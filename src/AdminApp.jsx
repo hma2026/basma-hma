@@ -49,10 +49,12 @@ const EVENTS = [
 
 function Logo({ s = 36 }) { const h = s/2, g = s*.02, r = s*.06, f = s*.28; return (<svg width={s} height={s} viewBox={`0 0 ${s} ${s}`}><rect x={0} y={0} width={h-g} height={h-g} rx={r} fill={B.blue}/><rect x={h+g} y={0} width={h-g} height={h-g} rx={r} fill={B.yellow}/><rect x={0} y={h+g} width={h-g} height={h-g} rx={r} fill={B.red}/><rect x={h+g} y={h+g} width={h-g} height={h-g} rx={r} fill={B.black}/><text x={h*.5} y={h*.68} textAnchor="middle" fill="#fff" fontSize={f} fontWeight="900" fontFamily="Arial">H</text><text x={h*1.5+g} y={h*.68} textAnchor="middle" fill={B.black} fontSize={f} fontWeight="900" fontFamily="Arial">M</text><text x={h*.5} y={h*1.68+g} textAnchor="middle" fill="#fff" fontSize={f} fontWeight="900" fontFamily="Arial">A</text><text x={h*1.5+g} y={h*1.52+g} textAnchor="middle" fill="#fff" fontSize={f*.45} fontWeight="800" fontFamily="Arial">ENG</text></svg>); }
 function Stripe() { return <div style={{ display: "flex", height: 4 }}><div style={{ flex: 1, background: B.blue }}/><div style={{ flex: 1, background: B.yellow }}/><div style={{ flex: 1, background: B.red }}/></div>; }
-function Toggle({ on, onClick }) { return <button onClick={onClick} style={{ width: 40, height: 22, borderRadius: 11, border: "none", cursor: "pointer", background: on ? t.ok : "#D1D5DB", position: "relative", transition: "all .3s" }}><div style={{ width: 16, height: 16, borderRadius: "50%", background: t.card, position: "absolute", top: 3, transition: "all .3s", ...(on ? { left: 21 } : { left: 3 }), boxShadow: "0 1px 3px rgba(0,0,0,.15)" }} /></button>; }
+function Toggle({ on, onClick, t }) { var p = t || LT; return <button onClick={onClick} style={{ width: 40, height: 22, borderRadius: 11, border: "none", cursor: "pointer", background: on ? p.ok : "#D1D5DB", position: "relative", transition: "all .3s" }}><div style={{ width: 16, height: 16, borderRadius: "50%", background: p.card, position: "absolute", top: 3, transition: "all .3s", ...(on ? { left: 21 } : { left: 3 }), boxShadow: "0 1px 3px rgba(0,0,0,.15)" }} /></button>; }
 
 // ═══════ LOGIN ═══════
 function Login({ onLogin }) {
+  var dk = localStorage.getItem("basma_theme") === "dark";
+  var t = dk ? DK : LT;
   const [role, setRole] = useState("manager");
   return (<div style={{ minHeight: "100vh", background: t.bg, display: "flex", alignItems: "center", justifyContent: "center" }}>
     <div style={{ background: t.card, borderRadius: 24, padding: "48px 40px", width: 380, textAlign: "center", boxShadow: "0 8px 40px rgba(0,0,0,.08)" }}>
