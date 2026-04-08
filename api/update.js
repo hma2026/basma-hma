@@ -1,15 +1,15 @@
-module.exports = function(req, res) {
+export default function(req, res) {
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS');
   res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
   if (req.method === 'OPTIONS') return res.status(200).end();
-  if (req.method !== 'POST') return res.status(200).json({ error: 'POST only' });
+  if (req.method !== 'POST') return res.status(200).json({ ok: true, method: req.method, msg: 'update API works' });
 
   var token = process.env.GITHUB_TOKEN;
   if (!token) return res.status(200).json({ error: 'GITHUB_TOKEN not set' });
 
   var chunks = [];
-  req.on('data', function(chunk) { chunks.push(chunk); });
+  req.on('data', function(c) { chunks.push(c); });
   req.on('end', function() {
     try {
       var raw = Buffer.concat(chunks);
@@ -19,7 +19,7 @@ module.exports = function(req, res) {
 
       var zipBuf = Buffer.from(json.zip, 'base64');
 
-      // Parse ZIP (stored/uncompressed only)
+      // Parse ZIP
       var files = [];
       var off = 0;
       while (off < zipBuf.length - 4) {
@@ -32,7 +32,7 @@ module.exports = function(req, res) {
         var name = zipBuf.slice(off + 30, off + 30 + nLen).toString('utf8');
         var dOff = off + 30 + nLen + eLen;
         var size = comp === 0 ? uSize : cSize;
-        if (size > 0 && name.indexOf('/') !== name.length - 1 && comp === 0) {
+        if (size > 0 && !name.endsWith('/') && comp === 0) {
           files.push({ name: name, b64: zipBuf.slice(dOff, dOff + size).toString('base64') });
         }
         off = dOff + size;
@@ -40,8 +40,7 @@ module.exports = function(req, res) {
 
       if (files.length === 0) return res.status(200).json({ error: 'No files. Use: zip -0 -r update.zip files/' });
 
-      // GitHub API
-      function ghReq(path, method, body) {
+      function gh(path, method, body) {
         return fetch('https://api.github.com/repos/hma2026/basma-hma' + path, {
           method: method || 'GET',
           headers: { 'Authorization': 'Bearer ' + token, 'Accept': 'application/vnd.github.v3+json', 'Content-Type': 'application/json' },
@@ -49,19 +48,17 @@ module.exports = function(req, res) {
         }).then(function(r) { return r.json(); });
       }
 
-      // Get ref -> create blobs -> tree -> commit -> update ref
-      ghReq('/git/ref/heads/main').then(function(ref) {
-        if (!ref.object) return ghReq('/git/ref/heads/master');
+      gh('/git/ref/heads/main').then(function(ref) {
+        if (!ref.object) return gh('/git/ref/heads/master');
         return ref;
       }).then(function(ref) {
         if (!ref.object) return res.status(200).json({ error: 'Branch not found' });
         var parentSHA = ref.object.sha;
         var branchPath = ref.ref ? ref.ref.replace('refs/', '') : 'heads/main';
 
-        ghReq('/git/commits/' + parentSHA).then(function(commit) {
-          // Create blobs in parallel
+        gh('/git/commits/' + parentSHA).then(function(commit) {
           Promise.all(files.map(function(f) {
-            return ghReq('/git/blobs', 'POST', { content: f.b64, encoding: 'base64' });
+            return gh('/git/blobs', 'POST', { content: f.b64, encoding: 'base64' });
           })).then(function(blobs) {
             var tree = files.map(function(f, i) {
               var p = f.name;
@@ -69,14 +66,14 @@ module.exports = function(req, res) {
               return { path: p, mode: '100644', type: 'blob', sha: blobs[i].sha };
             });
 
-            ghReq('/git/trees', 'POST', { base_tree: commit.tree.sha, tree: tree }).then(function(newTree) {
+            gh('/git/trees', 'POST', { base_tree: commit.tree.sha, tree: tree }).then(function(newTree) {
               var ts = new Date().toISOString().substring(0, 16);
-              ghReq('/git/commits', 'POST', {
+              gh('/git/commits', 'POST', {
                 message: '[بصمة] تحديث ' + ts + ' — ' + files.length + ' ملفات',
                 tree: newTree.sha,
                 parents: [parentSHA]
               }).then(function(newCommit) {
-                ghReq('/git/' + branchPath, 'PATCH', { sha: newCommit.sha }).then(function() {
+                gh('/git/' + branchPath, 'PATCH', { sha: newCommit.sha }).then(function() {
                   res.status(200).json({
                     success: true,
                     message: 'تم التحديث بنجاح!',
@@ -91,9 +88,8 @@ module.exports = function(req, res) {
       }).catch(function(err) {
         res.status(200).json({ error: 'GitHub: ' + String(err.message || err) });
       });
-
     } catch(err) {
       res.status(200).json({ error: String(err.message || err) });
     }
   });
-};
+}
