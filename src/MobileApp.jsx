@@ -463,8 +463,8 @@ function Widget({ emp, onApp }) {
     <div style={{ fontSize: 48 }}>🏖</div>
     <div style={{ fontSize: 20, fontWeight: 800, marginTop: 12, color: B.blue }}>أنت في إجازة</div>
     <div style={{ fontSize: 13, color: t.txM, marginTop: 8 }}>استمتع بوقتك!</div>
-    <div style={{ marginTop: 20, padding: "8px 20px", borderRadius: 12, background: t.card, border: `1px solid ${t.sep}` }}><span style={{ fontSize: 12, color: B.blue, fontWeight: 700 }}>باقي: {emp.leaveRemaining || "?"} أيام</span></div>
-    <button onClick={onApp} style={{ marginTop: 30, padding: "10px 30px", borderRadius: 14, background: t.card, border: `1px solid ${t.sep}`, color: B.blue, fontSize: 12, cursor: "pointer", fontWeight: 600 }}>التفاصيل ←</button>
+    <div style={{ marginTop: 20, padding: "8px 20px", borderRadius: 12, background: t.card, border: "1px solid " + t.sep }}><span style={{ fontSize: 12, color: B.blue, fontWeight: 700 }}>باقي: {emp.leaveRemaining || "?"} أيام</span></div>
+    <button onClick={onApp} style={{ marginTop: 30, padding: "10px 30px", borderRadius: 14, background: t.card, border: "1px solid " + t.sep, color: B.blue, fontSize: 12, cursor: "pointer", fontWeight: 600 }}>التفاصيل ←</button>
   </div>);
 
   return (<div style={{ ...FL, background: t.bg, display: "flex", flexDirection: "column", alignItems: "center", color: t.tx, position: "relative", overflow: "hidden" }}>
@@ -511,7 +511,7 @@ function Widget({ emp, onApp }) {
             await api('exceptions', 'POST', { empId: emp.id, reason, date: new Date().toISOString().split("T")[0], distance: gpsStatus.d });
             alert("✅ تم إرسال طلب الاستثناء لمدير النظام");
           }
-        }} style={{ marginTop: 8, width: "100%", padding: "7px", borderRadius: 10, background: t.card, border: `1px solid ${t.sep}`, color: C.bad, fontSize: 11, fontWeight: 600, cursor: "pointer" }}>📝 طلب استثناء</button>
+        }} style={{ marginTop: 8, width: "100%", padding: "7px", borderRadius: 10, background: t.card, border: "1px solid " + t.sep, color: C.bad, fontSize: 11, fontWeight: 600, cursor: "pointer" }}>📝 طلب استثناء</button>
       </div>
     )}
 
@@ -552,7 +552,7 @@ function Widget({ emp, onApp }) {
     </div>
 
     <div style={{ padding: "8px 20px 20px", width: "100%", zIndex: 1 }}>
-      <button onClick={onApp} style={{ width: "100%", padding: "11px", borderRadius: 14, background: t.card, border: `1px solid ${t.sep}`, color: B.blue, fontSize: 12, fontWeight: 600, cursor: "pointer" }}>{emp.isManager || emp.isAssistant ? "التفاصيل والإدارة ←" : "التفاصيل والمحفظة ←"}</button>
+      <button onClick={onApp} style={{ width: "100%", padding: "11px", borderRadius: 14, background: t.card, border: "1px solid " + t.sep, color: B.blue, fontSize: 12, fontWeight: 600, cursor: "pointer" }}>{emp.isManager || emp.isAssistant ? "التفاصيل والإدارة ←" : "التفاصيل والمحفظة ←"}</button>
       {cs === "idle" && <div style={{ textAlign: "center", marginTop: 3, fontSize: 7, color: t.txM }}>اضغط الدائرة لتقديم الوقت (تجريبي)</div>}
     </div>
   </div>);
@@ -709,7 +709,7 @@ function FullApp({ emp, onBack, onLogout }) {
 
   return (<div style={{ ...FL, background: t.bg, display: "flex", flexDirection: "column" }}>
     <Stripe h={4} />
-    <div style={{ padding: "8px 14px", display: "flex", alignItems: "center", gap: 8, background: t.card, borderBottom: `1px solid ${t.sep}` }}>
+    <div style={{ padding: "8px 14px", display: "flex", alignItems: "center", gap: 8, background: t.card, borderBottom: "1px solid " + t.sep }}>
       <button onClick={onBack} style={{ background: "none", border: "none", fontSize: 18, cursor: "pointer" }}>→</button>
       <Logo s={22} />
       <div style={{ flex: 1, fontSize: 13, fontWeight: 700, color: t.tx }}>{emp.name}</div>
@@ -722,7 +722,7 @@ function FullApp({ emp, onBack, onLogout }) {
       {tab === "admin" && <div>
         <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8, marginBottom: 12 }}>
           {[{ l: "الموظفين", v: emps.length, c: B.blue, i: "👥" }, { l: "حاضر اليوم", v: [...new Set(att.map(r => r.empId))].length, c: C.ok, i: "✅" }, { l: "إجازات معلّقة", v: leaves.filter(l => l.status === "pending").length, c: C.warn, i: "📋" }, { l: "بصمات اليوم", v: att.length, c: B.blueDk, i: "📊" }].map((s, i) => (
-            <div key={i} style={{ background: t.card, borderRadius: 14, padding: 12, border: `1px solid ${t.sep}`, display: "flex", alignItems: "center", gap: 8 }}>
+            <div key={i} style={{ background: t.card, borderRadius: 14, padding: 12, border: "1px solid " + t.sep, display: "flex", alignItems: "center", gap: 8 }}>
               <div style={{ width: 34, height: 34, borderRadius: 10, background: s.c + "12", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 16 }}>{s.i}</div>
               <div><div style={{ fontSize: 20, fontWeight: 800, color: s.c }}>{s.v}</div><div style={{ fontSize: 9, color: t.txM }}>{s.l}</div></div>
             </div>
@@ -803,7 +803,7 @@ function FullApp({ emp, onBack, onLogout }) {
           <input type="date" value={newDeleg.to} onChange={e => setNewDeleg(p => ({ ...p, to: e.target.value }))} style={{ ...inp, fontSize: 13, marginBottom: 8 }} />
           <div style={{ display: "flex", gap: 8 }}>
             <button onClick={addDelegation} style={{ ...PB, flex: 1, padding: 10 }}>إرسال</button>
-            <button onClick={() => setShowAddDeleg(false)} style={{ flex: 1, padding: 10, borderRadius: 14, background: t.bg, border: `1px solid ${t.sep}`, color: t.tx2, fontSize: 13, fontWeight: 700, cursor: "pointer" }}>إلغاء</button>
+            <button onClick={() => setShowAddDeleg(false)} style={{ flex: 1, padding: 10, borderRadius: 14, background: t.bg, border: "1px solid " + t.sep, color: t.tx2, fontSize: 13, fontWeight: 700, cursor: "pointer" }}>إلغاء</button>
           </div>
         </div>}
       </div>}
@@ -828,7 +828,7 @@ function FullApp({ emp, onBack, onLogout }) {
           <div style={{ fontSize: 10, color: t.txM, marginBottom: 6 }}>💡 افتح Google Maps ← اضغط على الموقع ← انسخ الإحداثيات</div>
           <div style={{ display: "flex", gap: 8 }}>
             <button onClick={addProject} style={{ ...PB, flex: 1, padding: 10 }}>حفظ</button>
-            <button onClick={() => setShowAddProject(false)} style={{ flex: 1, padding: 10, borderRadius: 14, background: t.bg, border: `1px solid ${t.sep}`, color: t.tx2, fontSize: 13, fontWeight: 700, cursor: "pointer" }}>إلغاء</button>
+            <button onClick={() => setShowAddProject(false)} style={{ flex: 1, padding: 10, borderRadius: 14, background: t.bg, border: "1px solid " + t.sep, color: t.tx2, fontSize: 13, fontWeight: 700, cursor: "pointer" }}>إلغاء</button>
           </div>
         </div>}
 
@@ -873,7 +873,7 @@ function FullApp({ emp, onBack, onLogout }) {
           <div style={{ fontSize: 10, color: t.tx2, marginBottom: 6 }}>اختر جاهزة:</div>
           <div style={{ display: "flex", flexWrap: "wrap", gap: 4, marginBottom: 10 }}>
             {PRESET_EVENTS.map((pe, i) => (
-              <button key={i} onClick={() => setNewEvent(p => ({ ...p, name: pe.name, emoji: pe.emoji, bg: pe.bg }))} style={{ padding: "4px 10px", borderRadius: 8, fontSize: 10, border: `1px solid ${t.sep}`, background: newEvent.name === pe.name ? B.blue : "#fff", color: newEvent.name === pe.name ? "#fff" : t.tx2, cursor: "pointer" }}>{pe.emoji} {pe.name}</button>
+              <button key={i} onClick={() => setNewEvent(p => ({ ...p, name: pe.name, emoji: pe.emoji, bg: pe.bg }))} style={{ padding: "4px 10px", borderRadius: 8, fontSize: 10, border: "1px solid " + t.sep, background: newEvent.name === pe.name ? B.blue : "#fff", color: newEvent.name === pe.name ? "#fff" : t.tx2, cursor: "pointer" }}>{pe.emoji} {pe.name}</button>
             ))}
           </div>
 
@@ -885,7 +885,7 @@ function FullApp({ emp, onBack, onLogout }) {
           <div style={{ display: "flex", gap: 8, marginBottom: 8 }}>
             <div style={{ flex: 1 }}>
               <label style={{ fontSize: 10, color: t.tx2 }}>لون الخلفية</label>
-              <input type="color" value={newEvent.bg} onChange={e => setNewEvent(p => ({ ...p, bg: e.target.value }))} style={{ width: "100%", height: 36, borderRadius: 8, border: `1px solid ${t.sep}`, cursor: "pointer" }} />
+              <input type="color" value={newEvent.bg} onChange={e => setNewEvent(p => ({ ...p, bg: e.target.value }))} style={{ width: "100%", height: 36, borderRadius: 8, border: "1px solid " + t.sep, cursor: "pointer" }} />
             </div>
           </div>
           
@@ -907,7 +907,7 @@ function FullApp({ emp, onBack, onLogout }) {
           </div>}
 
           {/* Preview */}
-          <div style={{ borderRadius: 16, overflow: "hidden", marginBottom: 10, border: `1px solid ${t.sep}` }}>
+          <div style={{ borderRadius: 16, overflow: "hidden", marginBottom: 10, border: "1px solid " + t.sep }}>
             <div style={{ background: newEvent.bg, padding: "20px 16px", textAlign: "center", position: "relative", overflow: "hidden", minHeight: 80 }}>
               <div style={{ fontSize: 32 }}>{newEvent.emoji}</div>
               <div style={{ fontSize: 14, fontWeight: 800, color: "#fff", marginTop: 4 }}>{newEvent.name || "اسم المناسبة"}</div>
@@ -920,7 +920,7 @@ function FullApp({ emp, onBack, onLogout }) {
 
           <div style={{ display: "flex", gap: 8 }}>
             <button onClick={addEvent} style={{ ...PB, flex: 1, padding: 10 }}>حفظ</button>
-            <button onClick={() => setShowAddEvent(false)} style={{ flex: 1, padding: 10, borderRadius: 14, background: t.bg, border: `1px solid ${t.sep}`, color: t.tx2, fontSize: 13, fontWeight: 700, cursor: "pointer" }}>إلغاء</button>
+            <button onClick={() => setShowAddEvent(false)} style={{ flex: 1, padding: 10, borderRadius: 14, background: t.bg, border: "1px solid " + t.sep, color: t.tx2, fontSize: 13, fontWeight: 700, cursor: "pointer" }}>إلغاء</button>
           </div>
         </div>}
 
@@ -1001,7 +1001,7 @@ function FullApp({ emp, onBack, onLogout }) {
           <textarea value={newLeave.reason} onChange={e => setNewLeave(p => ({ ...p, reason: e.target.value }))} rows={2} placeholder="السبب..." style={{ ...inp, fontSize: 12, resize: "none", marginBottom: 8 }} />
           <div style={{ display: "flex", gap: 8 }}>
             <button onClick={submitLeave} style={{ ...PB, flex: 1, padding: 10 }}>إرسال الطلب</button>
-            <button onClick={() => setShowLeaveReq(false)} style={{ flex: 1, padding: 10, borderRadius: 14, background: t.bg, border: `1px solid ${t.sep}`, color: t.tx2, fontSize: 13, fontWeight: 700, cursor: "pointer" }}>إلغاء</button>
+            <button onClick={() => setShowLeaveReq(false)} style={{ flex: 1, padding: 10, borderRadius: 14, background: t.bg, border: "1px solid " + t.sep, color: t.tx2, fontSize: 13, fontWeight: 700, cursor: "pointer" }}>إلغاء</button>
           </div>
         </div>}
 
@@ -1049,7 +1049,7 @@ function FullApp({ emp, onBack, onLogout }) {
           <div style={{ fontSize: 13, fontWeight: 700, color: B.blue, marginBottom: 10 }}>سؤال جديد</div>
           <label style={{ fontSize: 11, color: t.tx2, display: "block", marginBottom: 3 }}>التصنيف</label>
           <select value={newQ.type} onChange={e => setNewQ(p => ({ ...p, type: e.target.value }))} style={{ ...inp, fontSize: 13, marginBottom: 8 }}>
-            {["ذكر", "هندسي", "لغز", "سؤال", "معلومة"].map(t => <option key={t} value={t}>{t}</option>)}
+            {["ذكر", "هندسي", "لغز", "سؤال", "معلومة"].map(tp => <option key={tp} value={tp}>{tp}</option>)}
           </select>
           <label style={{ fontSize: 11, color: t.tx2, display: "block", marginBottom: 3 }}>السؤال</label>
           <input value={newQ.q} onChange={e => setNewQ(p => ({ ...p, q: e.target.value }))} placeholder="اكتب السؤال..." style={{ ...inp, fontSize: 13, marginBottom: 8 }} />
@@ -1061,7 +1061,7 @@ function FullApp({ emp, onBack, onLogout }) {
           <input value={newQ.opts[2]} onChange={e => { const o = [...newQ.opts]; o[2] = e.target.value; setNewQ(p => ({ ...p, opts: o })); }} placeholder="إجابة خاطئة" style={{ ...inp, fontSize: 13, marginBottom: 8 }} />
           <div style={{ display: "flex", gap: 8 }}>
             <button onClick={addQuestion} style={{ ...PB, flex: 1, padding: 10 }}>حفظ</button>
-            <button onClick={() => setShowAddQ(false)} style={{ flex: 1, padding: 10, borderRadius: 14, background: t.bg, border: `1px solid ${t.sep}`, color: t.tx2, fontSize: 13, fontWeight: 700, cursor: "pointer" }}>إلغاء</button>
+            <button onClick={() => setShowAddQ(false)} style={{ flex: 1, padding: 10, borderRadius: 14, background: t.bg, border: "1px solid " + t.sep, color: t.tx2, fontSize: 13, fontWeight: 700, cursor: "pointer" }}>إلغاء</button>
           </div>
         </div>}
 
@@ -1135,7 +1135,7 @@ function FullApp({ emp, onBack, onLogout }) {
           <div style={{ fontSize: 10, fontWeight: 700, color: B.blue }}>📌 تنويه</div>
           <div style={{ fontSize: 10, color: B.blueDk, lineHeight: 1.8 }}>هذه العضوية مقياس للانضباط وليست مقياساً للأداء الوظيفي السنوي</div>
         </div>
-        {LEVELS.map((l, i) => (<div key={i} style={{ display: "flex", alignItems: "center", gap: 10, padding: "10px 0", borderBottom: i < LEVELS.length - 1 ? `1px solid ${t.sep}` : "none", opacity: i > LEVELS.indexOf(level) ? .4 : 1 }}><div style={{ width: 32, height: 32, borderRadius: "50%", background: t.bg, border: l === level ? `2px solid ${l.color}` : "none", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 16 }}>{l.badge}</div><div style={{ flex: 1 }}><div style={{ fontSize: 12, fontWeight: 700, color: l === level ? l.color : t.tx }}>{l.name} {l === level && "← أنت"}</div><div style={{ fontSize: 9, color: t.txM }}>{l.min > 0 ? `${l.min}+ نقطة` : "الأساسي"}</div></div></div>))}
+        {LEVELS.map((l, i) => (<div key={i} style={{ display: "flex", alignItems: "center", gap: 10, padding: "10px 0", borderBottom: i < LEVELS.length - 1 ? "1px solid " + t.sep : "none", opacity: i > LEVELS.indexOf(level) ? .4 : 1 }}><div style={{ width: 32, height: 32, borderRadius: "50%", background: t.bg, border: l === level ? "2px solid " + l.color : "none", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 16 }}>{l.badge}</div><div style={{ flex: 1 }}><div style={{ fontSize: 12, fontWeight: 700, color: l === level ? l.color : t.tx }}>{l.name} {l === level && "← أنت"}</div><div style={{ fontSize: 9, color: t.txM }}>{l.min > 0 ? `${l.min}+ نقطة` : "الأساسي"}</div></div></div>))}
       </div>}
 
       {/* ATTENDANCE */}
@@ -1161,7 +1161,7 @@ function FullApp({ emp, onBack, onLogout }) {
             {emps.map(e => {
               const hasAtt = att.some(r => r.empId === e.id);
               return (
-                <div key={e.id} style={{ display: "flex", alignItems: "center", gap: 8, padding: "8px 0", borderBottom: `1px solid ${t.sep}` }}>
+                <div key={e.id} style={{ display: "flex", alignItems: "center", gap: 8, padding: "8px 0", borderBottom: "1px solid " + t.sep }}>
                   <div style={{ flex: 1 }}>
                     <div style={{ fontSize: 12, fontWeight: 700 }}>{e.name}</div>
                     <div style={{ fontSize: 9, color: t.txM }}>{e.id} · {EMP_TYPES[e.type] || "🏢"}</div>
@@ -1191,7 +1191,7 @@ function FullApp({ emp, onBack, onLogout }) {
               <div style={{ fontSize: 11, fontWeight: 700, marginTop: 4 }}>سجل الحضور</div>
               <div style={{ fontSize: 9, color: t.txM }}>CSV — كل البصمات</div>
             </button>
-            <button onClick={() => window.open(`/api/data?action=export&type=payroll`, '_blank')} style={{ ...crd, padding: 12, textAlign: "center", cursor: "pointer", border: `1px solid ${C.ok}33` }}>
+            <button onClick={() => window.open(`/api/data?action=export&type=payroll`, '_blank')} style={{ ...crd, padding: 12, textAlign: "center", cursor: "pointer", border: "1px solid " + C.ok + "33" }}>
               <div style={{ fontSize: 20 }}>💰</div>
               <div style={{ fontSize: 11, fontWeight: 700, marginTop: 4 }}>مسير الرواتب</div>
               <div style={{ fontSize: 9, color: t.txM }}>CSV — بصيغة البنك</div>
@@ -1224,8 +1224,8 @@ function FullApp({ emp, onBack, onLogout }) {
     </div>
 
     {/* Tab bar */}
-    <div style={{ display: "flex", justifyContent: "space-around", padding: "4px 0 12px", background: t.card, borderTop: `1px solid ${t.sep}`, position: "fixed", bottom: 0, left: 0, right: 0, maxWidth: 480, margin: "0 auto" }}>
-      {tabs.map(t => { const a = tab === t.id; return (<button key={t.id} onClick={() => setTab(t.id)} style={{ background: "none", border: "none", cursor: "pointer", display: "flex", flexDirection: "column", alignItems: "center", gap: 1, padding: "4px 8px", position: "relative" }}>{a && <div style={{ position: "absolute", top: -4, width: 18, height: 3, borderRadius: 2, background: B.blue }} />}<span style={{ fontSize: 15, filter: a ? "none" : "grayscale(.7) opacity(.4)" }}>{t.i}</span><span style={{ fontSize: 8, fontWeight: 700, color: a ? B.blue : t.txM }}>{t.l}</span></button>); })}
+    <div style={{ display: "flex", justifyContent: "space-around", padding: "4px 0 12px", background: t.card, borderTop: "1px solid " + t.sep, position: "fixed", bottom: 0, left: 0, right: 0, maxWidth: 480, margin: "0 auto" }}>
+      {tabs.map(tb => { const a = tab === tb.id; return (<button key={tb.id} onClick={() => setTab(tb.id)} style={{ background: "none", border: "none", cursor: "pointer", display: "flex", flexDirection: "column", alignItems: "center", gap: 1, padding: "4px 8px", position: "relative" }}>{a && <div style={{ position: "absolute", top: -4, width: 18, height: 3, borderRadius: 2, background: B.blue }} />}<span style={{ fontSize: 15, filter: a ? "none" : "grayscale(.7) opacity(.4)" }}>{tb.i}</span><span style={{ fontSize: 8, fontWeight: 700, color: a ? B.blue : t.txM }}>{tb.l}</span></button>); })}
     </div>
   </div>);
 }
@@ -1304,8 +1304,8 @@ function ProfileTab({ emp, emps, level, onLogout, loadData }) {
   return (<div>
     {/* Sub-tabs */}
     <div style={{ display: "flex", gap: 4, marginBottom: 12, overflowX: "auto" }}>
-      {subTabs.map(t => (
-        <button key={t.id} onClick={() => setSubTab(t.id)} style={{ padding: "6px 14px", borderRadius: 10, fontSize: 11, fontWeight: 700, border: subTab === t.id ? "none" : `1px solid ${t.sep}`, background: subTab === t.id ? B.blue : "#fff", color: subTab === t.id ? "#fff" : t.tx2, cursor: "pointer", whiteSpace: "nowrap" }}>{t.i} {t.l}</button>
+      {subTabs.map(st => (
+        <button key={st.id} onClick={() => setSubTab(st.id)} style={{ padding: "6px 14px", borderRadius: 10, fontSize: 11, fontWeight: 700, border: subTab === st.id ? "none" : "1px solid " + t.sep, background: subTab === st.id ? B.blue : "#fff", color: subTab === st.id ? "#fff" : t.tx2, cursor: "pointer", whiteSpace: "nowrap" }}>{st.i} {st.l}</button>
       ))}
     </div>
 
@@ -1317,7 +1317,7 @@ function ProfileTab({ emp, emps, level, onLogout, loadData }) {
       <div style={{ fontSize: 10, color: t.tx2, marginTop: 2 }}>{EMP_TYPES[emp.type] || "🏢 مكتبي"}</div>
       <div style={{ ...crd, marginTop: 14, textAlign: "right" }}>
         {[{ l: "الفرع", v: BR[emp.branch] }, { l: "المسمى", v: emp.role }, { l: "الرقم", v: emp.id }, { l: "التصنيف", v: EMP_TYPES[emp.type] || "مكتبي" }, { l: "الدوام المرن", v: emp.flexBase ? "✓" : "✕" }, { l: "أوفرتايم", v: emp.flexOT ? `✓ (${emp.flexOTMax}س)` : "✕" }, { l: "الالتحاق", v: emp.joinDate }].map((x, i) => (
-          <div key={i} style={{ display: "flex", justifyContent: "space-between", padding: "6px 0", borderBottom: i < 6 ? `1px solid ${t.sep}` : "none" }}>
+          <div key={i} style={{ display: "flex", justifyContent: "space-between", padding: "6px 0", borderBottom: i < 6 ? "1px solid " + t.sep : "none" }}>
             <span style={{ fontSize: 11, color: t.txM }}>{x.l}</span>
             <span style={{ fontSize: 11, fontWeight: 700 }}>{x.v}</span>
           </div>
@@ -1352,11 +1352,11 @@ function ProfileTab({ emp, emps, level, onLogout, loadData }) {
               <div style={{ fontSize: 13, fontWeight: 700 }}>🏛 عضوية الهيئة السعودية للمهندسين</div>
               <span style={{ padding: "3px 8px", borderRadius: 8, fontSize: 9, fontWeight: 700, background: `${sce?.color || C.ok}15`, color: sce?.color || C.ok }}>{sce?.icon} {sce?.status === "expired" ? "منتهية" : sce?.status === "critical" ? "حرجة" : sce?.status === "warning" ? "قريبة" : "سارية"}</span>
             </div>
-            <div style={{ display: "flex", justifyContent: "space-between", fontSize: 11, padding: "4px 0", borderBottom: `1px solid ${t.sep}` }}>
+            <div style={{ display: "flex", justifyContent: "space-between", fontSize: 11, padding: "4px 0", borderBottom: "1px solid " + t.sep }}>
               <span style={{ color: t.txM }}>رقم العضوية</span>
               <span style={{ fontWeight: 700 }}>{emp.sceNumber}</span>
             </div>
-            <div style={{ display: "flex", justifyContent: "space-between", fontSize: 11, padding: "4px 0", borderBottom: `1px solid ${t.sep}` }}>
+            <div style={{ display: "flex", justifyContent: "space-between", fontSize: 11, padding: "4px 0", borderBottom: "1px solid " + t.sep }}>
               <span style={{ color: t.txM }}>تاريخ الانتهاء</span>
               <span style={{ fontWeight: 700, color: sce?.color }}>{emp.sceExpiry}</span>
             </div>
@@ -1445,7 +1445,7 @@ function ProfileTab({ emp, emps, level, onLogout, loadData }) {
         </div>
         <div style={{ display: "flex", gap: 8 }}>
           <button onClick={addDep} style={{ ...PB, flex: 1, padding: 10 }}>حفظ</button>
-          <button onClick={() => setShowAddDep(false)} style={{ flex: 1, padding: 10, borderRadius: 14, background: t.bg, border: `1px solid ${t.sep}`, color: t.tx2, fontSize: 13, fontWeight: 700, cursor: "pointer" }}>إلغاء</button>
+          <button onClick={() => setShowAddDep(false)} style={{ flex: 1, padding: 10, borderRadius: 14, background: t.bg, border: "1px solid " + t.sep, color: t.tx2, fontSize: 13, fontWeight: 700, cursor: "pointer" }}>إلغاء</button>
         </div>
       </div>}
 
@@ -1481,23 +1481,23 @@ function ProfileTab({ emp, emps, level, onLogout, loadData }) {
         <textarea value={newTicket.body} onChange={e => setNewTicket(p => ({ ...p, body: e.target.value }))} placeholder="التفاصيل..." rows={3} style={{ ...inp, fontSize: 12, resize: "none", marginBottom: 6 }} />
         <div style={{ display: "flex", gap: 8 }}>
           <button onClick={addTicket} style={{ ...PB, flex: 1, padding: 10 }}>إرسال</button>
-          <button onClick={() => setShowAddTicket(false)} style={{ flex: 1, padding: 10, borderRadius: 14, background: t.bg, border: `1px solid ${t.sep}`, color: t.tx2, fontSize: 13, fontWeight: 700, cursor: "pointer" }}>إلغاء</button>
+          <button onClick={() => setShowAddTicket(false)} style={{ flex: 1, padding: 10, borderRadius: 14, background: t.bg, border: "1px solid " + t.sep, color: t.tx2, fontSize: 13, fontWeight: 700, cursor: "pointer" }}>إلغاء</button>
         </div>
       </div>}
 
       {tickets.length === 0 && !showAddTicket && <div style={{ ...crd, textAlign: "center", color: t.txM, fontSize: 11 }}>لا توجد تذاكر</div>}
-      {tickets.map(t => {
-        const sc = t.status === "open" ? C.warn : t.status === "closed" ? C.ok : t.txM;
+      {tickets.map(tk => {
+        const sc = tk.status === "open" ? C.warn : tk.status === "closed" ? C.ok : t.txM;
         return (
-          <div key={t.id} style={{ ...crd, marginBottom: 6 }}>
+          <div key={tk.id} style={{ ...crd, marginBottom: 6 }}>
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
               <div>
-                <div style={{ fontSize: 12, fontWeight: 700 }}>{t.subject}</div>
-                <div style={{ fontSize: 10, color: t.txM }}>{t.type} · {t.ts?.split("T")[0]}</div>
+                <div style={{ fontSize: 12, fontWeight: 700 }}>{tk.subject}</div>
+                <div style={{ fontSize: 10, color: t.txM }}>{tk.type} · {tk.ts?.split("T")[0]}</div>
               </div>
-              <span style={{ padding: "2px 8px", borderRadius: 6, fontSize: 9, fontWeight: 600, background: sc + "15", color: sc }}>{t.status === "open" ? "مفتوح" : "مغلق"}</span>
+              <span style={{ padding: "2px 8px", borderRadius: 6, fontSize: 9, fontWeight: 600, background: sc + "15", color: sc }}>{tk.status === "open" ? "مفتوح" : "مغلق"}</span>
             </div>
-            {t.body && <div style={{ fontSize: 10, color: t.tx2, marginTop: 4, lineHeight: 1.6 }}>{t.body}</div>}
+            {tk.body && <div style={{ fontSize: 10, color: t.tx2, marginTop: 4, lineHeight: 1.6 }}>{tk.body}</div>}
           </div>
         );
       })}

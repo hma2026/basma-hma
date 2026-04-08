@@ -59,7 +59,7 @@ function Login({ onLogin }) {
   return (<div style={{ minHeight: "100vh", background: t.bg, display: "flex", alignItems: "center", justifyContent: "center" }}>
     <div style={{ background: t.card, borderRadius: 24, padding: "48px 40px", width: 380, textAlign: "center", boxShadow: "0 8px 40px rgba(0,0,0,.08)" }}>
       <Logo s={60} /><div style={{ fontSize: 24, fontWeight: 800, color: B.blue, marginTop: 12 }}>{APP}</div><div style={{ fontSize: 13, color: t.txM, marginTop: 4 }}>لوحة إدارة الموارد البشرية</div><Stripe />
-      <div style={{ display: "flex", borderRadius: 12, overflow: "hidden", border: `1px solid ${t.sep}`, margin: "24px 0 20px" }}>
+      <div style={{ display: "flex", borderRadius: 12, overflow: "hidden", border: "1px solid " + t.sep, margin: "24px 0 20px" }}>
         {[{ id: "manager", l: "مدير" }, { id: "assistant", l: "مساعد" }].map(r => <button key={r.id} onClick={() => setRole(r.id)} style={{ flex: 1, padding: "12px", border: "none", fontSize: 13, fontWeight: 700, cursor: "pointer", background: role === r.id ? B.blue : "#F8F9FC", color: role === r.id ? "#fff" : t.txM }}>{r.l}</button>)}
       </div>
       <button onClick={() => onLogin(role)} style={{ width: "100%", padding: "14px", borderRadius: 14, background: B.blue, border: "none", color: "#fff", fontSize: 16, fontWeight: 700, cursor: "pointer" }}>دخول</button>
@@ -133,7 +133,7 @@ export default function AdminApp() {
     <style>{`button:active{transform:scale(.97)!important} ::-webkit-scrollbar{width:6px} ::-webkit-scrollbar-thumb{background:#CBD5E1;border-radius:3px}`}</style>
 
     {/* Sidebar */}
-    <div style={{ width: 220, background: t.card, borderLeft: `1px solid ${t.sep}`, display: "flex", flexDirection: "column", padding: "16px 0", flexShrink: 0 }}>
+    <div style={{ width: 220, background: t.card, borderLeft: "1px solid " + t.sep, display: "flex", flexDirection: "column", padding: "16px 0", flexShrink: 0 }}>
       <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "0 16px", marginBottom: 6 }}><Logo s={30} /><div><div style={{ fontSize: 14, fontWeight: 800, color: B.blue }}>{APP}</div><div style={{ fontSize: 8, color: t.txM }}>لوحة الإدارة</div></div></div>
       <Stripe />
       <div style={{ flex: 1, padding: "10px 8px" }}>
@@ -143,13 +143,13 @@ export default function AdminApp() {
           {item.badge > 0 && <div style={{ width: 18, height: 18, borderRadius: "50%", background: t.bad, color: "#fff", fontSize: 9, fontWeight: 800, display: "flex", alignItems: "center", justifyContent: "center" }}>{item.badge}</div>}
         </button>); })}
       </div>
-      <div style={{ padding: "8px 16px", borderTop: `1px solid ${t.sep}` }}>
+      <div style={{ padding: "8px 16px", borderTop: "1px solid " + t.sep }}>
         <button onClick={toggleTheme} style={{ width: "100%", padding: "8px", borderRadius: 8, background: dk ? "#2C2C2E" : "#E5E5EA", border: "none", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", gap: 6, marginBottom: 8 }}>
           <span style={{ fontSize: 14 }}>{dk ? "☀️" : "🌙"}</span>
           <span style={{ fontSize: 11, fontWeight: 600, color: t.tx2 }}>{dk ? "الوضع النهاري" : "الوضع الليلي"}</span>
         </button>
       </div>
-      <div style={{ padding: "12px 16px", borderTop: `1px solid ${t.sep}` }}>
+      <div style={{ padding: "12px 16px", borderTop: "1px solid " + t.sep }}>
         <div style={{ display: "flex", alignItems: "center", gap: 8 }}><div style={{ width: 32, height: 32, borderRadius: "50%", background: B.blueLt, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 16 }}>👤</div><div><div style={{ fontSize: 11, fontWeight: 700 }}>{role === "manager" ? "مدير HR" : "مساعد"}</div><div style={{ fontSize: 9, color: t.txM }}>{role === "manager" ? "صلاحيات كاملة" : "عرض وتدقيق"}</div></div></div>
         <button onClick={() => { setLoggedIn(false); }} style={{ width: "100%", marginTop: 8, padding: "6px", borderRadius: 6, background: t.badLt, border: "none", color: t.bad, fontSize: 10, fontWeight: 700, cursor: "pointer" }}>خروج</button>
       </div>
@@ -165,26 +165,26 @@ export default function AdminApp() {
       {/* ═══ DASHBOARD ═══ */}
       {tab === "dashboard" && <>
         <div style={{ display: "grid", gridTemplateColumns: "repeat(4,1fr)", gap: 12, marginBottom: 16 }}>
-          {[{ l: "حاضر", v: present, i: "✅", c: t.ok, s: `من ${EMPS.length}` }, { l: "غائب", v: absent, i: "🚫", c: t.bad }, { l: "متأخر", v: late, i: "⏰", c: t.warn }, { l: "طلبات معلّقة", v: pending, i: "📋", c: B.blue }].map((s, i) => <div key={i} style={{ background: t.card, borderRadius: 14, padding: "16px", border: `1px solid ${t.sep}` }}><div style={{ display: "flex", justifyContent: "space-between" }}><div><div style={{ fontSize: 11, color: t.txM }}>{s.l}</div><div style={{ fontSize: 28, fontWeight: 800, color: s.c, marginTop: 4 }}>{s.v}</div>{s.s && <div style={{ fontSize: 10, color: t.txM }}>{s.s}</div>}</div><div style={{ width: 40, height: 40, borderRadius: 10, background: `${s.c}12`, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 20 }}>{s.i}</div></div></div>)}
+          {[{ l: "حاضر", v: present, i: "✅", c: t.ok, s: `من ${EMPS.length}` }, { l: "غائب", v: absent, i: "🚫", c: t.bad }, { l: "متأخر", v: late, i: "⏰", c: t.warn }, { l: "طلبات معلّقة", v: pending, i: "📋", c: B.blue }].map((s, i) => <div key={i} style={{ background: t.card, borderRadius: 14, padding: "16px", border: "1px solid " + t.sep }}><div style={{ display: "flex", justifyContent: "space-between" }}><div><div style={{ fontSize: 11, color: t.txM }}>{s.l}</div><div style={{ fontSize: 28, fontWeight: 800, color: s.c, marginTop: 4 }}>{s.v}</div>{s.s && <div style={{ fontSize: 10, color: t.txM }}>{s.s}</div>}</div><div style={{ width: 40, height: 40, borderRadius: 10, background: `${s.c}12`, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 20 }}>{s.i}</div></div></div>)}
         </div>
         <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
-          <div style={{ background: t.card, borderRadius: 14, padding: "16px", border: `1px solid ${t.sep}` }}><div style={{ fontSize: 14, fontWeight: 700, marginBottom: 12 }}>⚡ يحتاج إجراء</div>{ALERTS.map((a, i) => <div key={i} style={{ padding: "8px 10px", borderRadius: 10, marginBottom: 6, background: a.type === "danger" ? t.badLt : a.type === "warn" ? t.warnLt : t.okLt, display: "flex", alignItems: "center", gap: 8 }}><span style={{ fontSize: 14 }}>{a.type === "danger" ? "🚨" : a.type === "warn" ? "⚠️" : "🏆"}</span><span style={{ flex: 1, fontSize: 11, fontWeight: 600 }}>{a.text}</span><span style={{ fontSize: 9, color: t.txM }}>{a.time}</span></div>)}</div>
-          <div style={{ background: t.card, borderRadius: 14, padding: "16px", border: `1px solid ${t.sep}` }}><div style={{ fontSize: 14, fontWeight: 700, marginBottom: 12 }}>📊 أداء الفروع</div>{BRANCHES.map((b, i) => { const pc = b.pct >= 90 ? t.ok : b.pct >= 75 ? t.warn : t.bad; return <div key={i} style={{ marginBottom: 12 }}><div style={{ display: "flex", justifyContent: "space-between", fontSize: 12, marginBottom: 4 }}><span style={{ fontWeight: 600 }}>{b.name}</span><span style={{ fontWeight: 800, color: pc }}>{b.pct}%</span></div><div style={{ height: 6, borderRadius: 3, background: "#F1F5F9", overflow: "hidden" }}><div style={{ height: "100%", width: `${b.pct}%`, borderRadius: 3, background: pc }} /></div></div>; })}<div style={{ marginTop: 16, fontSize: 13, fontWeight: 700, marginBottom: 8 }}>📈 الأسبوع</div><div style={{ display: "flex", alignItems: "flex-end", gap: 8, height: 80 }}>{WEEKLY.map((d, i) => { const pc = d.p >= 90 ? t.ok : d.p >= 80 ? B.blue : t.warn; return <div key={i} style={{ flex: 1, textAlign: "center" }}><div style={{ fontSize: 9, fontWeight: 700, color: pc }}>{d.p}%</div><div style={{ height: d.p * .7, borderRadius: 4, background: pc, minHeight: 6 }} /><div style={{ fontSize: 8, color: t.txM, marginTop: 3 }}>{d.d}</div></div>; })}</div></div>
+          <div style={{ background: t.card, borderRadius: 14, padding: "16px", border: "1px solid " + t.sep }}><div style={{ fontSize: 14, fontWeight: 700, marginBottom: 12 }}>⚡ يحتاج إجراء</div>{ALERTS.map((a, i) => <div key={i} style={{ padding: "8px 10px", borderRadius: 10, marginBottom: 6, background: a.type === "danger" ? t.badLt : a.type === "warn" ? t.warnLt : t.okLt, display: "flex", alignItems: "center", gap: 8 }}><span style={{ fontSize: 14 }}>{a.type === "danger" ? "🚨" : a.type === "warn" ? "⚠️" : "🏆"}</span><span style={{ flex: 1, fontSize: 11, fontWeight: 600 }}>{a.text}</span><span style={{ fontSize: 9, color: t.txM }}>{a.time}</span></div>)}</div>
+          <div style={{ background: t.card, borderRadius: 14, padding: "16px", border: "1px solid " + t.sep }}><div style={{ fontSize: 14, fontWeight: 700, marginBottom: 12 }}>📊 أداء الفروع</div>{BRANCHES.map((b, i) => { const pc = b.pct >= 90 ? t.ok : b.pct >= 75 ? t.warn : t.bad; return <div key={i} style={{ marginBottom: 12 }}><div style={{ display: "flex", justifyContent: "space-between", fontSize: 12, marginBottom: 4 }}><span style={{ fontWeight: 600 }}>{b.name}</span><span style={{ fontWeight: 800, color: pc }}>{b.pct}%</span></div><div style={{ height: 6, borderRadius: 3, background: "#F1F5F9", overflow: "hidden" }}><div style={{ height: "100%", width: `${b.pct}%`, borderRadius: 3, background: pc }} /></div></div>; })}<div style={{ marginTop: 16, fontSize: 13, fontWeight: 700, marginBottom: 8 }}>📈 الأسبوع</div><div style={{ display: "flex", alignItems: "flex-end", gap: 8, height: 80 }}>{WEEKLY.map((d, i) => { const pc = d.p >= 90 ? t.ok : d.p >= 80 ? B.blue : t.warn; return <div key={i} style={{ flex: 1, textAlign: "center" }}><div style={{ fontSize: 9, fontWeight: 700, color: pc }}>{d.p}%</div><div style={{ height: d.p * .7, borderRadius: 4, background: pc, minHeight: 6 }} /><div style={{ fontSize: 8, color: t.txM, marginTop: 3 }}>{d.d}</div></div>; })}</div></div>
         </div>
         <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12, marginTop: 12 }}>
-          <div style={{ background: t.card, borderRadius: 14, padding: "16px", border: `1px solid ${t.sep}` }}><div style={{ fontSize: 13, fontWeight: 700, color: t.ok, marginBottom: 10 }}>🏆 الأكثر انضباطاً</div>{EMPS.sort((a, b) => b.pct - a.pct).slice(0, 3).map((e, i) => <div key={i} style={{ display: "flex", alignItems: "center", gap: 8, padding: "6px 0", borderBottom: i < 2 ? `1px solid ${t.sep}` : "none" }}><span style={{ fontSize: 16 }}>{["🥇", "🥈", "🥉"][i]}</span><div style={{ flex: 1 }}><div style={{ fontSize: 12, fontWeight: 700 }}>{e.name}</div></div><span style={{ fontSize: 13, fontWeight: 800, color: t.ok }}>{e.pct}%</span></div>)}</div>
-          <div style={{ background: t.card, borderRadius: 14, padding: "16px", border: `1px solid ${t.sep}` }}><div style={{ fontSize: 13, fontWeight: 700, color: t.bad, marginBottom: 10 }}>⚠️ يحتاج متابعة</div>{EMPS.sort((a, b) => a.pct - b.pct).slice(0, 3).map((e, i) => <div key={i} style={{ display: "flex", alignItems: "center", gap: 8, padding: "6px 0", borderBottom: i < 2 ? `1px solid ${t.sep}` : "none" }}><div style={{ width: 24, height: 24, borderRadius: "50%", background: t.badLt, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 10, fontWeight: 800, color: t.bad }}>{i + 1}</div><div style={{ flex: 1 }}><div style={{ fontSize: 12, fontWeight: 700 }}>{e.name}</div></div><span style={{ fontSize: 13, fontWeight: 800, color: t.bad }}>{e.pct}%</span></div>)}</div>
+          <div style={{ background: t.card, borderRadius: 14, padding: "16px", border: "1px solid " + t.sep }}><div style={{ fontSize: 13, fontWeight: 700, color: t.ok, marginBottom: 10 }}>🏆 الأكثر انضباطاً</div>{EMPS.sort((a, b) => b.pct - a.pct).slice(0, 3).map((e, i) => <div key={i} style={{ display: "flex", alignItems: "center", gap: 8, padding: "6px 0", borderBottom: i < 2 ? "1px solid " + t.sep : "none" }}><span style={{ fontSize: 16 }}>{["🥇", "🥈", "🥉"][i]}</span><div style={{ flex: 1 }}><div style={{ fontSize: 12, fontWeight: 700 }}>{e.name}</div></div><span style={{ fontSize: 13, fontWeight: 800, color: t.ok }}>{e.pct}%</span></div>)}</div>
+          <div style={{ background: t.card, borderRadius: 14, padding: "16px", border: "1px solid " + t.sep }}><div style={{ fontSize: 13, fontWeight: 700, color: t.bad, marginBottom: 10 }}>⚠️ يحتاج متابعة</div>{EMPS.sort((a, b) => a.pct - b.pct).slice(0, 3).map((e, i) => <div key={i} style={{ display: "flex", alignItems: "center", gap: 8, padding: "6px 0", borderBottom: i < 2 ? "1px solid " + t.sep : "none" }}><div style={{ width: 24, height: 24, borderRadius: "50%", background: t.badLt, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 10, fontWeight: 800, color: t.bad }}>{i + 1}</div><div style={{ flex: 1 }}><div style={{ fontSize: 12, fontWeight: 700 }}>{e.name}</div></div><span style={{ fontSize: 13, fontWeight: 800, color: t.bad }}>{e.pct}%</span></div>)}</div>
         </div>
       </>}
 
       {/* ═══ EMPLOYEES ═══ */}
       {tab === "employees" && !selEmp && <>
         <div style={{ display: "flex", gap: 10, marginBottom: 14 }}>
-          <input value={search} onChange={e => setSearch(e.target.value)} placeholder="🔍 بحث..." style={{ flex: 1, padding: "10px 14px", borderRadius: 10, border: `1px solid ${t.sep}`, fontSize: 13, outline: "none", background: t.card }} />
-          <select value={brFilter} onChange={e => setBrFilter(e.target.value)} style={{ padding: "10px 14px", borderRadius: 10, border: `1px solid ${t.sep}`, fontSize: 12, background: t.card, fontWeight: 600, cursor: "pointer" }}><option value="all">كل الفروع</option>{BRANCHES.map(b => <option key={b.id} value={b.name}>{b.name}</option>)}</select>
+          <input value={search} onChange={e => setSearch(e.target.value)} placeholder="🔍 بحث..." style={{ flex: 1, padding: "10px 14px", borderRadius: 10, border: "1px solid " + t.sep, fontSize: 13, outline: "none", background: t.card }} />
+          <select value={brFilter} onChange={e => setBrFilter(e.target.value)} style={{ padding: "10px 14px", borderRadius: 10, border: "1px solid " + t.sep, fontSize: 12, background: t.card, fontWeight: 600, cursor: "pointer" }}><option value="all">كل الفروع</option>{BRANCHES.map(b => <option key={b.id} value={b.name}>{b.name}</option>)}</select>
         </div>
-        <div style={{ background: t.card, borderRadius: 14, border: `1px solid ${t.sep}`, overflow: "hidden" }}>
-          <table style={{ width: "100%", borderCollapse: "collapse" }}><thead><tr style={{ background: "#F8FAFC" }}>{["الموظف", "الفرع", "الحالة", "الالتزام", "السلسلة", "المستوى", "المخالفات", "البصمات"].map((h, i) => <th key={i} style={{ padding: "10px 12px", fontSize: 10, fontWeight: 700, color: t.txM, textAlign: "right", borderBottom: `1px solid ${t.sep}` }}>{h}</th>)}</tr></thead>
+        <div style={{ background: t.card, borderRadius: 14, border: "1px solid " + t.sep, overflow: "hidden" }}>
+          <table style={{ width: "100%", borderCollapse: "collapse" }}><thead><tr style={{ background: "#F8FAFC" }}>{["الموظف", "الفرع", "الحالة", "الالتزام", "السلسلة", "المستوى", "المخالفات", "البصمات"].map((h, i) => <th key={i} style={{ padding: "10px 12px", fontSize: 10, fontWeight: 700, color: t.txM, textAlign: "right", borderBottom: "1px solid " + t.sep }}>{h}</th>)}</tr></thead>
           <tbody>{filteredEmps.map(e => { const sc = e.status === "حاضر" ? t.ok : e.status === "متأخر" ? t.warn : t.bad; const pc = e.pct >= 85 ? t.ok : e.pct >= 70 ? t.warn : t.bad; return (<tr key={e.id} onClick={() => setSelEmp(e)} style={{ cursor: "pointer" }} onMouseEnter={ev => ev.currentTarget.style.background = "#F8FAFC"} onMouseLeave={ev => ev.currentTarget.style.background = "transparent"}>
             <td style={td}><div style={{ display: "flex", alignItems: "center", gap: 8 }}><div style={{ width: 32, height: 32, borderRadius: "50%", background: `${sc}12`, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 14 }}>👤</div><div><div style={{ fontSize: 12, fontWeight: 700 }}>{e.name}</div><div style={{ fontSize: 9, color: t.txM }}>{e.role} · {e.id}</div></div></div></td>
             <td style={td}><span style={{ fontSize: 11 }}>{e.branch}</span></td>
@@ -200,20 +200,20 @@ export default function AdminApp() {
       {tab === "employees" && selEmp && <>
         <button onClick={() => setSelEmp(null)} style={{ background: "none", border: "none", fontSize: 13, color: B.blue, fontWeight: 700, cursor: "pointer", marginBottom: 14 }}>→ رجوع للقائمة</button>
         <div style={{ display: "grid", gridTemplateColumns: "1fr 2fr", gap: 16 }}>
-          <div style={{ background: t.card, borderRadius: 14, padding: "20px", border: `1px solid ${t.sep}`, textAlign: "center" }}>
+          <div style={{ background: t.card, borderRadius: 14, padding: "20px", border: "1px solid " + t.sep, textAlign: "center" }}>
             <div style={{ width: 64, height: 64, borderRadius: "50%", background: `${(selEmp.status === "حاضر" ? t.ok : selEmp.status === "متأخر" ? t.warn : t.bad)}12`, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 32, margin: "0 auto 10px", border: `3px solid ${selEmp.status === "حاضر" ? t.ok : selEmp.status === "متأخر" ? t.warn : t.bad}` }}>👤</div>
             <div style={{ fontSize: 16, fontWeight: 800 }}>{selEmp.name}</div><div style={{ fontSize: 11, color: t.txM }}>{selEmp.role} — {selEmp.id}</div>
             <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 6, marginTop: 14 }}>{[{ l: "التزام", v: `${selEmp.pct}%`, c: selEmp.pct >= 85 ? t.ok : t.warn }, { l: "السلسلة", v: `🔥${selEmp.streak}`, c: "#FF6B35" }, { l: "النقاط", v: selEmp.pts, c: B.gold }].map((x, i) => <div key={i} style={{ background: t.bg, borderRadius: 8, padding: "8px 4px" }}><div style={{ fontSize: 14, fontWeight: 800, color: x.c }}>{x.v}</div><div style={{ fontSize: 8, color: t.txM, marginTop: 2 }}>{x.l}</div></div>)}</div>
             <div style={{ marginTop: 10, fontSize: 11, color: selEmp.gps ? t.ok : t.bad, fontWeight: 600 }}>{selEmp.gps ? "📍 في النطاق" : "📍 خارج النطاق"}</div>
           </div>
-          <div><div style={{ background: t.card, borderRadius: 14, padding: "16px", border: `1px solid ${t.sep}`, marginBottom: 12 }}><div style={{ fontSize: 13, fontWeight: 700, marginBottom: 10 }}>بصمات اليوم</div><div style={{ display: "flex", gap: 10 }}>{["☀️ حضور", "☕ استراحة", "🔄 عودة", "🌙 انصراف"].map((l, i) => <div key={i} style={{ flex: 1, textAlign: "center", padding: "10px 6px", borderRadius: 10, background: selEmp.checks[i] ? t.okLt : t.badLt }}><div style={{ fontSize: 18 }}>{selEmp.checks[i] ? "✅" : "❌"}</div><div style={{ fontSize: 9, color: t.tx2, marginTop: 3 }}>{l}</div></div>)}</div></div>
-            <div style={{ background: t.card, borderRadius: 14, padding: "16px", border: `1px solid ${t.sep}` }}><div style={{ fontSize: 13, fontWeight: 700, marginBottom: 10 }}>إجراءات</div><div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}><button style={actBtn}>📊 تقرير</button><button style={{ ...actBtn, background: t.warnLt, color: t.warn }}>⚠️ إنذار</button>{role === "manager" && <button style={{ ...actBtn, background: t.badLt, color: t.bad }}>🗑 حذف</button>}<button style={{ ...actBtn, background: t.okLt, color: t.ok }}>📤 تصدير لكوادر</button></div><div style={{ marginTop: 10, padding: "10px", borderRadius: 8, background: B.blueLt, fontSize: 11, fontWeight: 600, color: B.blue }}>النسبة المُصدّرة لكوادر: <strong>{selEmp.pct}%</strong></div></div></div>
+          <div><div style={{ background: t.card, borderRadius: 14, padding: "16px", border: "1px solid " + t.sep, marginBottom: 12 }}><div style={{ fontSize: 13, fontWeight: 700, marginBottom: 10 }}>بصمات اليوم</div><div style={{ display: "flex", gap: 10 }}>{["☀️ حضور", "☕ استراحة", "🔄 عودة", "🌙 انصراف"].map((l, i) => <div key={i} style={{ flex: 1, textAlign: "center", padding: "10px 6px", borderRadius: 10, background: selEmp.checks[i] ? t.okLt : t.badLt }}><div style={{ fontSize: 18 }}>{selEmp.checks[i] ? "✅" : "❌"}</div><div style={{ fontSize: 9, color: t.tx2, marginTop: 3 }}>{l}</div></div>)}</div></div>
+            <div style={{ background: t.card, borderRadius: 14, padding: "16px", border: "1px solid " + t.sep }}><div style={{ fontSize: 13, fontWeight: 700, marginBottom: 10 }}>إجراءات</div><div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}><button style={actBtn}>📊 تقرير</button><button style={{ ...actBtn, background: t.warnLt, color: t.warn }}>⚠️ إنذار</button>{role === "manager" && <button style={{ ...actBtn, background: t.badLt, color: t.bad }}>🗑 حذف</button>}<button style={{ ...actBtn, background: t.okLt, color: t.ok }}>📤 تصدير لكوادر</button></div><div style={{ marginTop: 10, padding: "10px", borderRadius: 8, background: B.blueLt, fontSize: 11, fontWeight: 600, color: B.blue }}>النسبة المُصدّرة لكوادر: <strong>{selEmp.pct}%</strong></div></div></div>
         </div>
       </>}
 
       {/* ═══ LEAVES ═══ */}
       {tab === "leaves" && <>
-        {leaves.map(l => { const sc = l.status === "معلّق" ? t.warn : l.status === "معتمد" ? t.ok : t.bad; return <div key={l.id} style={{ background: t.card, borderRadius: 14, padding: "16px 18px", border: `1px solid ${t.sep}`, marginBottom: 10, display: "flex", alignItems: "center", gap: 14 }}>
+        {leaves.map(l => { const sc = l.status === "معلّق" ? t.warn : l.status === "معتمد" ? t.ok : t.bad; return <div key={l.id} style={{ background: t.card, borderRadius: 14, padding: "16px 18px", border: "1px solid " + t.sep, marginBottom: 10, display: "flex", alignItems: "center", gap: 14 }}>
           <div style={{ width: 44, height: 44, borderRadius: 12, background: `${sc}12`, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 20 }}>{l.status === "معلّق" ? "⏳" : l.status === "معتمد" ? "✅" : "❌"}</div>
           <div style={{ flex: 1 }}><div style={{ fontSize: 14, fontWeight: 700 }}>{l.emp}</div><div style={{ fontSize: 11, color: t.tx2, marginTop: 2 }}>{l.type} · {l.days} أيام · {l.from} → {l.to}</div>{l.reason && <div style={{ fontSize: 10, color: t.txM, marginTop: 2 }}>{l.reason}</div>}</div>
           <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", gap: 6 }}><span style={{ padding: "3px 10px", borderRadius: 6, fontSize: 10, fontWeight: 700, background: `${sc}15`, color: sc }}>{l.status}</span>
@@ -225,17 +225,17 @@ export default function AdminApp() {
 
       {/* ═══ VIOLATIONS ═══ */}
       {tab === "violations" && <>
-        <div style={{ display: "grid", gridTemplateColumns: "repeat(4,1fr)", gap: 10, marginBottom: 16 }}>{[{ l: "مخالفات", v: 12, c: t.warn }, { l: "إنذارات", v: 7, c: "#F97316" }, { l: "خصومات الشهر", v: "2,420", c: t.bad }, { l: "بدون مخالفات", v: 4, c: t.ok }].map((s, i) => <div key={i} style={{ background: t.card, borderRadius: 14, padding: "16px", border: `1px solid ${t.sep}` }}><div style={{ fontSize: 10, color: t.txM }}>{s.l}</div><div style={{ fontSize: 24, fontWeight: 800, color: s.c, marginTop: 4 }}>{s.v}</div></div>)}</div>
-        <div style={{ background: t.card, borderRadius: 14, border: `1px solid ${t.sep}`, overflow: "hidden" }}>
-          <table style={{ width: "100%", borderCollapse: "collapse" }}><thead><tr style={{ background: "#F8FAFC" }}>{["الموظف", "المخالفات", "الإنذارات", "الخصومات", "الالتزام"].map((h, i) => <th key={i} style={{ padding: "10px 12px", fontSize: 10, fontWeight: 700, color: t.txM, textAlign: "right", borderBottom: `1px solid ${t.sep}` }}>{h}</th>)}</tr></thead>
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(4,1fr)", gap: 10, marginBottom: 16 }}>{[{ l: "مخالفات", v: 12, c: t.warn }, { l: "إنذارات", v: 7, c: "#F97316" }, { l: "خصومات الشهر", v: "2,420", c: t.bad }, { l: "بدون مخالفات", v: 4, c: t.ok }].map((s, i) => <div key={i} style={{ background: t.card, borderRadius: 14, padding: "16px", border: "1px solid " + t.sep }}><div style={{ fontSize: 10, color: t.txM }}>{s.l}</div><div style={{ fontSize: 24, fontWeight: 800, color: s.c, marginTop: 4 }}>{s.v}</div></div>)}</div>
+        <div style={{ background: t.card, borderRadius: 14, border: "1px solid " + t.sep, overflow: "hidden" }}>
+          <table style={{ width: "100%", borderCollapse: "collapse" }}><thead><tr style={{ background: "#F8FAFC" }}>{["الموظف", "المخالفات", "الإنذارات", "الخصومات", "الالتزام"].map((h, i) => <th key={i} style={{ padding: "10px 12px", fontSize: 10, fontWeight: 700, color: t.txM, textAlign: "right", borderBottom: "1px solid " + t.sep }}>{h}</th>)}</tr></thead>
           <tbody>{EMPS.filter(e => e.violations > 0).map(e => <tr key={e.id}><td style={td}><div style={{ fontSize: 12, fontWeight: 700 }}>{e.name}</div><div style={{ fontSize: 9, color: t.txM }}>{e.id}</div></td><td style={td}><span style={{ fontSize: 12, fontWeight: 700, color: t.bad }}>{e.violations}</span></td><td style={td}><span style={{ fontSize: 12, fontWeight: 700, color: t.warn }}>{e.warnings}</span></td><td style={td}><span style={{ fontSize: 12, fontWeight: 700, color: t.bad }}>-{e.deductions.toLocaleString()}</span></td><td style={td}><span style={{ fontSize: 13, fontWeight: 800, color: e.pct >= 70 ? t.warn : t.bad }}>{e.pct}%</span></td></tr>)}</tbody></table>
         </div>
       </>}
 
       {/* ═══ GEOFENCE ═══ */}
       {tab === "geofence" && <>
-        <div style={{ display: "flex", gap: 10, marginBottom: 14 }}>{branches.map(b => { const ins = EMPS.filter(e => e.branch === b.name && e.gps).length; const out = EMPS.filter(e => e.branch === b.name && !e.gps).length; return <div key={b.id} style={{ flex: 1, background: t.card, borderRadius: 14, padding: "14px", border: `1px solid ${t.sep}`, textAlign: "center" }}><div style={{ fontSize: 13, fontWeight: 700 }}>{b.name}</div><div style={{ display: "flex", justifyContent: "center", gap: 8, marginTop: 6 }}><span style={{ fontSize: 11, color: t.ok }}>✓{ins}</span>{out > 0 && <span style={{ fontSize: 11, color: t.bad }}>✕{out}</span>}</div><div style={{ fontSize: 10, color: B.blue, marginTop: 4 }}>📍 {b.radius}م</div><input type="range" min="50" max="900" step="10" value={b.radius} onChange={e => setBranches(bs => bs.map(x => x.id === b.id ? { ...x, radius: parseInt(e.target.value) } : x))} style={{ width: "100%", marginTop: 6, accentColor: B.blue }} /><div style={{ display: "flex", justifyContent: "space-between", fontSize: 8, color: t.txM }}><span>50م</span><span>900م</span></div></div>; })}</div>
-        {EMPS.filter(e => !e.gps).length > 0 && <div style={{ background: t.card, borderRadius: 14, padding: "16px", border: `1px solid ${t.sep}` }}><div style={{ fontSize: 13, fontWeight: 700, color: t.bad, marginBottom: 10 }}>🚨 خارج النطاق</div>{EMPS.filter(e => !e.gps).map((e, i) => <div key={i} style={{ padding: "8px 10px", borderRadius: 10, background: t.badLt, marginBottom: 6, display: "flex", alignItems: "center", gap: 8 }}><span>🚨</span><div style={{ flex: 1 }}><div style={{ fontSize: 12, fontWeight: 700 }}>{e.name}</div><div style={{ fontSize: 10, color: t.bad }}>{e.branch} · {e.status}</div></div>{role === "manager" && <button style={{ padding: "4px 10px", borderRadius: 6, background: B.blue, color: "#fff", fontSize: 10, fontWeight: 700, border: "none", cursor: "pointer" }}>إجراء</button>}</div>)}</div>}
+        <div style={{ display: "flex", gap: 10, marginBottom: 14 }}>{branches.map(b => { const ins = EMPS.filter(e => e.branch === b.name && e.gps).length; const out = EMPS.filter(e => e.branch === b.name && !e.gps).length; return <div key={b.id} style={{ flex: 1, background: t.card, borderRadius: 14, padding: "14px", border: "1px solid " + t.sep, textAlign: "center" }}><div style={{ fontSize: 13, fontWeight: 700 }}>{b.name}</div><div style={{ display: "flex", justifyContent: "center", gap: 8, marginTop: 6 }}><span style={{ fontSize: 11, color: t.ok }}>✓{ins}</span>{out > 0 && <span style={{ fontSize: 11, color: t.bad }}>✕{out}</span>}</div><div style={{ fontSize: 10, color: B.blue, marginTop: 4 }}>📍 {b.radius}م</div><input type="range" min="50" max="900" step="10" value={b.radius} onChange={e => setBranches(bs => bs.map(x => x.id === b.id ? { ...x, radius: parseInt(e.target.value) } : x))} style={{ width: "100%", marginTop: 6, accentColor: B.blue }} /><div style={{ display: "flex", justifyContent: "space-between", fontSize: 8, color: t.txM }}><span>50م</span><span>900م</span></div></div>; })}</div>
+        {EMPS.filter(e => !e.gps).length > 0 && <div style={{ background: t.card, borderRadius: 14, padding: "16px", border: "1px solid " + t.sep }}><div style={{ fontSize: 13, fontWeight: 700, color: t.bad, marginBottom: 10 }}>🚨 خارج النطاق</div>{EMPS.filter(e => !e.gps).map((e, i) => <div key={i} style={{ padding: "8px 10px", borderRadius: 10, background: t.badLt, marginBottom: 6, display: "flex", alignItems: "center", gap: 8 }}><span>🚨</span><div style={{ flex: 1 }}><div style={{ fontSize: 12, fontWeight: 700 }}>{e.name}</div><div style={{ fontSize: 10, color: t.bad }}>{e.branch} · {e.status}</div></div>{role === "manager" && <button style={{ padding: "4px 10px", borderRadius: 6, background: B.blue, color: "#fff", fontSize: 10, fontWeight: 700, border: "none", cursor: "pointer" }}>إجراء</button>}</div>)}</div>}
       </>}
 
       {/* ═══ REPORTS ═══ */}
@@ -247,7 +247,7 @@ export default function AdminApp() {
           { t: "بيانات التأمين", d: "موظفين + مرافقين + إفصاح صحي", i: "🏥", c: "#7C3AED" },
           { t: "تقرير الغياب", d: "تفاصيل الغياب والتأخير", i: "🚨", c: t.bad },
           { t: "تقرير شامل", d: "جميع البيانات في ملف واحد", i: "📋", c: B.blueDk },
-        ].map((r, i) => <div key={i} style={{ background: t.card, borderRadius: 14, padding: "20px", border: `1px solid ${t.sep}`, cursor: "pointer" }} onMouseEnter={e => e.currentTarget.style.boxShadow = "0 4px 16px rgba(0,0,0,.06)"} onMouseLeave={e => e.currentTarget.style.boxShadow = "none"}>
+        ].map((r, i) => <div key={i} style={{ background: t.card, borderRadius: 14, padding: "20px", border: "1px solid " + t.sep, cursor: "pointer" }} onMouseEnter={e => e.currentTarget.style.boxShadow = "0 4px 16px rgba(0,0,0,.06)"} onMouseLeave={e => e.currentTarget.style.boxShadow = "none"}>
           <div style={{ width: 44, height: 44, borderRadius: 12, background: `${r.c}12`, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 22, marginBottom: 10 }}>{r.i}</div>
           <div style={{ fontSize: 13, fontWeight: 700 }}>{r.t}</div><div style={{ fontSize: 11, color: t.txM, marginTop: 4 }}>{r.d}</div>
           <button style={{ marginTop: 10, padding: "7px 14px", borderRadius: 8, background: r.c, color: "#fff", fontSize: 11, fontWeight: 700, border: "none", cursor: "pointer" }}>تحميل</button>
@@ -257,29 +257,29 @@ export default function AdminApp() {
       {/* ═══ EVENTS ═══ */}
       {tab === "events" && <>
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 14 }}><span style={{ fontSize: 14, fontWeight: 700 }}>إدارة المناسبات</span><button style={{ padding: "8px 16px", borderRadius: 10, background: B.blue, color: "#fff", fontSize: 12, fontWeight: 700, border: "none", cursor: "pointer" }}>+ مناسبة جديدة</button></div>
-        {events.map(ev => <div key={ev.id} style={{ background: t.card, borderRadius: 14, padding: "14px 16px", border: `1px solid ${t.sep}`, marginBottom: 8, display: "flex", alignItems: "center", gap: 12 }}>
+        {events.map(ev => <div key={ev.id} style={{ background: t.card, borderRadius: 14, padding: "14px 16px", border: "1px solid " + t.sep, marginBottom: 8, display: "flex", alignItems: "center", gap: 12 }}>
           <div style={{ width: 44, height: 44, borderRadius: 12, background: "#0B0F1A", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 22 }}>{ev.emoji}</div>
           <div style={{ flex: 1 }}><div style={{ fontSize: 13, fontWeight: 700 }}>{ev.name}</div><div style={{ fontSize: 10, color: t.txM }}>{ev.date}</div>{ev.upgrade && <span style={{ padding: "2px 6px", borderRadius: 4, background: "#EDE9FE", fontSize: 9, fontWeight: 700, color: "#7C3AED" }}>💎 ترقية نخبة</span>}</div>
           <Toggle on={ev.active} onClick={() => setEvents(es => es.map(x => x.id === ev.id ? { ...x, active: !x.active } : x))} />
         </div>)}
-        <div style={{ background: t.card, borderRadius: 14, padding: "16px", border: `1px solid ${t.sep}`, marginTop: 12 }}><div style={{ fontSize: 13, fontWeight: 700, marginBottom: 10 }}>🎂 أعياد الميلاد التلقائية</div>{[{ l: "عيد ميلاد الموظف", v: "ترقية نخبة يومين + 🎂", on: true }, { l: "عيد ميلاد الأبناء", v: "ترقية يوم + 🎈", on: true }, { l: "ذكرى الالتحاق", v: "ترقية يوم + 🎉", on: true }].map((x, i) => <div key={i} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "8px 0", borderBottom: i < 2 ? `1px solid ${t.sep}` : "none" }}><div><div style={{ fontSize: 12, fontWeight: 600 }}>{x.l}</div><div style={{ fontSize: 10, color: t.txM }}>{x.v}</div></div><Toggle on={x.on} onClick={() => {}} /></div>)}</div>
+        <div style={{ background: t.card, borderRadius: 14, padding: "16px", border: "1px solid " + t.sep, marginTop: 12 }}><div style={{ fontSize: 13, fontWeight: 700, marginBottom: 10 }}>🎂 أعياد الميلاد التلقائية</div>{[{ l: "عيد ميلاد الموظف", v: "ترقية نخبة يومين + 🎂", on: true }, { l: "عيد ميلاد الأبناء", v: "ترقية يوم + 🎈", on: true }, { l: "ذكرى الالتحاق", v: "ترقية يوم + 🎉", on: true }].map((x, i) => <div key={i} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "8px 0", borderBottom: i < 2 ? "1px solid " + t.sep : "none" }}><div><div style={{ fontSize: 12, fontWeight: 600 }}>{x.l}</div><div style={{ fontSize: 10, color: t.txM }}>{x.v}</div></div><Toggle on={x.on} onClick={() => {}} /></div>)}</div>
       </>}
 
       {/* ═══ SETTINGS ═══ */}
       {tab === "settings" && <>
         {/* Sub-tabs for settings */}
-        <div style={{ display: "flex", gap: 6, marginBottom: 16 }}>{[{ id: "general", l: "⚙️ عام" }, { id: "email", l: "📧 توجيه الإيميل" }, { id: "observation", l: "👁 تحت الملاحظة" }].map(t => <button key={t.id} onClick={() => setSettingsTab(t.id)} style={{ padding: "8px 18px", borderRadius: 10, border: settingsTab === t.id ? "none" : `1px solid ${t.sep}`, background: settingsTab === t.id ? B.blue : "#fff", color: settingsTab === t.id ? "#fff" : t.tx2, fontSize: 12, fontWeight: 700, cursor: "pointer" }}>{t.l}</button>)}</div>
+        <div style={{ display: "flex", gap: 6, marginBottom: 16 }}>{[{ id: "general", l: "⚙️ عام" }, { id: "email", l: "📧 توجيه الإيميل" }, { id: "observation", l: "👁 تحت الملاحظة" }].map(t => <button key={t.id} onClick={() => setSettingsTab(t.id)} style={{ padding: "8px 18px", borderRadius: 10, border: settingsTab === t.id ? "none" : "1px solid " + t.sep, background: settingsTab === t.id ? B.blue : "#fff", color: settingsTab === t.id ? "#fff" : t.tx2, fontSize: 12, fontWeight: 700, cursor: "pointer" }}>{t.l}</button>)}</div>
 
         {/* GENERAL */}
         {settingsTab === "general" && <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
           {/* Branch Schedules */}
-          <div style={{ background: t.card, borderRadius: 14, padding: "18px", border: `1px solid ${t.sep}` }}>
+          <div style={{ background: t.card, borderRadius: 14, padding: "18px", border: "1px solid " + t.sep }}>
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 14 }}>
               <div><div style={{ fontSize: 14, fontWeight: 700 }}>🕐 أوقات الدوام لكل فرع</div><div style={{ fontSize: 10, color: t.txM, marginTop: 2 }}>كل فرع له إعدادات مستقلة — الفروع تتزامن مع كوادر</div></div>
               {role === "manager" && <button style={{ padding: "7px 14px", borderRadius: 8, background: B.blue, color: "#fff", fontSize: 11, fontWeight: 700, border: "none", cursor: "pointer" }}>+ فرع جديد</button>}
             </div>
             {branches.map((br, bi) => (
-              <div key={br.id} style={{ padding: "14px", borderRadius: 12, background: bi % 2 === 0 ? "#F8FAFC" : "#fff", border: `1px solid ${t.sep}`, marginBottom: 8 }}>
+              <div key={br.id} style={{ padding: "14px", borderRadius: 12, background: bi % 2 === 0 ? "#F8FAFC" : "#fff", border: "1px solid " + t.sep, marginBottom: 8 }}>
                 <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 10 }}>
                   <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
                     <div style={{ width: 32, height: 32, borderRadius: 8, background: B.blueLt, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 14 }}>🏢</div>
@@ -316,17 +316,17 @@ export default function AdminApp() {
           </div>
 
           <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
-            <div style={{ background: t.card, borderRadius: 14, padding: "18px", border: `1px solid ${t.sep}` }}><div style={{ fontSize: 13, fontWeight: 700, marginBottom: 12 }}>🎁 النقاط</div>{[{ l: "بصمة بوقتها", v: "10" }, { l: "تحدي الصباح", v: "25" }, { l: "بونص مبكر", v: "10" }].map((x, i) => <div key={i} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "6px 0", borderBottom: i < 2 ? `1px solid ${t.sep}` : "none" }}><span style={{ fontSize: 12, color: t.tx2 }}>{x.l}</span><input defaultValue={x.v} style={{ ...sinp, width: 50 }} disabled={role !== "manager"} /></div>)}</div>
-            <div style={{ background: t.card, borderRadius: 14, padding: "18px", border: `1px solid ${t.sep}` }}><div style={{ fontSize: 13, fontWeight: 700, marginBottom: 12 }}>🔗 كوادر</div><div style={{ display: "flex", alignItems: "center", gap: 6, padding: "8px", borderRadius: 8, background: t.okLt }}><span style={{ width: 6, height: 6, borderRadius: "50%", background: t.ok }} /><span style={{ fontSize: 11, fontWeight: 600, color: t.ok }}>متصل — مزامنة يومية 04:00</span></div>{role === "manager" && <button style={{ marginTop: 10, padding: "8px 14px", borderRadius: 8, background: B.blue, color: "#fff", fontSize: 12, fontWeight: 700, border: "none", cursor: "pointer", width: "100%" }}>مزامنة الآن</button>}</div>
-            <div style={{ background: t.card, borderRadius: 14, padding: "18px", border: `1px solid ${t.sep}` }}><div style={{ fontSize: 13, fontWeight: 700, marginBottom: 12 }}>🏅 العضوية</div>{[{ l: "عضوية فعّال 🔵", v: "0 نقطة" }, { l: "عضوية تميّز 🥇", v: "500 نقطة" }, { l: "عضوية نخبة 💎", v: "1200 نقطة" }].map((x, i) => <div key={i} style={{ display: "flex", justifyContent: "space-between", padding: "6px 0", borderBottom: i < 2 ? `1px solid ${t.sep}` : "none" }}><span style={{ fontSize: 12, color: t.tx2 }}>{x.l}</span><span style={{ fontSize: 11, fontWeight: 700 }}>{x.v}</span></div>)}{role === "manager" && <button style={{ marginTop: 10, padding: "8px 14px", borderRadius: 8, background: t.warnLt, color: t.warn, fontSize: 12, fontWeight: 700, border: "none", cursor: "pointer", width: "100%" }}>⏸ تجميد عضوية موظف</button>}</div>
-            <div style={{ background: t.card, borderRadius: 14, padding: "18px", border: `1px solid ${t.sep}` }}><div style={{ fontSize: 13, fontWeight: 700, marginBottom: 12 }}>⏱ البريك العشوائي</div><div style={{ fontSize: 11, color: t.txM, marginBottom: 10 }}>البصمة تجي عشوائياً قبل/بعد الاستراحة</div>{[{ l: "أقل مدة عشوائية", v: "2 دقيقة" }, { l: "أكثر مدة عشوائية", v: "7 دقائق" }].map((x, i) => <div key={i} style={{ display: "flex", justifyContent: "space-between", padding: "6px 0", borderBottom: i < 1 ? `1px solid ${t.sep}` : "none" }}><span style={{ fontSize: 12, color: t.tx2 }}>{x.l}</span><span style={{ fontSize: 11, fontWeight: 700 }}>{x.v}</span></div>)}<div style={{ marginTop: 8, padding: "6px 10px", borderRadius: 6, background: t.warnLt, fontSize: 10, color: "#92400E" }}>⚠️ أثناء الاستراحة ممنوع أي تواصل — وقت الموظف</div></div>
+            <div style={{ background: t.card, borderRadius: 14, padding: "18px", border: "1px solid " + t.sep }}><div style={{ fontSize: 13, fontWeight: 700, marginBottom: 12 }}>🎁 النقاط</div>{[{ l: "بصمة بوقتها", v: "10" }, { l: "تحدي الصباح", v: "25" }, { l: "بونص مبكر", v: "10" }].map((x, i) => <div key={i} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "6px 0", borderBottom: i < 2 ? "1px solid " + t.sep : "none" }}><span style={{ fontSize: 12, color: t.tx2 }}>{x.l}</span><input defaultValue={x.v} style={{ ...sinp, width: 50 }} disabled={role !== "manager"} /></div>)}</div>
+            <div style={{ background: t.card, borderRadius: 14, padding: "18px", border: "1px solid " + t.sep }}><div style={{ fontSize: 13, fontWeight: 700, marginBottom: 12 }}>🔗 كوادر</div><div style={{ display: "flex", alignItems: "center", gap: 6, padding: "8px", borderRadius: 8, background: t.okLt }}><span style={{ width: 6, height: 6, borderRadius: "50%", background: t.ok }} /><span style={{ fontSize: 11, fontWeight: 600, color: t.ok }}>متصل — مزامنة يومية 04:00</span></div>{role === "manager" && <button style={{ marginTop: 10, padding: "8px 14px", borderRadius: 8, background: B.blue, color: "#fff", fontSize: 12, fontWeight: 700, border: "none", cursor: "pointer", width: "100%" }}>مزامنة الآن</button>}</div>
+            <div style={{ background: t.card, borderRadius: 14, padding: "18px", border: "1px solid " + t.sep }}><div style={{ fontSize: 13, fontWeight: 700, marginBottom: 12 }}>🏅 العضوية</div>{[{ l: "عضوية فعّال 🔵", v: "0 نقطة" }, { l: "عضوية تميّز 🥇", v: "500 نقطة" }, { l: "عضوية نخبة 💎", v: "1200 نقطة" }].map((x, i) => <div key={i} style={{ display: "flex", justifyContent: "space-between", padding: "6px 0", borderBottom: i < 2 ? "1px solid " + t.sep : "none" }}><span style={{ fontSize: 12, color: t.tx2 }}>{x.l}</span><span style={{ fontSize: 11, fontWeight: 700 }}>{x.v}</span></div>)}{role === "manager" && <button style={{ marginTop: 10, padding: "8px 14px", borderRadius: 8, background: t.warnLt, color: t.warn, fontSize: 12, fontWeight: 700, border: "none", cursor: "pointer", width: "100%" }}>⏸ تجميد عضوية موظف</button>}</div>
+            <div style={{ background: t.card, borderRadius: 14, padding: "18px", border: "1px solid " + t.sep }}><div style={{ fontSize: 13, fontWeight: 700, marginBottom: 12 }}>⏱ البريك العشوائي</div><div style={{ fontSize: 11, color: t.txM, marginBottom: 10 }}>البصمة تجي عشوائياً قبل/بعد الاستراحة</div>{[{ l: "أقل مدة عشوائية", v: "2 دقيقة" }, { l: "أكثر مدة عشوائية", v: "7 دقائق" }].map((x, i) => <div key={i} style={{ display: "flex", justifyContent: "space-between", padding: "6px 0", borderBottom: i < 1 ? "1px solid " + t.sep : "none" }}><span style={{ fontSize: 12, color: t.tx2 }}>{x.l}</span><span style={{ fontSize: 11, fontWeight: 700 }}>{x.v}</span></div>)}<div style={{ marginTop: 8, padding: "6px 10px", borderRadius: 6, background: t.warnLt, fontSize: 10, color: "#92400E" }}>⚠️ أثناء الاستراحة ممنوع أي تواصل — وقت الموظف</div></div>
           </div>
         </div>}
 
         {/* EMAIL ROUTING */}
         {settingsTab === "email" && <>
           {/* Distribution Lists */}
-          <div style={{ background: t.card, borderRadius: 16, padding: "20px", border: `1px solid ${t.sep}`, marginBottom: 14 }}>
+          <div style={{ background: t.card, borderRadius: 16, padding: "20px", border: "1px solid " + t.sep, marginBottom: 14 }}>
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 14 }}>
               <div><div style={{ fontSize: 15, fontWeight: 700, color: t.tx }}>📬 قوائم التوزيع البريدية</div><div style={{ fontSize: 11, color: t.txM, marginTop: 2 }}>حدد الجهات التي تستلم نسخ من المراسلات</div></div>
               {role === "manager" && <button onClick={() => setEmailLists(l => [...l, { id: Date.now(), name: "", email: "", color: B.blue }])} style={{ padding: "8px 16px", borderRadius: 10, background: B.blue, color: "#fff", fontSize: 11, fontWeight: 700, border: "none", cursor: "pointer" }}>+ إضافة قائمة</button>}
@@ -344,12 +344,12 @@ export default function AdminApp() {
           </div>
 
           {/* Document → Email Routing (Layer 1) */}
-          <div style={{ background: t.card, borderRadius: 16, padding: "20px", border: `1px solid ${t.sep}`, marginBottom: 14 }}>
+          <div style={{ background: t.card, borderRadius: 16, padding: "20px", border: "1px solid " + t.sep, marginBottom: 14 }}>
             <div style={{ fontSize: 15, fontWeight: 700, color: t.tx, marginBottom: 4 }}>📄 توجيه المستندات → البريد (الإعداد العام)</div>
             <div style={{ fontSize: 11, color: t.txM, marginBottom: 14 }}>حدد أي جهة تستلم نسخة من كل نوع مستند</div>
             <div style={{ display: "grid", gridTemplateColumns: "1fr", gap: 8 }}>
               {docRouting.map((dr, di) => (
-                <div key={di} style={{ padding: "12px 14px", borderRadius: 12, background: "#F8FAFC", border: `1px solid ${t.sep}` }}>
+                <div key={di} style={{ padding: "12px 14px", borderRadius: 12, background: "#F8FAFC", border: "1px solid " + t.sep }}>
                   <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
                     <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
                       <span style={{ fontSize: 16 }}>{dr.icon}</span>
@@ -372,7 +372,7 @@ export default function AdminApp() {
           </div>
 
           {/* Per-Employee Override (Layer 2) */}
-          <div style={{ background: t.card, borderRadius: 16, padding: "20px", border: `1px solid ${t.sep}` }}>
+          <div style={{ background: t.card, borderRadius: 16, padding: "20px", border: "1px solid " + t.sep }}>
             <div style={{ fontSize: 15, fontWeight: 700, color: t.tx, marginBottom: 4 }}>👤 تخصيص موظف معيّن</div>
             <div style={{ fontSize: 11, color: t.txM, marginBottom: 14 }}>تجاوز الإعداد العام لموظف محدد — مراسلاته تروح لجهات مختلفة</div>
             {empOverrides.map((ov, oi) => (
@@ -388,13 +388,13 @@ export default function AdminApp() {
                 <div style={{ display: "flex", gap: 4, flexWrap: "wrap" }}>{ov.targets.map(t => { const el = emailLists.find(e => e.id === t); return el ? <span key={t} style={{ padding: "3px 10px", borderRadius: 6, background: `${el.color}15`, color: el.color, fontSize: 10, fontWeight: 700 }}>{el.name}</span> : null; })}</div>
               </div>
             ))}
-            {role === "manager" && <button style={{ width: "100%", padding: "10px", borderRadius: 10, background: "#F8FAFC", border: `2px dashed ${t.sep}`, color: t.tx2, fontSize: 12, fontWeight: 700, cursor: "pointer", marginTop: 6 }}>+ إضافة تخصيص لموظف</button>}
+            {role === "manager" && <button style={{ width: "100%", padding: "10px", borderRadius: 10, background: "#F8FAFC", border: "2px dashed " + t.sep, color: t.tx2, fontSize: 12, fontWeight: 700, cursor: "pointer", marginTop: 6 }}>+ إضافة تخصيص لموظف</button>}
           </div>
         </>}
 
         {/* UNDER OBSERVATION (Layer 3) */}
         {settingsTab === "observation" && <>
-          <div style={{ background: t.card, borderRadius: 16, padding: "20px", border: `1px solid ${t.sep}`, marginBottom: 14 }}>
+          <div style={{ background: t.card, borderRadius: 16, padding: "20px", border: "1px solid " + t.sep, marginBottom: 14 }}>
             <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 4 }}>
               <span style={{ fontSize: 22 }}>👁</span>
               <div><div style={{ fontSize: 16, fontWeight: 700, color: t.tx }}>الموظفين تحت الملاحظة</div><div style={{ fontSize: 11, color: t.txM }}>كل مراسلاتهم تروح نسخة إضافية تلقائياً للشؤون القانونية</div></div>
@@ -407,7 +407,7 @@ export default function AdminApp() {
           </div>
 
           {/* Observation target */}
-          <div style={{ background: t.card, borderRadius: 14, padding: "16px", border: `1px solid ${t.sep}`, marginBottom: 14 }}>
+          <div style={{ background: t.card, borderRadius: 14, padding: "16px", border: "1px solid " + t.sep, marginBottom: 14 }}>
             <div style={{ fontSize: 13, fontWeight: 700, marginBottom: 8 }}>📧 الجهة المستلمة لنسخ الملاحظة</div>
             <div style={{ display: "flex", gap: 6 }}>{emailLists.map(el => (
               <div key={el.id} style={{ padding: "6px 14px", borderRadius: 8, background: el.name.includes("قانونية") ? `${el.color}15` : "#F8FAFC", border: `1.5px solid ${el.name.includes("قانونية") ? el.color : t.sep}`, fontSize: 11, fontWeight: 700, color: el.name.includes("قانونية") ? el.color : t.txM }}>{el.name.includes("قانونية") ? "✓ " : ""}{el.name}</div>
@@ -419,7 +419,7 @@ export default function AdminApp() {
             <div key={ob.id} style={{ background: t.card, borderRadius: 14, padding: "16px 18px", border: `2px solid #FECACA`, marginBottom: 10 }}>
               <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
                 <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-                  <div style={{ width: 44, height: 44, borderRadius: "50%", background: t.badLt, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 20, border: `2px solid ${t.bad}` }}>👁</div>
+                  <div style={{ width: 44, height: 44, borderRadius: "50%", background: t.badLt, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 20, border: "2px solid " + t.bad }}>👁</div>
                   <div>
                     <div style={{ fontSize: 14, fontWeight: 700, color: t.tx }}>{ob.name}</div>
                     <div style={{ fontSize: 11, color: t.txM }}>{ob.empId} — {ob.role}</div>
@@ -445,13 +445,13 @@ export default function AdminApp() {
             </div>
           ))}
 
-          {role === "manager" && <button style={{ width: "100%", padding: "12px", borderRadius: 12, background: t.badLt, border: `2px dashed ${t.bad}`, color: t.bad, fontSize: 13, fontWeight: 700, cursor: "pointer", marginTop: 8 }}>👁 وضع موظف تحت الملاحظة</button>}
+          {role === "manager" && <button style={{ width: "100%", padding: "12px", borderRadius: 12, background: t.badLt, border: "2px dashed " + t.bad, color: t.bad, fontSize: 13, fontWeight: 700, cursor: "pointer", marginTop: 8 }}>👁 وضع موظف تحت الملاحظة</button>}
         </>}
       </>}
     </div>
   </div>);
 }
 
-const td = { padding: "10px 12px", borderBottom: `1px solid ${t.sep}`, fontSize: 12 };
+const td = { padding: "10px 12px", borderBottom: "1px solid #E5E5EA", fontSize: 12 };
 const actBtn = { padding: "7px 14px", borderRadius: 8, fontSize: 11, fontWeight: 700, border: "none", cursor: "pointer", background: B.blue, color: "#fff" };
-const sinp = { width: 70, padding: "5px 8px", borderRadius: 6, border: `1px solid ${t.sep}`, fontSize: 13, fontWeight: 700, textAlign: "center", outline: "none", fontFamily: "'Segoe UI',Tahoma,sans-serif" };
+const sinp = { width: 70, padding: "5px 8px", borderRadius: 6, border: "1px solid #E5E5EA", fontSize: 13, fontWeight: 700, textAlign: "center", outline: "none", fontFamily: "'IBM Plex Sans Arabic',-apple-system,sans-serif" };
