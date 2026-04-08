@@ -33,29 +33,32 @@ function UpdateScreen() {
     setStatus("uploading");
     setMsg("جارِ رفع الملف وتحديث GitHub...");
     try {
-      const reader = new FileReader();
-      reader.onload = async (e) => {
-        const base64 = e.target.result.split(',')[1];
-        const r = await fetch('/api/update', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ zip: base64 }),
-        });
-        const data = await r.json();
-        if (data.success) {
-          setStatus("success");
-          setMsg("تم التحديث بنجاح! Vercel يبني الآن...");
-          setDetails(data);
-        } else {
-          setStatus("error");
-          setMsg(data.error || "حدث خطأ");
-          setDetails(data);
-        }
-      };
-      reader.readAsDataURL(file);
+      const base64 = await new Promise((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = (e) => resolve(e.target.result.split(',')[1]);
+        reader.onerror = () => reject(new Error("فشل قراءة الملف"));
+        reader.readAsDataURL(file);
+      });
+      const r = await fetch('/api/update', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ zip: base64 }),
+      });
+      const text = await r.text();
+      var data;
+      try { data = JSON.parse(text); } catch { data = { error: text.substring(0, 200) }; }
+      if (data.success) {
+        setStatus("success");
+        setMsg("تم التحديث بنجاح! Vercel يبني الآن...");
+        setDetails(data);
+      } else {
+        setStatus("error");
+        setMsg(data.error || "حدث خطأ — status " + r.status);
+        setDetails(data);
+      }
     } catch (err) {
       setStatus("error");
-      setMsg(err.message);
+      setMsg(err.message || "خطأ غير متوقع");
     }
   };
 
