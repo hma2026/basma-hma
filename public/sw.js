@@ -1,4 +1,4 @@
-const CACHE_NAME = 'basma-hma-v2';
+const CACHE_NAME = 'basma-hma-v3';
 const STATIC_ASSETS = [
   '/',
   '/icon.svg',
@@ -27,7 +27,7 @@ self.addEventListener('activate', (event) => {
   self.clients.claim();
 });
 
-// Fetch — network first, fallback to cache
+// Fetch — smart caching strategy
 self.addEventListener('fetch', (event) => {
   const url = new URL(event.request.url);
   
@@ -37,6 +37,21 @@ self.addEventListener('fetch', (event) => {
       fetch(event.request).catch(() => {
         return new Response(JSON.stringify({ error: 'offline' }), {
           headers: { 'Content-Type': 'application/json' }
+        });
+      })
+    );
+    return;
+  }
+
+  // CDN resources (face-api.js models) — cache first, then network
+  if (url.hostname === 'cdn.jsdelivr.net') {
+    event.respondWith(
+      caches.match(event.request).then((cached) => {
+        if (cached) return cached;
+        return fetch(event.request).then((response) => {
+          const clone = response.clone();
+          caches.open(CACHE_NAME).then((cache) => cache.put(event.request, clone));
+          return response;
         });
       })
     );

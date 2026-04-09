@@ -198,33 +198,273 @@ function GpsBadge({ branch, empType, empId, onStatusChange }) {
   );
 }
 
-// ═══════ FACE CAMERA ═══════
+// ═══════ FACE-API.JS ENGINE ═══════
+// Neural network face detection, landmarks (68 points), and recognition (128-dim descriptor)
+
+var FACE_MODELS_URL = "https://cdn.jsdelivr.net/npm/@vladmandic/face-api@1.7.14/model";
+var _modelsLoaded = false;
+
+async function loadFaceModels(onProgress) {
+  if (_modelsLoaded) return true;
+  if (typeof faceapi === "undefined") { console.error("face-api.js not loaded"); return false; }
+  try {
+    if (onProgress) onProgress("تحميل نموذج كشف الوجه...");
+    await faceapi.nets.tinyFaceDetector.loadFromUri(FACE_MODELS_URL);
+    if (onProgress) onProgress("تحميل نموذج نقاط الوجه...");
+    await faceapi.nets.faceLandmark68TinyNet.loadFromUri(FACE_MODELS_URL);
+    if (onProgress) onProgress("تحميل نموذج التعرّف...");
+    await faceapi.nets.faceRecognitionNet.loadFromUri(FACE_MODELS_URL);
+    _modelsLoaded = true;
+    console.log("[FaceAPI] All models loaded");
+    return true;
+  } catch(e) {
+    console.error("[FaceAPI] Model load error:", e);
+    return false;
+  }
+}
+
+// Detect face + get 128-dim descriptor
+async function getFaceDescriptor(imgSrc) {
+  if (!_modelsLoaded) return { ok: false, reason: "النماذج لم تُحمَّل بعد" };
+  try {
+    var img = await faceapi.fetchImage(imgSrc);
+    var opts = new faceapi.TinyFaceDetectorOptions({ inputSize: 320, scoreThreshold: 0.5 });
+    var results = await faceapi.detectAllFaces(img, opts).withFaceLandmarks(true).withFaceDescriptors();
+    if (results.length === 0) return { ok: false, reason: "لم يتم اكتشاف وجه — وجّه الكاميرا لوجهك" };
+    if (results.length > 1) return { ok: false, reason: "أكثر من وجه في الصورة — صوّر وجهك فقط" };
+    var det = results[0];
+    // Check face size (must be at least 20% of image)
+    var box = det.detection.box;
+    var imgArea = img.width * img.height;
+    var faceArea = box.width * box.height;
+    if (faceArea / imgArea < 0.08) return { ok: false, reason: "الوجه بعيد — قرّب الجوال من وجهك" };
+    // Check detection confidence
+    if (det.detection.score < 0.65) return { ok: false, reason: "الصورة غير واضحة — تأكد من الإضاءة" };
+    // Check face angle using landmarks (eyes should be roughly level)
+    var landmarks = det.landmarks;
+    var leftEye = landmarks.getLeftEye();
+    var rightEye = landmarks.getRightEye();
+    var eyeCenter = function(pts) { var sx = 0, sy = 0; pts.forEach(function(p) { sx += p.x; sy += p.y; }); return { x: sx / pts.length, y: sy / pts.length }; };
+    var le = eyeCenter(leftEye), re = eyeCenter(rightEye);
+    var angle = Math.abs(Math.atan2(re.y - le.y, re.x - le.x) * 180 / Math.PI);
+    if (angle > 20) return { ok: false, reason: "وجهك مائل — انظر مباشرة للكاميرا" };
+    return {
+      ok: true,
+      descriptor: Array.from(det.detection.score > 0 ? det.descriptor : []),
+      score: Math.round(det.detection.score * 100),
+      box: { x: box.x, y: box.y, w: box.width, h: box.height }
+    };
+  } catch(e) {
+    console.error("[FaceAPI] Detection error:", e);
+    return { ok: false, reason: "خطأ في تحليل الصورة" };
+  }
+}
+
+// Compare two descriptors using Euclidean distance
+function compareDescriptors(desc1, desc2) {
+  if (!desc1 || !desc2 || desc1.length !== 128 || desc2.length !== 128) return 0;
+  var dist = faceapi.euclideanDistance(desc1, desc2);
+  // distance 0 = identical, 0.6+ = different person
+  // Convert to percentage: 0 → 100%, 0.6 → 0%
+  var sim = Math.max(0, Math.min(100, Math.round((1 - dist / 0.6) * 100)));
+  console.log("[FaceAPI] Distance:", dist.toFixed(4), "→ Similarity:", sim + "%");
+  return { similarity: sim, distance: dist };
+}
+
+// ═══════ FACE CAMERA COMPONENT ═══════
 function FaceCamera({ onOk, onNo }) {
-  const { t } = useTheme();
-  const vRef = useRef(null), cRef = useRef(null), sRef = useRef(null);
-  const [st, setSt] = useState("load"); const [photo, setPhoto] = useState(null);
-  useEffect(() => { startCam(); return () => stopCam(); }, []);
-  const startCam = async () => { try { const s = await navigator.mediaDevices.getUserMedia({ video: { facingMode: "user", width: 400, height: 400 } }); sRef.current = s; if (vRef.current) { vRef.current.srcObject = s; vRef.current.onloadedmetadata = () => setSt("ready"); } } catch { setSt("ok"); setTimeout(onOk, 1200); } };
-  const stopCam = () => { if (sRef.current) sRef.current.getTracks().forEach(t => t.stop()); };
-  const snap = () => { const v = vRef.current, c = cRef.current; if (!v || !c) return; const x = c.getContext("2d"); c.width = 280; c.height = 280; x.save(); x.scale(-1, 1); x.drawImage(v, -280, 0, 280, 280); x.restore(); setPhoto(c.toDataURL("image/jpeg", 0.7)); setSt("snapped"); };
-  const confirm = () => { setSt("checking"); const stored = localStorage.getItem("basma_face"); setTimeout(() => { if (!stored) localStorage.setItem("basma_face", photo); setSt("ok"); stopCam(); setTimeout(() => onOk(photo), 1200); }, 1800); };
-  const isFirst = !localStorage.getItem("basma_face");
-  return (<div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,.95)", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", zIndex: 200, direction: "rtl" }}>
-    <div style={{ color: "#fff", fontSize: 16, fontWeight: 700, marginBottom: 6 }}>{isFirst ? "🪪 تسجيل بصمة الوجه" : "🪪 التحقق من الهوية"}</div>
-    <div style={{ color: "rgba(255,255,255,.4)", fontSize: 11, marginBottom: 14 }}>{isFirst ? "التقط صورة واضحة لوجهك" : "انظر للكاميرا"}</div>
-    <div style={{ width: 240, height: 240, borderRadius: "50%", overflow: "hidden", border: `4px solid ${st === "ok" ? C.ok : st === "checking" ? B.yellow : B.blue}`, background: "#111" }}>
-      {(st === "load" || st === "ready") && <video ref={vRef} autoPlay playsInline muted style={{ width: "100%", height: "100%", objectFit: "cover", transform: "scaleX(-1)" }} />}
-      {(st === "snapped" || st === "checking") && photo && <img src={photo} style={{ width: "100%", height: "100%", objectFit: "cover" }} />}
-      {st === "ok" && <div style={{ width: "100%", height: "100%", display: "flex", alignItems: "center", justifyContent: "center" }}><span style={{ fontSize: 72 }}>✅</span></div>}
+  var themeObj = useTheme(); var t = themeObj.t;
+  var vRef = useRef(null), cRef = useRef(null), sRef = useRef(null);
+  var _st = useState("loading_models"), st = _st[0], setSt = _st[1];
+  var _ph = useState(null), photo = _ph[0], setPhoto = _ph[1];
+  var _mp = useState(0), matchPct = _mp[0], setMatchPct = _mp[1];
+  var _er = useState(""), err = _er[0], setErr = _er[1];
+  var _at = useState(0), attempts = _at[0], setAttempts = _at[1];
+  var _pg = useState(""), progress = _pg[0], setProgress = _pg[1];
+  var _li = useState(false), isLive = _li[0], setIsLive = _li[1];
+
+  // Load models then start camera
+  useEffect(function() {
+    var cancelled = false;
+    (async function() {
+      var ok = await loadFaceModels(function(msg) { if (!cancelled) setProgress(msg); });
+      if (cancelled) return;
+      if (!ok) { setErr("فشل تحميل نماذج الذكاء الاصطناعي — تحقق من الاتصال"); setSt("model_error"); return; }
+      setProgress("تشغيل الكاميرا...");
+      try {
+        var s = await navigator.mediaDevices.getUserMedia({
+          video: { facingMode: "user", width: { ideal: 640 }, height: { ideal: 640 } }
+        });
+        if (cancelled) { s.getTracks().forEach(function(tr) { tr.stop(); }); return; }
+        sRef.current = s;
+        if (vRef.current) {
+          vRef.current.srcObject = s;
+          vRef.current.onloadedmetadata = function() { if (!cancelled) setSt("ready"); };
+        }
+      } catch(e) {
+        if (!cancelled) { setErr("لا يمكن تشغيل الكاميرا — فعّل صلاحية الكاميرا"); setSt("cam_error"); }
+      }
+    })();
+    return function() { cancelled = true; stopCam(); };
+  }, []);
+
+  var stopCam = function() {
+    if (sRef.current) sRef.current.getTracks().forEach(function(tr) { tr.stop(); });
+  };
+
+  // Real-time face detection indicator
+  useEffect(function() {
+    if (st !== "ready" || !_modelsLoaded) return;
+    var interval = setInterval(async function() {
+      var v = vRef.current;
+      if (!v || v.readyState < 2) return;
+      try {
+        var dets = await faceapi.detectAllFaces(v, new faceapi.TinyFaceDetectorOptions({ inputSize: 160, scoreThreshold: 0.4 }));
+        setIsLive(dets.length === 1);
+      } catch(e) { /* ignore */ }
+    }, 800);
+    return function() { clearInterval(interval); };
+  }, [st]);
+
+  var snap = async function() {
+    var v = vRef.current, c = cRef.current;
+    if (!v || !c) return;
+    var ctx = c.getContext("2d");
+    c.width = 400; c.height = 400;
+    ctx.save(); ctx.scale(-1, 1); ctx.drawImage(v, -400, 0, 400, 400); ctx.restore();
+    var dataUrl = c.toDataURL("image/jpeg", 0.85);
+    setSt("checking"); setErr("");
+    var result = await getFaceDescriptor(dataUrl);
+    if (result.ok) {
+      setPhoto(dataUrl);
+      // Store descriptor temporarily for confirm step
+      cRef.current._descriptor = result.descriptor;
+      cRef.current._score = result.score;
+      setSt("snapped");
+    } else {
+      setErr(result.reason); setSt("ready");
+      setAttempts(function(a) { return a + 1; });
+    }
+  };
+
+  var confirm = async function() {
+    setSt("checking");
+    var descriptor = cRef.current._descriptor;
+    var score = cRef.current._score;
+    if (!descriptor || descriptor.length !== 128) {
+      setErr("خطأ في بيانات الوجه — أعد المحاولة");
+      setSt("ready"); setPhoto(null);
+      return;
+    }
+    var storedRaw = localStorage.getItem("basma_face_v2");
+    if (!storedRaw) {
+      // First registration
+      localStorage.setItem("basma_face_v2", JSON.stringify(descriptor));
+      // Remove old format if exists
+      localStorage.removeItem("basma_face");
+      api("checkin", "POST", { type: "face_register" });
+      setMatchPct(score);
+      setSt("ok"); stopCam();
+      setTimeout(function() { onOk(photo); }, 1400);
+    } else {
+      // Compare with stored descriptor
+      var storedDesc = JSON.parse(storedRaw);
+      var result = compareDescriptors(storedDesc, descriptor);
+      setMatchPct(result.similarity);
+      // Threshold: distance < 0.45 = same person (stricter than default 0.6)
+      if (result.distance < 0.45) {
+        setSt("ok"); stopCam();
+        setTimeout(function() { onOk(photo); }, 1400);
+      } else {
+        setErr("الوجه غير مطابق (" + result.similarity + "%) — المسافة: " + result.distance.toFixed(2));
+        setSt("ready"); setPhoto(null);
+        setAttempts(function(a) { return a + 1; });
+      }
+    }
+  };
+
+  var isFirst = !localStorage.getItem("basma_face_v2");
+  var MAX_ATTEMPTS = 5;
+  var borderColor = st === "ok" ? C.ok : err ? C.bad : st === "checking" ? B.yellow : isLive ? C.ok : B.blue;
+  var statusColor = st === "ok" ? C.ok : B.yellow;
+
+  var statusText =
+    st === "loading_models" ? progress || "جارِ التحميل..." :
+    st === "model_error" ? "خطأ في النماذج" :
+    st === "cam_error" ? "خطأ في الكاميرا" :
+    st === "ready" ? (isLive ? "✓ تم رصد وجه — اضغط التقاط" : "وجّه الكاميرا لوجهك") :
+    st === "snapped" ? "تم التحليل بنجاح ✓" :
+    st === "checking" ? "جارِ التحقق بالذكاء الاصطناعي..." :
+    isFirst ? "تم تسجيل البصمة ✓" : "تم التحقق ✓";
+
+  return (
+    <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,.97)", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", zIndex: 200, direction: "rtl" }}>
+      {/* Header */}
+      <div style={{ color: "#fff", fontSize: 17, fontWeight: 700, marginBottom: 2, letterSpacing: 0.3 }}>{isFirst ? "تسجيل بصمة الوجه" : "التحقق من الهوية"}</div>
+      <div style={{ color: "rgba(255,255,255,.3)", fontSize: 11, marginBottom: 6 }}>Face Recognition AI — 128-point neural network</div>
+      <div style={{ color: "rgba(255,255,255,.25)", fontSize: 10, marginBottom: 16 }}>{isFirst ? "التقط صورة واضحة لوجهك في إضاءة جيدة" : "سيتم مقارنة وجهك بالبصمة المسجّلة"}</div>
+
+      {/* Circular viewfinder */}
+      <div style={{ position: "relative", width: 260, height: 260 }}>
+        {/* Animated scanning ring */}
+        {st === "checking" && <div style={{ position: "absolute", inset: -8, borderRadius: "50%", border: "2px solid " + B.blue, animation: "pulse 1s infinite", opacity: 0.5 }} />}
+        {/* Live face indicator ring */}
+        {st === "ready" && isLive && <div style={{ position: "absolute", inset: -6, borderRadius: "50%", border: "2px solid " + C.ok, opacity: 0.4, transition: "opacity .3s" }} />}
+        {/* Guide ring */}
+        <div style={{ position: "absolute", inset: -6, borderRadius: "50%", border: "2px dashed rgba(255,255,255,.08)" }} />
+
+        <div style={{ width: 260, height: 260, borderRadius: "50%", overflow: "hidden", border: "4px solid " + borderColor, background: "#111", transition: "border-color .4s" }}>
+          {(st === "loading_models" || st === "model_error" || st === "cam_error") && <div style={{ width: "100%", height: "100%", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 8 }}>
+            {st === "loading_models" && <div style={{ width: 32, height: 32, border: "3px solid rgba(255,255,255,.1)", borderTopColor: B.blue, borderRadius: "50%", animation: "spin .8s linear infinite" }} />}
+            {st === "model_error" && <span style={{ fontSize: 36 }}>⚠️</span>}
+            {st === "cam_error" && <span style={{ fontSize: 36 }}>📷</span>}
+          </div>}
+          {(st === "ready") && <video ref={vRef} autoPlay playsInline muted style={{ width: "100%", height: "100%", objectFit: "cover", transform: "scaleX(-1)" }} />}
+          {(st === "snapped" || st === "checking") && photo && <img src={photo} style={{ width: "100%", height: "100%", objectFit: "cover" }} alt="" />}
+          {st === "ok" && <div style={{ width: "100%", height: "100%", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", background: "rgba(48,209,88,.08)" }}>
+            <span style={{ fontSize: 52, color: C.ok }}>✓</span>
+            {matchPct > 0 && <span style={{ fontSize: 14, color: C.ok, marginTop: 6, fontWeight: 700 }}>تطابق {matchPct}%</span>}
+          </div>}
+        </div>
+      </div>
+
+      <canvas ref={cRef} style={{ display: "none" }} />
+
+      {/* Error */}
+      {err && <div style={{ color: C.bad, fontSize: 12, fontWeight: 600, marginTop: 12, textAlign: "center", maxWidth: 300, lineHeight: 1.6 }}>{err}</div>}
+
+      {/* Attempts */}
+      {attempts > 0 && attempts < MAX_ATTEMPTS && st !== "ok" && <div style={{ color: "rgba(255,255,255,.2)", fontSize: 10, marginTop: 4 }}>المحاولة {attempts} من {MAX_ATTEMPTS}</div>}
+
+      {/* Status */}
+      <div style={{ color: statusColor, fontSize: 13, fontWeight: 700, marginTop: err ? 6 : 14, transition: "color .3s" }}>{statusText}</div>
+
+      {/* Action buttons */}
+      <div style={{ display: "flex", gap: 10, marginTop: 16 }}>
+        {st === "ready" && <button onClick={attempts >= MAX_ATTEMPTS ? undefined : snap} disabled={attempts >= MAX_ATTEMPTS} style={{ padding: "12px 32px", borderRadius: 50, background: attempts >= MAX_ATTEMPTS ? "#555" : isLive ? C.ok : B.blue, color: "#fff", fontSize: 15, fontWeight: 700, border: "none", cursor: attempts >= MAX_ATTEMPTS ? "not-allowed" : "pointer", opacity: attempts >= MAX_ATTEMPTS ? 0.5 : 1, transition: "background .3s" }}>{isLive ? "التقاط ✓" : "التقاط"}</button>}
+        {st === "snapped" && <>
+          <button onClick={confirm} style={{ padding: "12px 28px", borderRadius: 50, background: C.ok, color: "#fff", fontSize: 15, fontWeight: 700, border: "none", cursor: "pointer" }}>تأكيد</button>
+          <button onClick={function() { setPhoto(null); setSt("ready"); setErr(""); }} style={{ padding: "12px 28px", borderRadius: 50, background: "rgba(255,255,255,.1)", color: "#fff", fontSize: 15, fontWeight: 700, border: "none", cursor: "pointer" }}>إعادة</button>
+        </>}
+        {(st === "model_error" || st === "cam_error") && <button onClick={function() { setSt("loading_models"); setErr(""); loadFaceModels(setProgress).then(function(ok) { if (ok) startCam(); }); }} style={{ padding: "12px 28px", borderRadius: 50, background: B.blue, color: "#fff", fontSize: 14, fontWeight: 700, border: "none", cursor: "pointer" }}>إعادة المحاولة</button>}
+      </div>
+
+      {/* Max attempts */}
+      {attempts >= MAX_ATTEMPTS && st !== "ok" && <div style={{ color: C.bad, fontSize: 12, fontWeight: 600, marginTop: 12, textAlign: "center" }}>تم تجاوز الحد الأقصى للمحاولات — تواصل مع المدير</div>}
+
+      {/* Secondary actions */}
+      {st !== "ok" && st !== "checking" && st !== "loading_models" && <div style={{ display: "flex", gap: 16, marginTop: 16 }}>
+        <button onClick={function() { stopCam(); onNo(); }} style={{ background: "none", border: "none", color: "rgba(255,255,255,.3)", fontSize: 11, cursor: "pointer" }}>إلغاء</button>
+        {!isFirst && <button onClick={function() { localStorage.removeItem("basma_face_v2"); localStorage.removeItem("basma_face"); setErr(""); setSt("ready"); setPhoto(null); setAttempts(0); }} style={{ background: "none", border: "none", color: C.warn, fontSize: 11, cursor: "pointer" }}>إعادة تسجيل البصمة</button>}
+      </div>}
+
+      {/* CSS animations */}
+      <style>{"\
+@keyframes pulse{0%,100%{transform:scale(1);opacity:.3}50%{transform:scale(1.06);opacity:.6}}\
+@keyframes spin{to{transform:rotate(360deg)}}\
+      "}</style>
     </div>
-    <canvas ref={cRef} style={{ display: "none" }} />
-    <div style={{ color: st === "ok" ? C.ok : B.yellow, fontSize: 13, fontWeight: 700, marginTop: 12 }}>{st === "load" ? "جارِ تشغيل الكاميرا..." : st === "ready" ? "اضغط التقاط" : st === "snapped" ? "راجع الصورة" : st === "checking" ? "جارِ التحقق..." : isFirst ? "تم تسجيل البصمة ✓" : "تم التحقق ✓"}</div>
-    <div style={{ display: "flex", gap: 10, marginTop: 14 }}>
-      {st === "ready" && <button onClick={snap} style={{ padding: "11px 28px", borderRadius: 50, background: B.blue, color: "#fff", fontSize: 14, fontWeight: 700, border: "none", cursor: "pointer" }}>📸 التقاط</button>}
-      {st === "snapped" && <><button onClick={confirm} style={{ padding: "11px 24px", borderRadius: 50, background: C.ok, color: "#fff", fontSize: 14, fontWeight: 700, border: "none", cursor: "pointer" }}>✓ تأكيد</button><button onClick={() => { setPhoto(null); setSt("ready"); }} style={{ padding: "11px 24px", borderRadius: 50, background: "rgba(255,255,255,.1)", color: "#fff", fontSize: 14, fontWeight: 700, border: "none", cursor: "pointer" }}>↺ إعادة</button></>}
-    </div>
-    {st !== "ok" && st !== "checking" && <button onClick={() => { stopCam(); onNo(); }} style={{ marginTop: 14, background: "none", border: "none", color: "rgba(255,255,255,.3)", fontSize: 11, cursor: "pointer" }}>إلغاء</button>}
-  </div>);
+  );
 }
 
 // ═══════ CALL NOTIFICATION ═══════
@@ -1512,7 +1752,7 @@ export default function MobileApp() {
   const t = isDark ? DARK : LIGHT;
   const toggleTheme = () => { setIsDark(v => { const nv = !v; localStorage.setItem("basma_theme", nv ? "dark" : "light"); return nv; }); };
   useEffect(() => { const uid = localStorage.getItem("basma_uid"); if (uid) { api('employees').then(emps => { if (Array.isArray(emps)) { const e = emps.find(x => x.id === uid); if (e) setEmp(e); } }); } }, []);
-  const logout = () => { localStorage.removeItem("basma_uid"); localStorage.removeItem("basma_face"); setEmp(null); setSc("reg"); };
+  const logout = () => { localStorage.removeItem("basma_uid"); localStorage.removeItem("basma_face"); localStorage.removeItem("basma_face_v2"); setEmp(null); setSc("reg"); };
   return (<ThemeCtx.Provider value={{ dark: isDark, t, toggle: toggleTheme }}>
     <div style={{ direction: "rtl", fontFamily: Fn, maxWidth: 480, margin: "0 auto", minHeight: "100vh", background: t.bg }}>
     <style>{`*{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent}::-webkit-scrollbar{width:0}button:active{opacity:0.8!important}input::placeholder{color:${t.txM}}`}</style>
