@@ -413,13 +413,13 @@ function FaceCamera({ onOk, onNo }) {
         {/* Guide ring */}
         <div style={{ position: "absolute", inset: -6, borderRadius: "50%", border: "2px dashed rgba(255,255,255,.08)" }} />
 
-        <div style={{ width: 260, height: 260, borderRadius: "50%", overflow: "hidden", border: "4px solid " + borderColor, background: "#111", transition: "border-color .4s" }}>
-          {(st === "loading_models" || st === "model_error" || st === "cam_error") && <div style={{ width: "100%", height: "100%", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 8 }}>
+        <div style={{ width: 260, height: 260, borderRadius: "50%", overflow: "hidden", border: "4px solid " + borderColor, background: "#111", transition: "border-color .4s", position: "relative" }}>
+          {(st === "loading_models" || st === "model_error" || st === "cam_error") && <div style={{ position: "absolute", inset: 0, borderRadius: "50%", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 8, background: "#111", zIndex: 2 }}>
             {st === "loading_models" && <div style={{ width: 32, height: 32, border: "3px solid rgba(255,255,255,.1)", borderTopColor: B.blue, borderRadius: "50%", animation: "spin .8s linear infinite" }} />}
             {st === "model_error" && <span style={{ fontSize: 36 }}>⚠️</span>}
             {st === "cam_error" && <span style={{ fontSize: 36 }}>📷</span>}
           </div>}
-          {(st === "ready") && <video ref={vRef} autoPlay playsInline muted style={{ width: "100%", height: "100%", objectFit: "cover", transform: "scaleX(-1)" }} />}
+          <video ref={vRef} autoPlay playsInline muted style={{ width: "100%", height: "100%", objectFit: "cover", transform: "scaleX(-1)" }} />
           {(st === "snapped" || st === "checking") && photo && <img src={photo} style={{ width: "100%", height: "100%", objectFit: "cover" }} alt="" />}
           {st === "ok" && <div style={{ width: "100%", height: "100%", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", background: "rgba(48,209,88,.08)" }}>
             <span style={{ fontSize: 52, color: C.ok }}>✓</span>
