@@ -48,7 +48,7 @@ const DARK = {
 
 // ═══════ CONSTANTS ═══════
 const APP = "بصمة HMA";
-const VER = "v4.17";
+const VER = "v4.18";
 const CO = "هاني محمد عسيري للإستشارات الهندسية";
 const B = { blue: "#2B5EA7", yellow: "#FDD800", red: "#E2192C", black: "#1A1A1A", blueDk: "#1E4478", blueLt: "#EDF3FB", gold: "#D4A017", diamond: "#7C3AED" };
 const C = LIGHT; // Default light - components use useTheme().t for dynamic
@@ -2253,24 +2253,34 @@ export default function MobileApp() {
       setSc(disclaimerAccepted ? "reg" : "disclaimer");
       return;
     }
-    // User was logged in — load their data
+    // Try cached employee data first for instant load
+    var cached = localStorage.getItem("basma_emp_cache");
+    if (cached) {
+      try { var ce = JSON.parse(cached); if (ce && ce.id === uid) { setEmp(ce); setSc("widget"); } } catch(e) {}
+    }
+    // Then refresh from API in background
     api('employees').then(emps => {
       if (Array.isArray(emps)) {
         const e = emps.find(x => x.id === uid);
-        if (e) { setEmp(e); setSc("widget"); return; }
+        if (e) {
+          setEmp(e);
+          localStorage.setItem("basma_emp_cache", JSON.stringify(e));
+          if (sc === "init") setSc("widget");
+          return;
+        }
       }
-      // API failed or employee not found — still try widget with cached data
-      setSc("reg");
-    }).catch(() => { setSc("reg"); });
+      // Only go to reg if we don't have cached data
+      if (!cached) setSc("reg");
+    }).catch(() => { if (!cached) setSc("reg"); });
   }, []);
 
-  const logout = () => { localStorage.removeItem("basma_uid"); localStorage.removeItem("basma_face"); localStorage.removeItem("basma_face_v2"); setEmp(null); setSc("reg"); };
+  const logout = () => { localStorage.removeItem("basma_uid"); localStorage.removeItem("basma_face"); localStorage.removeItem("basma_face_v2"); localStorage.removeItem("basma_emp_cache"); setEmp(null); setSc("reg"); };
   return (<ThemeCtx.Provider value={{ dark: isDark, t, toggle: toggleTheme }}>
     <div style={{ direction: "rtl", fontFamily: Fn, maxWidth: 480, margin: "0 auto", minHeight: "100vh", background: t.bg }}>
     <style>{`*{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent}::-webkit-scrollbar{width:0}button:active{opacity:0.8!important}input::placeholder{color:${t.txM}}`}</style>
     {sc === "init" && <Splash onDone={() => {}} />}
     {sc === "disclaimer" && <Disclaimer onAccept={() => setSc("reg")} />}
-    {sc === "reg" && <Reg onDone={e => { setEmp(e); setSc("widget"); }} />}
+    {sc === "reg" && <Reg onDone={e => { setEmp(e); localStorage.setItem("basma_emp_cache", JSON.stringify(e)); setSc("widget"); }} />}
     {sc === "widget" && emp && <Widget emp={emp} onApp={() => setSc("app")} />}
     {sc === "app" && emp && <FullApp emp={emp} onBack={() => setSc("widget")} onLogout={logout} />}
   </div>
