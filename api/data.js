@@ -261,6 +261,116 @@ export default async function handler(req, res) {
         break;
       }
 
+      case 'custody': {
+        if (req.method === 'GET') {
+          let items = await dbGet('custody') || [];
+          const { empId } = req.query;
+          if (empId) items = items.filter(c => c.empId === empId);
+          return res.json(items);
+        }
+        if (req.method === 'POST') {
+          const items = await dbGet('custody') || [];
+          items.push({ id: 'CUS' + Date.now(), status: 'active', ...req.body, createdAt: new Date().toISOString() });
+          await dbSet('custody', items);
+          return res.json({ ok: true });
+        }
+        if (req.method === 'PUT') {
+          const items = await dbGet('custody') || [];
+          const { id, ...up } = req.body;
+          const i = items.findIndex(c => c.id === id);
+          if (i >= 0) { items[i] = { ...items[i], ...up, updatedAt: new Date().toISOString() }; await dbSet('custody', items); }
+          return res.json({ ok: true });
+        }
+        if (req.method === 'DELETE') {
+          const items = await dbGet('custody') || [];
+          await dbSet('custody', items.filter(c => c.id !== req.query.id));
+          return res.json({ ok: true });
+        }
+        break;
+      }
+
+      case 'custody_maintenance': {
+        if (req.method === 'GET') {
+          let logs = await dbGet('custody_maint') || [];
+          const { custodyId } = req.query;
+          if (custodyId) logs = logs.filter(l => l.custodyId === custodyId);
+          return res.json(logs);
+        }
+        if (req.method === 'POST') {
+          const logs = await dbGet('custody_maint') || [];
+          logs.push({ id: 'CM' + Date.now(), ...req.body, ts: new Date().toISOString() });
+          await dbSet('custody_maint', logs);
+          return res.json({ ok: true });
+        }
+        break;
+      }
+
+      case 'gps_log': {
+        if (req.method === 'GET') {
+          let logs = await dbGet('gps_logs') || [];
+          const { empId, date } = req.query;
+          if (empId) logs = logs.filter(l => l.empId === empId);
+          if (date) logs = logs.filter(l => l.date === date);
+          return res.json(logs);
+        }
+        if (req.method === 'POST') {
+          const logs = await dbGet('gps_logs') || [];
+          const entry = { ...req.body, ts: new Date().toISOString(), date: new Date().toISOString().split('T')[0] };
+          logs.push(entry);
+          // Keep only last 7 days
+          const cutoff = new Date(); cutoff.setDate(cutoff.getDate() - 7);
+          const filtered = logs.filter(l => new Date(l.ts) > cutoff);
+          await dbSet('gps_logs', filtered);
+          return res.json({ ok: true });
+        }
+        break;
+      }
+
+      case 'termination': {
+        if (req.method === 'GET') return res.json(await dbGet('terminations') || []);
+        if (req.method === 'POST') {
+          const ts = await dbGet('terminations') || [];
+          ts.push({ id: 'TERM' + Date.now(), status: 'pending', ...req.body, createdAt: new Date().toISOString() });
+          await dbSet('terminations', ts);
+          // Deactivate employee
+          const emps = await dbGet('employees') || [];
+          const ei = emps.findIndex(e => e.id === req.body.empId);
+          if (ei >= 0) { emps[ei].terminated = true; emps[ei].terminatedAt = new Date().toISOString(); await dbSet('employees', emps); }
+          return res.json({ ok: true });
+        }
+        if (req.method === 'PUT') {
+          const ts = await dbGet('terminations') || [];
+          const { id, ...up } = req.body;
+          const i = ts.findIndex(t => t.id === id);
+          if (i >= 0) { ts[i] = { ...ts[i], ...up }; await dbSet('terminations', ts); }
+          return res.json({ ok: true });
+        }
+        break;
+      }
+
+      case 'requests': {
+        if (req.method === 'GET') {
+          let reqs = await dbGet('admin_requests') || [];
+          const { empId } = req.query;
+          if (empId) reqs = reqs.filter(r => r.empId === empId);
+          return res.json(reqs);
+        }
+        if (req.method === 'POST') {
+          const reqs = await dbGet('admin_requests') || [];
+          reqs.push({ id: 'REQ' + Date.now(), status: 'pending', ...req.body, ts: new Date().toISOString() });
+          await dbSet('admin_requests', reqs);
+          return res.json({ ok: true });
+        }
+        if (req.method === 'PUT') {
+          const reqs = await dbGet('admin_requests') || [];
+          const { id, ...up } = req.body;
+          const i = reqs.findIndex(r => r.id === id);
+          if (i >= 0) { reqs[i] = { ...reqs[i], ...up }; await dbSet('admin_requests', reqs); }
+          return res.json({ ok: true });
+        }
+        break;
+      }
+
       case 'dependents': {
         if (req.method === 'GET') { const ds = await dbGet('dependents') || []; const { empId } = req.query; return res.json(empId ? ds.filter(d => d.empId === empId) : ds); }
         if (req.method === 'POST') { const ds = await dbGet('dependents') || []; ds.push({ id: 'DEP' + Date.now(), status: 'pending', ...req.body }); await dbSet('dependents', ds); return res.json({ ok: true }); }

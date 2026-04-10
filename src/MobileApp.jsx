@@ -48,7 +48,7 @@ const DARK = {
 
 // ═══════ CONSTANTS ═══════
 const APP = "بصمة HMA";
-const VER = "v4.06";
+const VER = "v4.07";
 const CO = "هاني محمد عسيري للإستشارات الهندسية";
 const B = { blue: "#2B5EA7", yellow: "#FDD800", red: "#E2192C", black: "#1A1A1A", blueDk: "#1E4478", blueLt: "#EDF3FB", gold: "#D4A017", diamond: "#7C3AED" };
 const C = LIGHT; // Default light - components use useTheme().t for dynamic
@@ -652,6 +652,21 @@ function Widget({ emp, onApp }) {
   // Real time
   useEffect(() => { const t = setInterval(() => { const n = new Date(); setSH(n.getHours()); setSM(n.getMinutes()); }, 30000); return () => clearInterval(t); }, []);
 
+  // GPS tracking during work hours (every 5 min)
+  useEffect(() => {
+    if (isLeave) return;
+    var gpsInterval = setInterval(async function() {
+      var h = new Date().getHours();
+      if (h >= 7 && h < 18) {
+        try {
+          var pos = await getGPS();
+          api("gps_log", "POST", { empId: emp.id, lat: pos.lat, lng: pos.lng });
+        } catch(e) { /* GPS unavailable */ }
+      }
+    }, 5 * 60 * 1000); // Every 5 minutes
+    return function() { clearInterval(gpsInterval); };
+  }, [isLeave]);
+
   // Load today's records
   useEffect(() => {
     const today = new Date().toISOString().split("T")[0];
@@ -892,6 +907,8 @@ function FullApp({ emp, onBack, onLogout }) {
   const [exceptions, setExceptions] = useState([]);
   const [violations, setViolations] = useState([]);
   const [warnings, setWarnings] = useState([]);
+  const [custodyItems, setCustodyItems] = useState([]);
+  const [adminRequests, setAdminRequests] = useState([]);
   const [showAddProject, setShowAddProject] = useState(false);
   const [showAddDeleg, setShowAddDeleg] = useState(false);
   const [newProj, setNewProj] = useState({ name: "", lat: "", lng: "", radius: 150, employees: [] });
@@ -909,6 +926,8 @@ function FullApp({ emp, onBack, onLogout }) {
     const ex = await api('exceptions'); if (Array.isArray(ex)) setExceptions(ex);
     const v = await api('violations', 'GET', null, `&empId=${emp.id}`); if (Array.isArray(v)) setViolations(v);
     const w = await api('warnings', 'GET', null, `&empId=${emp.id}`); if (Array.isArray(w)) setWarnings(w);
+    const cust = await api('custody', 'GET', null, isHR ? '' : `&empId=${emp.id}`); if (Array.isArray(cust)) setCustodyItems(cust);
+    const reqs = await api('requests', 'GET', null, `&empId=${emp.id}`); if (Array.isArray(reqs)) setAdminRequests(reqs);
   };
 
   const approveLeave = async (id) => { await api('leaves', 'PUT', { id, status: 'approved' }); loadData(); };
@@ -1028,8 +1047,8 @@ function FullApp({ emp, onBack, onLogout }) {
   };
 
   const tabs = isHR
-    ? [{ id: "admin", i: "🏢", l: "الإدارة" }, { id: "projects", i: "🏗️", l: "المشاريع" }, { id: "events", i: "🎉", l: "المناسبات" }, { id: "questions", i: "⚡", l: "الأسئلة" }, { id: "leaves_tab", i: "🏖", l: "الإجازات" }, { id: "alerts", i: "🔔", l: "الإشعارات" }, { id: "wallet", i: "🎁", l: "المحفظة" }, { id: "support", i: "💬", l: "الدعم" }, { id: "profile", i: "👤", l: "حسابي" }]
-    : [{ id: "alerts", i: "🔔", l: "الإشعارات" }, { id: "leaves_tab", i: "🏖", l: "الإجازات" }, { id: "wallet", i: "🎁", l: "المحفظة" }, { id: "membership", i: "🏅", l: "العضوية" }, { id: "attendance", i: "📊", l: "الحضور" }, { id: "support", i: "💬", l: "الدعم" }, { id: "profile", i: "👤", l: "حسابي" }];
+    ? [{ id: "admin", i: "🏢", l: "الإدارة" }, { id: "projects", i: "🏗️", l: "المشاريع" }, { id: "custody_tab", i: "📦", l: "العهد" }, { id: "alerts", i: "🔔", l: "الإشعارات" }, { id: "leaves_tab", i: "🏖", l: "الإجازات" }, { id: "events", i: "🎉", l: "المناسبات" }, { id: "support", i: "💬", l: "الدعم" }, { id: "profile", i: "👤", l: "حسابي" }]
+    : [{ id: "alerts", i: "🔔", l: "الإشعارات" }, { id: "custody_tab", i: "📦", l: "عهدي" }, { id: "leaves_tab", i: "🏖", l: "الإجازات" }, { id: "requests_tab", i: "📝", l: "طلبات" }, { id: "attendance", i: "📊", l: "الحضور" }, { id: "support", i: "💬", l: "الدعم" }, { id: "profile", i: "👤", l: "حسابي" }];
 
   return (<div style={{ ...FL, background: t.bg, display: "flex", flexDirection: "column" }}>
     <Stripe h={4} />
@@ -1541,6 +1560,106 @@ function FullApp({ emp, onBack, onLogout }) {
             );
           })}
         </>}
+      </div>}
+
+      {/* CUSTODY / ASSETS */}
+      {tab === "custody_tab" && <div>
+        <div style={{ ...crd, marginBottom: 12 }}>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+            <div style={{ fontSize: 16, fontWeight: 700 }}>📦 {isHR ? "إدارة العهد" : "عهدي"}</div>
+            <span style={{ padding: "3px 10px", borderRadius: 8, fontSize: 11, fontWeight: 700, background: B.blue + "15", color: B.blue }}>{custodyItems.length} عهدة</span>
+          </div>
+        </div>
+
+        {custodyItems.length === 0 && <div style={{ ...crd, textAlign: "center", padding: 30 }}><div style={{ fontSize: 36 }}>📦</div><div style={{ fontSize: 13, color: t.txM, marginTop: 8 }}>لا توجد عهد مسجّلة</div></div>}
+
+        {custodyItems.map(function(item) { return <div key={item.id} style={{ ...crd, marginBottom: 8 }}>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
+            <div style={{ flex: 1 }}>
+              <div style={{ fontSize: 14, fontWeight: 700, color: t.tx }}>{item.name}</div>
+              <div style={{ fontSize: 11, color: t.tx2, marginTop: 2 }}>{item.category || "عهدة"} {item.serialNumber ? "· S/N: " + item.serialNumber : ""}</div>
+              {item.empName && <div style={{ fontSize: 10, color: B.blue, marginTop: 4 }}>👤 {item.empName}</div>}
+              {item.maintenanceDue && <div style={{ fontSize: 10, color: new Date(item.maintenanceDue) < new Date() ? C.bad : C.warn, marginTop: 4 }}>🔧 صيانة: {new Date(item.maintenanceDue).toLocaleDateString("ar-SA")}</div>}
+            </div>
+            <span style={{ padding: "3px 8px", borderRadius: 6, fontSize: 9, fontWeight: 700, background: item.status === "active" ? t.okLt : item.status === "returned" ? t.bg : t.warnLt, color: item.status === "active" ? C.ok : item.status === "returned" ? t.txM : C.warn }}>{item.status === "active" ? "مُستلمة" : item.status === "returned" ? "مُعادة" : item.status === "maintenance" ? "صيانة" : item.status}</span>
+          </div>
+          {item.status === "active" && <div style={{ display: "flex", gap: 6, marginTop: 8 }}>
+            {item.maintenanceDue && <button onClick={async function() { await api("custody_maintenance", "POST", { custodyId: item.id, empId: emp.id, type: "صيانة دورية", note: "تمت الصيانة" }); var nextDate = new Date(); nextDate.setMonth(nextDate.getMonth() + 3); await api("custody", "PUT", { id: item.id, maintenanceDue: nextDate.toISOString().split("T")[0], lastMaintenance: today }); loadData(); }} style={{ flex: 1, padding: "7px", borderRadius: 8, background: C.ok + "15", color: C.ok, fontSize: 10, fontWeight: 700, border: "none", cursor: "pointer" }}>🔧 تم الصيانة</button>}
+          </div>}
+        </div>; })}
+
+        {/* HR: Add custody item */}
+        {isHR && <div style={{ ...crd, marginTop: 12, border: "1px solid " + B.blue + "33" }}>
+          <div style={{ fontSize: 13, fontWeight: 700, marginBottom: 10, color: B.blue }}>➕ تسجيل عهدة جديدة</div>
+          <select id="cust-emp" style={{ width: "100%", padding: 10, borderRadius: 10, border: "1px solid " + t.sep, fontSize: 12, marginBottom: 6, background: t.inp, color: t.tx, fontFamily: Fn }}><option value="">اختر الموظف</option>{emps.map(function(e) { return <option key={e.id} value={e.id}>{e.name} ({e.id})</option>; })}</select>
+          <input id="cust-name" placeholder="اسم العهدة (مثل: لابتوب Dell)" style={{ width: "100%", padding: 10, borderRadius: 10, border: "1px solid " + t.sep, fontSize: 12, marginBottom: 6, background: t.inp, color: t.tx, fontFamily: Fn }} />
+          <div style={{ display: "flex", gap: 6, marginBottom: 6 }}>
+            <select id="cust-cat" style={{ flex: 1, padding: 10, borderRadius: 10, border: "1px solid " + t.sep, fontSize: 11, background: t.inp, color: t.tx, fontFamily: Fn }}><option value="electronics">💻 إلكترونيات</option><option value="vehicle">🚗 مركبة</option><option value="equipment">🔧 معدات</option><option value="furniture">🪑 أثاث</option><option value="cash">💰 عهدة نقدية</option><option value="other">📦 أخرى</option></select>
+            <input id="cust-serial" placeholder="S/N (اختياري)" style={{ flex: 1, padding: 10, borderRadius: 10, border: "1px solid " + t.sep, fontSize: 11, background: t.inp, color: t.tx, fontFamily: Fn }} />
+          </div>
+          <div style={{ display: "flex", gap: 6, marginBottom: 8 }}>
+            <input id="cust-value" placeholder="القيمة (ريال)" type="number" style={{ flex: 1, padding: 10, borderRadius: 10, border: "1px solid " + t.sep, fontSize: 11, background: t.inp, color: t.tx, fontFamily: Fn }} />
+            <input id="cust-maint" type="date" placeholder="موعد الصيانة" style={{ flex: 1, padding: 10, borderRadius: 10, border: "1px solid " + t.sep, fontSize: 11, background: t.inp, color: t.tx, fontFamily: Fn }} />
+          </div>
+          <button onClick={async function() {
+            var empId = document.getElementById("cust-emp").value;
+            var name = document.getElementById("cust-name").value;
+            if (!empId || !name) return alert("اختر الموظف واكتب اسم العهدة");
+            var empName = emps.find(function(e) { return e.id === empId; })?.name || empId;
+            await api("custody", "POST", {
+              empId: empId, empName: empName, name: name,
+              category: document.getElementById("cust-cat").value,
+              serialNumber: document.getElementById("cust-serial").value,
+              value: document.getElementById("cust-value").value,
+              maintenanceDue: document.getElementById("cust-maint").value || null,
+              assignedBy: emp.name
+            });
+            document.getElementById("cust-name").value = "";
+            document.getElementById("cust-serial").value = "";
+            document.getElementById("cust-value").value = "";
+            alert("✅ تم تسجيل العهدة");
+            loadData();
+          }} style={{ width: "100%", padding: "11px", borderRadius: 10, background: B.blue, color: "#fff", fontSize: 14, fontWeight: 700, border: "none", cursor: "pointer" }}>💾 تسجيل العهدة</button>
+        </div>}
+      </div>}
+
+      {/* ADMIN REQUESTS */}
+      {tab === "requests_tab" && <div>
+        <div style={{ ...crd, marginBottom: 12 }}>
+          <div style={{ fontSize: 16, fontWeight: 700, marginBottom: 12 }}>📝 الطلبات الإدارية</div>
+          <div style={{ fontSize: 11, color: t.txM, marginBottom: 12 }}>قدّم طلب للإدارة (شهادة خبرة، خطاب تعريف، سلفة، وغيرها)</div>
+          <select id="req-type" style={{ width: "100%", padding: 10, borderRadius: 10, border: "1px solid " + t.sep, fontSize: 12, marginBottom: 6, background: t.inp, color: t.tx, fontFamily: Fn }}>
+            <option value="experience_letter">📄 شهادة خبرة</option>
+            <option value="intro_letter">📋 خطاب تعريف</option>
+            <option value="salary_cert">💰 شهادة راتب</option>
+            <option value="advance">💵 سلفة مالية</option>
+            <option value="compensation">⏰ طلب تعويض</option>
+            <option value="other">📝 طلب آخر</option>
+          </select>
+          <textarea id="req-note" placeholder="تفاصيل الطلب..." rows="3" style={{ width: "100%", padding: 10, borderRadius: 10, border: "1px solid " + t.sep, fontSize: 12, marginBottom: 8, background: t.inp, color: t.tx, fontFamily: Fn, resize: "none" }} />
+          <button onClick={async function() {
+            var type = document.getElementById("req-type").value;
+            var note = document.getElementById("req-note").value;
+            if (!note) return alert("اكتب تفاصيل الطلب");
+            await api("requests", "POST", { empId: emp.id, empName: emp.name, type: type, note: note });
+            document.getElementById("req-note").value = "";
+            alert("✅ تم إرسال الطلب");
+            loadData();
+          }} style={{ width: "100%", padding: "11px", borderRadius: 10, background: B.blue, color: "#fff", fontSize: 14, fontWeight: 700, border: "none", cursor: "pointer" }}>📤 إرسال الطلب</button>
+        </div>
+
+        {adminRequests.length > 0 && <div style={{ ...crd }}>
+          <div style={{ fontSize: 13, fontWeight: 700, marginBottom: 10 }}>📋 طلباتي السابقة</div>
+          {adminRequests.map(function(r) { var types = { experience_letter: "📄 شهادة خبرة", intro_letter: "📋 خطاب تعريف", salary_cert: "💰 شهادة راتب", advance: "💵 سلفة", compensation: "⏰ تعويض", other: "📝 أخرى" }; return <div key={r.id} style={{ padding: 10, borderRadius: 8, background: t.bg, marginBottom: 6 }}>
+            <div style={{ display: "flex", justifyContent: "space-between" }}>
+              <div style={{ fontSize: 12, fontWeight: 600 }}>{types[r.type] || r.type}</div>
+              <span style={{ padding: "2px 8px", borderRadius: 6, fontSize: 9, fontWeight: 700, background: r.status === "approved" ? t.okLt : r.status === "rejected" ? t.badLt : t.warnLt, color: r.status === "approved" ? C.ok : r.status === "rejected" ? C.bad : C.warn }}>{r.status === "approved" ? "مُوافق" : r.status === "rejected" ? "مرفوض" : "قيد المراجعة"}</span>
+            </div>
+            <div style={{ fontSize: 10, color: t.tx2, marginTop: 4 }}>{r.note}</div>
+            {r.adminReply && <div style={{ fontSize: 10, color: B.blue, marginTop: 4, padding: 6, borderRadius: 6, background: B.blue + "08" }}>💬 رد الإدارة: {r.adminReply}</div>}
+            <div style={{ fontSize: 9, color: t.txM, marginTop: 4 }}>{r.ts ? new Date(r.ts).toLocaleDateString("ar-SA") : ""}</div>
+          </div>; })}
+        </div>}
       </div>}
 
       {/* ALERTS - VIOLATIONS & WARNINGS */}

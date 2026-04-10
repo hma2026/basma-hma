@@ -283,6 +283,8 @@ export default function AdminApp() {
     { id: "employees", icon: "👥", label: "الموظفين" },
     { id: "leaves", icon: "📋", label: "الإجازات", badge: pending },
     { id: "violations", icon: "⚠️", label: "المخالفات" },
+    { id: "custody_admin", icon: "📦", label: "العهد" },
+    { id: "tracking", icon: "🛰️", label: "تتبّع الحركة" },
     { id: "geofence", icon: "📍", label: "النطاق الجغرافي" },
     { id: "reports", icon: "📄", label: "التقارير" },
     { id: "events", icon: "🎉", label: "المناسبات" },
@@ -398,6 +400,67 @@ export default function AdminApp() {
         {EMPS.filter(e => !e.gps).length > 0 && <div style={{ background: t.card, borderRadius: 14, padding: "16px", border: "1px solid " + t.sep }}><div style={{ fontSize: 13, fontWeight: 700, color: t.bad, marginBottom: 10 }}>🚨 خارج النطاق</div>{EMPS.filter(e => !e.gps).map((e, i) => <div key={i} style={{ padding: "8px 10px", borderRadius: 10, background: t.badLt, marginBottom: 6, display: "flex", alignItems: "center", gap: 8 }}><span>🚨</span><div style={{ flex: 1 }}><div style={{ fontSize: 12, fontWeight: 700 }}>{e.name}</div><div style={{ fontSize: 10, color: t.bad }}>{e.branch} · {e.status}</div></div>{role === "manager" && <button style={{ padding: "4px 10px", borderRadius: 6, background: B.blue, color: "#fff", fontSize: 10, fontWeight: 700, border: "none", cursor: "pointer" }}>إجراء</button>}</div>)}</div>}
         {/* Map Picker Modal */}
         {mapTarget && mapTarget.type === "branch" && (function() { var br = branches.find(function(x) { return x.id === mapTarget.id; }); if (!br) return null; return <MapPicker lat={br.lat} lng={br.lng} radius={br.radius} name={br.name} t={t} onClose={function() { setMapTarget(null); }} onSave={function(lat, lng, rad) { var nb = branches.map(function(x) { return x.id === br.id ? Object.assign({}, x, { lat: lat, lng: lng, radius: rad }) : x; }); saveBranches(nb); setMapTarget(null); }} />; })()}
+      </>}
+
+      {/* ═══ TRACKING (Admin only — secret) ═══ */}
+      {tab === "tracking" && <>
+        <div style={{ background: t.card, borderRadius: 14, padding: "18px", border: "1px solid " + t.sep, marginBottom: 14 }}>
+          <div style={{ fontSize: 14, fontWeight: 700, marginBottom: 4 }}>🛰️ تحليل حركة الموظفين</div>
+          <div style={{ fontSize: 11, color: t.txM, marginBottom: 14 }}>سري — يظهر فقط لمدير النظام. الموظفين لا يعلمون بوجوده.</div>
+          <div style={{ fontSize: 11, color: t.txM }}>اختر الموظف واليوم لعرض تقرير الحركة:</div>
+          <div style={{ display: "flex", gap: 8, marginTop: 10 }}>
+            <select id="track-emp" style={{ flex: 2, padding: 10, borderRadius: 10, border: "1px solid " + t.sep, fontSize: 12, background: t.inp, color: t.tx }}>{EMPS.map(function(e) { return <option key={e.id} value={e.id}>{e.name}</option>; })}</select>
+            <input id="track-date" type="date" defaultValue={new Date().toISOString().split("T")[0]} style={{ flex: 1, padding: 10, borderRadius: 10, border: "1px solid " + t.sep, fontSize: 12, background: t.inp, color: t.tx }} />
+            <button onClick={async function() {
+              var empId = document.getElementById("track-emp").value;
+              var date = document.getElementById("track-date").value;
+              var logs = await api("gps_log", "GET", null, "&empId=" + empId + "&date=" + date);
+              if (!Array.isArray(logs) || logs.length === 0) { alert("لا توجد بيانات لهذا اليوم"); return; }
+              var el = document.getElementById("track-results");
+              // Analyze movement vs stationary
+              var stationary = 0, moving = 0;
+              for (var i = 1; i < logs.length; i++) {
+                var d = Math.sqrt(Math.pow(logs[i].lat - logs[i-1].lat, 2) + Math.pow(logs[i].lng - logs[i-1].lng, 2)) * 111000;
+                if (d < 20) stationary++; else moving++;
+              }
+              var total = stationary + moving || 1;
+              el.innerHTML = "<div style='padding:12px'><div style='font-size:13px;font-weight:700;margin-bottom:8px'>📍 " + logs.length + " نقطة مسجّلة</div>" +
+                "<div style='display:flex;gap:8px;margin-bottom:10px'><div style='flex:1;text-align:center;padding:10px;border-radius:10px;background:#30D15815'><div style='font-size:20px;font-weight:800;color:#30D158'>" + Math.round(moving/total*100) + "%</div><div style='font-size:9px;color:#6E6E73'>متحرّك</div></div><div style='flex:1;text-align:center;padding:10px;border-radius:10px;background:#FF9F0A15'><div style='font-size:20px;font-weight:800;color:#FF9F0A'>" + Math.round(stationary/total*100) + "%</div><div style='font-size:9px;color:#6E6E73'>ثابت</div></div></div>" +
+                "<div style='font-size:10px;color:#8E8E93'>أول نقطة: " + new Date(logs[0].ts).toLocaleTimeString("ar-SA") + " — آخر نقطة: " + new Date(logs[logs.length-1].ts).toLocaleTimeString("ar-SA") + "</div></div>";
+            }} style={{ padding: "10px 18px", borderRadius: 10, background: B.blue, color: "#fff", fontSize: 12, fontWeight: 700, border: "none", cursor: "pointer" }}>تحليل</button>
+          </div>
+          <div id="track-results" style={{ marginTop: 12, borderRadius: 10, background: t.bg, minHeight: 20 }}></div>
+        </div>
+        <div style={{ background: t.warnLt, borderRadius: 10, padding: "10px 14px", fontSize: 10, color: "#92400E" }}>⚠️ هذه الميزة سرية — تظهر فقط لمدير النظام. الموظفين لا يعلمون بوجود تتبّع الحركة. يتم التتبّع فقط خلال ساعات الدوام الرسمية.</div>
+      </>}
+
+      {/* ═══ CUSTODY ADMIN ═══ */}
+      {tab === "custody_admin" && <>
+        <div style={{ background: t.card, borderRadius: 14, padding: "18px", border: "1px solid " + t.sep, marginBottom: 14 }}>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 14 }}>
+            <div style={{ fontSize: 14, fontWeight: 700 }}>📦 إدارة العهد</div>
+            <button onClick={async function() {
+              var items = await api("custody") || [];
+              if (!Array.isArray(items)) items = [];
+              var el = document.getElementById("custody-admin-list");
+              if (items.length === 0) { el.innerHTML = "<div style='text-align:center;padding:20px;color:#8E8E93'>لا توجد عهد مسجّلة</div>"; return; }
+              var html = items.map(function(item) {
+                var statusColor = item.status === "active" ? "#30D158" : item.status === "returned" ? "#8E8E93" : "#FF9F0A";
+                var statusText = item.status === "active" ? "مُستلمة" : item.status === "returned" ? "مُعادة" : "صيانة";
+                return "<div style='padding:10px;border-radius:8px;background:#F8F9FA;margin-bottom:6px;display:flex;justify-content:space-between;align-items:center'>" +
+                  "<div><div style='font-size:12px;font-weight:700'>" + item.name + "</div>" +
+                  "<div style='font-size:10px;color:#6E6E73'>" + (item.empName || "—") + " · " + (item.category || "") + (item.serialNumber ? " · S/N: " + item.serialNumber : "") + "</div>" +
+                  (item.value ? "<div style='font-size:9px;color:#2B5EA7'>💰 " + item.value + " ريال</div>" : "") +
+                  "</div><span style='padding:3px 8px;border-radius:6px;font-size:9px;font-weight:700;background:" + statusColor + "15;color:" + statusColor + "'>" + statusText + "</span></div>";
+              }).join("");
+              el.innerHTML = html;
+            }} style={{ padding: "8px 16px", borderRadius: 8, background: B.blue, color: "#fff", fontSize: 11, fontWeight: 700, border: "none", cursor: "pointer" }}>🔄 تحديث</button>
+          </div>
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 8, marginBottom: 14 }}>
+            {[{ l: "إلكترونيات", i: "💻" }, { l: "مركبات", i: "🚗" }, { l: "معدات", i: "🔧" }, { l: "أثاث", i: "🪑" }, { l: "نقدية", i: "💰" }, { l: "أخرى", i: "📦" }].map(function(c, i) { return <div key={i} style={{ textAlign: "center", padding: "10px 4px", borderRadius: 10, background: t.bg, border: "1px solid " + t.sep }}><div style={{ fontSize: 18 }}>{c.i}</div><div style={{ fontSize: 9, color: t.txM, marginTop: 4 }}>{c.l}</div></div>; })}
+          </div>
+          <div id="custody-admin-list" style={{ minHeight: 40 }}><div style={{ textAlign: "center", padding: 12, color: t.txM, fontSize: 11 }}>اضغط "تحديث" لعرض العهد</div></div>
+        </div>
       </>}
 
       {/* ═══ REPORTS ═══ */}
