@@ -564,7 +564,22 @@ function Reg({ onDone }) {
   const { t } = useTheme();
   const [st, setSt] = useState(0), [eid, setEid] = useState(""), [code, setCode] = useState(""), [err, setErr] = useState(""), [found, setFound] = useState(null), [showCam, setShowCam] = useState(false);
   const go = async () => { const emps = await api('employees') || []; const e = emps.find(x => x.id === eid.toUpperCase()); if (e) { setFound(e); setSt(1); setErr(""); } else setErr("الرقم الوظيفي غير موجود"); };
-  const doLogin = async () => { const r = await api('login', 'POST', { empId: eid.toUpperCase(), code }); if (r?.ok) { localStorage.setItem("basma_uid", found.id); setShowCam(true); } else setErr(r?.error || "رمز خاطئ"); };
+  const doLogin = async () => {
+    const r = await api('login', 'POST', { empId: eid.toUpperCase(), code });
+    if (r?.ok) {
+      localStorage.setItem("basma_uid", found.id);
+      // Check if face already registered on server
+      var faceData = await api("face", "GET", null, "&empId=" + found.id);
+      if (faceData && faceData.ok && faceData.descriptor) {
+        // Face already registered — skip camera, go straight in
+        localStorage.setItem("basma_face_v2", JSON.stringify(faceData.descriptor));
+        onDone(found);
+      } else {
+        // First time — need face registration
+        setShowCam(true);
+      }
+    } else setErr(r?.error || "رمز خاطئ");
+  };
   if (showCam) return <FaceCamera empId={found.id} onOk={() => onDone(found)} onNo={() => setShowCam(false)} />;
   return (<div style={{ ...FL, background: t.card, display: "flex", flexDirection: "column" }}><Stripe h={5} /><div style={{ flex: 1, padding: 24, display: "flex", flexDirection: "column", justifyContent: "center" }}>
     {st === 0 && <div style={{ textAlign: "center" }}><Logo s={70} /><div style={{ fontSize: 11, color: "#000", fontWeight: 600, marginTop: 10 }}>مكتب هاني محمد عسيري للاستشارات الهندسية</div><div style={{ fontSize: 20, fontWeight: 800, color: B.blue, marginTop: 6 }}>أهلاً بك في {APP}</div><div style={{ fontSize: 12, color: t.txM, marginTop: 6 }}>أدخل الرقم الوظيفي</div><input value={eid} onChange={e => { setEid(e.target.value.toUpperCase()); setErr(""); }} placeholder="E001" style={{ ...inp, textAlign: "center", letterSpacing: 3, fontSize: 20, marginTop: 16 }} onKeyDown={e => e.key === "Enter" && go()} />{err && <div style={{ color: C.bad, fontSize: 12, marginTop: 8, fontWeight: 600 }}>{err}</div>}<button onClick={go} style={{ ...PB, width: "100%", marginTop: 18 }}>التالي</button><div style={{ fontSize: 12, color: t.txM, marginTop: 14 }}>{new Date().toLocaleDateString("ar-SA", { weekday: "long", year: "numeric", month: "long", day: "numeric" })}</div><div style={{ fontSize: 9, color: "rgba(0,0,0,.15)", marginTop: 20 }}>{VER}</div></div>}
@@ -1773,16 +1788,31 @@ function ProfileTab({ emp, emps, level, onLogout, loadData }) {
 
 // ═══════ MAIN ═══════
 export default function MobileApp() {
-  const [sc, setSc] = useState("splash"), [emp, setEmp] = useState(null);
+  const [sc, setSc] = useState("init"), [emp, setEmp] = useState(null);
   const [isDark, setIsDark] = useState(() => localStorage.getItem("basma_theme") === "dark");
   const t = isDark ? DARK : LIGHT;
   const toggleTheme = () => { setIsDark(v => { const nv = !v; localStorage.setItem("basma_theme", nv ? "dark" : "light"); return nv; }); };
-  useEffect(() => { const uid = localStorage.getItem("basma_uid"); if (uid) { api('employees').then(emps => { if (Array.isArray(emps)) { const e = emps.find(x => x.id === uid); if (e) setEmp(e); } }); } }, []);
+
+  // On mount: check if user is already logged in
+  useEffect(() => {
+    const uid = localStorage.getItem("basma_uid");
+    if (!uid) { setSc("reg"); return; }
+    // User was logged in — load their data
+    api('employees').then(emps => {
+      if (Array.isArray(emps)) {
+        const e = emps.find(x => x.id === uid);
+        if (e) { setEmp(e); setSc("widget"); return; }
+      }
+      // API failed or employee not found — still try widget with cached data
+      setSc("reg");
+    }).catch(() => { setSc("reg"); });
+  }, []);
+
   const logout = () => { localStorage.removeItem("basma_uid"); localStorage.removeItem("basma_face"); localStorage.removeItem("basma_face_v2"); setEmp(null); setSc("reg"); };
   return (<ThemeCtx.Provider value={{ dark: isDark, t, toggle: toggleTheme }}>
     <div style={{ direction: "rtl", fontFamily: Fn, maxWidth: 480, margin: "0 auto", minHeight: "100vh", background: t.bg }}>
     <style>{`*{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent}::-webkit-scrollbar{width:0}button:active{opacity:0.8!important}input::placeholder{color:${t.txM}}`}</style>
-    {sc === "splash" && <Splash onDone={() => setSc(emp ? "widget" : "reg")} />}
+    {sc === "init" && <Splash onDone={() => {}} />}
     {sc === "reg" && <Reg onDone={e => { setEmp(e); setSc("widget"); }} />}
     {sc === "widget" && emp && <Widget emp={emp} onApp={() => setSc("app")} />}
     {sc === "app" && emp && <FullApp emp={emp} onBack={() => setSc("widget")} onLogout={logout} />}
