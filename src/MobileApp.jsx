@@ -49,7 +49,7 @@ const DARK = {
 
 // ═══════ CONSTANTS ═══════
 const APP = "بصمة HMA";
-const VER = "v4.26";
+const VER = "v4.28";
 const CO = "هاني محمد عسيري للإستشارات الهندسية";
 const B = { blue: "#2B5EA7", yellow: "#FDD800", red: "#E2192C", black: "#1A1A1A", blueDk: "#1E4478", blueLt: "#EDF3FB", gold: "#D4A017", diamond: "#7C3AED" };
 const C = LIGHT; // Default light - components use useTheme().t for dynamic
@@ -68,7 +68,12 @@ const LEVELS = [
 ];
 const getLevel = pts => [...LEVELS].reverse().find(l => pts >= l.min) || LEVELS[0];
 const EMP_TYPES = { office: "🏢 مكتبي", field: "🏗️ ميداني", mixed: "🔄 مختلط", remote: "🏠 عن بُعد" };
-const CPS = [
+const CPS = TEST_MODE ? [
+  { id: 1, h: 0, m: 10, l: "الحضور", ic: "☀️" },
+  { id: 2, h: 0, m: 13, l: "الاستراحة", ic: "☕" },
+  { id: 3, h: 0, m: 16, l: "العودة", ic: "🔄" },
+  { id: 4, h: 0, m: 19, l: "الانصراف", ic: "🌙" },
+] : [
   { id: 1, h: 8, m: 30, l: "الحضور", ic: "☀️" },
   { id: 2, h: 12, m: 25, l: "الاستراحة", ic: "☕" },
   { id: 3, h: 13, m: 5, l: "العودة", ic: "🔄" },
@@ -87,6 +92,30 @@ const COUPONS = [
   { id: 3, brand: "غسيل سيارة", discount: "غسلة مجانية", icon: "🚗", pts: 30 },
   { id: 4, brand: "مكتبة جرير", discount: "خصم 20%", icon: "📚", pts: 80 },
 ];
+
+// ═══════ TEST MODE — set false for production ═══════
+const TEST_MODE = true;
+const TEST_SCHEDULE = {
+  windowStart: 23 * 60 + 0,   // 23:00
+  windowEnd: 3 * 60,           // 03:00
+  cp1: 0 * 60 + 10,           // 00:10 — حضور
+  cp2: 0 * 60 + 13,           // 00:13 — استراحة
+  cp3: 0 * 60 + 16,           // 00:16 — عودة
+  cp4: 0 * 60 + 19,           // 00:19 — انصراف
+  workStart: 0 * 60 + 10,     // 00:10
+  workEnd: 0 * 60 + 19,       // 00:19
+};
+const PROD_SCHEDULE = {
+  windowStart: 7 * 60 + 15,   // 07:15
+  windowEnd: 18 * 60 + 15,    // 18:15
+  cp1: 8 * 60 + 30,           // 08:30
+  cp2: 12 * 60 + 30,          // 12:30
+  cp3: 13 * 60 + 0,           // 13:00
+  cp4: 17 * 60 + 0,           // 17:00
+  workStart: 8 * 60 + 30,     // 08:30
+  workEnd: 17 * 60 + 0,       // 17:00
+};
+const SCH = TEST_MODE ? TEST_SCHEDULE : PROD_SCHEDULE;
 
 // ═══════ GPS ═══════
 function getGPS() { return new Promise((ok, no) => { if (!navigator.geolocation) return no("none"); navigator.geolocation.getCurrentPosition(p => ok({ lat: p.coords.latitude, lng: p.coords.longitude }), no, { enableHighAccuracy: true, timeout: 8000 }); }); }
@@ -672,8 +701,8 @@ function Widget({ emp, onApp }) {
   const breakOffsetBefore = (empHash % 4) + 2; // 2-5 minutes before break
   const breakOffsetAfter = ((empHash + 7) % 4) + 2; // 2-5 minutes after break
 
-  // Real time
-  useEffect(() => { const t = setInterval(() => { const n = new Date(); setSH(n.getHours()); setSM(n.getMinutes()); }, 30000); return () => clearInterval(t); }, []);
+  // Real time — faster in test mode to catch checkpoints
+  useEffect(() => { const t = setInterval(() => { const n = new Date(); setSH(n.getHours()); setSM(n.getMinutes()); }, TEST_MODE ? 5000 : 30000); return () => clearInterval(t); }, []);
 
   // GPS tracking during work hours (every 5 min)
   useEffect(() => {
@@ -719,9 +748,12 @@ function Widget({ emp, onApp }) {
   }, []);
 
   // On leave?
-  const dur = sH >= 8 && sH < 17, aft = sH >= 17, bef = sH < 8 || (sH === 8 && sM < 30);
-  const mW = dur ? Math.max(0, (sH - 8) * 60 + sM - 30) : aft ? 510 : 0;
-  const pct = Math.min(100, Math.max(0, Math.round((mW / 510) * 100)));
+  const dur = curMin >= SCH.workStart && curMin < SCH.workEnd;
+  const aft = curMin >= SCH.workEnd;
+  const bef = !dur && !aft;
+  const totalWorkMin = SCH.workEnd - SCH.workStart;
+  const mW = dur ? Math.max(0, curMin - SCH.workStart) : aft ? totalWorkMin : 0;
+  const pct = Math.min(100, Math.max(0, Math.round((mW / totalWorkMin) * 100)));
   const tStr = `${String(sH).padStart(2, "0")}:${String(sM).padStart(2, "0")}`;
   const S = 260, R = 108, cx = 130, cy = 130, RC = 2 * Math.PI * R;
 
@@ -737,28 +769,28 @@ function Widget({ emp, onApp }) {
   useEffect(() => {
     if (cs !== "idle" || isLeave) return;
     const cur = sH * 60 + sM;
-    // CP1: Start of work (8:30 = 510)
-    if (cur >= 510 && cur <= 512 && !cpTrig.current.has(1)) {
+    // CP1: Start of work
+    if (cur >= SCH.cp1 && cur <= SCH.cp1 + 2 && !cpTrig.current.has(1)) {
       cpTrig.current.add(1);
       triggerCall("checkin", "☀️ وقت الحضور", "سجّل حضورك الآن");
       return;
     }
-    // CP2: Before break (12:30 = 750, minus stable offset per employee)
-    const breakCallTime = 750 - breakOffsetBefore;
+    // CP2: Before break
+    var breakCallTime = TEST_MODE ? SCH.cp2 : SCH.cp2 - breakOffsetBefore;
     if (cur >= breakCallTime && cur <= breakCallTime + 2 && !cpTrig.current.has(2)) {
       cpTrig.current.add(2);
-      triggerCall("break_s", "☕ وقت الاستراحة", `سجّل قبل الاستراحة (${breakOffsetBefore} دقائق)`);
+      triggerCall("break_s", "☕ وقت الاستراحة", "سجّل قبل الاستراحة");
       return;
     }
-    // CP3: After break (13:00 = 780, plus stable offset per employee)
-    const returnCallTime = 780 + breakOffsetAfter;
+    // CP3: After break
+    var returnCallTime = TEST_MODE ? SCH.cp3 : SCH.cp3 + breakOffsetAfter;
     if (cur >= returnCallTime && cur <= returnCallTime + 2 && !cpTrig.current.has(3)) {
       cpTrig.current.add(3);
-      triggerCall("break_e", "🔄 نهاية الاستراحة", `سجّل عودتك (${breakOffsetAfter} دقائق)`);
+      triggerCall("break_e", "🔄 نهاية الاستراحة", "سجّل عودتك");
       return;
     }
-    // CP4: End of work (17:00 = 1020) — NO CALL, just countdown on circle
-    if (cur >= 1020 && cur <= 1022 && !cpTrig.current.has(4)) {
+    // CP4: End of work — countdown on circle
+    if (cur >= SCH.cp4 && cur <= SCH.cp4 + 2 && !cpTrig.current.has(4)) {
       cpTrig.current.add(4);
       setAcp({ id: 4, l: "الانصراف", ic: "🌙" });
       setCd(60);
@@ -854,12 +886,18 @@ function Widget({ emp, onApp }) {
   const outOfRange = !gpsStatus.inR && !gpsStatus.remote && emp.type !== "remote";
   const rCol = outOfRange && cs === "idle" ? C.bad : cs === "countdown" ? B.yellow : cs === "scan" ? B.blue : cs === "done" || cs === "correct" ? C.ok : cs === "challenge" ? B.gold : cs === "wrong" ? C.bad : pct >= 60 ? B.blue : B.yellow;
 
-  // Work hours window check (7:15 - 18:15, extended for overtime)
-  var windowStart = 7 * 60 + 15; // 7:15
-  var windowEnd = 18 * 60 + 15; // 18:15
-  if (emp.flexOT) windowEnd = 20 * 60; // Extended for overtime employees
+  // Work hours window check
+  var windowStart = SCH.windowStart;
+  var windowEnd = SCH.windowEnd;
+  if (emp.flexOT) windowEnd = TEST_MODE ? 1 * 60 + 30 : 20 * 60;
   var curMin = sH * 60 + sM;
-  var outsideWindow = curMin < windowStart || curMin > windowEnd;
+  // Handle midnight crossing (windowStart > windowEnd means crosses midnight)
+  var outsideWindow;
+  if (windowStart > windowEnd) {
+    outsideWindow = curMin > windowEnd && curMin < windowStart;
+  } else {
+    outsideWindow = curMin < windowStart || curMin > windowEnd;
+  }
 
   // Leave screen
   if (isLeave) return (<div style={{ ...FL, background: t.bg, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", color: t.tx }}>
@@ -874,7 +912,7 @@ function Widget({ emp, onApp }) {
   if (outsideWindow && !done.includes("الحضور")) return (<div style={{ ...FL, background: t.bg, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", color: t.tx }}>
     <div style={{ fontSize: 48 }}>🌙</div>
     <div style={{ fontSize: 20, fontWeight: 800, marginTop: 12, color: t.txM }}>خارج أوقات الدوام</div>
-    <div style={{ fontSize: 13, color: t.txM, marginTop: 8, textAlign: "center", lineHeight: 1.8, maxWidth: 260 }}>التطبيق يعمل من الساعة 7:15 صباحاً{"\n"}إلى 6:15 مساءً</div>
+    <div style={{ fontSize: 13, color: t.txM, marginTop: 8, textAlign: "center", lineHeight: 1.8, maxWidth: 260 }}>{TEST_MODE ? "وضع الاختبار — الدوام يبدأ 00:01" : "التطبيق يعمل من الساعة 7:15 صباحاً\nإلى 6:15 مساءً"}</div>
     <div style={{ fontSize: 11, color: t.txM, marginTop: 16 }}>{tStr}</div>
     <button onClick={onApp} style={{ marginTop: 30, padding: "10px 30px", borderRadius: 14, background: t.card, border: "1px solid " + t.sep, color: B.blue, fontSize: 12, cursor: "pointer", fontWeight: 600 }}>التفاصيل ←</button>
     <div style={{ fontSize: 9, color: "rgba(0,0,0,.1)", marginTop: 20 }}>{VER}</div>
@@ -937,7 +975,7 @@ function Widget({ emp, onApp }) {
           {cs === "scan" && <circle cx={cx} cy={cy} r={R + 6} fill="none" stroke={B.yellow} strokeWidth="2" strokeDasharray="40 30" style={{ animation: "spin 1.5s linear infinite", transformOrigin: `${cx}px ${cy}px` }} />}
         </svg>
         <div style={{ position: "absolute", inset: 0, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center" }}>
-          {cs === "idle" && bef && !outOfRange && <><div style={{ fontSize: 10, color: t.txM }}>قبل الدوام</div><div style={{ fontSize: 38, fontWeight: 800, color: t.tx }}>{8 - sH}<span style={{ fontSize: 14, color: t.txM }}>س</span></div></>}
+          {cs === "idle" && bef && !outOfRange && <><div style={{ fontSize: 10, color: t.txM }}>قبل الدوام</div><div style={{ fontSize: 38, fontWeight: 800, color: t.tx }}>{Math.max(0, Math.floor((SCH.workStart - curMin) / 60))}<span style={{ fontSize: 14, color: t.txM }}>:{String(Math.max(0, (SCH.workStart - curMin) % 60)).padStart(2, "0")}</span></div></>}
           {cs === "idle" && dur && !outOfRange && <><div style={{ fontSize: 10, color: t.txM }}>ساعات العمل</div><div style={{ fontSize: 42, fontWeight: 800, color: t.tx }}>{Math.floor(mW / 60)}<span style={{ fontSize: 14, color: t.txM }}>:{String(mW % 60).padStart(2, "0")}</span></div><div style={{ fontSize: 13, fontWeight: 700, color: rCol }}>{pct}%</div></>}
           {cs === "idle" && aft && !outOfRange && <><div style={{ fontSize: 40 }}>✅</div><div style={{ fontSize: 14, fontWeight: 700, color: C.ok, marginTop: 6 }}>اكتمل الدوام</div></>}
           {cs === "idle" && outOfRange && <><div style={{ fontSize: 36 }}>🚫</div><div style={{ fontSize: 12, fontWeight: 700, color: C.bad, marginTop: 6, textAlign: "center", lineHeight: 1.6 }}>لم تقم بتسجيل{"\n"}الحضور</div><div style={{ fontSize: 9, color: t.txM, marginTop: 4 }}>خارج منطقة العمل</div></>}
@@ -966,11 +1004,11 @@ function Widget({ emp, onApp }) {
 
     <div style={{ padding: "8px 20px 20px", width: "100%", zIndex: 1 }}>
       {/* Manual Check-in Button */}
-      {cs === "idle" && !done.includes("الحضور") && !isLeave && sH >= 7 && sH < 10 && (
+      {cs === "idle" && !done.includes("الحضور") && !isLeave && !outsideWindow && (
         <button onClick={function() { setLastCallType("manual_in"); setShowFace(true); }} style={{ width: "100%", padding: "13px", borderRadius: 14, background: C.ok, color: "#fff", fontSize: 15, fontWeight: 700, border: "none", cursor: "pointer", marginBottom: 8, boxShadow: "0 4px 15px rgba(48,209,88,.3)" }}>☀️ سجّل حضورك</button>
       )}
       {/* Manual Check-out Button */}
-      {cs === "idle" && done.includes("الحضور") && !done.includes("الانصراف") && !isLeave && (sH >= 16 || (sH >= 15 && sM >= 30)) && (
+      {cs === "idle" && done.includes("الحضور") && !done.includes("الانصراف") && !isLeave && (curMin >= SCH.cp4 - 2 || (TEST_MODE && curMin >= SCH.cp3)) && (
         <button onClick={function() { setLastCallType("manual_out"); setShowFace(true); }} style={{ width: "100%", padding: "13px", borderRadius: 14, background: B.blue, color: "#fff", fontSize: 15, fontWeight: 700, border: "none", cursor: "pointer", marginBottom: 8, boxShadow: "0 4px 15px rgba(43,94,167,.3)" }}>🌙 سجّل انصرافك</button>
       )}
       <button onClick={onApp} style={{ width: "100%", padding: "11px", borderRadius: 14, background: t.card, border: "1px solid " + t.sep, color: B.blue, fontSize: 12, fontWeight: 600, cursor: "pointer" }}>{emp.isManager || emp.isAssistant ? "التفاصيل والإدارة ←" : "التفاصيل والمحفظة ←"}</button>
