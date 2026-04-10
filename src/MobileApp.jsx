@@ -48,7 +48,7 @@ const DARK = {
 
 // ═══════ CONSTANTS ═══════
 const APP = "بصمة HMA";
-const VER = "v4.07";
+const VER = "v4.11";
 const CO = "هاني محمد عسيري للإستشارات الهندسية";
 const B = { blue: "#2B5EA7", yellow: "#FDD800", red: "#E2192C", black: "#1A1A1A", blueDk: "#1E4478", blueLt: "#EDF3FB", gold: "#D4A017", diamond: "#7C3AED" };
 const C = LIGHT; // Default light - components use useTheme().t for dynamic
@@ -625,17 +625,18 @@ function Widget({ emp, onApp }) {
   const [sH, setSH] = useState(now.getHours()), [sM, setSM] = useState(now.getMinutes());
   const [cs, setCs] = useState("idle"), [done, setDone] = useState([]), [cd, setCd] = useState(60), [acp, setAcp] = useState(null);
   const [ch, setCh] = useState(null);
-  // Load challenge from server (HR-managed) or fallback to defaults
+  const [empSettings, setEmpSettings] = useState({ callRemindIn: false, callRemindOut: false });
+  // Load challenge and employee settings
   useEffect(() => {
     api('settings').then(s => {
       const pool = (s?.questions?.length > 0) ? s.questions : CHALLENGES;
-      // Pick based on day of year to avoid repetition within a week
       const dayOfYear = Math.floor((Date.now() - new Date(new Date().getFullYear(), 0, 0)) / 86400000);
       const picked = pool[dayOfYear % pool.length];
-      // Shuffle options but track correct answer
       const correctAns = picked.opts[picked.correct || 0];
       const shuffled = [...picked.opts].sort(() => Math.random() - 0.5);
       setCh({ ...picked, opts: shuffled, correct: shuffled.indexOf(correctAns) });
+      // Load employee-specific settings
+      if (s?.empPrefs?.[emp.id]) setEmpSettings(s.empPrefs[emp.id]);
     });
   }, []);
   const [chDone, setChDone] = useState(false), [sel, setSel] = useState(null);
@@ -766,16 +767,42 @@ function Widget({ emp, onApp }) {
     setCs("scan");
     let gps = { lat: 0, lng: 0 };
     try { gps = await getGPS(); } catch {}
-    // Determine checkin type based on last call
     let type;
     if (lastCallType === "break_s") type = "الاستراحة";
     else if (lastCallType === "break_e") type = "العودة";
     else if (lastCallType === "manual_out") type = "الانصراف";
     else if (lastCallType === "manual_in" || !done.includes("الحضور")) type = "الحضور";
     else type = "الانصراف";
-    await api('checkin', 'POST', { empId: emp.id, type, lat: gps.lat, lng: gps.lng, facePhoto: true });
+    var checkinData = { empId: emp.id, type, lat: gps.lat, lng: gps.lng, facePhoto: true };
+    // Try online first, fallback to offline
+    var result = await api('checkin', 'POST', checkinData);
+    if (!result || result.error) {
+      // Offline — save locally
+      var offline = JSON.parse(localStorage.getItem("basma_offline") || "[]");
+      offline.push({ ...checkinData, ts: new Date().toISOString(), offline: true });
+      localStorage.setItem("basma_offline", JSON.stringify(offline));
+      console.log("[Offline] Saved locally, will sync later");
+    }
     setTimeout(() => { setDone(p => [...p, type]); setCs("done"); setTimeout(() => { setCs("idle"); setAcp(null); setLastCallType(null); }, 1800); }, 1500);
   };
+
+  // Sync offline check-ins when online
+  useEffect(() => {
+    var syncOffline = async function() {
+      var offline = JSON.parse(localStorage.getItem("basma_offline") || "[]");
+      if (offline.length === 0) return;
+      var remaining = [];
+      for (var i = 0; i < offline.length; i++) {
+        var r = await api('checkin', 'POST', offline[i]);
+        if (!r || r.error) remaining.push(offline[i]);
+      }
+      localStorage.setItem("basma_offline", JSON.stringify(remaining));
+      if (remaining.length < offline.length) console.log("[Offline] Synced " + (offline.length - remaining.length) + " records");
+    };
+    syncOffline();
+    var interval = setInterval(syncOffline, 60000); // Retry every minute
+    return function() { clearInterval(interval); };
+  }, []);
 
   // Demo: advance time
   const advTime = () => { if (cs !== "idle") return; setSM(p => { let n = p + 15; if (n >= 60) { setSH(h => Math.min(h + 1, 18)); return n - 60; } return n; }); };
@@ -786,6 +813,13 @@ function Widget({ emp, onApp }) {
   const outOfRange = !gpsStatus.inR && !gpsStatus.remote && emp.type !== "remote";
   const rCol = outOfRange && cs === "idle" ? C.bad : cs === "countdown" ? B.yellow : cs === "scan" ? B.blue : cs === "done" || cs === "correct" ? C.ok : cs === "challenge" ? B.gold : cs === "wrong" ? C.bad : pct >= 60 ? B.blue : B.yellow;
 
+  // Work hours window check (7:15 - 18:15, extended for overtime)
+  var windowStart = 7 * 60 + 15; // 7:15
+  var windowEnd = 18 * 60 + 15; // 18:15
+  if (emp.flexOT) windowEnd = 20 * 60; // Extended for overtime employees
+  var curMin = sH * 60 + sM;
+  var outsideWindow = curMin < windowStart || curMin > windowEnd;
+
   // Leave screen
   if (isLeave) return (<div style={{ ...FL, background: t.bg, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", color: t.tx }}>
     <div style={{ fontSize: 48 }}>🏖</div>
@@ -793,6 +827,16 @@ function Widget({ emp, onApp }) {
     <div style={{ fontSize: 13, color: t.txM, marginTop: 8 }}>استمتع بوقتك!</div>
     <div style={{ marginTop: 20, padding: "8px 20px", borderRadius: 12, background: t.card, border: "1px solid " + t.sep }}><span style={{ fontSize: 12, color: B.blue, fontWeight: 700 }}>باقي: {emp.leaveRemaining || "?"} أيام</span></div>
     <button onClick={onApp} style={{ marginTop: 30, padding: "10px 30px", borderRadius: 14, background: t.card, border: "1px solid " + t.sep, color: B.blue, fontSize: 12, cursor: "pointer", fontWeight: 600 }}>التفاصيل ←</button>
+  </div>);
+
+  // Outside work hours screen
+  if (outsideWindow && !done.includes("الحضور")) return (<div style={{ ...FL, background: t.bg, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", color: t.tx }}>
+    <div style={{ fontSize: 48 }}>🌙</div>
+    <div style={{ fontSize: 20, fontWeight: 800, marginTop: 12, color: t.txM }}>خارج أوقات الدوام</div>
+    <div style={{ fontSize: 13, color: t.txM, marginTop: 8, textAlign: "center", lineHeight: 1.8, maxWidth: 260 }}>التطبيق يعمل من الساعة 7:15 صباحاً{"\n"}إلى 6:15 مساءً</div>
+    <div style={{ fontSize: 11, color: t.txM, marginTop: 16 }}>{tStr}</div>
+    <button onClick={onApp} style={{ marginTop: 30, padding: "10px 30px", borderRadius: 14, background: t.card, border: "1px solid " + t.sep, color: B.blue, fontSize: 12, cursor: "pointer", fontWeight: 600 }}>التفاصيل ←</button>
+    <div style={{ fontSize: 9, color: "rgba(0,0,0,.1)", marginTop: 20 }}>{VER}</div>
   </div>);
 
   return (<div style={{ ...FL, background: t.bg, display: "flex", flexDirection: "column", alignItems: "center", color: t.tx, position: "relative", overflow: "hidden" }}>
@@ -1013,7 +1057,9 @@ function FullApp({ emp, onBack, onLogout }) {
   // Leave balance
   const [leaveBalance] = useState({ annual: 30, used: 8, sick: 3, unpaid: 1, remaining: 18 });
   const [showLeaveReq, setShowLeaveReq] = useState(false);
-  const [newLeave, setNewLeave] = useState({ type: "سنوية", from: "", to: "", reason: "" });
+  const [newLeave, setNewLeave] = useState({ type: "سنوية", from: "", to: "", reason: "", needsVisa: false });
+  const [showCompReq, setShowCompReq] = useState(false);
+  const [showOTReq, setShowOTReq] = useState(false);
   const [questions, setQuestions] = useState([]);
   const [showAddQ, setShowAddQ] = useState(false);
   const [newQ, setNewQ] = useState({ q: "", opts: ["", "", ""], correct: 0, type: "سؤال" });
@@ -1022,13 +1068,34 @@ function FullApp({ emp, onBack, onLogout }) {
 
   const submitLeave = async () => {
     if (!newLeave.from) return alert("حدد تاريخ البداية");
-    const from = new Date(newLeave.from), to = newLeave.to ? new Date(newLeave.to) : from;
-    const days = Math.max(1, Math.round((to - from) / 86400000) + 1);
-    await api('leaves', 'POST', { empId: emp.id, empName: emp.name, ...newLeave, days });
-    setNewLeave({ type: "سنوية", from: "", to: "", reason: "" });
+    var from = new Date(newLeave.from), to = newLeave.to ? new Date(newLeave.to) : from;
+    var days = Math.max(1, Math.round((to - from) / 86400000) + 1);
+    // Approval chain: manager first, then HR + finance in parallel
+    var approvalChain = [
+      { role: "مدير مباشر", status: "pending" },
+      { role: "الموارد البشرية", status: "waiting" },
+    ];
+    // Add finance if employee has financial obligations
+    if (emp.hasLoan || emp.hasCustody) approvalChain.push({ role: "المحاسبة", status: "waiting" });
+    await api('leaves', 'POST', { empId: emp.id, empName: emp.name, branch: emp.branch, ...newLeave, days, approvalChain, needsVisa: newLeave.needsVisa });
+    setNewLeave({ type: "سنوية", from: "", to: "", reason: "", needsVisa: false });
     setShowLeaveReq(false);
     loadData();
-    alert("✅ تم إرسال طلب الإجازة");
+    alert("✅ تم إرسال طلب الإجازة → المدير المباشر أولاً");
+  };
+
+  const submitCompensation = async (hours, reason) => {
+    await api('requests', 'POST', { empId: emp.id, empName: emp.name, type: "compensation", hours: hours, reason: reason, date: today });
+    setShowCompReq(false);
+    loadData();
+    alert("✅ تم إرسال طلب التعويض — بانتظار موافقة الإدارة");
+  };
+
+  const submitOvertime = async (hours, type, reason) => {
+    await api('requests', 'POST', { empId: emp.id, empName: emp.name, type: "overtime", hours: hours, otType: type, reason: reason, date: today });
+    setShowOTReq(false);
+    loadData();
+    alert("✅ تم إرسال طلب الأوفرتايم — بانتظار الاعتماد");
   };
 
   const addQuestion = async () => {
@@ -1323,18 +1390,20 @@ function FullApp({ emp, onBack, onLogout }) {
           ))}
         </div>
 
-        {/* Request leave button */}
-        {!showLeaveReq && <button onClick={() => setShowLeaveReq(true)} style={{ ...PB, width: "100%", marginBottom: 12 }}>🏖 طلب إجازة</button>}
+        {/* Request buttons */}
+        {!showLeaveReq && !showCompReq && !showOTReq && <div style={{ display: "flex", gap: 8, marginBottom: 12 }}>
+          <button onClick={() => setShowLeaveReq(true)} style={{ ...PB, flex: 2, padding: 10, fontSize: 13 }}>🏖 طلب إجازة</button>
+          <button onClick={() => setShowCompReq(true)} style={{ flex: 1, padding: 10, borderRadius: 12, background: C.warn + "15", color: C.warn, fontSize: 11, fontWeight: 700, border: "none", cursor: "pointer" }}>⏰ تعويض</button>
+          <button onClick={() => setShowOTReq(true)} style={{ flex: 1, padding: 10, borderRadius: 12, background: B.blue + "15", color: B.blue, fontSize: 11, fontWeight: 700, border: "none", cursor: "pointer" }}>🕐 أوفرتايم</button>
+        </div>}
 
         {/* Leave request form */}
         {showLeaveReq && <div style={{ ...crd, marginBottom: 12 }}>
           <div style={{ fontSize: 13, fontWeight: 700, color: B.blue, marginBottom: 10 }}>🏖 طلب إجازة جديد</div>
+          <div style={{ fontSize: 10, color: t.txM, marginBottom: 8, padding: 6, borderRadius: 6, background: B.blue + "08" }}>سلسلة الموافقة: المدير المباشر أولاً → الموارد البشرية{emp.hasLoan ? " + المحاسبة" : ""}</div>
           <label style={{ fontSize: 11, color: t.tx2, display: "block", marginBottom: 3 }}>النوع</label>
           <select value={newLeave.type} onChange={e => setNewLeave(p => ({ ...p, type: e.target.value }))} style={{ ...inp, fontSize: 13, marginBottom: 8 }}>
-            <option value="سنوية">سنوية</option>
-            <option value="مرضية">مرضية</option>
-            <option value="بدون راتب">بدون راتب</option>
-            <option value="طارئة">طارئة</option>
+            <option value="سنوية">سنوية</option><option value="مرضية">مرضية</option><option value="بدون راتب">بدون راتب</option><option value="طارئة">طارئة</option>
           </select>
           <label style={{ fontSize: 11, color: t.tx2, display: "block", marginBottom: 3 }}>من تاريخ</label>
           <input type="date" value={newLeave.from} onChange={e => setNewLeave(p => ({ ...p, from: e.target.value }))} style={{ ...inp, fontSize: 13, marginBottom: 8 }} />
@@ -1342,9 +1411,42 @@ function FullApp({ emp, onBack, onLogout }) {
           <input type="date" value={newLeave.to} onChange={e => setNewLeave(p => ({ ...p, to: e.target.value }))} style={{ ...inp, fontSize: 13, marginBottom: 8 }} />
           <label style={{ fontSize: 11, color: t.tx2, display: "block", marginBottom: 3 }}>السبب (اختياري)</label>
           <textarea value={newLeave.reason} onChange={e => setNewLeave(p => ({ ...p, reason: e.target.value }))} rows={2} placeholder="السبب..." style={{ ...inp, fontSize: 12, resize: "none", marginBottom: 8 }} />
+          <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 10, padding: "8px 10px", borderRadius: 8, background: t.bg }}>
+            <input type="checkbox" checked={newLeave.needsVisa} onChange={e => setNewLeave(p => ({ ...p, needsVisa: e.target.checked }))} style={{ width: 18, height: 18 }} />
+            <div><div style={{ fontSize: 12, fontWeight: 600, color: t.tx }}>✈️ أحتاج تأشيرة خروج وعودة</div><div style={{ fontSize: 9, color: t.txM }}>سيتم إبلاغ الإدارة لإصدار التأشيرة</div></div>
+          </div>
           <div style={{ display: "flex", gap: 8 }}>
             <button onClick={submitLeave} style={{ ...PB, flex: 1, padding: 10 }}>إرسال الطلب</button>
             <button onClick={() => setShowLeaveReq(false)} style={{ flex: 1, padding: 10, borderRadius: 14, background: t.bg, border: "1px solid " + t.sep, color: t.tx2, fontSize: 13, fontWeight: 700, cursor: "pointer" }}>إلغاء</button>
+          </div>
+        </div>}
+
+        {/* Compensation request */}
+        {showCompReq && <div style={{ ...crd, marginBottom: 12 }}>
+          <div style={{ fontSize: 13, fontWeight: 700, color: C.warn, marginBottom: 10 }}>⏰ طلب تعويض وقت</div>
+          <div style={{ fontSize: 10, color: t.txM, marginBottom: 8 }}>تعويض التأخير بالبقاء بعد الدوام (بحد أقصى ساعة)</div>
+          <label style={{ fontSize: 11, color: t.tx2, display: "block", marginBottom: 3 }}>عدد الدقائق</label>
+          <input id="comp-mins" type="number" min="15" max="60" step="15" defaultValue="30" style={{ ...inp, fontSize: 13, marginBottom: 8 }} />
+          <label style={{ fontSize: 11, color: t.tx2, display: "block", marginBottom: 3 }}>السبب</label>
+          <input id="comp-reason" placeholder="مثال: تأخرت 30 دقيقة بسبب الزحام" style={{ ...inp, fontSize: 12, marginBottom: 8 }} />
+          <div style={{ display: "flex", gap: 8 }}>
+            <button onClick={() => { var m = document.getElementById("comp-mins").value; var r = document.getElementById("comp-reason").value; if (!r) return alert("اكتب السبب"); submitCompensation(m, r); }} style={{ flex: 1, padding: 10, borderRadius: 12, background: C.warn, color: "#fff", fontSize: 13, fontWeight: 700, border: "none", cursor: "pointer" }}>إرسال طلب التعويض</button>
+            <button onClick={() => setShowCompReq(false)} style={{ padding: "10px 16px", borderRadius: 12, background: t.bg, border: "1px solid " + t.sep, color: t.tx2, fontSize: 12, fontWeight: 600, cursor: "pointer" }}>إلغاء</button>
+          </div>
+        </div>}
+
+        {/* Overtime request */}
+        {showOTReq && <div style={{ ...crd, marginBottom: 12 }}>
+          <div style={{ fontSize: 13, fontWeight: 700, color: B.blue, marginBottom: 10 }}>🕐 طلب وقت إضافي (أوفرتايم)</div>
+          <label style={{ fontSize: 11, color: t.tx2, display: "block", marginBottom: 3 }}>عدد الساعات</label>
+          <input id="ot-hours" type="number" min="1" max="4" defaultValue="2" style={{ ...inp, fontSize: 13, marginBottom: 8 }} />
+          <label style={{ fontSize: 11, color: t.tx2, display: "block", marginBottom: 3 }}>نوع الأوفرتايم</label>
+          <select id="ot-type" style={{ ...inp, fontSize: 13, marginBottom: 8 }}><option value="office">🏢 داخل المكتب (يلزم GPS)</option><option value="remote">🏠 خارج المكتب (بدون قيد موقع)</option></select>
+          <label style={{ fontSize: 11, color: t.tx2, display: "block", marginBottom: 3 }}>السبب</label>
+          <input id="ot-reason" placeholder="مثال: إكمال تصاميم مشروع..." style={{ ...inp, fontSize: 12, marginBottom: 8 }} />
+          <div style={{ display: "flex", gap: 8 }}>
+            <button onClick={() => { var h = document.getElementById("ot-hours").value; var ty = document.getElementById("ot-type").value; var r = document.getElementById("ot-reason").value; if (!r) return alert("اكتب السبب"); submitOvertime(h, ty, r); }} style={{ flex: 1, padding: 10, borderRadius: 12, background: B.blue, color: "#fff", fontSize: 13, fontWeight: 700, border: "none", cursor: "pointer" }}>إرسال طلب الأوفرتايم</button>
+            <button onClick={() => setShowOTReq(false)} style={{ padding: "10px 16px", borderRadius: 12, background: t.bg, border: "1px solid " + t.sep, color: t.tx2, fontSize: 12, fontWeight: 600, cursor: "pointer" }}>إلغاء</button>
           </div>
         </div>}
 
@@ -1899,6 +2001,19 @@ function ProfileTab({ emp, emps, level, onLogout, loadData }) {
             <div style={{ width: 22, height: 22, borderRadius: 11, background: "#fff", position: "absolute", top: 3, transition: "all .2s", ...(dk ? { left: 25 } : { left: 3 }), boxShadow: "0 1px 3px rgba(0,0,0,.2)" }} />
           </button>
         </div>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "10px 0", borderBottom: "1px solid " + t.sep }}>
+          <div><span style={{ fontSize: 14, color: t.tx }}>📞 تذكير بالحضور</span><div style={{ fontSize: 9, color: t.txM }}>اتصال تذكيري وقت الحضور (اختياري)</div></div>
+          <button onClick={async function() { var v = !(JSON.parse(localStorage.getItem("basma_prefs_" + emp.id) || "{}").callRemindIn); var prefs = JSON.parse(localStorage.getItem("basma_prefs_" + emp.id) || "{}"); prefs.callRemindIn = v; localStorage.setItem("basma_prefs_" + emp.id, JSON.stringify(prefs)); api("settings", "GET").then(function(s) { var ep = (s?.empPrefs) || {}; ep[emp.id] = prefs; api("settings", "PUT", Object.assign({}, s || {}, { empPrefs: ep })); }); loadData(); }} style={{ width: 50, height: 28, borderRadius: 14, background: JSON.parse(localStorage.getItem("basma_prefs_" + emp.id) || "{}").callRemindIn ? "#30D158" : "#E5E5EA", border: "none", cursor: "pointer", position: "relative" }}>
+            <div style={{ width: 22, height: 22, borderRadius: 11, background: "#fff", position: "absolute", top: 3, transition: "all .2s", ...(JSON.parse(localStorage.getItem("basma_prefs_" + emp.id) || "{}").callRemindIn ? { left: 25 } : { left: 3 }), boxShadow: "0 1px 3px rgba(0,0,0,.2)" }} />
+          </button>
+        </div>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "10px 0", borderBottom: "1px solid " + t.sep }}>
+          <div><span style={{ fontSize: 14, color: t.tx }}>📞 تذكير بالانصراف</span><div style={{ fontSize: 9, color: t.txM }}>اتصال تذكيري وقت الانصراف (اختياري)</div></div>
+          <button onClick={async function() { var v = !(JSON.parse(localStorage.getItem("basma_prefs_" + emp.id) || "{}").callRemindOut); var prefs = JSON.parse(localStorage.getItem("basma_prefs_" + emp.id) || "{}"); prefs.callRemindOut = v; localStorage.setItem("basma_prefs_" + emp.id, JSON.stringify(prefs)); api("settings", "GET").then(function(s) { var ep = (s?.empPrefs) || {}; ep[emp.id] = prefs; api("settings", "PUT", Object.assign({}, s || {}, { empPrefs: ep })); }); loadData(); }} style={{ width: 50, height: 28, borderRadius: 14, background: JSON.parse(localStorage.getItem("basma_prefs_" + emp.id) || "{}").callRemindOut ? "#30D158" : "#E5E5EA", border: "none", cursor: "pointer", position: "relative" }}>
+            <div style={{ width: 22, height: 22, borderRadius: 11, background: "#fff", position: "absolute", top: 3, transition: "all .2s", ...(JSON.parse(localStorage.getItem("basma_prefs_" + emp.id) || "{}").callRemindOut ? { left: 25 } : { left: 3 }), boxShadow: "0 1px 3px rgba(0,0,0,.2)" }} />
+          </button>
+        </div>
+        <div style={{ fontSize: 9, color: t.txM, padding: "6px 0", borderBottom: "1px solid " + t.sep }}>☕ بصمات الاستراحة إلزامية ولا يمكن إيقافها</div>
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "10px 0" }}>
           <span style={{ fontSize: 14, color: t.tx }}>اللغة</span>
           <span style={{ fontSize: 14, color: t.ac }}>العربية</span>

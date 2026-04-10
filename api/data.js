@@ -371,6 +371,66 @@ export default async function handler(req, res) {
         break;
       }
 
+      case 'auto_check': {
+        // Auto-detect violations for today
+        const today = new Date().toISOString().split('T')[0];
+        const emps = await dbGet('employees') || [];
+        const att = (await dbGet('attendance') || []).filter(a => a.date === today);
+        const violations = await dbGet('violations') || [];
+        const preAbs = (await dbGet('pre_absences') || []).filter(p => p.date === today);
+        const branches = await dbGet('branches') || [];
+        const settings = await dbGet('settings') || {};
+        var newViolations = [];
+        var hour = new Date().getHours(), min = new Date().getMinutes();
+        var curMin = hour * 60 + min;
+
+        for (const emp of emps) {
+          if (emp.terminated || emp.onLeave) continue;
+          if (preAbs.find(p => p.empId === emp.id)) continue; // Pre-notified absence
+          var empAtt = att.filter(a => a.empId === emp.id);
+          var hasCheckin = empAtt.find(a => a.type === "الحضور");
+          var br = branches.find(b => b.id === emp.branch) || { start: "08:30" };
+          var startMin = parseInt(br.start?.split(":")[0] || 8) * 60 + parseInt(br.start?.split(":")[1] || 30);
+
+          // Late detection (after start + 15 min grace)
+          if (curMin > startMin + 15 && hasCheckin) {
+            var checkinTime = new Date(hasCheckin.ts);
+            var checkinMin = checkinTime.getHours() * 60 + checkinTime.getMinutes();
+            if (checkinMin > startMin + 5) {
+              var lateMin = checkinMin - startMin;
+              var existing = violations.find(v => v.empId === emp.id && v.date === today && v.type === "late");
+              if (!existing) newViolations.push({ empId: emp.id, empName: emp.name, type: "late", date: today, details: "تأخر " + lateMin + " دقيقة" });
+            }
+          }
+
+          // Absent detection (after start + 60 min, no checkin)
+          if (curMin > startMin + 60 && !hasCheckin) {
+            var existing2 = violations.find(v => v.empId === emp.id && v.date === today && v.type === "absent");
+            if (!existing2) newViolations.push({ empId: emp.id, empName: emp.name, type: "absent", date: today, details: "غياب بدون إفادة مسبقة" });
+          }
+        }
+
+        // Save new violations
+        if (newViolations.length > 0) {
+          for (const v of newViolations) violations.push({ id: 'V' + Date.now() + Math.random().toString(36).substr(2, 4), status: 'open', ...v, ts: new Date().toISOString() });
+          await dbSet('violations', violations);
+        }
+
+        // Auto-escalate overdue warnings
+        const warnings = await dbGet('warnings') || [];
+        var escalated = 0;
+        for (const w of warnings) {
+          if (w.status === 'pending' && w.deadline && new Date(w.deadline) < new Date()) {
+            w.status = 'escalated';
+            w.escalatedAt = new Date().toISOString();
+            escalated++;
+          }
+        }
+        if (escalated > 0) await dbSet('warnings', warnings);
+
+        return res.json({ ok: true, newViolations: newViolations.length, escalated, date: today });
+      }
+
       case 'dependents': {
         if (req.method === 'GET') { const ds = await dbGet('dependents') || []; const { empId } = req.query; return res.json(empId ? ds.filter(d => d.empId === empId) : ds); }
         if (req.method === 'POST') { const ds = await dbGet('dependents') || []; ds.push({ id: 'DEP' + Date.now(), status: 'pending', ...req.body }); await dbSet('dependents', ds); return res.json({ ok: true }); }
@@ -409,6 +469,60 @@ export default async function handler(req, res) {
           return res.json({ employees: emps.map(e => ({ id: e.id, compliance: Math.round((e.points || 0) / 15), points: e.points || 0 })), syncDate: new Date().toISOString() });
         }
         break;
+      }
+
+      case 'report': {
+        const { period } = req.query; // 'weekly' or 'monthly'
+        const emps = await dbGet('employees') || [];
+        const att = await dbGet('attendance') || [];
+        const violations = await dbGet('violations') || [];
+        const warnings = await dbGet('warnings') || [];
+        const leaves = await dbGet('leaves') || [];
+        const now = new Date();
+        var startDate, endDate = now.toISOString().split('T')[0];
+
+        if (period === 'weekly') {
+          var d = new Date(); d.setDate(d.getDate() - 7);
+          startDate = d.toISOString().split('T')[0];
+        } else {
+          var d2 = new Date(); d2.setMonth(d2.getMonth() - 1);
+          startDate = d2.toISOString().split('T')[0];
+        }
+
+        var periodAtt = att.filter(a => a.date >= startDate && a.date <= endDate);
+        var periodViol = violations.filter(v => (v.date || v.ts?.split('T')[0]) >= startDate);
+        var periodWarn = warnings.filter(w => w.ts?.split('T')[0] >= startDate);
+        var periodLeaves = leaves.filter(l => l.ts?.split('T')[0] >= startDate);
+
+        // Build per-employee summary
+        var empSummary = emps.filter(e => !e.terminated).map(function(e) {
+          var myAtt = periodAtt.filter(a => a.empId === e.id);
+          var checkins = myAtt.filter(a => a.type === "الحضور").length;
+          var myViol = periodViol.filter(v => v.empId === e.id);
+          var myWarn = periodWarn.filter(w => w.empId === e.id);
+          var lateCount = myViol.filter(v => v.type === "late").length;
+          var absentCount = myViol.filter(v => v.type === "absent").length;
+          return {
+            id: e.id, name: e.name, branch: e.branch, role: e.role,
+            daysPresent: checkins, lateCount, absentCount,
+            violationCount: myViol.length, warningCount: myWarn.length,
+            pendingWarnings: myWarn.filter(w => w.status === "pending").length,
+          };
+        });
+
+        return res.json({
+          period: period || 'monthly',
+          from: startDate, to: endDate,
+          totalEmployees: emps.filter(e => !e.terminated).length,
+          totalAttendance: periodAtt.length,
+          totalViolations: periodViol.length,
+          totalWarnings: periodWarn.length,
+          pendingWarnings: periodWarn.filter(w => w.status === "pending").length,
+          escalatedWarnings: periodWarn.filter(w => w.status === "escalated").length,
+          pendingLeaves: periodLeaves.filter(l => l.status === "pending").length,
+          employees: empSummary,
+          generatedAt: now.toISOString()
+        });
       }
 
       case 'export': {

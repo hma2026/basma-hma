@@ -265,6 +265,26 @@ export default function AdminApp() {
   if (!loggedIn) return <Login onLogin={r => { setRole(r); setLoggedIn(true); }} />;
   if (loading) return <div style={{ minHeight: "100vh", background: t.bg, display: "flex", alignItems: "center", justifyContent: "center", fontFamily: Fn, direction: "rtl" }}><div style={{ textAlign: "center" }}><div style={{ width: 32, height: 32, border: "3px solid " + t.sep, borderTopColor: B.blue, borderRadius: "50%", animation: "spin .8s linear infinite", margin: "0 auto" }} /><div style={{ fontSize: 13, color: t.txM, marginTop: 12 }}>جارِ تحميل البيانات...</div></div><style>{"@keyframes spin{to{transform:rotate(360deg)}}"}</style></div>;
 
+  var formatReport = function(r, label) {
+    var html = "<div style='padding:14px'>" +
+      "<div style='font-size:14px;font-weight:700;margin-bottom:8px'>📊 التقرير ال" + label + " — " + r.from + " إلى " + r.to + "</div>" +
+      "<div style='display:grid;grid-template-columns:1fr 1fr 1fr 1fr;gap:6px;margin-bottom:12px'>" +
+      "<div style='text-align:center;padding:8px;border-radius:8px;background:#0A84FF15'><div style='font-size:18px;font-weight:800;color:#0A84FF'>" + r.totalEmployees + "</div><div style='font-size:8px;color:#8E8E93'>موظف</div></div>" +
+      "<div style='text-align:center;padding:8px;border-radius:8px;background:#30D15815'><div style='font-size:18px;font-weight:800;color:#30D158'>" + r.totalAttendance + "</div><div style='font-size:8px;color:#8E8E93'>بصمة</div></div>" +
+      "<div style='text-align:center;padding:8px;border-radius:8px;background:#FF9F0A15'><div style='font-size:18px;font-weight:800;color:#FF9F0A'>" + r.totalViolations + "</div><div style='font-size:8px;color:#8E8E93'>مخالفة</div></div>" +
+      "<div style='text-align:center;padding:8px;border-radius:8px;background:#FF3B3015'><div style='font-size:18px;font-weight:800;color:#FF3B30'>" + r.pendingWarnings + "</div><div style='font-size:8px;color:#8E8E93'>إنذار معلّق</div></div></div>";
+    if (r.employees && r.employees.length > 0) {
+      html += "<table style='width:100%;border-collapse:collapse;font-size:10px'><tr style='background:#F8F9FA'><th style='padding:6px;text-align:right'>الموظف</th><th>حضور</th><th>تأخر</th><th>غياب</th><th>مخالفات</th><th>إنذارات</th></tr>";
+      r.employees.forEach(function(e) {
+        var rc = e.violationCount > 0 ? "#FFF5F5" : "#FFFFFF";
+        html += "<tr style='background:" + rc + ";border-bottom:1px solid #F0F0F0'><td style='padding:5px;font-weight:600'>" + e.name + "</td><td style='text-align:center;color:#30D158;font-weight:700'>" + e.daysPresent + "</td><td style='text-align:center;color:#FF9F0A'>" + e.lateCount + "</td><td style='text-align:center;color:#FF3B30'>" + e.absentCount + "</td><td style='text-align:center'>" + e.violationCount + "</td><td style='text-align:center'>" + e.warningCount + "</td></tr>";
+      });
+      html += "</table>";
+    }
+    html += "<div style='margin-top:8px;font-size:9px;color:#8E8E93'>تم الإنشاء: " + new Date(r.generatedAt).toLocaleString("ar-SA") + "</div></div>";
+    return html;
+  };
+
   const approve = id => role === "manager" && setLeaves(l => l.map(x => x.id === id ? { ...x, status: "معتمد" } : x));
   const reject = id => role === "manager" && setLeaves(l => l.map(x => x.id === id ? { ...x, status: "مرفوض" } : x));
   const pending = leaves.filter(l => l.status === "معلّق").length;
@@ -285,6 +305,7 @@ export default function AdminApp() {
     { id: "violations", icon: "⚠️", label: "المخالفات" },
     { id: "custody_admin", icon: "📦", label: "العهد" },
     { id: "tracking", icon: "🛰️", label: "تتبّع الحركة" },
+    { id: "termination", icon: "🚪", label: "إنهاء خدمات" },
     { id: "geofence", icon: "📍", label: "النطاق الجغرافي" },
     { id: "reports", icon: "📄", label: "التقارير" },
     { id: "events", icon: "🎉", label: "المناسبات" },
@@ -394,6 +415,43 @@ export default function AdminApp() {
         </div>
       </>}
 
+      {/* ═══ TERMINATION ═══ */}
+      {tab === "termination" && <>
+        <div style={{ background: t.card, borderRadius: 14, padding: "18px", border: "1px solid " + t.sep, marginBottom: 14 }}>
+          <div style={{ fontSize: 14, fontWeight: 700, marginBottom: 12 }}>🚪 إنهاء خدمات موظف</div>
+          <div style={{ fontSize: 11, color: t.txM, marginBottom: 12 }}>يتم تعطيل حساب الموظف فوراً مع بدء إجراءات التسليم والتصفية</div>
+          <select id="term-emp" style={{ width: "100%", padding: 10, borderRadius: 10, border: "1px solid " + t.sep, fontSize: 12, marginBottom: 8, background: t.inp, color: t.tx }}>{EMPS.map(function(e) { return <option key={e.id} value={e.id}>{e.name} ({e.id})</option>; })}</select>
+          <select id="term-reason" style={{ width: "100%", padding: 10, borderRadius: 10, border: "1px solid " + t.sep, fontSize: 12, marginBottom: 8, background: t.inp, color: t.tx }}>
+            <option value="resignation">استقالة</option><option value="termination">فصل</option><option value="contract_end">انتهاء عقد</option><option value="retirement">تقاعد</option>
+          </select>
+          <textarea id="term-notes" placeholder="ملاحظات إضافية..." rows="2" style={{ width: "100%", padding: 10, borderRadius: 10, border: "1px solid " + t.sep, fontSize: 12, marginBottom: 8, background: t.inp, color: t.tx, resize: "none", fontFamily: Fn }} />
+          <div style={{ background: t.warnLt, borderRadius: 8, padding: 10, marginBottom: 12, fontSize: 10, color: "#92400E" }}>⚠️ هذا الإجراء يعطّل حساب الموظف فوراً ويبدأ:<br/>1. تسليم العهد<br/>2. تصفية المستحقات<br/>3. إرسال إشعارات للموظف وHR والمحاسبة</div>
+          <button onClick={async function() {
+            var empId = document.getElementById("term-emp").value;
+            var reason = document.getElementById("term-reason").value;
+            var notes = document.getElementById("term-notes").value;
+            if (!confirm("⚠️ هل أنت متأكد من إنهاء خدمات هذا الموظف؟")) return;
+            var empName = EMPS.find(function(e) { return e.id === empId; })?.name || empId;
+            await api("termination", "POST", { empId: empId, empName: empName, reason: reason, notes: notes, initiatedBy: role === "manager" ? "مدير النظام" : "مساعد" });
+            alert("✅ تم تعطيل حساب الموظف وبدأت إجراءات إنهاء الخدمات");
+          }} style={{ width: "100%", padding: "12px", borderRadius: 10, background: t.bad, color: "#fff", fontSize: 14, fontWeight: 700, border: "none", cursor: "pointer" }}>🚪 تنفيذ إنهاء الخدمات</button>
+        </div>
+
+        {/* Auto-check violations */}
+        <div style={{ background: t.card, borderRadius: 14, padding: "18px", border: "1px solid " + t.sep }}>
+          <div style={{ fontSize: 14, fontWeight: 700, marginBottom: 8 }}>⚡ فحص المخالفات التلقائي</div>
+          <div style={{ fontSize: 11, color: t.txM, marginBottom: 12 }}>يفحص حضور اليوم ويكتشف التأخرات والغياب + يصعّد الإنذارات المتأخرة</div>
+          <button onClick={async function() {
+            var r = await api("auto_check");
+            if (r && r.ok) {
+              var el = document.getElementById("auto-check-result");
+              el.innerHTML = "<div style='padding:10px'><div style='font-size:12px;font-weight:700;color:#30D158'>✅ تم الفحص</div><div style='margin-top:6px;font-size:11px;color:#6E6E73'>مخالفات جديدة: <strong>" + r.newViolations + "</strong></div><div style='font-size:11px;color:#6E6E73'>إنذارات مُصعّدة: <strong>" + r.escalated + "</strong></div></div>";
+            }
+          }} style={{ width: "100%", padding: "12px", borderRadius: 10, background: B.blue, color: "#fff", fontSize: 14, fontWeight: 700, border: "none", cursor: "pointer" }}>🔍 فحص الآن</button>
+          <div id="auto-check-result" style={{ marginTop: 8 }}></div>
+        </div>
+      </>}
+
       {/* ═══ GEOFENCE ═══ */}
       {tab === "geofence" && <>
         <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(160px, 1fr))", gap: 10, marginBottom: 14 }}>{branches.map(b => { var ins = EMPS.filter(e => e.branch === b.name && e.gps).length; var out = EMPS.filter(e => e.branch === b.name && !e.gps).length; return <div key={b.id} style={{ background: t.card, borderRadius: 14, padding: "14px", border: "1px solid " + t.sep, textAlign: "center" }}><div style={{ fontSize: 13, fontWeight: 700 }}>{b.name}</div><div style={{ display: "flex", justifyContent: "center", gap: 8, marginTop: 6 }}><span style={{ fontSize: 11, color: t.ok }}>✓{ins}</span>{out > 0 && <span style={{ fontSize: 11, color: t.bad }}>✕{out}</span>}</div><div style={{ fontSize: 10, color: B.blue, marginTop: 6 }}>📍 {b.radius < 1000 ? b.radius + " م" : (b.radius / 1000).toFixed(1) + " كم"}</div>{b.lat ? <div style={{ fontSize: 9, color: t.txM, marginTop: 2, fontFamily: "monospace" }}>{b.lat.toFixed(4)}, {b.lng.toFixed(4)}</div> : <div style={{ fontSize: 9, color: t.warn, marginTop: 2 }}>⚠️ لم يُحدد الموقع</div>}<button onClick={function() { setMapTarget({ type: "branch", id: b.id }); }} style={{ width: "100%", marginTop: 8, padding: "7px", borderRadius: 8, background: B.blue + "12", color: B.blue, fontSize: 11, fontWeight: 700, border: "none", cursor: "pointer" }}>🗺️ تحديد الموقع</button></div>; })}</div>
@@ -465,17 +523,31 @@ export default function AdminApp() {
 
       {/* ═══ REPORTS ═══ */}
       {tab === "reports" && <>
+        {/* Report generation */}
+        <div style={{ background: t.card, borderRadius: 14, padding: "18px", border: "1px solid " + t.sep, marginBottom: 14 }}>
+          <div style={{ fontSize: 14, fontWeight: 700, marginBottom: 12 }}>📊 إنشاء تقرير</div>
+          <div style={{ display: "flex", gap: 8, marginBottom: 12 }}>
+            <button onClick={async function() {
+              var r = await api("report", "GET", null, "&period=weekly");
+              if (r) document.getElementById("report-data").innerHTML = formatReport(r, "أسبوعي");
+            }} style={{ flex: 1, padding: "12px", borderRadius: 10, background: B.blue, color: "#fff", fontSize: 13, fontWeight: 700, border: "none", cursor: "pointer" }}>📊 تقرير أسبوعي</button>
+            <button onClick={async function() {
+              var r = await api("report", "GET", null, "&period=monthly");
+              if (r) document.getElementById("report-data").innerHTML = formatReport(r, "شهري");
+            }} style={{ flex: 1, padding: "12px", borderRadius: 10, background: B.blueDk, color: "#fff", fontSize: 13, fontWeight: 700, border: "none", cursor: "pointer" }}>📋 تقرير شهري</button>
+          </div>
+          <div id="report-data" style={{ minHeight: 20 }}></div>
+        </div>
+
+        {/* Export buttons */}
         <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 12 }}>{[
-          { t: "تقرير الحضور الشهري", d: "نسب حضور جميع الموظفين", i: "📊", c: B.blue },
-          { t: "تصدير لكوادر", d: "تصدير النسب لنظام كوادر", i: "📤", c: t.ok },
-          { t: "مسير الرواتب (بنك)", d: "ملف جاهز للرفع على البنك", i: "🏦", c: B.blueDk },
-          { t: "بيانات التأمين", d: "موظفين + مرافقين + إفصاح صحي", i: "🏥", c: "#7C3AED" },
-          { t: "تقرير الغياب", d: "تفاصيل الغياب والتأخير", i: "🚨", c: t.bad },
-          { t: "تقرير شامل", d: "جميع البيانات في ملف واحد", i: "📋", c: B.blueDk },
-        ].map((r, i) => <div key={i} style={{ background: t.card, borderRadius: 14, padding: "20px", border: "1px solid " + t.sep, cursor: "pointer" }} onMouseEnter={e => e.currentTarget.style.boxShadow = "0 4px 16px rgba(0,0,0,.06)"} onMouseLeave={e => e.currentTarget.style.boxShadow = "none"}>
-          <div style={{ width: 44, height: 44, borderRadius: 12, background: `${r.c}12`, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 22, marginBottom: 10 }}>{r.i}</div>
+          { t: "تصدير الحضور CSV", d: "بيانات الحضور", i: "📊", c: B.blue, action: function() { window.open("/api/data?action=export&type=attendance"); } },
+          { t: "مسير الرواتب CSV", d: "جاهز للبنك", i: "🏦", c: B.blueDk, action: function() { window.open("/api/data?action=export&type=payroll"); } },
+          { t: "تصدير لكوادر", d: "نسب الالتزام", i: "📤", c: t.ok, action: async function() { var r = await api("kadwar-sync"); alert("✅ تم إرسال البيانات لكوادر"); } },
+        ].map((r, i) => <div key={i} style={{ background: t.card, borderRadius: 14, padding: "20px", border: "1px solid " + t.sep, cursor: "pointer" }}>
+          <div style={{ width: 44, height: 44, borderRadius: 12, background: r.c + "12", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 22, marginBottom: 10 }}>{r.i}</div>
           <div style={{ fontSize: 13, fontWeight: 700 }}>{r.t}</div><div style={{ fontSize: 11, color: t.txM, marginTop: 4 }}>{r.d}</div>
-          <button style={{ marginTop: 10, padding: "7px 14px", borderRadius: 8, background: r.c, color: "#fff", fontSize: 11, fontWeight: 700, border: "none", cursor: "pointer" }}>تحميل</button>
+          <button onClick={r.action} style={{ marginTop: 10, padding: "7px 14px", borderRadius: 8, background: r.c, color: "#fff", fontSize: 11, fontWeight: 700, border: "none", cursor: "pointer" }}>تحميل</button>
         </div>)}</div>
       </>}
 
