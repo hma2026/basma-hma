@@ -48,7 +48,7 @@ const DARK = {
 
 // ═══════ CONSTANTS ═══════
 const APP = "بصمة HMA";
-const VER = "v4.04";
+const VER = "v4.05";
 const CO = "هاني محمد عسيري للإستشارات الهندسية";
 const B = { blue: "#2B5EA7", yellow: "#FDD800", red: "#E2192C", black: "#1A1A1A", blueDk: "#1E4478", blueLt: "#EDF3FB", gold: "#D4A017", diamond: "#7C3AED" };
 const C = LIGHT; // Default light - components use useTheme().t for dynamic
@@ -883,13 +883,15 @@ function FullApp({ emp, onBack, onLogout }) {
   const { dark: dk, t, toggle: toggleTheme } = useTheme();
   const crd = getCrd(t);
   const isHR = emp.isManager || emp.isAssistant;
-  const [tab, setTab] = useState(isHR ? "admin" : "wallet");
+  const [tab, setTab] = useState(isHR ? "admin" : "alerts");
   const [emps, setEmps] = useState([]);
   const [att, setAtt] = useState([]);
   const [leaves, setLeaves] = useState([]);
   const [projects, setProjects] = useState([]);
   const [delegations, setDelegations] = useState([]);
   const [exceptions, setExceptions] = useState([]);
+  const [violations, setViolations] = useState([]);
+  const [warnings, setWarnings] = useState([]);
   const [showAddProject, setShowAddProject] = useState(false);
   const [showAddDeleg, setShowAddDeleg] = useState(false);
   const [newProj, setNewProj] = useState({ name: "", lat: "", lng: "", radius: 150, employees: [] });
@@ -905,6 +907,8 @@ function FullApp({ emp, onBack, onLogout }) {
     const p = await api('projects'); if (Array.isArray(p)) setProjects(p);
     const d = await api('delegations'); if (Array.isArray(d)) setDelegations(d);
     const ex = await api('exceptions'); if (Array.isArray(ex)) setExceptions(ex);
+    const v = await api('violations', 'GET', null, `&empId=${emp.id}`); if (Array.isArray(v)) setViolations(v);
+    const w = await api('warnings', 'GET', null, `&empId=${emp.id}`); if (Array.isArray(w)) setWarnings(w);
   };
 
   const approveLeave = async (id) => { await api('leaves', 'PUT', { id, status: 'approved' }); loadData(); };
@@ -1024,8 +1028,8 @@ function FullApp({ emp, onBack, onLogout }) {
   };
 
   const tabs = isHR
-    ? [{ id: "admin", i: "🏢", l: "الإدارة" }, { id: "projects", i: "🏗️", l: "المشاريع" }, { id: "events", i: "🎉", l: "المناسبات" }, { id: "questions", i: "⚡", l: "الأسئلة" }, { id: "leaves_tab", i: "🏖", l: "الإجازات" }, { id: "wallet", i: "🎁", l: "المحفظة" }, { id: "support", i: "💬", l: "الدعم" }, { id: "profile", i: "👤", l: "حسابي" }]
-    : [{ id: "leaves_tab", i: "🏖", l: "الإجازات" }, { id: "wallet", i: "🎁", l: "المحفظة" }, { id: "membership", i: "🏅", l: "العضوية" }, { id: "attendance", i: "📊", l: "الحضور" }, { id: "support", i: "💬", l: "الدعم" }, { id: "profile", i: "👤", l: "حسابي" }];
+    ? [{ id: "admin", i: "🏢", l: "الإدارة" }, { id: "projects", i: "🏗️", l: "المشاريع" }, { id: "events", i: "🎉", l: "المناسبات" }, { id: "questions", i: "⚡", l: "الأسئلة" }, { id: "leaves_tab", i: "🏖", l: "الإجازات" }, { id: "alerts", i: "🔔", l: "الإشعارات" }, { id: "wallet", i: "🎁", l: "المحفظة" }, { id: "support", i: "💬", l: "الدعم" }, { id: "profile", i: "👤", l: "حسابي" }]
+    : [{ id: "alerts", i: "🔔", l: "الإشعارات" }, { id: "leaves_tab", i: "🏖", l: "الإجازات" }, { id: "wallet", i: "🎁", l: "المحفظة" }, { id: "membership", i: "🏅", l: "العضوية" }, { id: "attendance", i: "📊", l: "الحضور" }, { id: "support", i: "💬", l: "الدعم" }, { id: "profile", i: "👤", l: "حسابي" }];
 
   return (<div style={{ ...FL, background: t.bg, display: "flex", flexDirection: "column" }}>
     <Stripe h={4} />
@@ -1537,6 +1541,98 @@ function FullApp({ emp, onBack, onLogout }) {
             );
           })}
         </>}
+      </div>}
+
+      {/* ALERTS - VIOLATIONS & WARNINGS */}
+      {tab === "alerts" && <div>
+        <div style={{ ...crd, marginBottom: 12 }}>
+          <div style={{ display: "flex", gap: 8 }}>
+            {[{ l: "مخالفات", v: violations.length, c: C.warn, i: "⚠️" }, { l: "إنذارات", v: warnings.length, c: C.bad, i: "📋" }, { l: "تحتاج رد", v: warnings.filter(function(w) { return w.status === "pending"; }).length, c: B.blue, i: "💬" }].map(function(s, i) { return <div key={i} style={{ flex: 1, textAlign: "center", padding: 8, borderRadius: 10, background: s.c + "12" }}><div style={{ fontSize: 18 }}>{s.i}</div><div style={{ fontSize: 20, fontWeight: 800, color: s.c }}>{s.v}</div><div style={{ fontSize: 9, color: t.txM }}>{s.l}</div></div>; })}
+          </div>
+        </div>
+
+        {/* Warnings requiring response */}
+        {warnings.filter(function(w) { return w.status === "pending"; }).length > 0 && <div style={{ ...crd, marginBottom: 12, border: "1px solid " + C.bad + "33" }}>
+          <div style={{ fontSize: 14, fontWeight: 700, color: C.bad, marginBottom: 10 }}>📋 إنذارات تحتاج ردك</div>
+          {warnings.filter(function(w) { return w.status === "pending"; }).map(function(w) { return <div key={w.id} style={{ padding: 12, borderRadius: 10, background: t.badLt, marginBottom: 8 }}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
+              <div style={{ flex: 1 }}>
+                <div style={{ fontSize: 12, fontWeight: 700, color: C.bad }}>{w.type === "written" ? "📝 إنذار كتابي" : w.type === "formal" ? "📋 إنذار رسمي" : "⚡ إنذار إلكتروني"}</div>
+                <div style={{ fontSize: 11, color: t.tx2, marginTop: 4 }}>{w.reason || "مخالفة لائحة العمل"}</div>
+                <div style={{ fontSize: 9, color: t.txM, marginTop: 4 }}>{w.ts ? new Date(w.ts).toLocaleDateString("ar-SA") : ""}</div>
+                {w.deadline && <div style={{ fontSize: 9, color: C.bad, marginTop: 2 }}>⏰ آخر موعد للرد: {new Date(w.deadline).toLocaleDateString("ar-SA")}</div>}
+              </div>
+            </div>
+            <div style={{ display: "flex", gap: 6, marginTop: 8 }}>
+              <button onClick={async function() { var response = prompt("اكتب ردك على الإنذار:"); if (response) { await api("warnings", "PUT", { id: w.id, status: "responded", response: response, respondedAt: new Date().toISOString() }); loadData(); } }} style={{ flex: 1, padding: "8px", borderRadius: 8, background: B.blue, color: "#fff", fontSize: 11, fontWeight: 700, border: "none", cursor: "pointer" }}>💬 رد على الإنذار</button>
+              {w.type === "written" && <button onClick={async function() { var note = prompt("أرفق رقم الإفادة الورقية:"); if (note) { await api("warnings", "PUT", { id: w.id, status: "paper_submitted", paperRef: note }); loadData(); } }} style={{ flex: 1, padding: "8px", borderRadius: 8, background: C.warn, color: "#fff", fontSize: 11, fontWeight: 700, border: "none", cursor: "pointer" }}>📎 إفادة ورقية</button>}
+            </div>
+          </div>; })}
+        </div>}
+
+        {/* Responded warnings */}
+        {warnings.filter(function(w) { return w.status !== "pending"; }).length > 0 && <div style={{ ...crd, marginBottom: 12 }}>
+          <div style={{ fontSize: 13, fontWeight: 700, marginBottom: 10 }}>📄 إنذارات سابقة</div>
+          {warnings.filter(function(w) { return w.status !== "pending"; }).map(function(w) { return <div key={w.id} style={{ padding: 10, borderRadius: 8, background: t.bg, marginBottom: 6, display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+            <div><div style={{ fontSize: 11, fontWeight: 600 }}>{w.reason || "مخالفة"}</div><div style={{ fontSize: 9, color: t.txM }}>{w.ts ? new Date(w.ts).toLocaleDateString("ar-SA") : ""}</div></div>
+            <span style={{ padding: "3px 8px", borderRadius: 6, fontSize: 9, fontWeight: 700, background: w.status === "responded" ? t.okLt : w.status === "paper_submitted" ? t.warnLt : t.badLt, color: w.status === "responded" ? C.ok : w.status === "paper_submitted" ? C.warn : C.bad }}>{w.status === "responded" ? "تم الرد" : w.status === "paper_submitted" ? "إفادة مرفقة" : w.status === "escalated" ? "مُصعّد" : w.status}</span>
+          </div>; })}
+        </div>}
+
+        {/* Violations list */}
+        {violations.length > 0 && <div style={{ ...crd, marginBottom: 12 }}>
+          <div style={{ fontSize: 13, fontWeight: 700, marginBottom: 10 }}>⚠️ سجل المخالفات</div>
+          {violations.map(function(v) { return <div key={v.id} style={{ padding: 10, borderRadius: 8, background: t.bg, marginBottom: 6 }}>
+            <div style={{ display: "flex", justifyContent: "space-between" }}>
+              <div style={{ fontSize: 12, fontWeight: 600, color: t.tx }}>{v.type === "late" ? "⏰ تأخر" : v.type === "absent" ? "🚫 غياب" : v.type === "missed_break" ? "☕ فاتته الاستراحة" : v.type === "out_of_range" ? "📍 خارج النطاق" : "⚠️ " + (v.type || "مخالفة")}</div>
+              <span style={{ fontSize: 9, color: t.txM }}>{v.date || (v.ts ? new Date(v.ts).toLocaleDateString("ar-SA") : "")}</span>
+            </div>
+            {v.details && <div style={{ fontSize: 10, color: t.tx2, marginTop: 4 }}>{v.details}</div>}
+          </div>; })}
+        </div>}
+
+        {violations.length === 0 && warnings.length === 0 && <div style={{ ...crd, textAlign: "center", padding: 30 }}>
+          <div style={{ fontSize: 40, marginBottom: 8 }}>✅</div>
+          <div style={{ fontSize: 14, fontWeight: 700, color: C.ok }}>لا توجد مخالفات أو إنذارات</div>
+          <div style={{ fontSize: 11, color: t.txM, marginTop: 4 }}>سجلك نظيف — استمر!</div>
+        </div>}
+
+        {/* HR: Issue warning */}
+        {isHR && <div style={{ ...crd, marginTop: 12, border: "1px solid " + B.blue + "33" }}>
+          <div style={{ fontSize: 13, fontWeight: 700, marginBottom: 10, color: B.blue }}>🏢 إصدار إنذار (HR)</div>
+          <select id="warn-emp" style={{ width: "100%", padding: 10, borderRadius: 10, border: "1px solid " + t.sep, fontSize: 12, marginBottom: 8, background: t.inp, color: t.tx, fontFamily: Fn }}><option value="">اختر الموظف</option>{emps.map(function(e) { return <option key={e.id} value={e.id}>{e.name} ({e.id})</option>; })}</select>
+          <select id="warn-type" style={{ width: "100%", padding: 10, borderRadius: 10, border: "1px solid " + t.sep, fontSize: 12, marginBottom: 8, background: t.inp, color: t.tx, fontFamily: Fn }}><option value="electronic">⚡ إنذار إلكتروني</option><option value="formal">📋 إنذار رسمي (نظام + إيميل)</option><option value="written">📝 إنذار كتابي (يحتاج إفادة ورقية)</option></select>
+          <input id="warn-reason" placeholder="سبب الإنذار" style={{ width: "100%", padding: 10, borderRadius: 10, border: "1px solid " + t.sep, fontSize: 12, marginBottom: 8, background: t.inp, color: t.tx, fontFamily: Fn }} />
+          <button onClick={async function() {
+            var empId = document.getElementById("warn-emp").value;
+            var type = document.getElementById("warn-type").value;
+            var reason = document.getElementById("warn-reason").value;
+            if (!empId || !reason) return alert("اختر الموظف واكتب السبب");
+            var empName = emps.find(function(e) { return e.id === empId; })?.name || empId;
+            var deadline = new Date(); deadline.setDate(deadline.getDate() + (type === "written" ? 5 : 3));
+            await api("warnings", "POST", { empId: empId, empName: empName, type: type, reason: reason, issuedBy: emp.name, deadline: deadline.toISOString() });
+            document.getElementById("warn-reason").value = "";
+            document.getElementById("warn-emp").value = "";
+            alert("✅ تم إصدار الإنذار");
+            loadData();
+          }} style={{ width: "100%", padding: "11px", borderRadius: 10, background: C.bad, color: "#fff", fontSize: 14, fontWeight: 700, border: "none", cursor: "pointer" }}>📋 إصدار الإنذار</button>
+
+          {/* Pre-absence notification */}
+          <div style={{ marginTop: 16, paddingTop: 16, borderTop: "1px solid " + t.sep }}>
+            <div style={{ fontSize: 13, fontWeight: 700, marginBottom: 8 }}>📅 إفادة غياب مسبقة</div>
+            <div style={{ fontSize: 10, color: t.txM, marginBottom: 8 }}>أبلغ النظام إن الموظف لن يحضر غداً (لمنع الإنذارات التلقائية)</div>
+            <select id="abs-emp" style={{ width: "100%", padding: 10, borderRadius: 10, border: "1px solid " + t.sep, fontSize: 12, marginBottom: 8, background: t.inp, color: t.tx, fontFamily: Fn }}><option value="">اختر الموظف</option>{emps.map(function(e) { return <option key={e.id} value={e.id}>{e.name} ({e.id})</option>; })}</select>
+            <select id="abs-type" style={{ width: "100%", padding: 10, borderRadius: 10, border: "1px solid " + t.sep, fontSize: 12, marginBottom: 8, background: t.inp, color: t.tx, fontFamily: Fn }}><option value="absent">غياب بإذن</option><option value="annual_leave">تُحسب إجازة سنوية</option><option value="sick">إجازة مرضية</option></select>
+            <button onClick={async function() {
+              var empId = document.getElementById("abs-emp").value;
+              var type = document.getElementById("abs-type").value;
+              if (!empId) return alert("اختر الموظف");
+              var tomorrow = new Date(); tomorrow.setDate(tomorrow.getDate() + 1);
+              await api("pre_absence", "POST", { empId: empId, date: tomorrow.toISOString().split("T")[0], type: type, notifiedBy: emp.name });
+              alert("✅ تم تسجيل الإفادة — الموظف لن يحصل على إنذار غداً");
+            }} style={{ width: "100%", padding: "11px", borderRadius: 10, background: C.ok, color: "#fff", fontSize: 14, fontWeight: 700, border: "none", cursor: "pointer" }}>✅ تسجيل الإفادة</button>
+          </div>
+        </div>}
       </div>}
 
       {/* SUPPORT & FAQ */}

@@ -215,14 +215,49 @@ export default async function handler(req, res) {
       }
 
       case 'violations': {
-        if (req.method === 'GET') return res.json(await dbGet('violations') || []);
-        if (req.method === 'POST') { const vs = await dbGet('violations') || []; vs.push({ id: 'V' + Date.now(), ...req.body, ts: new Date().toISOString() }); await dbSet('violations', vs); return res.json({ ok: true }); }
+        if (req.method === 'GET') {
+          let vs = await dbGet('violations') || [];
+          const { empId } = req.query;
+          if (empId) vs = vs.filter(v => v.empId === empId);
+          return res.json(vs);
+        }
+        if (req.method === 'POST') { const vs = await dbGet('violations') || []; vs.push({ id: 'V' + Date.now(), status: 'open', ...req.body, ts: new Date().toISOString() }); await dbSet('violations', vs); return res.json({ ok: true }); }
+        if (req.method === 'PUT') {
+          const vs = await dbGet('violations') || [];
+          const { id, ...up } = req.body;
+          const i = vs.findIndex(v => v.id === id);
+          if (i >= 0) { vs[i] = { ...vs[i], ...up, updatedAt: new Date().toISOString() }; await dbSet('violations', vs); }
+          return res.json({ ok: true });
+        }
         break;
       }
 
       case 'warnings': {
-        if (req.method === 'GET') return res.json(await dbGet('warnings') || []);
-        if (req.method === 'POST') { const ws = await dbGet('warnings') || []; ws.push({ id: 'W' + Date.now(), ...req.body, ts: new Date().toISOString() }); await dbSet('warnings', ws); return res.json({ ok: true }); }
+        if (req.method === 'GET') {
+          let ws = await dbGet('warnings') || [];
+          const { empId } = req.query;
+          if (empId) ws = ws.filter(w => w.empId === empId);
+          return res.json(ws);
+        }
+        if (req.method === 'POST') { const ws = await dbGet('warnings') || []; ws.push({ id: 'W' + Date.now(), status: 'pending', ...req.body, ts: new Date().toISOString() }); await dbSet('warnings', ws); return res.json({ ok: true }); }
+        if (req.method === 'PUT') {
+          const ws = await dbGet('warnings') || [];
+          const { id, ...up } = req.body;
+          const i = ws.findIndex(w => w.id === id);
+          if (i >= 0) { ws[i] = { ...ws[i], ...up, updatedAt: new Date().toISOString() }; await dbSet('warnings', ws); }
+          return res.json({ ok: true });
+        }
+        break;
+      }
+
+      case 'pre_absence': {
+        if (req.method === 'GET') return res.json(await dbGet('pre_absences') || []);
+        if (req.method === 'POST') {
+          const pas = await dbGet('pre_absences') || [];
+          pas.push({ id: 'PA' + Date.now(), ...req.body, ts: new Date().toISOString() });
+          await dbSet('pre_absences', pas);
+          return res.json({ ok: true });
+        }
         break;
       }
 
