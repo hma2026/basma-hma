@@ -4,20 +4,62 @@ const PFX = 'basma_';
 
 async function dbGet(t) {
   try {
+    const r = await fetch(process.env.BLOB_READ_WRITE_TOKEN ? undefined : '', { method: 'HEAD' }).catch(() => null);
+    // Use list to find the blob, take the LATEST one
     const { blobs } = await list({ prefix: PFX + t + '.json' });
     if (!blobs.length) return null;
-    const r = await fetch(blobs[0].url);
-    return await r.json();
+    // Sort by uploadedAt descending to get latest
+    blobs.sort((a, b) => new Date(b.uploadedAt) - new Date(a.uploadedAt));
+    const res = await fetch(blobs[0].url);
+    return await res.json();
   } catch(e) { console.error('[DB GET ERROR] ' + t + ':', e.message); return null; }
 }
 
 async function dbSet(t, d) {
   try {
-    const { blobs } = await list({ prefix: PFX + t + '.json' });
-    for (const b of blobs) await del(b.url);
-    await put(PFX + t + '.json', JSON.stringify(d), { access: 'public', contentType: 'application/json' });
+    // Use addRandomSuffix: false to OVERWRITE instead of creating duplicates
+    await put(PFX + t + '.json', JSON.stringify(d), { 
+      access: 'public', 
+      contentType: 'application/json',
+      addRandomSuffix: false 
+    });
     return true;
   } catch(e) { console.error('[DB SET ERROR] ' + t + ':', e.message); return false; }
+}
+
+// Cleanup function — delete all duplicate blobs, keep only latest of each
+async function dbCleanup() {
+  try {
+    var allBlobs = [];
+    var cursor = undefined;
+    // Paginate through all blobs
+    do {
+      var result = await list({ prefix: PFX, cursor, limit: 1000 });
+      allBlobs = allBlobs.concat(result.blobs);
+      cursor = result.cursor;
+    } while (cursor);
+
+    // Group by pathname
+    var groups = {};
+    for (var b of allBlobs) {
+      if (!groups[b.pathname]) groups[b.pathname] = [];
+      groups[b.pathname].push(b);
+    }
+
+    var deleted = 0;
+    for (var pathname in groups) {
+      var blobs = groups[pathname];
+      if (blobs.length <= 1) continue;
+      // Sort by date, keep latest
+      blobs.sort((a, b) => new Date(b.uploadedAt) - new Date(a.uploadedAt));
+      // Delete all except the latest
+      for (var i = 1; i < blobs.length; i++) {
+        await del(blobs[i].url);
+        deleted++;
+      }
+    }
+    return { ok: true, totalFound: allBlobs.length, deleted, remaining: allBlobs.length - deleted };
+  } catch(e) { return { ok: false, error: e.message }; }
 }
 
 const INIT_EMP = [
@@ -636,6 +678,12 @@ export default async function handler(req, res) {
           return res.send('\uFEFF' + csv);
         }
         return res.json({ error: 'unknown type' });
+      }
+
+      case 'cleanup': {
+        // Delete all duplicate blobs — run once to fix the 1000 blob issue
+        var result = await dbCleanup();
+        return res.json(result);
       }
 
       case 'diagnostic': {
