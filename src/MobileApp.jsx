@@ -7,8 +7,9 @@ const api = async (action, method = 'GET', body = null, params = '') => {
     const opts = { method, headers: { 'Content-Type': 'application/json' } };
     if (body) opts.body = JSON.stringify(body);
     const r = await fetch(`${API}?action=${action}${params}`, opts);
+    if (!r.ok) { console.error('[API FAIL]', action, r.status, r.statusText); }
     return await r.json();
-  } catch { return null; }
+  } catch(e) { console.error('[API ERROR]', action, e.message); return null; }
 };
 
 // ═══════ THEME SYSTEM ═══════
@@ -48,7 +49,7 @@ const DARK = {
 
 // ═══════ CONSTANTS ═══════
 const APP = "بصمة HMA";
-const VER = "v4.21";
+const VER = "v4.22";
 const CO = "هاني محمد عسيري للإستشارات الهندسية";
 const B = { blue: "#2B5EA7", yellow: "#FDD800", red: "#E2192C", black: "#1A1A1A", blueDk: "#1E4478", blueLt: "#EDF3FB", gold: "#D4A017", diamond: "#7C3AED" };
 const C = LIGHT; // Default light - components use useTheme().t for dynamic

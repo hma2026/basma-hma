@@ -8,7 +8,7 @@ async function dbGet(t) {
     if (!blobs.length) return null;
     const r = await fetch(blobs[0].url);
     return await r.json();
-  } catch { return null; }
+  } catch(e) { console.error('[DB GET ERROR] ' + t + ':', e.message); return null; }
 }
 
 async function dbSet(t, d) {
@@ -17,7 +17,7 @@ async function dbSet(t, d) {
     for (const b of blobs) await del(b.url);
     await put(PFX + t + '.json', JSON.stringify(d), { access: 'public', contentType: 'application/json' });
     return true;
-  } catch { return false; }
+  } catch(e) { console.error('[DB SET ERROR] ' + t + ':', e.message); return false; }
 }
 
 const INIT_EMP = [
@@ -380,9 +380,10 @@ export default async function handler(req, res) {
         }
         if (req.method === 'POST') {
           const reqs = await dbGet('admin_requests') || [];
-          reqs.push({ id: 'REQ' + Date.now(), status: 'pending', ...req.body, ts: new Date().toISOString() });
-          await dbSet('admin_requests', reqs);
-          return res.json({ ok: true });
+          const newReq = { id: 'REQ' + Date.now(), status: 'pending', ...req.body, ts: new Date().toISOString() };
+          reqs.push(newReq);
+          const saved = await dbSet('admin_requests', reqs);
+          return res.json({ ok: saved, saved, id: newReq.id, total: reqs.length });
         }
         if (req.method === 'PUT') {
           const reqs = await dbGet('admin_requests') || [];
@@ -635,6 +636,42 @@ export default async function handler(req, res) {
           return res.send('\uFEFF' + csv);
         }
         return res.json({ error: 'unknown type' });
+      }
+
+      case 'diagnostic': {
+        // Test database read/write
+        var results = { token: !!process.env.BLOB_READ_WRITE_TOKEN, tokenPrefix: (process.env.BLOB_READ_WRITE_TOKEN || '').substring(0, 10) + '...', tests: {} };
+        try {
+          // Test write
+          await put(PFX + 'test_diag.json', JSON.stringify({ test: true, ts: new Date().toISOString() }), { access: 'public', contentType: 'application/json' });
+          results.tests.write = 'OK';
+        } catch(e) { results.tests.write = 'FAIL: ' + e.message; }
+        try {
+          // Test read
+          var { blobs } = await list({ prefix: PFX + 'test_diag.json' });
+          results.tests.read = blobs.length > 0 ? 'OK (' + blobs.length + ' blobs)' : 'FAIL: no blobs found';
+          // List all basma blobs
+          var allBlobs = await list({ prefix: PFX });
+          results.tests.totalBlobs = allBlobs.blobs.length;
+          results.tests.blobNames = allBlobs.blobs.map(b => b.pathname);
+          // Cleanup test
+          for (var b of blobs) await del(b.url);
+          results.tests.delete = 'OK';
+        } catch(e) { results.tests.read = 'FAIL: ' + e.message; }
+        // Test existing data
+        try {
+          var emps = await dbGet('employees');
+          results.tests.employees = emps ? (Array.isArray(emps) ? emps.length + ' employees' : typeof emps) : 'NULL';
+        } catch(e) { results.tests.employees = 'FAIL: ' + e.message; }
+        try {
+          var settings = await dbGet('settings');
+          results.tests.settings = settings ? 'exists' : 'NULL';
+        } catch(e) { results.tests.settings = 'FAIL: ' + e.message; }
+        try {
+          var reqs = await dbGet('admin_requests');
+          results.tests.requests = reqs ? (Array.isArray(reqs) ? reqs.length + ' requests' : typeof reqs) : 'NULL (empty)';
+        } catch(e) { results.tests.requests = 'FAIL: ' + e.message; }
+        return res.json(results);
       }
 
       default: return res.status(400).json({ error: 'unknown action' });
