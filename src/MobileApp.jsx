@@ -48,7 +48,7 @@ const DARK = {
 
 // ═══════ CONSTANTS ═══════
 const APP = "بصمة HMA";
-const VER = "v4.19";
+const VER = "v4.21";
 const CO = "هاني محمد عسيري للإستشارات الهندسية";
 const B = { blue: "#2B5EA7", yellow: "#FDD800", red: "#E2192C", black: "#1A1A1A", blueDk: "#1E4478", blueLt: "#EDF3FB", gold: "#D4A017", diamond: "#7C3AED" };
 const C = LIGHT; // Default light - components use useTheme().t for dynamic
@@ -377,10 +377,13 @@ function FaceCamera({ onOk, onNo, empId }) {
       return;
     }
     if (!serverDesc) {
-      // First registration — save to server + localStorage
+      // First registration — save to server, notify admin if similar face exists
       var saveOk = await api("face", "POST", { empId: empId, descriptor: descriptor });
-      if (!saveOk || saveOk.error) {
-        // Fallback: save locally if server fails
+      if (saveOk && saveOk.warning === "similar_face") {
+        // Similar face found — notify admin but allow registration
+        console.log("[FaceAPI] Warning: similar face found for " + saveOk.matchedEmpId);
+      }
+      if (!saveOk || (saveOk.error && saveOk.error !== "similar_face")) {
         localStorage.setItem("basma_face_v2", JSON.stringify(descriptor));
         console.log("[FaceAPI] Server save failed, cached locally");
       } else {

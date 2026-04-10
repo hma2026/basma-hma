@@ -117,12 +117,35 @@ export default async function handler(req, res) {
           const { empId, descriptor } = req.body || {};
           if (!empId || !descriptor || !Array.isArray(descriptor) || descriptor.length !== 128) return res.status(400).json({ error: 'empId + descriptor[128] required' });
           const faces = await dbGet('faces') || {};
+          // Check if similar face exists for another employee — notify admin, don't block
+          var similarFound = null;
+          for (const [existingId, existingDesc] of Object.entries(faces)) {
+            if (existingId === empId) continue;
+            if (!Array.isArray(existingDesc) || existingDesc.length !== 128) continue;
+            let sum = 0;
+            for (let i = 0; i < 128; i++) sum += (descriptor[i] - existingDesc[i]) ** 2;
+            const dist = Math.sqrt(sum);
+            if (dist < 0.35) { similarFound = { empId: existingId, distance: dist }; break; }
+          }
+          // Save the face regardless
           faces[empId] = descriptor;
           await dbSet('faces', faces);
+          // If similar face found, create admin notification
+          if (similarFound) {
+            const violations = await dbGet('violations') || [];
+            violations.push({ id: 'V' + Date.now(), status: 'open', empId, type: 'similar_face', details: 'تنبيه: وجه مشابه للموظف ' + similarFound.empId + ' (المسافة: ' + similarFound.distance.toFixed(3) + ') — قد يكون توأم أو قريب', date: new Date().toISOString().split('T')[0], ts: new Date().toISOString() });
+            await dbSet('violations', violations);
+            return res.json({ ok: true, warning: 'similar_face', matchedEmpId: similarFound.empId });
+          }
           return res.json({ ok: true });
         }
         if (req.method === 'DELETE') {
           const faceId = req.query.empId;
+          if (faceId === 'ALL') {
+            // Admin: clear all faces
+            await dbSet('faces', {});
+            return res.json({ ok: true, msg: 'all faces cleared' });
+          }
           if (!faceId) return res.status(400).json({ error: 'empId required' });
           const faces = await dbGet('faces') || {};
           delete faces[faceId];
