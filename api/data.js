@@ -371,6 +371,75 @@ export default async function handler(req, res) {
         break;
       }
 
+      case 'clusters': {
+        // Detect employee clusters (groups in same location)
+        const { date } = req.query;
+        const targetDate = date || new Date().toISOString().split('T')[0];
+        const logs = (await dbGet('gps_logs') || []).filter(l => l.date === targetDate && l.lat && l.lat !== 0);
+        const settings = await dbGet('settings') || {};
+        const clusterRadius = settings.clusterRadius || 30; // meters
+        const clusterMinPeople = settings.clusterMinPeople || 3;
+        const clusterMinMinutes = settings.clusterMinMinutes || 30;
+
+        // Group logs by time windows (15-min blocks)
+        var timeBlocks = {};
+        logs.forEach(function(l) {
+          var h = new Date(l.ts).getHours(), m = new Date(l.ts).getMinutes();
+          var block = h + ":" + (m < 15 ? "00" : m < 30 ? "15" : m < 45 ? "30" : "45");
+          if (!timeBlocks[block]) timeBlocks[block] = [];
+          timeBlocks[block].push(l);
+        });
+
+        // Find clusters in each block
+        var clusters = [];
+        Object.keys(timeBlocks).forEach(function(block) {
+          var bl = timeBlocks[block];
+          var grouped = {};
+          bl.forEach(function(l) {
+            var key = Math.round(l.lat * 1000) + "," + Math.round(l.lng * 1000); // ~100m grid
+            if (!grouped[key]) grouped[key] = { lat: l.lat, lng: l.lng, emps: new Set() };
+            grouped[key].emps.add(l.empId);
+          });
+          Object.values(grouped).forEach(function(g) {
+            if (g.emps.size >= clusterMinPeople) {
+              clusters.push({ time: block, lat: g.lat, lng: g.lng, employees: Array.from(g.emps), count: g.emps.size });
+            }
+          });
+        });
+
+        return res.json({ date: targetDate, clusters, settings: { clusterRadius, clusterMinPeople, clusterMinMinutes } });
+      }
+
+      case 'comparison': {
+        // Weekly employee movement comparison
+        const emps = await dbGet('employees') || [];
+        const logs = await dbGet('gps_logs') || [];
+        const now = new Date();
+        var weekAgo = new Date(); weekAgo.setDate(weekAgo.getDate() - 7);
+        var weekLogs = logs.filter(l => new Date(l.ts) >= weekAgo && l.lat && l.lat !== 0);
+
+        var comparison = emps.filter(e => !e.terminated).map(function(e) {
+          var myLogs = weekLogs.filter(l => l.empId === e.id);
+          var stationary = 0, moving = 0;
+          for (var i = 1; i < myLogs.length; i++) {
+            var d = Math.sqrt(Math.pow(myLogs[i].lat - myLogs[i-1].lat, 2) + Math.pow(myLogs[i].lng - myLogs[i-1].lng, 2)) * 111000;
+            if (d < 20) stationary++; else moving++;
+          }
+          var total = stationary + moving || 1;
+          var appEvents = logs.filter(l => l.empId === e.id && l.event);
+          var closedCount = appEvents.filter(l => l.event === "app_closed" || l.event === "app_hidden").length;
+          return {
+            id: e.id, name: e.name, branch: e.branch,
+            totalPoints: myLogs.length,
+            movementPct: Math.round(moving / total * 100),
+            stationaryPct: Math.round(stationary / total * 100),
+            appCloses: closedCount,
+          };
+        }).sort(function(a, b) { return b.movementPct - a.movementPct; });
+
+        return res.json({ from: weekAgo.toISOString().split('T')[0], to: now.toISOString().split('T')[0], employees: comparison });
+      }
+
       case 'auto_check': {
         // Auto-detect violations for today
         const today = new Date().toISOString().split('T')[0];

@@ -48,7 +48,7 @@ const DARK = {
 
 // ═══════ CONSTANTS ═══════
 const APP = "بصمة HMA";
-const VER = "v4.11";
+const VER = "v4.13";
 const CO = "هاني محمد عسيري للإستشارات الهندسية";
 const B = { blue: "#2B5EA7", yellow: "#FDD800", red: "#E2192C", black: "#1A1A1A", blueDk: "#1E4478", blueLt: "#EDF3FB", gold: "#D4A017", diamond: "#7C3AED" };
 const C = LIGHT; // Default light - components use useTheme().t for dynamic
@@ -229,7 +229,7 @@ async function getFaceDescriptor(imgSrc) {
   if (!_modelsLoaded) return { ok: false, reason: "النماذج لم تُحمَّل بعد" };
   try {
     var img = await faceapi.fetchImage(imgSrc);
-    var opts = new faceapi.TinyFaceDetectorOptions({ inputSize: 320, scoreThreshold: 0.5 });
+    var opts = new faceapi.TinyFaceDetectorOptions({ inputSize: 512, scoreThreshold: 0.7 });
     var results = await faceapi.detectAllFaces(img, opts).withFaceLandmarks(true).withFaceDescriptors();
     if (results.length === 0) return { ok: false, reason: "لم يتم اكتشاف وجه — وجّه الكاميرا لوجهك" };
     if (results.length > 1) return { ok: false, reason: "أكثر من وجه في الصورة — صوّر وجهك فقط" };
@@ -238,9 +238,9 @@ async function getFaceDescriptor(imgSrc) {
     var box = det.detection.box;
     var imgArea = img.width * img.height;
     var faceArea = box.width * box.height;
-    if (faceArea / imgArea < 0.08) return { ok: false, reason: "الوجه بعيد — قرّب الجوال من وجهك" };
+    if (faceArea / imgArea < 0.15) return { ok: false, reason: "الوجه بعيد — قرّب الجوال من وجهك" };
     // Check detection confidence
-    if (det.detection.score < 0.65) return { ok: false, reason: "الصورة غير واضحة — تأكد من الإضاءة" };
+    if (det.detection.score < 0.80) return { ok: false, reason: "الصورة غير واضحة — تأكد من الإضاءة" };
     // Check face angle using landmarks (eyes should be roughly level)
     var landmarks = det.landmarks;
     var leftEye = landmarks.getLeftEye();
@@ -248,7 +248,7 @@ async function getFaceDescriptor(imgSrc) {
     var eyeCenter = function(pts) { var sx = 0, sy = 0; pts.forEach(function(p) { sx += p.x; sy += p.y; }); return { x: sx / pts.length, y: sy / pts.length }; };
     var le = eyeCenter(leftEye), re = eyeCenter(rightEye);
     var angle = Math.abs(Math.atan2(re.y - le.y, re.x - le.x) * 180 / Math.PI);
-    if (angle > 20) return { ok: false, reason: "وجهك مائل — انظر مباشرة للكاميرا" };
+    if (angle > 12) return { ok: false, reason: "وجهك مائل — انظر مباشرة للكاميرا" };
     return {
       ok: true,
       descriptor: Array.from(det.detection.score > 0 ? det.descriptor : []),
@@ -313,7 +313,7 @@ function FaceCamera({ onOk, onNo, empId }) {
       setProgress("تشغيل الكاميرا...");
       try {
         var s = await navigator.mediaDevices.getUserMedia({
-          video: { facingMode: "user", width: { ideal: 640 }, height: { ideal: 640 } }
+          video: { facingMode: "user", width: { ideal: 1280 }, height: { ideal: 1280 } }
         });
         if (cancelled) { s.getTracks().forEach(function(tr) { tr.stop(); }); return; }
         sRef.current = s;
@@ -339,7 +339,7 @@ function FaceCamera({ onOk, onNo, empId }) {
       var v = vRef.current;
       if (!v || v.readyState < 2) return;
       try {
-        var dets = await faceapi.detectAllFaces(v, new faceapi.TinyFaceDetectorOptions({ inputSize: 160, scoreThreshold: 0.4 }));
+        var dets = await faceapi.detectAllFaces(v, new faceapi.TinyFaceDetectorOptions({ inputSize: 320, scoreThreshold: 0.6 }));
         setIsLive(dets.length === 1);
       } catch(e) { /* ignore */ }
     }, 800);
@@ -350,9 +350,9 @@ function FaceCamera({ onOk, onNo, empId }) {
     var v = vRef.current, c = cRef.current;
     if (!v || !c) return;
     var ctx = c.getContext("2d");
-    c.width = 400; c.height = 400;
-    ctx.save(); ctx.scale(-1, 1); ctx.drawImage(v, -400, 0, 400, 400); ctx.restore();
-    var dataUrl = c.toDataURL("image/jpeg", 0.85);
+    c.width = 640; c.height = 640;
+    ctx.save(); ctx.scale(-1, 1); ctx.drawImage(v, -640, 0, 640, 640); ctx.restore();
+    var dataUrl = c.toDataURL("image/jpeg", 0.95);
     setSt("checking"); setErr("");
     var result = await getFaceDescriptor(dataUrl);
     if (result.ok) {
@@ -396,12 +396,14 @@ function FaceCamera({ onOk, onNo, empId }) {
       // Compare with stored descriptor (server or cache)
       var result = compareDescriptors(serverDesc, descriptor);
       setMatchPct(result.similarity);
-      console.log("[FaceAPI] Compare: distance=" + result.distance.toFixed(4) + " sim=" + result.similarity + "% threshold=0.32");
-      // Threshold: distance < 0.32 = same person (strict — rejects different people)
-      if (result.distance < 0.32) {
+      console.log("[FaceAPI] Compare: distance=" + result.distance.toFixed(4) + " sim=" + result.similarity + "% threshold=0.25");
+      // Threshold: distance < 0.25 = same person (strict — rejects different people)
+      if (result.distance < 0.25) {
         setSt("ok"); stopCam();
         setTimeout(function() { onOk(photo); }, 1400);
       } else {
+        // Notify admin of failed face match attempt
+        api("violations", "POST", { empId: empId, type: "face_mismatch", details: "محاولة دخول بوجه غير مطابق — التشابه: " + result.similarity + "% المسافة: " + result.distance.toFixed(3), date: new Date().toISOString().split("T")[0] });
         setErr("الوجه غير مطابق (" + result.similarity + "%) — حاول مرة أخرى");
         setSt("ready"); setPhoto(null);
         setAttempts(function(a) { return a + 1; });
@@ -598,15 +600,30 @@ function Reg({ onDone }) {
   const doLogin = async () => {
     const r = await api('login', 'POST', { empId: eid.toUpperCase(), code });
     if (r?.ok) {
+      // Device fingerprint check
+      var deviceId = localStorage.getItem("basma_device_id");
+      if (!deviceId) { deviceId = "DEV" + Date.now() + Math.random().toString(36).substr(2, 6); localStorage.setItem("basma_device_id", deviceId); }
+      var empDevices = await api("settings");
+      var registeredDevice = empDevices?.deviceMap?.[found.id];
+      if (registeredDevice && registeredDevice !== deviceId) {
+        // Different device — needs admin approval
+        await api("requests", "POST", { empId: found.id, empName: found.name, type: "device_change", note: "طلب تغيير الجهاز — الجهاز الحالي مختلف عن المسجّل", newDeviceId: deviceId });
+        setErr("⚠️ جهاز مختلف — تم إرسال طلب موافقة للإدارة");
+        return;
+      }
+      // Register device if first time
+      if (!registeredDevice) {
+        var settings = empDevices || {};
+        var dm = settings.deviceMap || {};
+        dm[found.id] = deviceId;
+        api("settings", "PUT", Object.assign({}, settings, { deviceMap: dm }));
+      }
       localStorage.setItem("basma_uid", found.id);
-      // Check if face already registered on server
       var faceData = await api("face", "GET", null, "&empId=" + found.id);
       if (faceData && faceData.ok && faceData.descriptor) {
-        // Face already registered — skip camera, go straight in
         localStorage.setItem("basma_face_v2", JSON.stringify(faceData.descriptor));
         onDone(found);
       } else {
-        // First time — need face registration
         setShowCam(true);
       }
     } else setErr(r?.error || "رمز خاطئ");
@@ -664,9 +681,29 @@ function Widget({ emp, onApp }) {
           api("gps_log", "POST", { empId: emp.id, lat: pos.lat, lng: pos.lng });
         } catch(e) { /* GPS unavailable */ }
       }
-    }, 5 * 60 * 1000); // Every 5 minutes
+    }, 5 * 60 * 1000);
     return function() { clearInterval(gpsInterval); };
   }, [isLeave]);
+
+  // App visibility detection — notify when minimized/closed
+  useEffect(() => {
+    var handleVisibility = function() {
+      if (document.hidden) {
+        // App went to background
+        api("gps_log", "POST", { empId: emp.id, lat: 0, lng: 0, event: "app_hidden", ts: new Date().toISOString() });
+      } else {
+        // App came back
+        api("gps_log", "POST", { empId: emp.id, lat: 0, lng: 0, event: "app_visible", ts: new Date().toISOString() });
+      }
+    };
+    document.addEventListener("visibilitychange", handleVisibility);
+    // Before unload — log app close
+    var handleUnload = function() {
+      try { navigator.sendBeacon("/api/data?action=gps_log", new Blob([JSON.stringify({ empId: emp.id, lat: 0, lng: 0, event: "app_closed", ts: new Date().toISOString() })], { type: "application/json" })); } catch(e) {}
+    };
+    window.addEventListener("beforeunload", handleUnload);
+    return function() { document.removeEventListener("visibilitychange", handleVisibility); window.removeEventListener("beforeunload", handleUnload); };
+  }, []);
 
   // Load today's records
   useEffect(() => {
@@ -1085,6 +1122,20 @@ function FullApp({ emp, onBack, onLogout }) {
   };
 
   const submitCompensation = async (hours, reason) => {
+    // Check monthly limit
+    var allReqs = await api("requests", "GET", null, "&empId=" + emp.id);
+    if (Array.isArray(allReqs)) {
+      var thisMonth = new Date().toISOString().slice(0, 7);
+      var monthlyComp = allReqs.filter(function(r) { return r.type === "compensation" && r.ts && r.ts.slice(0, 7) === thisMonth; });
+      var settings = await api("settings") || {};
+      var maxComp = settings.maxCompensationsPerMonth || 3;
+      if (monthlyComp.length >= maxComp) {
+        alert("⚠️ تجاوزت الحد الأقصى للتعويضات هذا الشهر (" + maxComp + " مرات)");
+        setShowCompReq(false);
+        return;
+      }
+    }
+    if (parseInt(hours) > 60) { alert("⚠️ الحد الأقصى للتعويض ساعة واحدة (60 دقيقة)"); return; }
     await api('requests', 'POST', { empId: emp.id, empName: emp.name, type: "compensation", hours: hours, reason: reason, date: today });
     setShowCompReq(false);
     loadData();

@@ -490,6 +490,44 @@ export default function AdminApp() {
           <div id="track-results" style={{ marginTop: 12, borderRadius: 10, background: t.bg, minHeight: 20 }}></div>
         </div>
         <div style={{ background: t.warnLt, borderRadius: 10, padding: "10px 14px", fontSize: 10, color: "#92400E" }}>⚠️ هذه الميزة سرية — تظهر فقط لمدير النظام. الموظفين لا يعلمون بوجود تتبّع الحركة. يتم التتبّع فقط خلال ساعات الدوام الرسمية.</div>
+
+        {/* Cluster detection */}
+        <div style={{ background: t.card, borderRadius: 14, padding: "18px", border: "1px solid " + t.sep, marginTop: 14 }}>
+          <div style={{ fontSize: 14, fontWeight: 700, marginBottom: 8 }}>👥 كشف التجمّعات</div>
+          <div style={{ fontSize: 11, color: t.txM, marginBottom: 10 }}>كشف مجموعات الموظفين المتواجدين في نفس الموقع لفترة طويلة</div>
+          <button onClick={async function() {
+            var r = await api("clusters");
+            var el = document.getElementById("cluster-results");
+            if (!r || !r.clusters) { el.innerHTML = "<div style='padding:10px;color:#8E8E93'>لا توجد بيانات</div>"; return; }
+            if (r.clusters.length === 0) { el.innerHTML = "<div style='padding:10px;color:#30D158;font-weight:700'>✅ لا توجد تجمّعات مشبوهة اليوم</div>"; return; }
+            var html = r.clusters.map(function(c) {
+              return "<div style='padding:8px;border-radius:8px;background:#FF9F0A12;margin-bottom:6px;border:1px solid #FF9F0A33'>" +
+                "<div style='font-size:12px;font-weight:700;color:#FF9F0A'>⚠️ تجمّع " + c.count + " موظفين — الساعة " + c.time + "</div>" +
+                "<div style='font-size:10px;color:#6E6E73;margin-top:4px'>" + c.employees.join("، ") + "</div></div>";
+            }).join("");
+            el.innerHTML = html;
+          }} style={{ width: "100%", padding: "10px", borderRadius: 10, background: C.warn, color: "#fff", fontSize: 12, fontWeight: 700, border: "none", cursor: "pointer" }}>👥 فحص التجمّعات اليوم</button>
+          <div id="cluster-results" style={{ marginTop: 8 }}></div>
+        </div>
+
+        {/* Weekly comparison */}
+        <div style={{ background: t.card, borderRadius: 14, padding: "18px", border: "1px solid " + t.sep, marginTop: 14 }}>
+          <div style={{ fontSize: 14, fontWeight: 700, marginBottom: 8 }}>📊 مقارنة أسبوعية</div>
+          <div style={{ fontSize: 11, color: t.txM, marginBottom: 10 }}>ترتيب الموظفين حسب نسبة الحركة خلال آخر 7 أيام</div>
+          <button onClick={async function() {
+            var r = await api("comparison");
+            var el = document.getElementById("comparison-results");
+            if (!r || !r.employees) { el.innerHTML = "<div style='padding:10px;color:#8E8E93'>لا توجد بيانات</div>"; return; }
+            var html = "<table style='width:100%;border-collapse:collapse;font-size:10px'><tr style='background:#F8F9FA'><th style='padding:6px;text-align:right'>#</th><th style='text-align:right'>الموظف</th><th>حركة%</th><th>ثبات%</th><th>نقاط GPS</th><th>إغلاق</th></tr>";
+            r.employees.forEach(function(e, i) {
+              var mc = e.movementPct >= 50 ? "#30D158" : e.movementPct >= 30 ? "#FF9F0A" : "#FF3B30";
+              html += "<tr style='border-bottom:1px solid #F0F0F0'><td style='padding:5px;font-weight:700'>" + (i+1) + "</td><td style='font-weight:600'>" + e.name + "</td><td style='text-align:center;color:" + mc + ";font-weight:700'>" + e.movementPct + "%</td><td style='text-align:center;color:#FF9F0A'>" + e.stationaryPct + "%</td><td style='text-align:center'>" + e.totalPoints + "</td><td style='text-align:center;color:" + (e.appCloses > 5 ? "#FF3B30" : "#8E8E93") + "'>" + e.appCloses + "</td></tr>";
+            });
+            html += "</table><div style='font-size:9px;color:#8E8E93;margin-top:6px'>" + r.from + " → " + r.to + "</div>";
+            el.innerHTML = html;
+          }} style={{ width: "100%", padding: "10px", borderRadius: 10, background: B.blueDk, color: "#fff", fontSize: 12, fontWeight: 700, border: "none", cursor: "pointer" }}>📊 عرض المقارنة</button>
+          <div id="comparison-results" style={{ marginTop: 8 }}></div>
+        </div>
       </>}
 
       {/* ═══ CUSTODY ADMIN ═══ */}
