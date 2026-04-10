@@ -49,7 +49,7 @@ const DARK = {
 
 // ═══════ CONSTANTS ═══════
 const APP = "بصمة HMA";
-const VER = "v4.32";
+const VER = "v4.33";
 const CO = "هاني محمد عسيري للإستشارات الهندسية";
 const B = { blue: "#2B5EA7", yellow: "#FDD800", red: "#E2192C", black: "#1A1A1A", blueDk: "#1E4478", blueLt: "#EDF3FB", gold: "#D4A017", diamond: "#7C3AED" };
 const C = LIGHT; // Default light - components use useTheme().t for dynamic
@@ -611,10 +611,13 @@ function Reg({ onDone }) {
       var empDevices = await api("settings");
       var registeredDevice = empDevices?.deviceMap?.[found.id];
       if (registeredDevice && registeredDevice !== deviceId) {
-        // Different device — needs admin approval
-        await api("requests", "POST", { empId: found.id, empName: found.name, type: "device_change", note: "طلب تغيير الجهاز — الجهاز الحالي مختلف عن المسجّل", newDeviceId: deviceId });
-        setErr("⚠️ جهاز مختلف — تم إرسال طلب موافقة للإدارة");
-        return;
+        // Different device — notify admin but allow login
+        api("requests", "POST", { empId: found.id, empName: found.name, type: "device_change", note: "تنبيه: تسجيل دخول من جهاز مختلف", newDeviceId: deviceId });
+        // Update device
+        var settings2 = empDevices || {};
+        var dm2 = settings2.deviceMap || {};
+        dm2[found.id] = deviceId;
+        api("settings", "PUT", Object.assign({}, settings2, { deviceMap: dm2 }));
       }
       // Register device if first time
       if (!registeredDevice) {
