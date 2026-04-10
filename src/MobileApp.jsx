@@ -49,7 +49,7 @@ const DARK = {
 
 // ═══════ CONSTANTS ═══════
 const APP = "بصمة HMA";
-const VER = "v4.25";
+const VER = "v4.26";
 const CO = "هاني محمد عسيري للإستشارات الهندسية";
 const B = { blue: "#2B5EA7", yellow: "#FDD800", red: "#E2192C", black: "#1A1A1A", blueDk: "#1E4478", blueLt: "#EDF3FB", gold: "#D4A017", diamond: "#7C3AED" };
 const C = LIGHT; // Default light - components use useTheme().t for dynamic
@@ -1101,11 +1101,12 @@ function FullApp({ emp, onBack, onLogout }) {
   const [newLeave, setNewLeave] = useState({ type: "سنوية", from: "", to: "", reason: "", needsVisa: false });
   const [showCompReq, setShowCompReq] = useState(false);
   const [showOTReq, setShowOTReq] = useState(false);
+  const [allowAttachments, setAllowAttachments] = useState(true);
   const [questions, setQuestions] = useState([]);
   const [showAddQ, setShowAddQ] = useState(false);
   const [newQ, setNewQ] = useState({ q: "", opts: ["", "", ""], correct: 0, type: "سؤال" });
 
-  useEffect(() => { api('settings').then(s => { if (s?.questions) setQuestions(s.questions); }); }, []);
+  useEffect(() => { api('settings').then(s => { if (s?.questions) setQuestions(s.questions); if (s?.allowAttachments === false) setAllowAttachments(false); }); }, []);
 
   const submitLeave = async () => {
     if (!newLeave.from) return alert("حدد تاريخ البداية");
@@ -1291,6 +1292,7 @@ function FullApp({ emp, onBack, onLogout }) {
                   <span style={{ padding: "3px 10px", borderRadius: 8, fontSize: 10, fontWeight: 700, background: t.warnLt, color: C.warn }}>معلّق</span>
                 </div>
                 {r.note && <div style={{ fontSize: 10, color: t.tx2, marginTop: 6 }}>{r.note}</div>}
+                {r.attachment && <button onClick={function() { var w = window.open(); w.document.write("<img src='" + r.attachment.data + "' style='max-width:100%'/>"); }} style={{ marginTop: 6, padding: "4px 10px", borderRadius: 6, background: B.blue + "12", color: B.blue, fontSize: 10, fontWeight: 600, border: "none", cursor: "pointer" }}>📎 {r.attachment.name} — عرض المرفق</button>}
                 <div style={{ fontSize: 9, color: t.txM, marginTop: 4 }}>{r.ts ? new Date(r.ts).toLocaleString("ar-SA") : ""}</div>
                 <div style={{ display: "flex", gap: 8, marginTop: 8 }}>
                   <button onClick={async function() {
@@ -1845,12 +1847,27 @@ function FullApp({ emp, onBack, onLogout }) {
             <option value="other">📝 طلب آخر</option>
           </select>
           <textarea id="req-note" placeholder="تفاصيل الطلب..." rows="3" style={{ width: "100%", padding: 10, borderRadius: 10, border: "1px solid " + t.sep, fontSize: 12, marginBottom: 8, background: t.inp, color: t.tx, fontFamily: Fn, resize: "none" }} />
+          <input type="file" id="req-file" accept="image/*,.pdf,.doc,.docx" style={{ display: "none" }} onChange={function(e) { var f = e.target.files[0]; if (f) document.getElementById("req-file-name").textContent = "📎 " + f.name; }} />
+          {allowAttachments && <button onClick={function() { document.getElementById("req-file").click(); }} style={{ width: "100%", padding: "10px", borderRadius: 10, border: "1px dashed " + t.sep, background: t.bg, color: t.tx2, fontSize: 12, fontWeight: 600, cursor: "pointer", marginBottom: 8 }}><span id="req-file-name">📎 إرفاق ملف (اختياري)</span></button>}
           <button onClick={async function() {
             var type = document.getElementById("req-type").value;
             var note = document.getElementById("req-note").value;
             if (!note) return alert("اكتب تفاصيل الطلب");
-            await api("requests", "POST", { empId: emp.id, empName: emp.name, type: type, note: note });
+            var fileInput = document.getElementById("req-file");
+            var attachment = null;
+            if (fileInput.files[0]) {
+              var file = fileInput.files[0];
+              if (file.size > 2 * 1024 * 1024) return alert("⚠️ حجم الملف أكبر من 2 ميجا");
+              attachment = await new Promise(function(resolve) {
+                var reader = new FileReader();
+                reader.onload = function(ev) { resolve({ name: file.name, size: file.size, type: file.type, data: ev.target.result }); };
+                reader.readAsDataURL(file);
+              });
+            }
+            await api("requests", "POST", { empId: emp.id, empName: emp.name, type: type, note: note, attachment: attachment });
             document.getElementById("req-note").value = "";
+            document.getElementById("req-file").value = "";
+            document.getElementById("req-file-name").textContent = "📎 إرفاق ملف (اختياري)";
             alert("✅ تم إرسال الطلب");
             loadData();
           }} style={{ width: "100%", padding: "11px", borderRadius: 10, background: B.blue, color: "#fff", fontSize: 14, fontWeight: 700, border: "none", cursor: "pointer" }}>📤 إرسال الطلب</button>
@@ -1864,6 +1881,7 @@ function FullApp({ emp, onBack, onLogout }) {
               <span style={{ padding: "2px 8px", borderRadius: 6, fontSize: 9, fontWeight: 700, background: r.status === "approved" ? t.okLt : r.status === "rejected" ? t.badLt : t.warnLt, color: r.status === "approved" ? C.ok : r.status === "rejected" ? C.bad : C.warn }}>{r.status === "approved" ? "مُوافق" : r.status === "rejected" ? "مرفوض" : "قيد المراجعة"}</span>
             </div>
             <div style={{ fontSize: 10, color: t.tx2, marginTop: 4 }}>{r.note}</div>
+            {r.attachment && <div style={{ fontSize: 10, color: B.blue, marginTop: 4 }}>📎 {r.attachment.name}</div>}
             {r.adminReply && <div style={{ fontSize: 10, color: B.blue, marginTop: 4, padding: 6, borderRadius: 6, background: B.blue + "08" }}>💬 رد الإدارة: {r.adminReply}</div>}
             <div style={{ fontSize: 9, color: t.txM, marginTop: 4 }}>{r.ts ? new Date(r.ts).toLocaleDateString("ar-SA") : ""}</div>
           </div>; })}
