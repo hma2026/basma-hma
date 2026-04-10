@@ -105,6 +105,33 @@ export default async function handler(req, res) {
         return res.json({ ok: true, record: rec });
       }
 
+      case 'face': {
+        if (req.method === 'GET') {
+          const faceId = req.query.empId;
+          if (!faceId) return res.status(400).json({ error: 'empId required' });
+          const faces = await dbGet('faces') || {};
+          if (faces[faceId]) return res.json({ ok: true, descriptor: faces[faceId] });
+          return res.json({ ok: false });
+        }
+        if (req.method === 'POST') {
+          const { empId, descriptor } = req.body || {};
+          if (!empId || !descriptor || !Array.isArray(descriptor) || descriptor.length !== 128) return res.status(400).json({ error: 'empId + descriptor[128] required' });
+          const faces = await dbGet('faces') || {};
+          faces[empId] = descriptor;
+          await dbSet('faces', faces);
+          return res.json({ ok: true });
+        }
+        if (req.method === 'DELETE') {
+          const faceId = req.query.empId;
+          if (!faceId) return res.status(400).json({ error: 'empId required' });
+          const faces = await dbGet('faces') || {};
+          delete faces[faceId];
+          await dbSet('faces', faces);
+          return res.json({ ok: true });
+        }
+        return res.json({ error: 'method not allowed' });
+      }
+
       case 'attendance': {
         let recs = await dbGet('attendance') || [];
         const { empId, date, from, to } = req.query;

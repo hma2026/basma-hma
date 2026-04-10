@@ -272,7 +272,7 @@ function compareDescriptors(desc1, desc2) {
 }
 
 // ═══════ FACE CAMERA COMPONENT ═══════
-function FaceCamera({ onOk, onNo }) {
+function FaceCamera({ onOk, onNo, empId }) {
   var themeObj = useTheme(); var t = themeObj.t;
   var vRef = useRef(null), cRef = useRef(null), sRef = useRef(null);
   var _st = useState("loading_models"), st = _st[0], setSt = _st[1];
@@ -282,6 +282,8 @@ function FaceCamera({ onOk, onNo }) {
   var _at = useState(0), attempts = _at[0], setAttempts = _at[1];
   var _pg = useState(""), progress = _pg[0], setProgress = _pg[1];
   var _li = useState(false), isLive = _li[0], setIsLive = _li[1];
+  var _sd = useState(null), serverDesc = _sd[0], setServerDesc = _sd[1];
+  var _fl = useState(true), faceLoading = _fl[0], setFaceLoading = _fl[1];
 
   // Load models then start camera
   useEffect(function() {
@@ -290,6 +292,23 @@ function FaceCamera({ onOk, onNo }) {
       var ok = await loadFaceModels(function(msg) { if (!cancelled) setProgress(msg); });
       if (cancelled) return;
       if (!ok) { setErr("فشل تحميل نماذج الذكاء الاصطناعي — تحقق من الاتصال"); setSt("model_error"); return; }
+      // Load face descriptor from server
+      if (empId) {
+        setProgress("تحميل بيانات البصمة...");
+        try {
+          var faceData = await api("face", "GET", null, "&empId=" + empId);
+          if (faceData && faceData.ok && faceData.descriptor) {
+            setServerDesc(faceData.descriptor);
+            // Cache locally
+            localStorage.setItem("basma_face_v2", JSON.stringify(faceData.descriptor));
+          }
+        } catch(e) {
+          // Fallback to localStorage cache
+          var cached = localStorage.getItem("basma_face_v2");
+          if (cached) setServerDesc(JSON.parse(cached));
+        }
+      }
+      setFaceLoading(false);
       setProgress("تشغيل الكاميرا...");
       try {
         var s = await navigator.mediaDevices.getUserMedia({
@@ -356,34 +375,40 @@ function FaceCamera({ onOk, onNo }) {
       setSt("ready"); setPhoto(null);
       return;
     }
-    var storedRaw = localStorage.getItem("basma_face_v2");
-    if (!storedRaw) {
-      // First registration
-      localStorage.setItem("basma_face_v2", JSON.stringify(descriptor));
-      // Remove old format if exists
+    if (!serverDesc) {
+      // First registration — save to server + localStorage
+      var saveOk = await api("face", "POST", { empId: empId, descriptor: descriptor });
+      if (!saveOk || saveOk.error) {
+        // Fallback: save locally if server fails
+        localStorage.setItem("basma_face_v2", JSON.stringify(descriptor));
+        console.log("[FaceAPI] Server save failed, cached locally");
+      } else {
+        localStorage.setItem("basma_face_v2", JSON.stringify(descriptor));
+        console.log("[FaceAPI] Descriptor saved to server ✓");
+      }
       localStorage.removeItem("basma_face");
-      api("checkin", "POST", { type: "face_register" });
+      api("checkin", "POST", { type: "face_register", empId: empId });
       setMatchPct(score);
       setSt("ok"); stopCam();
       setTimeout(function() { onOk(photo); }, 1400);
     } else {
-      // Compare with stored descriptor
-      var storedDesc = JSON.parse(storedRaw);
-      var result = compareDescriptors(storedDesc, descriptor);
+      // Compare with stored descriptor (server or cache)
+      var result = compareDescriptors(serverDesc, descriptor);
       setMatchPct(result.similarity);
-      // Threshold: distance < 0.45 = same person (stricter than default 0.6)
-      if (result.distance < 0.45) {
+      console.log("[FaceAPI] Compare: distance=" + result.distance.toFixed(4) + " sim=" + result.similarity + "% threshold=0.32");
+      // Threshold: distance < 0.32 = same person (strict — rejects different people)
+      if (result.distance < 0.32) {
         setSt("ok"); stopCam();
         setTimeout(function() { onOk(photo); }, 1400);
       } else {
-        setErr("الوجه غير مطابق (" + result.similarity + "%) — المسافة: " + result.distance.toFixed(2));
+        setErr("الوجه غير مطابق (" + result.similarity + "%) — حاول مرة أخرى");
         setSt("ready"); setPhoto(null);
         setAttempts(function(a) { return a + 1; });
       }
     }
   };
 
-  var isFirst = !localStorage.getItem("basma_face_v2");
+  var isFirst = !serverDesc && !faceLoading;
   var MAX_ATTEMPTS = 5;
   var borderColor = st === "ok" ? C.ok : err ? C.bad : st === "checking" ? B.yellow : isLive ? C.ok : B.blue;
   var statusColor = st === "ok" ? C.ok : B.yellow;
@@ -455,7 +480,7 @@ function FaceCamera({ onOk, onNo }) {
       {/* Secondary actions */}
       {st !== "ok" && st !== "checking" && st !== "loading_models" && <div style={{ display: "flex", gap: 16, marginTop: 16 }}>
         <button onClick={function() { stopCam(); onNo(); }} style={{ background: "none", border: "none", color: "rgba(255,255,255,.3)", fontSize: 11, cursor: "pointer" }}>إلغاء</button>
-        {!isFirst && <button onClick={function() { localStorage.removeItem("basma_face_v2"); localStorage.removeItem("basma_face"); setErr(""); setSt("ready"); setPhoto(null); setAttempts(0); }} style={{ background: "none", border: "none", color: C.warn, fontSize: 11, cursor: "pointer" }}>إعادة تسجيل البصمة</button>}
+        {!isFirst && <button onClick={function() { api("face", "DELETE", null, "&empId=" + empId); localStorage.removeItem("basma_face_v2"); localStorage.removeItem("basma_face"); setServerDesc(null); setErr(""); setSt("ready"); setPhoto(null); setAttempts(0); }} style={{ background: "none", border: "none", color: C.warn, fontSize: 11, cursor: "pointer" }}>إعادة تسجيل البصمة</button>}
       </div>}
 
       {/* CSS animations */}
@@ -539,7 +564,7 @@ function Reg({ onDone }) {
   const [st, setSt] = useState(0), [eid, setEid] = useState(""), [code, setCode] = useState(""), [err, setErr] = useState(""), [found, setFound] = useState(null), [showCam, setShowCam] = useState(false);
   const go = async () => { const emps = await api('employees') || []; const e = emps.find(x => x.id === eid.toUpperCase()); if (e) { setFound(e); setSt(1); setErr(""); } else setErr("الرقم الوظيفي غير موجود"); };
   const doLogin = async () => { const r = await api('login', 'POST', { empId: eid.toUpperCase(), code }); if (r?.ok) { localStorage.setItem("basma_uid", found.id); setShowCam(true); } else setErr(r?.error || "رمز خاطئ"); };
-  if (showCam) return <FaceCamera onOk={() => onDone(found)} onNo={() => setShowCam(false)} />;
+  if (showCam) return <FaceCamera empId={found.id} onOk={() => onDone(found)} onNo={() => setShowCam(false)} />;
   return (<div style={{ ...FL, background: t.card, display: "flex", flexDirection: "column" }}><Stripe h={5} /><div style={{ flex: 1, padding: 24, display: "flex", flexDirection: "column", justifyContent: "center" }}>
     {st === 0 && <div style={{ textAlign: "center" }}><Logo s={70} /><div style={{ fontSize: 11, color: "#000", fontWeight: 600, marginTop: 10 }}>مكتب هاني محمد عسيري للاستشارات الهندسية</div><div style={{ fontSize: 20, fontWeight: 800, color: B.blue, marginTop: 6 }}>أهلاً بك في {APP}</div><div style={{ fontSize: 12, color: t.txM, marginTop: 6 }}>أدخل الرقم الوظيفي</div><input value={eid} onChange={e => { setEid(e.target.value.toUpperCase()); setErr(""); }} placeholder="E001" style={{ ...inp, textAlign: "center", letterSpacing: 3, fontSize: 20, marginTop: 16 }} onKeyDown={e => e.key === "Enter" && go()} />{err && <div style={{ color: C.bad, fontSize: 12, marginTop: 8, fontWeight: 600 }}>{err}</div>}<button onClick={go} style={{ ...PB, width: "100%", marginTop: 18 }}>التالي</button><div style={{ fontSize: 12, color: t.txM, marginTop: 14 }}>{new Date().toLocaleDateString("ar-SA", { weekday: "long", year: "numeric", month: "long", day: "numeric" })}</div></div>}
     {st === 1 && found && <div style={{ textAlign: "center" }}><div style={{ background: t.okLt, borderRadius: 12, padding: 12, marginBottom: 16 }}><div style={{ fontSize: 14, fontWeight: 700, color: C.ok }}>✓ {found.name}</div><div style={{ fontSize: 11, color: t.tx2, marginTop: 2 }}>{found.role} — {BR[found.branch]} — {EMP_TYPES[found.type] || "🏢 مكتبي"}</div></div><div style={{ fontSize: 28 }}>🔑</div><div style={{ fontSize: 12, color: t.txM, marginTop: 6 }}>رمز التفعيل</div><input value={code} onChange={e => { setCode(e.target.value); setErr(""); }} placeholder="6 أرقام" maxLength={6} style={{ ...inp, textAlign: "center", letterSpacing: 6, fontSize: 22, marginTop: 12 }} onKeyDown={e => e.key === "Enter" && doLogin()} />{err && <div style={{ color: C.bad, fontSize: 12, marginTop: 8, fontWeight: 600 }}>{err}</div>}<button onClick={doLogin} style={{ ...PB, width: "100%", marginTop: 18 }}>دخول</button><button onClick={() => { setSt(0); setFound(null); setCode(""); setErr(""); }} style={{ marginTop: 10, background: "none", border: "none", color: t.txM, fontSize: 12, cursor: "pointer" }}>← رجوع</button></div>}
@@ -708,7 +733,7 @@ function Widget({ emp, onApp }) {
   </div>);
 
   return (<div style={{ ...FL, background: t.bg, display: "flex", flexDirection: "column", alignItems: "center", color: t.tx, position: "relative", overflow: "hidden" }}>
-    {showFace && <FaceCamera onOk={onFaceDone} onNo={() => { setShowFace(false); setCs("idle"); }} />}
+    {showFace && <FaceCamera empId={emp.id} onOk={onFaceDone} onNo={() => { setShowFace(false); setCs("idle"); }} />}
     {callNotif && <CallNotif type={callNotif.type} title={callNotif.title} sub={callNotif.sub} onAnswer={onCallAnswer} onDecline={onCallDecline} />}
     <style>{`@keyframes pu{0%,100%{transform:scale(1)}50%{transform:scale(1.05)}} @keyframes spin{to{transform:rotate(360deg)}} button:active{transform:scale(.95)!important}`}</style>
 
