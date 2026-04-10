@@ -48,7 +48,7 @@ const DARK = {
 
 // ═══════ CONSTANTS ═══════
 const APP = "بصمة HMA";
-const VER = "v4.15";
+const VER = "v4.17";
 const CO = "هاني محمد عسيري للإستشارات الهندسية";
 const B = { blue: "#2B5EA7", yellow: "#FDD800", red: "#E2192C", black: "#1A1A1A", blueDk: "#1E4478", blueLt: "#EDF3FB", gold: "#D4A017", diamond: "#7C3AED" };
 const C = LIGHT; // Default light - components use useTheme().t for dynamic
@@ -229,7 +229,7 @@ async function getFaceDescriptor(imgSrc) {
   if (!_modelsLoaded) return { ok: false, reason: "النماذج لم تُحمَّل بعد" };
   try {
     var img = await faceapi.fetchImage(imgSrc);
-    var opts = new faceapi.TinyFaceDetectorOptions({ inputSize: 512, scoreThreshold: 0.7 });
+    var opts = new faceapi.TinyFaceDetectorOptions({ inputSize: 416, scoreThreshold: 0.5 });
     var results = await faceapi.detectAllFaces(img, opts).withFaceLandmarks(true).withFaceDescriptors();
     if (results.length === 0) return { ok: false, reason: "لم يتم اكتشاف وجه — وجّه الكاميرا لوجهك" };
     if (results.length > 1) return { ok: false, reason: "أكثر من وجه في الصورة — صوّر وجهك فقط" };
@@ -238,9 +238,9 @@ async function getFaceDescriptor(imgSrc) {
     var box = det.detection.box;
     var imgArea = img.width * img.height;
     var faceArea = box.width * box.height;
-    if (faceArea / imgArea < 0.15) return { ok: false, reason: "الوجه بعيد — قرّب الجوال من وجهك" };
+    if (faceArea / imgArea < 0.10) return { ok: false, reason: "الوجه بعيد — قرّب الجوال من وجهك" };
     // Check detection confidence
-    if (det.detection.score < 0.80) return { ok: false, reason: "الصورة غير واضحة — تأكد من الإضاءة" };
+    if (det.detection.score < 0.65) return { ok: false, reason: "الصورة غير واضحة — تأكد من الإضاءة" };
     // Check face angle using landmarks (eyes should be roughly level)
     var landmarks = det.landmarks;
     var leftEye = landmarks.getLeftEye();
@@ -248,7 +248,7 @@ async function getFaceDescriptor(imgSrc) {
     var eyeCenter = function(pts) { var sx = 0, sy = 0; pts.forEach(function(p) { sx += p.x; sy += p.y; }); return { x: sx / pts.length, y: sy / pts.length }; };
     var le = eyeCenter(leftEye), re = eyeCenter(rightEye);
     var angle = Math.abs(Math.atan2(re.y - le.y, re.x - le.x) * 180 / Math.PI);
-    if (angle > 12) return { ok: false, reason: "وجهك مائل — انظر مباشرة للكاميرا" };
+    if (angle > 15) return { ok: false, reason: "وجهك مائل — انظر مباشرة للكاميرا" };
     return {
       ok: true,
       descriptor: Array.from(det.detection.score > 0 ? det.descriptor : []),
@@ -313,7 +313,7 @@ function FaceCamera({ onOk, onNo, empId }) {
       setProgress("تشغيل الكاميرا...");
       try {
         var s = await navigator.mediaDevices.getUserMedia({
-          video: { facingMode: "user", width: { ideal: 1280 }, height: { ideal: 1280 } }
+          video: { facingMode: "user", width: { ideal: 640 }, height: { ideal: 640 } }
         });
         if (cancelled) { s.getTracks().forEach(function(tr) { tr.stop(); }); return; }
         sRef.current = s;
@@ -339,7 +339,7 @@ function FaceCamera({ onOk, onNo, empId }) {
       var v = vRef.current;
       if (!v || v.readyState < 2) return;
       try {
-        var dets = await faceapi.detectAllFaces(v, new faceapi.TinyFaceDetectorOptions({ inputSize: 320, scoreThreshold: 0.6 }));
+        var dets = await faceapi.detectAllFaces(v, new faceapi.TinyFaceDetectorOptions({ inputSize: 224, scoreThreshold: 0.4 }));
         setIsLive(dets.length === 1);
       } catch(e) { /* ignore */ }
     }, 800);
