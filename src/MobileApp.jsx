@@ -49,7 +49,7 @@ const DARK = {
 
 // ═══════ CONSTANTS ═══════
 const APP = "بصمة HMA";
-const VER = "v4.24";
+const VER = "v4.25";
 const CO = "هاني محمد عسيري للإستشارات الهندسية";
 const B = { blue: "#2B5EA7", yellow: "#FDD800", red: "#E2192C", black: "#1A1A1A", blueDk: "#1E4478", blueLt: "#EDF3FB", gold: "#D4A017", diamond: "#7C3AED" };
 const C = LIGHT; // Default light - components use useTheme().t for dynamic
@@ -1009,10 +1009,10 @@ function FullApp({ emp, onBack, onLogout }) {
     const p = await api('projects'); if (Array.isArray(p)) setProjects(p);
     const d = await api('delegations'); if (Array.isArray(d)) setDelegations(d);
     const ex = await api('exceptions'); if (Array.isArray(ex)) setExceptions(ex);
-    const v = await api('violations', 'GET', null, `&empId=${emp.id}`); if (Array.isArray(v)) setViolations(v);
-    const w = await api('warnings', 'GET', null, `&empId=${emp.id}`); if (Array.isArray(w)) setWarnings(w);
+    const v = await api('violations', 'GET', null, isHR ? '' : `&empId=${emp.id}`); if (Array.isArray(v)) setViolations(v);
+    const w = await api('warnings', 'GET', null, isHR ? '' : `&empId=${emp.id}`); if (Array.isArray(w)) setWarnings(w);
     const cust = await api('custody', 'GET', null, isHR ? '' : `&empId=${emp.id}`); if (Array.isArray(cust)) setCustodyItems(cust);
-    const reqs = await api('requests', 'GET', null, `&empId=${emp.id}`); if (Array.isArray(reqs)) setAdminRequests(reqs);
+    const reqs = await api('requests', 'GET', null, isHR ? '' : `&empId=${emp.id}`); if (Array.isArray(reqs)) setAdminRequests(reqs);
   };
 
   const approveLeave = async (id) => { await api('leaves', 'PUT', { id, status: 'approved' }); loadData(); };
@@ -1271,6 +1271,57 @@ function FullApp({ emp, onBack, onLogout }) {
             <button onClick={() => setShowAddDeleg(false)} style={{ flex: 1, padding: 10, borderRadius: 14, background: t.bg, border: "1px solid " + t.sep, color: t.tx2, fontSize: 13, fontWeight: 700, cursor: "pointer" }}>إلغاء</button>
           </div>
         </div>}
+
+        {/* ADMIN REQUESTS - طلبات الموظفين */}
+        {isHR && <>
+          <div style={{ fontSize: 14, fontWeight: 700, marginTop: 14, marginBottom: 8 }}>📝 طلبات الموظفين</div>
+          {adminRequests.length === 0 && <div style={{ ...crd, textAlign: "center", color: t.txM, fontSize: 11 }}>لا توجد طلبات</div>}
+          {adminRequests.filter(function(r) { return r.status === "pending"; }).length > 0 && <>
+            <div style={{ padding: "6px 10px", borderRadius: 8, background: C.warn + "15", marginBottom: 8 }}>
+              <span style={{ fontSize: 12, fontWeight: 700, color: C.warn }}>⏳ {adminRequests.filter(function(r) { return r.status === "pending"; }).length} طلب بانتظار الاعتماد</span>
+            </div>
+            {adminRequests.filter(function(r) { return r.status === "pending"; }).map(function(r) {
+              var types = { experience_letter: "📄 شهادة خبرة", intro_letter: "📋 خطاب تعريف", salary_cert: "💰 شهادة راتب", advance: "💵 سلفة", compensation: "⏰ تعويض", overtime: "🕐 أوفرتايم", device_change: "📱 تغيير جهاز", other: "📝 أخرى" };
+              return <div key={r.id} style={{ ...crd, marginBottom: 6 }}>
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                  <div>
+                    <div style={{ fontSize: 13, fontWeight: 700 }}>{r.empName || r.empId}</div>
+                    <div style={{ fontSize: 11, color: t.tx2 }}>{types[r.type] || r.type}</div>
+                  </div>
+                  <span style={{ padding: "3px 10px", borderRadius: 8, fontSize: 10, fontWeight: 700, background: t.warnLt, color: C.warn }}>معلّق</span>
+                </div>
+                {r.note && <div style={{ fontSize: 10, color: t.tx2, marginTop: 6 }}>{r.note}</div>}
+                <div style={{ fontSize: 9, color: t.txM, marginTop: 4 }}>{r.ts ? new Date(r.ts).toLocaleString("ar-SA") : ""}</div>
+                <div style={{ display: "flex", gap: 8, marginTop: 8 }}>
+                  <button onClick={async function() {
+                    var reply = prompt("رد الإدارة (اختياري):");
+                    await api("requests", "PUT", { id: r.id, status: "approved", adminReply: reply || "تمت الموافقة" });
+                    loadData();
+                    alert("✅ تمت الموافقة");
+                  }} style={{ flex: 1, padding: 8, borderRadius: 8, background: C.ok, color: "#fff", fontSize: 12, fontWeight: 700, border: "none", cursor: "pointer" }}>✅ موافقة</button>
+                  <button onClick={async function() {
+                    var reply = prompt("سبب الرفض:");
+                    if (!reply) return;
+                    await api("requests", "PUT", { id: r.id, status: "rejected", adminReply: reply });
+                    loadData();
+                    alert("تم الرفض");
+                  }} style={{ flex: 1, padding: 8, borderRadius: 8, background: C.bad, color: "#fff", fontSize: 12, fontWeight: 700, border: "none", cursor: "pointer" }}>❌ رفض</button>
+                </div>
+              </div>;
+            })}
+          </>}
+          {adminRequests.filter(function(r) { return r.status !== "pending"; }).length > 0 && <>
+            <div style={{ fontSize: 12, fontWeight: 600, color: t.txM, marginTop: 10, marginBottom: 6 }}>طلبات سابقة</div>
+            {adminRequests.filter(function(r) { return r.status !== "pending"; }).slice(0, 5).map(function(r) {
+              var types = { experience_letter: "📄 خبرة", intro_letter: "📋 تعريف", salary_cert: "💰 راتب", advance: "💵 سلفة", compensation: "⏰ تعويض", overtime: "🕐 أوفرتايم", device_change: "📱 جهاز", other: "📝 أخرى" };
+              var sc = r.status === "approved" ? C.ok : C.bad;
+              return <div key={r.id} style={{ display: "flex", justifyContent: "space-between", padding: "6px 0", borderBottom: "1px solid " + t.sep, fontSize: 11 }}>
+                <span>{r.empName || r.empId} — {types[r.type] || r.type}</span>
+                <span style={{ color: sc, fontWeight: 700 }}>{r.status === "approved" ? "✅" : "❌"}</span>
+              </div>;
+            })}
+          </>}
+        </>}
       </div>}
 
       {/* PROJECTS TAB */}
