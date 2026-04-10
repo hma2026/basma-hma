@@ -48,7 +48,7 @@ const DARK = {
 
 // ═══════ CONSTANTS ═══════
 const APP = "بصمة HMA";
-const VER = "v4.14";
+const VER = "v4.15";
 const CO = "هاني محمد عسيري للإستشارات الهندسية";
 const B = { blue: "#2B5EA7", yellow: "#FDD800", red: "#E2192C", black: "#1A1A1A", blueDk: "#1E4478", blueLt: "#EDF3FB", gold: "#D4A017", diamond: "#7C3AED" };
 const C = LIGHT; // Default light - components use useTheme().t for dynamic
@@ -662,6 +662,7 @@ function Widget({ emp, onApp }) {
   const [lastCallType, setLastCallType] = useState(null);
   const cdRef = useRef(null), cpTrig = useRef(new Set()), retryRef = useRef(null);
   const level = getLevel(emp.points || 0);
+  const isLeave = emp.onLeave;
   // Stable per-employee break offset (2-5 min based on employee ID)
   const empHash = emp.id.split('').reduce((a, c) => a + c.charCodeAt(0), 0);
   const breakOffsetBefore = (empHash % 4) + 2; // 2-5 minutes before break
@@ -714,7 +715,6 @@ function Widget({ emp, onApp }) {
   }, []);
 
   // On leave?
-  const isLeave = emp.onLeave;
   const dur = sH >= 8 && sH < 17, aft = sH >= 17, bef = sH < 8 || (sH === 8 && sM < 30);
   const mW = dur ? Math.max(0, (sH - 8) * 60 + sM - 30) : aft ? 510 : 0;
   const pct = Math.min(100, Math.max(0, Math.round((mW / 510) * 100)));
