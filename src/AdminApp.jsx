@@ -243,17 +243,19 @@ export default function AdminApp() {
     })();
   }, []);
 
-  // ═══ SAVE HELPERS ═══
-  var saveBranches = function(newBranches) { setBranches(newBranches); api('branches', 'PUT', newBranches); };
-  var saveSettings = function(updates) {
-    var current = { emailLists, docRouting, empOverrides, observed, questions };
-    var merged = Object.assign({}, current, updates);
-    api('settings', 'PUT', merged);
+  // ═══ SAVE HELPERS (with await + confirmation) ═══
+  var saveBranches = async function(newBranches) { setBranches(newBranches); var r = await api('branches', 'PUT', newBranches); if (!r || r.error) console.error("Branch save failed:", r); };
+  var saveSettings = async function(updates) {
+    // Load current settings from server first to avoid stale data
+    var serverSettings = await api('settings') || {};
+    var merged = Object.assign({}, serverSettings, updates);
+    var r = await api('settings', 'PUT', merged);
+    if (!r || r.error) { console.error("Settings save failed:", r); return; }
     if (updates.emailLists) setEmailLists(updates.emailLists);
     if (updates.docRouting) setDocRouting(updates.docRouting);
     if (updates.empOverrides) setEmpOverrides(updates.empOverrides);
     if (updates.observed) setObserved(updates.observed);
-    if (updates.questions) setQuestions(updates.questions);
+    if (updates.questions !== undefined) setQuestions(updates.questions);
   };
   var saveEvent = async function(ev) { await api('events', 'POST', ev); var evs = await api('events'); if (Array.isArray(evs)) setEvents(evs); };
   var deleteEvent = async function(id) { await api('events', 'DELETE', null, '&id=' + id); var evs = await api('events'); if (Array.isArray(evs)) setEvents(evs); };
