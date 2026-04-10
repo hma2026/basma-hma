@@ -148,18 +148,38 @@ function Login({ onLogin }) {
   var dk = localStorage.getItem("basma_theme") === "dark";
   var t = dk ? DK : LT;
   const [role, setRole] = useState("manager");
-  return (<div style={{ minHeight: "100vh", background: t.bg, display: "flex", alignItems: "center", justifyContent: "center" }}>
+  const [pin, setPin] = useState("");
+  const [err, setErr] = useState("");
+  const ADMIN_PIN = "1437"; // Default PIN — should be changed from settings
+  const doLogin = () => {
+    if (pin === ADMIN_PIN) { setErr(""); onLogin(role); }
+    else { setErr("الرقم السري غير صحيح"); setPin(""); }
+  };
+  return (<div style={{ minHeight: "100vh", background: t.bg, display: "flex", alignItems: "center", justifyContent: "center", fontFamily: Fn, direction: "rtl" }}>
     <div style={{ background: t.card, borderRadius: 24, padding: "48px 40px", width: 380, textAlign: "center", boxShadow: "0 8px 40px rgba(0,0,0,.08)" }}>
       <Logo s={60} /><div style={{ fontSize: 24, fontWeight: 800, color: B.blue, marginTop: 12 }}>{APP}</div><div style={{ fontSize: 13, color: t.txM, marginTop: 4 }}>لوحة إدارة الموارد البشرية</div><Stripe />
-      <div style={{ display: "flex", borderRadius: 12, overflow: "hidden", border: "1px solid " + t.sep, margin: "24px 0 20px" }}>
+      <div style={{ display: "flex", borderRadius: 12, overflow: "hidden", border: "1px solid " + t.sep, margin: "24px 0 16px" }}>
         {[{ id: "manager", l: "مدير" }, { id: "assistant", l: "مساعد" }].map(r => <button key={r.id} onClick={() => setRole(r.id)} style={{ flex: 1, padding: "12px", border: "none", fontSize: 13, fontWeight: 700, cursor: "pointer", background: role === r.id ? B.blue : "#F8F9FC", color: role === r.id ? "#fff" : t.txM }}>{r.l}</button>)}
       </div>
-      <button onClick={() => onLogin(role)} style={{ width: "100%", padding: "14px", borderRadius: 14, background: B.blue, border: "none", color: "#fff", fontSize: 16, fontWeight: 700, cursor: "pointer" }}>دخول</button>
+      <div style={{ fontSize: 12, color: t.txM, marginBottom: 8 }}>🔑 الرقم السري</div>
+      <input type="password" value={pin} onChange={e => { setPin(e.target.value); setErr(""); }} placeholder="****" maxLength={6} onKeyDown={e => e.key === "Enter" && doLogin()} style={{ width: "100%", padding: "14px", borderRadius: 12, border: "1px solid " + (err ? "#FF3B30" : t.sep), fontSize: 22, textAlign: "center", letterSpacing: 8, fontFamily: Fn, outline: "none", background: t.inp, color: t.tx, marginBottom: err ? 4 : 16 }} />
+      {err && <div style={{ color: "#FF3B30", fontSize: 12, fontWeight: 600, marginBottom: 12 }}>{err}</div>}
+      <button onClick={doLogin} style={{ width: "100%", padding: "14px", borderRadius: 14, background: B.blue, border: "none", color: "#fff", fontSize: 16, fontWeight: 700, cursor: "pointer" }}>دخول</button>
     </div>
   </div>);
 }
 
 // ═══════ MAIN DASHBOARD ═══════
+const API = '/api/data';
+const api = async (action, method = 'GET', body = null, params = '') => {
+  try {
+    const opts = { method, headers: { 'Content-Type': 'application/json' } };
+    if (body) opts.body = JSON.stringify(body);
+    const r = await fetch(`${API}?action=${action}${params}`, opts);
+    return await r.json();
+  } catch { return null; }
+};
+
 export default function AdminApp() {
   const [dk, setDk] = useState(() => localStorage.getItem("basma_theme") === "dark");
   const t = dk ? DK : LT;
@@ -167,14 +187,18 @@ export default function AdminApp() {
   const [loggedIn, setLoggedIn] = useState(false);
   const [role, setRole] = useState("manager");
   const [tab, setTab] = useState("dashboard");
+  const [loading, setLoading] = useState(true);
   const [leaves, setLeaves] = useState(LEAVE_INIT);
   const [search, setSearch] = useState("");
   const [brFilter, setBrFilter] = useState("all");
   const [selEmp, setSelEmp] = useState(null);
   const [events, setEvents] = useState(EVENTS);
   const [branches, setBranches] = useState(BRANCHES);
-  const [mapTarget, setMapTarget] = useState(null); // { type: 'branch', id: 'jed' }
+  const [emps, setEmps] = useState(EMPS);
+  const [mapTarget, setMapTarget] = useState(null);
   const [settingsTab, setSettingsTab] = useState("general");
+  const [questions, setQuestions] = useState([]);
+  const [newQ, setNewQ] = useState({ q: "", opts: ["", "", "", ""], correct: 0 });
   const [emailLists, setEmailLists] = useState([
     { id: 1, name: "الموارد البشرية", email: "hr@hma.engineer", color: B.blue },
     { id: 2, name: "الشؤون القانونية", email: "legal@hma.engineer", color: t.bad },
@@ -196,7 +220,48 @@ export default function AdminApp() {
     { id: 1, name: "ماجد الحربي", empId: "E008", role: "مهندس مساحة", reason: "مخالفات متكررة + شكاوى سابقة", addedBy: "مدير الموارد البشرية", date: "2026-03-20", duration: "حتى إشعار آخر" },
   ]);
 
+  // ═══ LOAD ALL DATA FROM API ═══
+  useEffect(() => {
+    (async () => {
+      try {
+        var [brData, empData, evData, lvData, stData] = await Promise.all([
+          api('branches'), api('employees'), api('events'), api('leaves'), api('settings')
+        ]);
+        if (Array.isArray(brData) && brData.length > 0) setBranches(brData);
+        if (Array.isArray(empData) && empData.length > 0) setEmps(empData);
+        if (Array.isArray(evData)) setEvents(evData);
+        if (Array.isArray(lvData)) setLeaves(lvData);
+        if (stData && typeof stData === 'object' && !stData.error) {
+          if (stData.emailLists) setEmailLists(stData.emailLists);
+          if (stData.docRouting) setDocRouting(stData.docRouting);
+          if (stData.empOverrides) setEmpOverrides(stData.empOverrides);
+          if (stData.observed) setObserved(stData.observed);
+          if (Array.isArray(stData.questions)) setQuestions(stData.questions);
+        }
+      } catch(e) { console.error("Load error:", e); }
+      setLoading(false);
+    })();
+  }, []);
+
+  // ═══ SAVE HELPERS ═══
+  var saveBranches = function(newBranches) { setBranches(newBranches); api('branches', 'PUT', newBranches); };
+  var saveSettings = function(updates) {
+    var current = { emailLists, docRouting, empOverrides, observed, questions };
+    var merged = Object.assign({}, current, updates);
+    api('settings', 'PUT', merged);
+    if (updates.emailLists) setEmailLists(updates.emailLists);
+    if (updates.docRouting) setDocRouting(updates.docRouting);
+    if (updates.empOverrides) setEmpOverrides(updates.empOverrides);
+    if (updates.observed) setObserved(updates.observed);
+    if (updates.questions) setQuestions(updates.questions);
+  };
+  var saveEvent = async function(ev) { await api('events', 'POST', ev); var evs = await api('events'); if (Array.isArray(evs)) setEvents(evs); };
+  var deleteEvent = async function(id) { await api('events', 'DELETE', null, '&id=' + id); var evs = await api('events'); if (Array.isArray(evs)) setEvents(evs); };
+  var approveLeave = async function(id) { await api('leaves', 'PUT', { id, status: 'approved' }); var lvs = await api('leaves'); if (Array.isArray(lvs)) setLeaves(lvs); };
+  var rejectLeave = async function(id) { await api('leaves', 'PUT', { id, status: 'rejected' }); var lvs = await api('leaves'); if (Array.isArray(lvs)) setLeaves(lvs); };
+
   if (!loggedIn) return <Login onLogin={r => { setRole(r); setLoggedIn(true); }} />;
+  if (loading) return <div style={{ minHeight: "100vh", background: t.bg, display: "flex", alignItems: "center", justifyContent: "center", fontFamily: Fn, direction: "rtl" }}><div style={{ textAlign: "center" }}><div style={{ width: 32, height: 32, border: "3px solid " + t.sep, borderTopColor: B.blue, borderRadius: "50%", animation: "spin .8s linear infinite", margin: "0 auto" }} /><div style={{ fontSize: 13, color: t.txM, marginTop: 12 }}>جارِ تحميل البيانات...</div></div><style>{"@keyframes spin{to{transform:rotate(360deg)}}"}</style></div>;
 
   const approve = id => role === "manager" && setLeaves(l => l.map(x => x.id === id ? { ...x, status: "معتمد" } : x));
   const reject = id => role === "manager" && setLeaves(l => l.map(x => x.id === id ? { ...x, status: "مرفوض" } : x));
@@ -330,7 +395,7 @@ export default function AdminApp() {
         <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(160px, 1fr))", gap: 10, marginBottom: 14 }}>{branches.map(b => { var ins = EMPS.filter(e => e.branch === b.name && e.gps).length; var out = EMPS.filter(e => e.branch === b.name && !e.gps).length; return <div key={b.id} style={{ background: t.card, borderRadius: 14, padding: "14px", border: "1px solid " + t.sep, textAlign: "center" }}><div style={{ fontSize: 13, fontWeight: 700 }}>{b.name}</div><div style={{ display: "flex", justifyContent: "center", gap: 8, marginTop: 6 }}><span style={{ fontSize: 11, color: t.ok }}>✓{ins}</span>{out > 0 && <span style={{ fontSize: 11, color: t.bad }}>✕{out}</span>}</div><div style={{ fontSize: 10, color: B.blue, marginTop: 6 }}>📍 {b.radius < 1000 ? b.radius + " م" : (b.radius / 1000).toFixed(1) + " كم"}</div>{b.lat ? <div style={{ fontSize: 9, color: t.txM, marginTop: 2, fontFamily: "monospace" }}>{b.lat.toFixed(4)}, {b.lng.toFixed(4)}</div> : <div style={{ fontSize: 9, color: t.warn, marginTop: 2 }}>⚠️ لم يُحدد الموقع</div>}<button onClick={function() { setMapTarget({ type: "branch", id: b.id }); }} style={{ width: "100%", marginTop: 8, padding: "7px", borderRadius: 8, background: B.blue + "12", color: B.blue, fontSize: 11, fontWeight: 700, border: "none", cursor: "pointer" }}>🗺️ تحديد الموقع</button></div>; })}</div>
         {EMPS.filter(e => !e.gps).length > 0 && <div style={{ background: t.card, borderRadius: 14, padding: "16px", border: "1px solid " + t.sep }}><div style={{ fontSize: 13, fontWeight: 700, color: t.bad, marginBottom: 10 }}>🚨 خارج النطاق</div>{EMPS.filter(e => !e.gps).map((e, i) => <div key={i} style={{ padding: "8px 10px", borderRadius: 10, background: t.badLt, marginBottom: 6, display: "flex", alignItems: "center", gap: 8 }}><span>🚨</span><div style={{ flex: 1 }}><div style={{ fontSize: 12, fontWeight: 700 }}>{e.name}</div><div style={{ fontSize: 10, color: t.bad }}>{e.branch} · {e.status}</div></div>{role === "manager" && <button style={{ padding: "4px 10px", borderRadius: 6, background: B.blue, color: "#fff", fontSize: 10, fontWeight: 700, border: "none", cursor: "pointer" }}>إجراء</button>}</div>)}</div>}
         {/* Map Picker Modal */}
-        {mapTarget && mapTarget.type === "branch" && (function() { var br = branches.find(function(x) { return x.id === mapTarget.id; }); if (!br) return null; return <MapPicker lat={br.lat} lng={br.lng} radius={br.radius} name={br.name} t={t} onClose={function() { setMapTarget(null); }} onSave={function(lat, lng, rad) { setBranches(function(bs) { return bs.map(function(x) { return x.id === br.id ? Object.assign({}, x, { lat: lat, lng: lng, radius: rad }) : x; }); }); setMapTarget(null); }} />; })()}
+        {mapTarget && mapTarget.type === "branch" && (function() { var br = branches.find(function(x) { return x.id === mapTarget.id; }); if (!br) return null; return <MapPicker lat={br.lat} lng={br.lng} radius={br.radius} name={br.name} t={t} onClose={function() { setMapTarget(null); }} onSave={function(lat, lng, rad) { var nb = branches.map(function(x) { return x.id === br.id ? Object.assign({}, x, { lat: lat, lng: lng, radius: rad }) : x; }); saveBranches(nb); setMapTarget(null); }} />; })()}
       </>}
 
       {/* ═══ REPORTS ═══ */}
@@ -363,7 +428,7 @@ export default function AdminApp() {
       {/* ═══ SETTINGS ═══ */}
       {tab === "settings" && <>
         {/* Sub-tabs for settings */}
-        <div style={{ display: "flex", gap: 6, marginBottom: 16 }}>{[{ id: "general", l: "⚙️ عام" }, { id: "email", l: "📧 توجيه الإيميل" }, { id: "observation", l: "👁 تحت الملاحظة" }].map(t => <button key={t.id} onClick={() => setSettingsTab(t.id)} style={{ padding: "8px 18px", borderRadius: 10, border: settingsTab === t.id ? "none" : "1px solid " + t.sep, background: settingsTab === t.id ? B.blue : "#fff", color: settingsTab === t.id ? "#fff" : t.tx2, fontSize: 12, fontWeight: 700, cursor: "pointer" }}>{t.l}</button>)}</div>
+        <div style={{ display: "flex", gap: 6, marginBottom: 16, flexWrap: "wrap" }}>{[{ id: "general", l: "⚙️ عام" }, { id: "questions", l: "❓ الأسئلة" }, { id: "email", l: "📧 توجيه الإيميل" }, { id: "observation", l: "👁 تحت الملاحظة" }].map(st => <button key={st.id} onClick={() => setSettingsTab(st.id)} style={{ padding: "8px 18px", borderRadius: 10, border: settingsTab === st.id ? "none" : "1px solid " + t.sep, background: settingsTab === st.id ? B.blue : t.card, color: settingsTab === st.id ? "#fff" : t.tx2, fontSize: 12, fontWeight: 700, cursor: "pointer" }}>{st.l}</button>)}</div>
 
         {/* GENERAL */}
         {settingsTab === "general" && <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
@@ -393,11 +458,11 @@ export default function AdminApp() {
                     <div key={fi}>
                       <div style={{ fontSize: 9, color: t.txM, marginBottom: 3 }}>{f.l}</div>
                       {f.k === "offDay" ? (
-                        <select value={f.v} onChange={e => setBranches(bs => bs.map(x => x.id === br.id ? { ...x, [f.k]: e.target.value } : x))} style={{ ...sinp, width: "100%" }} disabled={role !== "manager"}>
+                        <select value={f.v} onChange={e => { var nb = branches.map(function(xx) { return xx.id === br.id ? Object.assign({}, xx, { [f.k]: e.target.value }) : xx; }); saveBranches(nb); }} style={{ ...sinp, width: "100%" }} disabled={role !== "manager"}>
                           {["الجمعة", "السبت", "الأحد", "الجمعة+السبت", "السبت+الأحد"].map(d => <option key={d} value={d}>{d}</option>)}
                         </select>
                       ) : (
-                        <input value={f.v} onChange={e => setBranches(bs => bs.map(x => x.id === br.id ? { ...x, [f.k]: e.target.value } : x))} style={{ ...sinp, width: "100%" }} disabled={role !== "manager"} />
+                        <input value={f.v} onChange={e => { var nb = branches.map(function(xx) { return xx.id === br.id ? Object.assign({}, xx, { [f.k]: e.target.value }) : xx; }); saveBranches(nb); }} style={{ ...sinp, width: "100%" }} disabled={role !== "manager"} />
                       )}
                     </div>
                   ))}
@@ -419,6 +484,41 @@ export default function AdminApp() {
         </div>}
 
         {/* EMAIL ROUTING */}
+        {settingsTab === "questions" && <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+          <div style={{ background: t.card, borderRadius: 14, padding: "18px", border: "1px solid " + t.sep }}>
+            <div style={{ fontSize: 14, fontWeight: 700, marginBottom: 4 }}>❓ أسئلة التحدي اليومية</div>
+            <div style={{ fontSize: 11, color: t.txM, marginBottom: 14 }}>الأسئلة تظهر للموظف عند تسجيل الحضور — الإجابة الصحيحة = +5 نقاط</div>
+            {questions.length === 0 && <div style={{ padding: 20, textAlign: "center", color: t.txM, fontSize: 12 }}>لا توجد أسئلة — سيتم استخدام الأسئلة الافتراضية</div>}
+            {questions.map(function(q, qi) { return <div key={qi} style={{ padding: 12, borderRadius: 10, background: t.bg, marginBottom: 8, border: "1px solid " + t.sep }}>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
+                <div style={{ flex: 1 }}>
+                  <div style={{ fontSize: 13, fontWeight: 700, color: t.tx }}>{qi + 1}. {q.q}</div>
+                  <div style={{ display: "flex", flexWrap: "wrap", gap: 6, marginTop: 6 }}>{q.opts.map(function(o, oi) { return <span key={oi} style={{ padding: "3px 10px", borderRadius: 6, fontSize: 11, fontWeight: 600, background: oi === q.correct ? t.okLt : "rgba(0,0,0,.04)", color: oi === q.correct ? t.ok : t.tx2 }}>{oi === q.correct ? "✓ " : ""}{o}</span>; })}</div>
+                </div>
+                <button onClick={function() { var nq = questions.filter(function(_, i) { return i !== qi; }); saveSettings({ questions: nq }); }} style={{ background: "none", border: "none", color: t.bad, fontSize: 16, cursor: "pointer", padding: 4 }}>✕</button>
+              </div>
+            </div>; })}
+          </div>
+          {/* Add new question */}
+          <div style={{ background: t.card, borderRadius: 14, padding: "18px", border: "1px solid " + t.sep }}>
+            <div style={{ fontSize: 13, fontWeight: 700, marginBottom: 12 }}>➕ إضافة سؤال جديد</div>
+            <div style={{ marginBottom: 10 }}>
+              <div style={{ fontSize: 10, color: t.txM, marginBottom: 4 }}>نص السؤال</div>
+              <input value={newQ.q} onChange={function(e) { setNewQ(function(p) { return Object.assign({}, p, { q: e.target.value }); }); }} placeholder="مثال: ما هو أعلى برج في العالم؟" style={{ width: "100%", padding: "10px 12px", borderRadius: 10, border: "1px solid " + t.sep, fontSize: 13, fontFamily: Fn, background: t.inp, color: t.tx, outline: "none" }} />
+            </div>
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8, marginBottom: 10 }}>
+              {[0, 1, 2, 3].map(function(i) { return <div key={i}>
+                <div style={{ fontSize: 10, color: t.txM, marginBottom: 3 }}>الخيار {i + 1} {i === newQ.correct ? "✓ صحيح" : ""}</div>
+                <div style={{ display: "flex", gap: 4 }}>
+                  <input value={newQ.opts[i]} onChange={function(e) { setNewQ(function(p) { var no = [].concat(p.opts); no[i] = e.target.value; return Object.assign({}, p, { opts: no }); }); }} placeholder={"الخيار " + (i + 1)} style={{ flex: 1, padding: "8px 10px", borderRadius: 8, border: "1px solid " + t.sep, fontSize: 12, fontFamily: Fn, background: t.inp, color: t.tx, outline: "none" }} />
+                  <button onClick={function() { setNewQ(function(p) { return Object.assign({}, p, { correct: i }); }); }} style={{ padding: "6px 10px", borderRadius: 8, border: "none", background: i === newQ.correct ? t.ok : t.bg, color: i === newQ.correct ? "#fff" : t.txM, fontSize: 10, fontWeight: 700, cursor: "pointer" }}>✓</button>
+                </div>
+              </div>; })}
+            </div>
+            <button onClick={function() { if (!newQ.q || newQ.opts.some(function(o) { return !o; })) return; var nq = questions.concat([{ q: newQ.q, opts: newQ.opts, correct: newQ.correct }]); saveSettings({ questions: nq }); setNewQ({ q: "", opts: ["", "", "", ""], correct: 0 }); }} style={{ width: "100%", padding: "11px", borderRadius: 10, background: B.blue, color: "#fff", fontSize: 14, fontWeight: 700, border: "none", cursor: "pointer" }}>💾 حفظ السؤال</button>
+          </div>
+        </div>}
+
         {settingsTab === "email" && <>
           {/* Distribution Lists */}
           <div style={{ background: t.card, borderRadius: 16, padding: "20px", border: "1px solid " + t.sep, marginBottom: 14 }}>

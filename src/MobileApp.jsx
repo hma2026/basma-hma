@@ -48,7 +48,7 @@ const DARK = {
 
 // ═══════ CONSTANTS ═══════
 const APP = "بصمة HMA";
-const VER = "v4.02";
+const VER = "v4.04";
 const CO = "هاني محمد عسيري للإستشارات الهندسية";
 const B = { blue: "#2B5EA7", yellow: "#FDD800", red: "#E2192C", black: "#1A1A1A", blueDk: "#1E4478", blueLt: "#EDF3FB", gold: "#D4A017", diamond: "#7C3AED" };
 const C = LIGHT; // Default light - components use useTheme().t for dynamic
@@ -559,6 +559,37 @@ function Splash({ onDone }) {
   return (<div style={{ ...FL, background: t.card, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center" }}><Logo s={100} /><div style={{ fontSize: 26, fontWeight: 800, color: B.blue, marginTop: 16 }}>{APP}</div><div style={{ fontSize: 12, color: t.txM, marginTop: 6 }}>{CO}</div></div>);
 }
 
+// ═══════ LEGAL DISCLAIMER ═══════
+function Disclaimer({ onAccept }) {
+  var _t = useTheme(), t = _t.t;
+  var _scroll = useState(false), scrolled = _scroll[0], setScrolled = _scroll[1];
+  return (<div style={{ ...FL, background: t.card, display: "flex", flexDirection: "column", direction: "rtl" }}>
+    <Stripe h={5} />
+    <div style={{ padding: "20px 20px 0", textAlign: "center" }}><Logo s={50} /><div style={{ fontSize: 18, fontWeight: 800, color: B.blue, marginTop: 10 }}>إقرار استخدام التطبيق</div><div style={{ fontSize: 11, color: t.txM, marginTop: 4 }}>يرجى قراءة الشروط والموافقة عليها</div></div>
+    <div onScroll={function(e) { if (e.target.scrollTop > 100) setScrolled(true); }} style={{ flex: 1, padding: "16px 20px", overflowY: "auto", fontSize: 13, color: t.tx2, lineHeight: 2 }}>
+      <div style={{ fontWeight: 700, color: t.tx, marginBottom: 8 }}>بسم الله الرحمن الرحيم</div>
+      <div>بتسجيلك في تطبيق <strong>بصمة HMA</strong> التابع لمكتب هاني محمد عسيري للاستشارات الهندسية، فإنك تقرّ وتوافق على ما يلي:</div>
+      <div style={{ marginTop: 12, fontWeight: 700, color: t.tx }}>1. طبيعة التطبيق</div>
+      <div>هذا التطبيق مخصص لتسجيل الحضور والانصراف باستخدام التعرّف على الوجه وتحديد الموقع الجغرافي (GPS).</div>
+      <div style={{ marginTop: 12, fontWeight: 700, color: t.tx }}>2. الاستخدام الاختياري</div>
+      <div>استخدام هذا التطبيق <strong style={{ color: C.ok }}>اختياري بالكامل</strong>. يحق لك عدم تنزيل التطبيق على جهازك الشخصي، ويمكنك:</div>
+      <div style={{ padding: "8px 16px", background: t.okLt, borderRadius: 10, margin: "8px 0" }}>• طلب جهاز من الإدارة لاستخدام التطبيق<br/>• التحضير يدوياً عبر المدير المباشر يومياً</div>
+      <div style={{ marginTop: 12, fontWeight: 700, color: t.tx }}>3. التتبّع وساعات العمل</div>
+      <div>يتم تتبّع الموقع الجغرافي <strong style={{ color: B.blue }}>فقط خلال ساعات الدوام الرسمية</strong>. لا يتم أي تتبّع خارج أوقات العمل المحددة.</div>
+      <div style={{ marginTop: 12, fontWeight: 700, color: t.tx }}>4. بصمة الوجه</div>
+      <div>يتم تحويل صورة وجهك إلى بيانات رقمية مشفّرة (128 رقم) تُحفظ في سيرفر آمن. لا تُحفظ صور الوجه الفعلية.</div>
+      <div style={{ marginTop: 12, fontWeight: 700, color: t.tx }}>5. خصوصية البيانات</div>
+      <div>جميع البيانات تُستخدم حصرياً لأغراض إدارة الحضور والانصراف، ولا تُشارك مع أي جهة خارجية.</div>
+      <div style={{ marginTop: 12, fontWeight: 700, color: t.tx }}>6. لائحة العمل</div>
+      <div>يخضع هذا النظام للائحة العمل المعتمدة في المكتب، وأي مخالفات تُعالج وفقاً لأحكامها.</div>
+      <div style={{ height: 40 }} />
+    </div>
+    <div style={{ padding: "12px 20px 20px" }}>
+      <button onClick={function() { localStorage.setItem("basma_disclaimer", "accepted"); onAccept(); }} disabled={!scrolled} style={{ width: "100%", padding: "14px", borderRadius: 14, background: scrolled ? C.ok : t.sep, color: scrolled ? "#fff" : t.txM, fontSize: 16, fontWeight: 700, border: "none", cursor: scrolled ? "pointer" : "default", transition: "all .3s" }}>{scrolled ? "✓ أوافق على الشروط" : "⬇️ اقرأ حتى الأسفل للموافقة"}</button>
+    </div>
+  </div>);
+}
+
 // ═══════ REGISTRATION ═══════
 function Reg({ onDone }) {
   const { t } = useTheme();
@@ -724,7 +755,8 @@ function Widget({ emp, onApp }) {
     let type;
     if (lastCallType === "break_s") type = "الاستراحة";
     else if (lastCallType === "break_e") type = "العودة";
-    else if (!done.includes("الحضور")) type = "الحضور";
+    else if (lastCallType === "manual_out") type = "الانصراف";
+    else if (lastCallType === "manual_in" || !done.includes("الحضور")) type = "الحضور";
     else type = "الانصراف";
     await api('checkin', 'POST', { empId: emp.id, type, lat: gps.lat, lng: gps.lng, facePhoto: true });
     setTimeout(() => { setDone(p => [...p, type]); setCs("done"); setTimeout(() => { setCs("idle"); setAcp(null); setLastCallType(null); }, 1800); }, 1500);
@@ -833,8 +865,15 @@ function Widget({ emp, onApp }) {
     </div>
 
     <div style={{ padding: "8px 20px 20px", width: "100%", zIndex: 1 }}>
+      {/* Manual Check-in Button */}
+      {cs === "idle" && !done.includes("الحضور") && !isLeave && sH >= 7 && sH < 10 && (
+        <button onClick={function() { setLastCallType("manual_in"); setShowFace(true); }} style={{ width: "100%", padding: "13px", borderRadius: 14, background: C.ok, color: "#fff", fontSize: 15, fontWeight: 700, border: "none", cursor: "pointer", marginBottom: 8, boxShadow: "0 4px 15px rgba(48,209,88,.3)" }}>☀️ سجّل حضورك</button>
+      )}
+      {/* Manual Check-out Button */}
+      {cs === "idle" && done.includes("الحضور") && !done.includes("الانصراف") && !isLeave && (sH >= 16 || (sH >= 15 && sM >= 30)) && (
+        <button onClick={function() { setLastCallType("manual_out"); setShowFace(true); }} style={{ width: "100%", padding: "13px", borderRadius: 14, background: B.blue, color: "#fff", fontSize: 15, fontWeight: 700, border: "none", cursor: "pointer", marginBottom: 8, boxShadow: "0 4px 15px rgba(43,94,167,.3)" }}>🌙 سجّل انصرافك</button>
+      )}
       <button onClick={onApp} style={{ width: "100%", padding: "11px", borderRadius: 14, background: t.card, border: "1px solid " + t.sep, color: B.blue, fontSize: 12, fontWeight: 600, cursor: "pointer" }}>{emp.isManager || emp.isAssistant ? "التفاصيل والإدارة ←" : "التفاصيل والمحفظة ←"}</button>
-      {cs === "idle" && <div style={{ textAlign: "center", marginTop: 3, fontSize: 7, color: t.txM }}>اضغط الدائرة لتقديم الوقت (تجريبي)</div>}
     </div>
   </div>);
 }
@@ -985,8 +1024,8 @@ function FullApp({ emp, onBack, onLogout }) {
   };
 
   const tabs = isHR
-    ? [{ id: "admin", i: "🏢", l: "الإدارة" }, { id: "projects", i: "🏗️", l: "المشاريع" }, { id: "events", i: "🎉", l: "المناسبات" }, { id: "questions", i: "⚡", l: "الأسئلة" }, { id: "leaves_tab", i: "🏖", l: "الإجازات" }, { id: "wallet", i: "🎁", l: "المحفظة" }, { id: "profile", i: "👤", l: "حسابي" }]
-    : [{ id: "leaves_tab", i: "🏖", l: "الإجازات" }, { id: "wallet", i: "🎁", l: "المحفظة" }, { id: "membership", i: "🏅", l: "العضوية" }, { id: "attendance", i: "📊", l: "الحضور" }, { id: "profile", i: "👤", l: "حسابي" }];
+    ? [{ id: "admin", i: "🏢", l: "الإدارة" }, { id: "projects", i: "🏗️", l: "المشاريع" }, { id: "events", i: "🎉", l: "المناسبات" }, { id: "questions", i: "⚡", l: "الأسئلة" }, { id: "leaves_tab", i: "🏖", l: "الإجازات" }, { id: "wallet", i: "🎁", l: "المحفظة" }, { id: "support", i: "💬", l: "الدعم" }, { id: "profile", i: "👤", l: "حسابي" }]
+    : [{ id: "leaves_tab", i: "🏖", l: "الإجازات" }, { id: "wallet", i: "🎁", l: "المحفظة" }, { id: "membership", i: "🏅", l: "العضوية" }, { id: "attendance", i: "📊", l: "الحضور" }, { id: "support", i: "💬", l: "الدعم" }, { id: "profile", i: "👤", l: "حسابي" }];
 
   return (<div style={{ ...FL, background: t.bg, display: "flex", flexDirection: "column" }}>
     <Stripe h={4} />
@@ -1500,6 +1539,38 @@ function FullApp({ emp, onBack, onLogout }) {
         </>}
       </div>}
 
+      {/* SUPPORT & FAQ */}
+      {tab === "support" && <div>
+        <div style={{ ...crd, marginBottom: 12, textAlign: "center" }}>
+          <div style={{ fontSize: 40, marginBottom: 8 }}>💬</div>
+          <div style={{ fontSize: 16, fontWeight: 700 }}>الدعم الفني والأسئلة الشائعة</div>
+          <div style={{ fontSize: 11, color: t.txM, marginTop: 4 }}>{VER} · {APP}</div>
+        </div>
+
+        {/* FAQ */}
+        {[
+          { q: "كيف أسجّل حضوري؟", a: "اضغط زر \"سجّل حضورك\" الأخضر في الشاشة الرئيسية → سيفتح الكاميرا للتحقق من وجهك → بعد التأكيد يتم تسجيل الحضور تلقائياً مع الموقع." },
+          { q: "كيف أسجّل انصرافي؟", a: "اضغط زر \"سجّل انصرافك\" الأزرق الذي يظهر بعد الساعة 3:30 → تحقق من الوجه → تم. لو نسيت، النظام يسجّلك تلقائياً بعد 5 دقائق من نهاية الدوام." },
+          { q: "ماذا يحدث عند بصمة الاستراحة؟", a: "يأتيك اتصال تلقائي قبل الاستراحة وبعدها. رد على الاتصال → سجّل بصمة الوجه. هذا الاتصال إلزامي ولا يمكن إيقافه." },
+          { q: "بصمة الوجه لا تتعرّف عليّ", a: "تأكد من: إضاءة جيدة على وجهك، النظر مباشرة للكاميرا، عدم ارتداء نظارات شمسية. لو استمرت المشكلة اضغط \"إعادة تسجيل البصمة\" من صفحة حسابي." },
+          { q: "هل التطبيق يتتبّعني خارج الدوام؟", a: "لا. التطبيق يعمل فقط خلال ساعات الدوام الرسمية. خارج هذه الأوقات لا يوجد أي تتبّع." },
+          { q: "هل يمكنني استخدام التطبيق بدون إنترنت؟", a: "نعم. يمكنك تسجيل الحضور والانصراف بدون إنترنت — البيانات تُحفظ محلياً وترتفع تلقائياً عند عودة الاتصال." },
+          { q: "أخوي/زميلي حاول يسجّل بدلي — هل يقدر؟", a: "لا. النظام يستخدم ذكاء اصطناعي متقدم (128 نقطة على الوجه) ويرفض أي وجه غير مطابق للبصمة المسجّلة." },
+          { q: "نسيت أسجّل حضور — إيش أسوي؟", a: "تقدر تسجّل متأخر وسيتم توثيق وقت التأخير. لو تحتاج تعويض قدّم طلب تعويض من التطبيق." },
+          { q: "كيف أطلب إجازة؟", a: "من تاب الإجازات → طلب إجازة جديدة → حدد النوع والتاريخ → أرسل. الطلب يذهب للمدير المباشر ثم الموارد البشرية." },
+          { q: "كيف أغيّر جهازي؟", a: "تغيير الجهاز يحتاج موافقة الإدارة. تواصل مع مدير الموارد البشرية لتفعيل جهازك الجديد." },
+          { q: "هل التطبيق إجباري؟", a: "لا. استخدام التطبيق اختياري بالكامل. يحق لك طلب جهاز من الإدارة أو التحضير يدوياً عبر المدير المباشر." },
+        ].map(function(faq, i) { return <details key={i} style={{ ...crd, marginBottom: 8, cursor: "pointer" }}><summary style={{ fontSize: 13, fontWeight: 700, color: t.tx, padding: "2px 0", listStyle: "none", display: "flex", justifyContent: "space-between", alignItems: "center" }}><span>❓ {faq.q}</span><span style={{ fontSize: 10, color: t.txM }}>▼</span></summary><div style={{ fontSize: 12, color: t.tx2, marginTop: 10, lineHeight: 1.8, paddingTop: 10, borderTop: "1px solid " + t.sep }}>{faq.a}</div></details>; })}
+
+        {/* Contact Support */}
+        <div style={{ ...crd, marginTop: 12, textAlign: "center" }}>
+          <div style={{ fontSize: 14, fontWeight: 700, marginBottom: 8 }}>لم تجد إجابة؟</div>
+          <div style={{ fontSize: 12, color: t.txM, marginBottom: 12 }}>تواصل مع الدعم الفني</div>
+          <button onClick={function() { window.open("mailto:support@hma.engineer?subject=دعم بصمة HMA — " + emp.id); }} style={{ width: "100%", padding: "12px", borderRadius: 12, background: B.blue, color: "#fff", fontSize: 14, fontWeight: 700, border: "none", cursor: "pointer", marginBottom: 8 }}>📧 إرسال إيميل للدعم</button>
+          <div style={{ fontSize: 10, color: t.txM }}>support@hma.engineer</div>
+        </div>
+      </div>}
+
       {/* PROFILE */}
       {tab === "profile" && <ProfileTab emp={emp} emps={emps} level={level} onLogout={onLogout} loadData={loadData} />}
     </div>
@@ -1796,7 +1867,11 @@ export default function MobileApp() {
   // On mount: check if user is already logged in
   useEffect(() => {
     const uid = localStorage.getItem("basma_uid");
-    if (!uid) { setSc("reg"); return; }
+    if (!uid) {
+      var disclaimerAccepted = localStorage.getItem("basma_disclaimer") === "accepted";
+      setSc(disclaimerAccepted ? "reg" : "disclaimer");
+      return;
+    }
     // User was logged in — load their data
     api('employees').then(emps => {
       if (Array.isArray(emps)) {
@@ -1813,6 +1888,7 @@ export default function MobileApp() {
     <div style={{ direction: "rtl", fontFamily: Fn, maxWidth: 480, margin: "0 auto", minHeight: "100vh", background: t.bg }}>
     <style>{`*{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent}::-webkit-scrollbar{width:0}button:active{opacity:0.8!important}input::placeholder{color:${t.txM}}`}</style>
     {sc === "init" && <Splash onDone={() => {}} />}
+    {sc === "disclaimer" && <Disclaimer onAccept={() => setSc("reg")} />}
     {sc === "reg" && <Reg onDone={e => { setEmp(e); setSc("widget"); }} />}
     {sc === "widget" && emp && <Widget emp={emp} onApp={() => setSc("app")} />}
     {sc === "app" && emp && <FullApp emp={emp} onBack={() => setSc("widget")} onLogout={logout} />}
