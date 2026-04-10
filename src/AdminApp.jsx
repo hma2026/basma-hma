@@ -308,6 +308,7 @@ export default function AdminApp() {
     { id: "dashboard", icon: "📊", label: "الرئيسية" },
     { id: "employees", icon: "👥", label: "الموظفين" },
     { id: "leaves", icon: "📋", label: "الإجازات", badge: pending },
+    { id: "admin_requests", icon: "📝", label: "الطلبات" },
     { id: "violations", icon: "⚠️", label: "المخالفات" },
     { id: "custody_admin", icon: "📦", label: "العهد" },
     { id: "tracking", icon: "🛰️", label: "تتبّع الحركة" },
@@ -410,6 +411,53 @@ export default function AdminApp() {
             {l.status === "معلّق" && role === "assistant" && <span style={{ fontSize: 9, color: t.txM }}>بانتظار المدير</span>}
           </div>
         </div>; })}
+      </>}
+
+      {/* ═══ ADMIN REQUESTS ═══ */}
+      {tab === "admin_requests" && <>
+        <div style={{ background: t.card, borderRadius: 14, padding: "18px", border: "1px solid " + t.sep, marginBottom: 14 }}>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 14 }}>
+            <div><div style={{ fontSize: 14, fontWeight: 700 }}>📝 طلبات الموظفين</div><div style={{ fontSize: 11, color: t.txM, marginTop: 2 }}>شهادات خبرة، خطابات تعريف، سلف، تعويضات</div></div>
+            <button onClick={async function() {
+              var reqs = await api("requests") || [];
+              if (!Array.isArray(reqs)) reqs = [];
+              var el = document.getElementById("admin-requests-list");
+              if (reqs.length === 0) { el.innerHTML = "<div style='text-align:center;padding:20px;color:#8E8E93'>لا توجد طلبات</div>"; return; }
+              var types = { experience_letter: "📄 شهادة خبرة", intro_letter: "📋 خطاب تعريف", salary_cert: "💰 شهادة راتب", advance: "💵 سلفة", compensation: "⏰ تعويض", overtime: "🕐 أوفرتايم", device_change: "📱 تغيير جهاز", other: "📝 أخرى" };
+              var html = reqs.sort(function(a,b) { return (b.ts||"").localeCompare(a.ts||""); }).map(function(r) {
+                var sc = r.status === "approved" ? "#30D158" : r.status === "rejected" ? "#FF3B30" : "#FF9F0A";
+                var sl = r.status === "approved" ? "مُوافق" : r.status === "rejected" ? "مرفوض" : "قيد المراجعة";
+                return "<div style='padding:12px;border-radius:10px;background:#F8F9FA;margin-bottom:8px;border:1px solid #E5E5EA' id='req-" + r.id + "'>" +
+                  "<div style='display:flex;justify-content:space-between;align-items:center'>" +
+                  "<div><div style='font-size:13px;font-weight:700'>" + (r.empName || r.empId) + "</div>" +
+                  "<div style='font-size:11px;color:#6E6E73'>" + (types[r.type] || r.type) + "</div></div>" +
+                  "<span style='padding:3px 10px;border-radius:6px;font-size:10px;font-weight:700;background:" + sc + "15;color:" + sc + "'>" + sl + "</span></div>" +
+                  "<div style='font-size:11px;color:#3C3C43;margin-top:6px'>" + (r.note || "") + "</div>" +
+                  "<div style='font-size:9px;color:#8E8E93;margin-top:4px'>" + (r.ts ? new Date(r.ts).toLocaleString("ar-SA") : "") + "</div>" +
+                  (r.status === "pending" ? "<div style='display:flex;gap:6px;margin-top:8px'>" +
+                    "<button onclick='approveReq(\"" + r.id + "\")' style='flex:1;padding:7px;border-radius:8px;background:#30D158;color:#fff;font-size:11px;font-weight:700;border:none;cursor:pointer'>✅ موافقة</button>" +
+                    "<button onclick='rejectReq(\"" + r.id + "\")' style='flex:1;padding:7px;border-radius:8px;background:#FF3B30;color:#fff;font-size:11px;font-weight:700;border:none;cursor:pointer'>❌ رفض</button></div>" : "") +
+                  "</div>";
+              }).join("");
+              el.innerHTML = html;
+              // Add global functions for approve/reject
+              window.approveReq = async function(id) {
+                var reply = prompt("رد الإدارة (اختياري):");
+                await fetch("/api/data?action=requests", { method: "PUT", headers: {"Content-Type":"application/json"}, body: JSON.stringify({ id: id, status: "approved", adminReply: reply || "تمت الموافقة" }) });
+                document.getElementById("req-" + id).style.opacity = "0.5";
+                alert("✅ تمت الموافقة");
+              };
+              window.rejectReq = async function(id) {
+                var reply = prompt("سبب الرفض:");
+                if (!reply) return;
+                await fetch("/api/data?action=requests", { method: "PUT", headers: {"Content-Type":"application/json"}, body: JSON.stringify({ id: id, status: "rejected", adminReply: reply }) });
+                document.getElementById("req-" + id).style.opacity = "0.5";
+                alert("تم الرفض");
+              };
+            }} style={{ padding: "8px 16px", borderRadius: 8, background: B.blue, color: "#fff", fontSize: 11, fontWeight: 700, border: "none", cursor: "pointer" }}>🔄 تحديث</button>
+          </div>
+          <div id="admin-requests-list"><div style={{ textAlign: "center", padding: 12, color: t.txM, fontSize: 11 }}>اضغط "تحديث" لعرض الطلبات</div></div>
+        </div>
       </>}
 
       {/* ═══ VIOLATIONS ═══ */}
