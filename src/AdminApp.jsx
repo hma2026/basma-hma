@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect, useRef } from "react";
 
 const APP = "بصمة HMA";
 const CO = "هاني محمد عسيري للإستشارات الهندسية";
@@ -11,10 +11,10 @@ const Fn = "'IBM Plex Sans Arabic',-apple-system,'Segoe UI',sans-serif";
 
 // ═══════ DATA ═══════
 const BRANCHES = [
-  { id: "jed", name: "جدة", count: 12, present: 10, pct: 88, radius: 150, start: "08:30", end: "17:00", breakStart: "12:30", breakEnd: "13:00", offDay: "الجمعة", tz: "Asia/Riyadh" },
-  { id: "riy", name: "الرياض", count: 8, present: 7, pct: 85, radius: 150, start: "08:30", end: "17:00", breakStart: "12:30", breakEnd: "13:00", offDay: "الجمعة", tz: "Asia/Riyadh" },
-  { id: "ist", name: "اسطنبول", count: 5, present: 4, pct: 82, radius: 200, start: "08:30", end: "17:00", breakStart: "12:30", breakEnd: "13:00", offDay: "الجمعة", tz: "Europe/Istanbul" },
-  { id: "gaz", name: "غازي عنتاب", count: 3, present: 3, pct: 95, radius: 120, start: "08:30", end: "17:00", breakStart: "12:30", breakEnd: "13:00", offDay: "الجمعة", tz: "Europe/Istanbul" },
+  { id: "jed", name: "جدة", count: 12, present: 10, pct: 88, radius: 150, lat: 21.5433, lng: 39.1728, start: "08:30", end: "17:00", breakStart: "12:30", breakEnd: "13:00", offDay: "الجمعة", tz: "Asia/Riyadh" },
+  { id: "riy", name: "الرياض", count: 8, present: 7, pct: 85, radius: 150, lat: 24.7136, lng: 46.6753, start: "08:30", end: "17:00", breakStart: "12:30", breakEnd: "13:00", offDay: "الجمعة", tz: "Asia/Riyadh" },
+  { id: "ist", name: "اسطنبول", count: 5, present: 4, pct: 82, radius: 200, lat: 41.0082, lng: 28.9784, start: "08:30", end: "17:00", breakStart: "12:30", breakEnd: "13:00", offDay: "الجمعة", tz: "Europe/Istanbul" },
+  { id: "gaz", name: "غازي عنتاب", count: 3, present: 3, pct: 95, radius: 120, lat: 37.0662, lng: 37.3833, start: "08:30", end: "17:00", breakStart: "12:30", breakEnd: "13:00", offDay: "الجمعة", tz: "Europe/Istanbul" },
 ];
 const EMPS = [
   { id: "E001", name: "أحمد محمد عسيري", role: "مهندس معماري", branch: "جدة", pct: 92, streak: 15, pts: 980, level: "🥇", status: "حاضر", checks: [1, 1, 1, 0], gps: true, violations: 0, warnings: 0, deductions: 0, salary: 15000 },
@@ -51,6 +51,98 @@ function Logo({ s = 36 }) { const h = s/2, g = s*.02, r = s*.06, f = s*.28; retu
 function Stripe() { return <div style={{ display: "flex", height: 4 }}><div style={{ flex: 1, background: B.blue }}/><div style={{ flex: 1, background: B.yellow }}/><div style={{ flex: 1, background: B.red }}/></div>; }
 function Toggle({ on, onClick, t }) { var p = t || LT; return <button onClick={onClick} style={{ width: 40, height: 22, borderRadius: 11, border: "none", cursor: "pointer", background: on ? p.ok : "#D1D5DB", position: "relative", transition: "all .3s" }}><div style={{ width: 16, height: 16, borderRadius: "50%", background: p.card, position: "absolute", top: 3, transition: "all .3s", ...(on ? { left: 21 } : { left: 3 }), boxShadow: "0 1px 3px rgba(0,0,0,.15)" }} /></button>; }
 
+// ═══════ MAP PICKER ═══════
+function MapPicker({ lat, lng, radius, name, onSave, onClose, t }) {
+  var mapRef = useRef(null);
+  var mapInst = useRef(null);
+  var markerRef = useRef(null);
+  var circleRef = useRef(null);
+  var _lat = useState(lat || 21.5433), curLat = _lat[0], setCurLat = _lat[1];
+  var _lng = useState(lng || 39.1728), curLng = _lng[0], setCurLng = _lng[1];
+  var _rad = useState(radius || 150), curRad = _rad[0], setCurRad = _rad[1];
+
+  useEffect(function() {
+    if (!mapRef.current || typeof L === "undefined") return;
+    var map = L.map(mapRef.current, { zoomControl: true }).setView([curLat, curLng], curRad > 500 ? 14 : curRad > 200 ? 16 : 17);
+    L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", { maxZoom: 19, attribution: "© OpenStreetMap" }).addTo(map);
+    var marker = L.marker([curLat, curLng], { draggable: true }).addTo(map);
+    var circle = L.circle([curLat, curLng], { radius: curRad, color: B.blue, fillColor: B.blue, fillOpacity: 0.15, weight: 2 }).addTo(map);
+    marker.on("dragend", function() {
+      var pos = marker.getLatLng();
+      setCurLat(pos.lat);
+      setCurLng(pos.lng);
+      circle.setLatLng(pos);
+    });
+    map.on("click", function(e) {
+      setCurLat(e.latlng.lat);
+      setCurLng(e.latlng.lng);
+      marker.setLatLng(e.latlng);
+      circle.setLatLng(e.latlng);
+    });
+    mapInst.current = map;
+    markerRef.current = marker;
+    circleRef.current = circle;
+    setTimeout(function() { map.invalidateSize(); }, 200);
+    return function() { map.remove(); };
+  }, []);
+
+  useEffect(function() {
+    if (circleRef.current) circleRef.current.setRadius(curRad);
+  }, [curRad]);
+
+  var radLabels = curRad < 100 ? curRad + " م" : (curRad / 1000).toFixed(curRad >= 1000 ? 1 : 2) + " كم";
+
+  return (
+    <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,.7)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 999, direction: "rtl" }}>
+      <div style={{ background: t.card, borderRadius: 20, width: "90%", maxWidth: 700, maxHeight: "90vh", overflow: "hidden", boxShadow: "0 20px 60px rgba(0,0,0,.3)" }}>
+        {/* Header */}
+        <div style={{ padding: "16px 20px", borderBottom: "1px solid " + t.sep, display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+          <div>
+            <div style={{ fontSize: 16, fontWeight: 700, color: t.tx }}>📍 تحديد موقع — {name}</div>
+            <div style={{ fontSize: 11, color: t.txM, marginTop: 2 }}>اضغط على الخريطة أو اسحب العلامة لتحديد الموقع</div>
+          </div>
+          <button onClick={onClose} style={{ background: "none", border: "none", fontSize: 20, color: t.txM, cursor: "pointer" }}>✕</button>
+        </div>
+
+        {/* Map */}
+        <div ref={mapRef} style={{ width: "100%", height: 380 }} />
+
+        {/* Controls */}
+        <div style={{ padding: "16px 20px" }}>
+          {/* Coordinates display */}
+          <div style={{ display: "flex", gap: 12, marginBottom: 14 }}>
+            <div style={{ flex: 1, background: t.bg, borderRadius: 10, padding: "8px 12px" }}>
+              <div style={{ fontSize: 9, color: t.txM }}>خط العرض</div>
+              <div style={{ fontSize: 13, fontWeight: 700, color: t.tx, fontFamily: "monospace" }}>{curLat.toFixed(6)}</div>
+            </div>
+            <div style={{ flex: 1, background: t.bg, borderRadius: 10, padding: "8px 12px" }}>
+              <div style={{ fontSize: 9, color: t.txM }}>خط الطول</div>
+              <div style={{ fontSize: 13, fontWeight: 700, color: t.tx, fontFamily: "monospace" }}>{curLng.toFixed(6)}</div>
+            </div>
+            <div style={{ flex: 1, background: t.bg, borderRadius: 10, padding: "8px 12px" }}>
+              <div style={{ fontSize: 9, color: t.txM }}>النطاق</div>
+              <div style={{ fontSize: 13, fontWeight: 700, color: B.blue }}>{radLabels}</div>
+            </div>
+          </div>
+
+          {/* Radius slider */}
+          <div style={{ marginBottom: 14 }}>
+            <div style={{ fontSize: 11, fontWeight: 600, color: t.tx, marginBottom: 6 }}>نطاق التغطية: {radLabels}</div>
+            <input type="range" min="10" max="2000" step="10" value={curRad} onChange={function(e) { setCurRad(parseInt(e.target.value)); }} style={{ width: "100%", accentColor: B.blue }} />
+            <div style={{ display: "flex", justifyContent: "space-between", fontSize: 9, color: t.txM }}><span>10 م</span><span>500 م</span><span>1 كم</span><span>2 كم</span></div>
+          </div>
+
+          {/* Buttons */}
+          <div style={{ display: "flex", gap: 10 }}>
+            <button onClick={function() { onSave(curLat, curLng, curRad); }} style={{ flex: 1, padding: "12px", borderRadius: 12, background: B.blue, color: "#fff", fontSize: 15, fontWeight: 700, border: "none", cursor: "pointer" }}>💾 حفظ الموقع</button>
+            <button onClick={onClose} style={{ padding: "12px 20px", borderRadius: 12, background: t.bg, color: t.txM, fontSize: 14, fontWeight: 600, border: "1px solid " + t.sep, cursor: "pointer" }}>إلغاء</button>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // ═══════ LOGIN ═══════
 function Login({ onLogin }) {
   var dk = localStorage.getItem("basma_theme") === "dark";
@@ -81,6 +173,7 @@ export default function AdminApp() {
   const [selEmp, setSelEmp] = useState(null);
   const [events, setEvents] = useState(EVENTS);
   const [branches, setBranches] = useState(BRANCHES);
+  const [mapTarget, setMapTarget] = useState(null); // { type: 'branch', id: 'jed' }
   const [settingsTab, setSettingsTab] = useState("general");
   const [emailLists, setEmailLists] = useState([
     { id: 1, name: "الموارد البشرية", email: "hr@hma.engineer", color: B.blue },
@@ -234,8 +327,10 @@ export default function AdminApp() {
 
       {/* ═══ GEOFENCE ═══ */}
       {tab === "geofence" && <>
-        <div style={{ display: "flex", gap: 10, marginBottom: 14 }}>{branches.map(b => { const ins = EMPS.filter(e => e.branch === b.name && e.gps).length; const out = EMPS.filter(e => e.branch === b.name && !e.gps).length; return <div key={b.id} style={{ flex: 1, background: t.card, borderRadius: 14, padding: "14px", border: "1px solid " + t.sep, textAlign: "center" }}><div style={{ fontSize: 13, fontWeight: 700 }}>{b.name}</div><div style={{ display: "flex", justifyContent: "center", gap: 8, marginTop: 6 }}><span style={{ fontSize: 11, color: t.ok }}>✓{ins}</span>{out > 0 && <span style={{ fontSize: 11, color: t.bad }}>✕{out}</span>}</div><div style={{ fontSize: 10, color: B.blue, marginTop: 4 }}>📍 {b.radius}م</div><input type="range" min="50" max="900" step="10" value={b.radius} onChange={e => setBranches(bs => bs.map(x => x.id === b.id ? { ...x, radius: parseInt(e.target.value) } : x))} style={{ width: "100%", marginTop: 6, accentColor: B.blue }} /><div style={{ display: "flex", justifyContent: "space-between", fontSize: 8, color: t.txM }}><span>50م</span><span>900م</span></div></div>; })}</div>
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(160px, 1fr))", gap: 10, marginBottom: 14 }}>{branches.map(b => { var ins = EMPS.filter(e => e.branch === b.name && e.gps).length; var out = EMPS.filter(e => e.branch === b.name && !e.gps).length; return <div key={b.id} style={{ background: t.card, borderRadius: 14, padding: "14px", border: "1px solid " + t.sep, textAlign: "center" }}><div style={{ fontSize: 13, fontWeight: 700 }}>{b.name}</div><div style={{ display: "flex", justifyContent: "center", gap: 8, marginTop: 6 }}><span style={{ fontSize: 11, color: t.ok }}>✓{ins}</span>{out > 0 && <span style={{ fontSize: 11, color: t.bad }}>✕{out}</span>}</div><div style={{ fontSize: 10, color: B.blue, marginTop: 6 }}>📍 {b.radius < 1000 ? b.radius + " م" : (b.radius / 1000).toFixed(1) + " كم"}</div>{b.lat ? <div style={{ fontSize: 9, color: t.txM, marginTop: 2, fontFamily: "monospace" }}>{b.lat.toFixed(4)}, {b.lng.toFixed(4)}</div> : <div style={{ fontSize: 9, color: t.warn, marginTop: 2 }}>⚠️ لم يُحدد الموقع</div>}<button onClick={function() { setMapTarget({ type: "branch", id: b.id }); }} style={{ width: "100%", marginTop: 8, padding: "7px", borderRadius: 8, background: B.blue + "12", color: B.blue, fontSize: 11, fontWeight: 700, border: "none", cursor: "pointer" }}>🗺️ تحديد الموقع</button></div>; })}</div>
         {EMPS.filter(e => !e.gps).length > 0 && <div style={{ background: t.card, borderRadius: 14, padding: "16px", border: "1px solid " + t.sep }}><div style={{ fontSize: 13, fontWeight: 700, color: t.bad, marginBottom: 10 }}>🚨 خارج النطاق</div>{EMPS.filter(e => !e.gps).map((e, i) => <div key={i} style={{ padding: "8px 10px", borderRadius: 10, background: t.badLt, marginBottom: 6, display: "flex", alignItems: "center", gap: 8 }}><span>🚨</span><div style={{ flex: 1 }}><div style={{ fontSize: 12, fontWeight: 700 }}>{e.name}</div><div style={{ fontSize: 10, color: t.bad }}>{e.branch} · {e.status}</div></div>{role === "manager" && <button style={{ padding: "4px 10px", borderRadius: 6, background: B.blue, color: "#fff", fontSize: 10, fontWeight: 700, border: "none", cursor: "pointer" }}>إجراء</button>}</div>)}</div>}
+        {/* Map Picker Modal */}
+        {mapTarget && mapTarget.type === "branch" && (function() { var br = branches.find(function(x) { return x.id === mapTarget.id; }); if (!br) return null; return <MapPicker lat={br.lat} lng={br.lng} radius={br.radius} name={br.name} t={t} onClose={function() { setMapTarget(null); }} onSave={function(lat, lng, rad) { setBranches(function(bs) { return bs.map(function(x) { return x.id === br.id ? Object.assign({}, x, { lat: lat, lng: lng, radius: rad }) : x; }); }); setMapTarget(null); }} />; })()}
       </>}
 
       {/* ═══ REPORTS ═══ */}

@@ -1,4 +1,4 @@
-const CACHE_NAME = 'basma-hma-v3';
+const CACHE_NAME = 'basma-hma-v4';
 const STATIC_ASSETS = [
   '/',
   '/icon.svg',
@@ -43,8 +43,8 @@ self.addEventListener('fetch', (event) => {
     return;
   }
 
-  // CDN resources (face-api.js models) — cache first, then network
-  if (url.hostname === 'cdn.jsdelivr.net') {
+  // CDN resources (face-api.js models + Leaflet) — cache first, then network
+  if (url.hostname === 'cdn.jsdelivr.net' || url.hostname === 'unpkg.com') {
     event.respondWith(
       caches.match(event.request).then((cached) => {
         if (cached) return cached;
