@@ -48,7 +48,7 @@ const DARK = {
 
 // ═══════ CONSTANTS ═══════
 const APP = "بصمة HMA";
-const VER = "v4.18";
+const VER = "v4.19";
 const CO = "هاني محمد عسيري للإستشارات الهندسية";
 const B = { blue: "#2B5EA7", yellow: "#FDD800", red: "#E2192C", black: "#1A1A1A", blueDk: "#1E4478", blueLt: "#EDF3FB", gold: "#D4A017", diamond: "#7C3AED" };
 const C = LIGHT; // Default light - components use useTheme().t for dynamic
@@ -2253,25 +2253,33 @@ export default function MobileApp() {
       setSc(disclaimerAccepted ? "reg" : "disclaimer");
       return;
     }
-    // Try cached employee data first for instant load
+    // ALWAYS try cached employee data first — instant load, no waiting
     var cached = localStorage.getItem("basma_emp_cache");
+    var loaded = false;
     if (cached) {
-      try { var ce = JSON.parse(cached); if (ce && ce.id === uid) { setEmp(ce); setSc("widget"); } } catch(e) {}
+      try {
+        var ce = JSON.parse(cached);
+        if (ce && ce.id === uid) { setEmp(ce); setSc("widget"); loaded = true; }
+      } catch(e) {}
     }
-    // Then refresh from API in background
-    api('employees').then(emps => {
+    // Refresh from API in background — NEVER kick user out
+    api('employees').then(function(emps) {
       if (Array.isArray(emps)) {
-        const e = emps.find(x => x.id === uid);
+        var e = emps.find(function(x) { return x.id === uid; });
         if (e) {
           setEmp(e);
           localStorage.setItem("basma_emp_cache", JSON.stringify(e));
-          if (sc === "init") setSc("widget");
-          return;
+          if (!loaded) setSc("widget");
         }
       }
-      // Only go to reg if we don't have cached data
-      if (!cached) setSc("reg");
-    }).catch(() => { if (!cached) setSc("reg"); });
+      // If API fails and no cache — only then show reg
+      if (!loaded) {
+        var recheckCache = localStorage.getItem("basma_emp_cache");
+        if (!recheckCache) setSc("reg");
+      }
+    }).catch(function() {
+      if (!loaded) setSc("reg");
+    });
   }, []);
 
   const logout = () => { localStorage.removeItem("basma_uid"); localStorage.removeItem("basma_face"); localStorage.removeItem("basma_face_v2"); localStorage.removeItem("basma_emp_cache"); setEmp(null); setSc("reg"); };
