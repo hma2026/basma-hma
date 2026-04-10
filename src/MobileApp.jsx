@@ -49,7 +49,7 @@ const DARK = {
 
 // ═══════ CONSTANTS ═══════
 const APP = "بصمة HMA";
-const VER = "v4.28";
+const VER = "v4.31";
 const CO = "هاني محمد عسيري للإستشارات الهندسية";
 const B = { blue: "#2B5EA7", yellow: "#FDD800", red: "#E2192C", black: "#1A1A1A", blueDk: "#1E4478", blueLt: "#EDF3FB", gold: "#D4A017", diamond: "#7C3AED" };
 const C = LIGHT; // Default light - components use useTheme().t for dynamic
@@ -69,10 +69,10 @@ const LEVELS = [
 const getLevel = pts => [...LEVELS].reverse().find(l => pts >= l.min) || LEVELS[0];
 const EMP_TYPES = { office: "🏢 مكتبي", field: "🏗️ ميداني", mixed: "🔄 مختلط", remote: "🏠 عن بُعد" };
 const CPS = TEST_MODE ? [
-  { id: 1, h: 0, m: 10, l: "الحضور", ic: "☀️" },
-  { id: 2, h: 0, m: 13, l: "الاستراحة", ic: "☕" },
-  { id: 3, h: 0, m: 16, l: "العودة", ic: "🔄" },
-  { id: 4, h: 0, m: 19, l: "الانصراف", ic: "🌙" },
+  { id: 1, h: 0, m: 22, l: "الحضور", ic: "☀️" },
+  { id: 2, h: 0, m: 25, l: "الاستراحة", ic: "☕" },
+  { id: 3, h: 0, m: 28, l: "العودة", ic: "🔄" },
+  { id: 4, h: 0, m: 31, l: "الانصراف", ic: "🌙" },
 ] : [
   { id: 1, h: 8, m: 30, l: "الحضور", ic: "☀️" },
   { id: 2, h: 12, m: 25, l: "الاستراحة", ic: "☕" },
@@ -94,16 +94,16 @@ const COUPONS = [
 ];
 
 // ═══════ TEST MODE — set false for production ═══════
-const TEST_MODE = true;
+const TEST_MODE = false;
 const TEST_SCHEDULE = {
   windowStart: 23 * 60 + 0,   // 23:00
   windowEnd: 3 * 60,           // 03:00
-  cp1: 0 * 60 + 10,           // 00:10 — حضور
-  cp2: 0 * 60 + 13,           // 00:13 — استراحة
-  cp3: 0 * 60 + 16,           // 00:16 — عودة
-  cp4: 0 * 60 + 19,           // 00:19 — انصراف
-  workStart: 0 * 60 + 10,     // 00:10
-  workEnd: 0 * 60 + 19,       // 00:19
+  cp1: 0 * 60 + 22,           // 00:22 — حضور
+  cp2: 0 * 60 + 25,           // 00:25 — استراحة
+  cp3: 0 * 60 + 28,           // 00:28 — عودة
+  cp4: 0 * 60 + 31,           // 00:31 — انصراف
+  workStart: 0 * 60 + 22,     // 00:22
+  workEnd: 0 * 60 + 31,       // 00:31
 };
 const PROD_SCHEDULE = {
   windowStart: 7 * 60 + 15,   // 07:15
@@ -748,12 +748,24 @@ function Widget({ emp, onApp }) {
   }, []);
 
   // On leave?
-  const dur = curMin >= SCH.workStart && curMin < SCH.workEnd;
-  const aft = curMin >= SCH.workEnd;
-  const bef = !dur && !aft;
+  // Work period detection (handles midnight crossing)
+  var dur, aft, bef;
+  if (TEST_MODE && SCH.windowStart > SCH.windowEnd) {
+    // Midnight crossing: work is in early morning hours
+    // Before work = in evening window (23:xx) or early morning before workStart
+    // During work = between workStart and workEnd
+    // After work = between workEnd and windowEnd
+    dur = curMin >= SCH.workStart && curMin < SCH.workEnd;
+    aft = curMin >= SCH.workEnd && curMin <= SCH.windowEnd;
+    bef = !dur && !aft;
+  } else {
+    dur = curMin >= SCH.workStart && curMin < SCH.workEnd;
+    aft = curMin >= SCH.workEnd;
+    bef = !dur && !aft;
+  }
   const totalWorkMin = SCH.workEnd - SCH.workStart;
   const mW = dur ? Math.max(0, curMin - SCH.workStart) : aft ? totalWorkMin : 0;
-  const pct = Math.min(100, Math.max(0, Math.round((mW / totalWorkMin) * 100)));
+  const pct = Math.min(100, Math.max(0, Math.round((mW / Math.max(1, totalWorkMin)) * 100)));
   const tStr = `${String(sH).padStart(2, "0")}:${String(sM).padStart(2, "0")}`;
   const S = 260, R = 108, cx = 130, cy = 130, RC = 2 * Math.PI * R;
 
@@ -769,6 +781,8 @@ function Widget({ emp, onApp }) {
   useEffect(() => {
     if (cs !== "idle" || isLeave) return;
     const cur = sH * 60 + sM;
+    // Only detect checkpoints during work period (not in evening before midnight)
+    if (TEST_MODE && SCH.windowStart > SCH.windowEnd && cur > SCH.windowEnd && cur < SCH.windowStart) return;
     // CP1: Start of work
     if (cur >= SCH.cp1 && cur <= SCH.cp1 + 2 && !cpTrig.current.has(1)) {
       cpTrig.current.add(1);
@@ -975,7 +989,7 @@ function Widget({ emp, onApp }) {
           {cs === "scan" && <circle cx={cx} cy={cy} r={R + 6} fill="none" stroke={B.yellow} strokeWidth="2" strokeDasharray="40 30" style={{ animation: "spin 1.5s linear infinite", transformOrigin: `${cx}px ${cy}px` }} />}
         </svg>
         <div style={{ position: "absolute", inset: 0, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center" }}>
-          {cs === "idle" && bef && !outOfRange && <><div style={{ fontSize: 10, color: t.txM }}>قبل الدوام</div><div style={{ fontSize: 38, fontWeight: 800, color: t.tx }}>{Math.max(0, Math.floor((SCH.workStart - curMin) / 60))}<span style={{ fontSize: 14, color: t.txM }}>:{String(Math.max(0, (SCH.workStart - curMin) % 60)).padStart(2, "0")}</span></div></>}
+          {cs === "idle" && bef && !outOfRange && <><div style={{ fontSize: 10, color: t.txM }}>قبل الدوام</div><div style={{ fontSize: 38, fontWeight: 800, color: t.tx }}>{(function() { var rem = SCH.workStart - curMin; if (rem < 0) rem += 24 * 60; var h = Math.floor(rem / 60); var m = rem % 60; return h > 0 ? h + ":" + String(m).padStart(2, "0") : m + "د"; })()}</div></>}
           {cs === "idle" && dur && !outOfRange && <><div style={{ fontSize: 10, color: t.txM }}>ساعات العمل</div><div style={{ fontSize: 42, fontWeight: 800, color: t.tx }}>{Math.floor(mW / 60)}<span style={{ fontSize: 14, color: t.txM }}>:{String(mW % 60).padStart(2, "0")}</span></div><div style={{ fontSize: 13, fontWeight: 700, color: rCol }}>{pct}%</div></>}
           {cs === "idle" && aft && !outOfRange && <><div style={{ fontSize: 40 }}>✅</div><div style={{ fontSize: 14, fontWeight: 700, color: C.ok, marginTop: 6 }}>اكتمل الدوام</div></>}
           {cs === "idle" && outOfRange && <><div style={{ fontSize: 36 }}>🚫</div><div style={{ fontSize: 12, fontWeight: 700, color: C.bad, marginTop: 6, textAlign: "center", lineHeight: 1.6 }}>لم تقم بتسجيل{"\n"}الحضور</div><div style={{ fontSize: 9, color: t.txM, marginTop: 4 }}>خارج منطقة العمل</div></>}
