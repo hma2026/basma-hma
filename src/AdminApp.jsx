@@ -508,8 +508,63 @@ export default function AdminApp() {
 
       {/* ═══ GEOFENCE ═══ */}
       {tab === "geofence" && <>
-        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(160px, 1fr))", gap: 10, marginBottom: 14 }}>{branches.map(b => { var ins = safeEmps.filter(e => e.branch === b.name && e.gps).length; var out = safeEmps.filter(e => e.branch === b.name && !e.gps).length; return <div key={b.id} style={{ background: t.card, borderRadius: 14, padding: "14px", border: "1px solid " + t.sep, textAlign: "center" }}><div style={{ fontSize: 13, fontWeight: 700 }}>{b.name}</div><div style={{ display: "flex", justifyContent: "center", gap: 8, marginTop: 6 }}><span style={{ fontSize: 11, color: t.ok }}>✓{ins}</span>{out > 0 && <span style={{ fontSize: 11, color: t.bad }}>✕{out}</span>}</div><div style={{ fontSize: 10, color: B.blue, marginTop: 6 }}>📍 {b.radius < 1000 ? b.radius + " م" : (b.radius / 1000).toFixed(1) + " كم"}</div>{b.lat ? <div style={{ fontSize: 9, color: t.txM, marginTop: 2, fontFamily: "monospace" }}>{b.lat.toFixed(4)}, {b.lng.toFixed(4)}</div> : <div style={{ fontSize: 9, color: t.warn, marginTop: 2 }}>⚠️ لم يُحدد الموقع</div>}<button onClick={function() { setMapTarget({ type: "branch", id: b.id }); }} style={{ width: "100%", marginTop: 8, padding: "7px", borderRadius: 8, background: B.blue + "12", color: B.blue, fontSize: 11, fontWeight: 700, border: "none", cursor: "pointer" }}>🗺️ تحديد الموقع</button></div>; })}</div>
-        {safeEmps.filter(e => !e.gps).length > 0 && <div style={{ background: t.card, borderRadius: 14, padding: "16px", border: "1px solid " + t.sep }}><div style={{ fontSize: 13, fontWeight: 700, color: t.bad, marginBottom: 10 }}>🚨 خارج النطاق</div>{safeEmps.filter(e => !e.gps).map((e, i) => <div key={i} style={{ padding: "8px 10px", borderRadius: 10, background: t.badLt, marginBottom: 6, display: "flex", alignItems: "center", gap: 8 }}><span>🚨</span><div style={{ flex: 1 }}><div style={{ fontSize: 12, fontWeight: 700 }}>{e.name}</div><div style={{ fontSize: 10, color: t.bad }}>{e.branch} · {e.status}</div></div>{role === "manager" && <button style={{ padding: "4px 10px", borderRadius: 6, background: B.blue, color: "#fff", fontSize: 10, fontWeight: 700, border: "none", cursor: "pointer" }}>إجراء</button>}</div>)}</div>}
+        {/* Add Branch */}
+        <div style={{ background: t.card, borderRadius: 14, padding: "16px", border: "1px solid " + t.sep, marginBottom: 14 }}>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>
+            <div style={{ fontSize: 14, fontWeight: 700 }}>📍 إدارة مواقع العمل</div>
+            <span style={{ fontSize: 11, color: t.txM }}>{branches.length} موقع</span>
+          </div>
+          <div style={{ display: "flex", gap: 6, marginBottom: 10 }}>
+            <input id="new-branch-name" placeholder="اسم الموقع الجديد" style={{ flex: 2, padding: 10, borderRadius: 10, border: "1px solid " + t.sep, fontSize: 12, background: t.inp, color: t.tx, fontFamily: Fn }} />
+            <input id="new-branch-radius" type="number" placeholder="النطاق (م)" defaultValue="150" style={{ flex: 1, padding: 10, borderRadius: 10, border: "1px solid " + t.sep, fontSize: 12, background: t.inp, color: t.tx }} />
+            <button onClick={async function() {
+              var name = document.getElementById("new-branch-name").value;
+              var radius = parseInt(document.getElementById("new-branch-radius").value) || 150;
+              if (!name) return alert("اكتب اسم الموقع");
+              var id = name.replace(/\s/g, "_").toLowerCase().substring(0, 10) + "_" + Date.now().toString(36);
+              var nb = branches.concat([{ id: id, name: name, start: "08:30", end: "17:00", breakS: "12:30", breakE: "13:00", offDay: "الجمعة", tz: "Asia/Riyadh", radius: radius, lat: 0, lng: 0 }]);
+              await saveBranches(nb);
+              document.getElementById("new-branch-name").value = "";
+              alert("✅ تم إضافة الموقع — حدد إحداثياته من الخريطة");
+            }} style={{ padding: "10px 16px", borderRadius: 10, background: B.blue, color: "#fff", fontSize: 12, fontWeight: 700, border: "none", cursor: "pointer", whiteSpace: "nowrap" }}>+ إضافة</button>
+          </div>
+        </div>
+
+        {/* Branch cards */}
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(200px, 1fr))", gap: 10, marginBottom: 14 }}>{branches.map(function(b) {
+          var brEmps = safeEmps.filter(function(e) { return e.branch === b.id || e.branch === b.name; });
+          return <div key={b.id} style={{ background: t.card, borderRadius: 14, padding: "14px", border: "1px solid " + t.sep }}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+              <div style={{ fontSize: 13, fontWeight: 700 }}>{b.name}</div>
+              {role === "manager" && <button onClick={async function() {
+                if (!confirm("حذف موقع " + b.name + "؟")) return;
+                var nb = branches.filter(function(x) { return x.id !== b.id; });
+                await saveBranches(nb);
+              }} style={{ background: "none", border: "none", color: t.bad, fontSize: 14, cursor: "pointer" }}>🗑</button>}
+            </div>
+            <div style={{ fontSize: 10, color: B.blue, marginTop: 6 }}>📍 {b.radius < 1000 ? b.radius + " م" : (b.radius / 1000).toFixed(1) + " كم"}</div>
+            {b.lat && b.lat !== 0 ? <div style={{ fontSize: 9, color: t.txM, marginTop: 2, fontFamily: "monospace" }}>{b.lat.toFixed(4)}, {b.lng.toFixed(4)}</div> : <div style={{ fontSize: 9, color: t.warn, marginTop: 2 }}>⚠️ لم يُحدد الموقع</div>}
+            <button onClick={function() { setMapTarget({ type: "branch", id: b.id }); }} style={{ width: "100%", marginTop: 8, padding: "7px", borderRadius: 8, background: B.blue + "12", color: B.blue, fontSize: 11, fontWeight: 700, border: "none", cursor: "pointer" }}>🗺️ تحديد الموقع</button>
+            {/* Assigned employees */}
+            <div style={{ marginTop: 8, paddingTop: 8, borderTop: "1px solid " + t.sep }}>
+              <div style={{ fontSize: 10, fontWeight: 600, color: t.tx2, marginBottom: 4 }}>👥 الموظفين ({brEmps.length})</div>
+              {brEmps.length === 0 && <div style={{ fontSize: 9, color: t.txM }}>لا يوجد موظفين</div>}
+              {brEmps.map(function(e) { return <div key={e.id} style={{ fontSize: 10, color: t.tx2, padding: "2px 0" }}>• {e.name} ({e.id})</div>; })}
+              {role === "manager" && <button onClick={async function() {
+                var empId = prompt("أدخل الرقم الوظيفي للموظف (مثل E004):");
+                if (!empId) return;
+                empId = empId.toUpperCase();
+                var allEmps = await api("employees") || [];
+                var emp2 = allEmps.find(function(e) { return e.id === empId; });
+                if (!emp2) return alert("الموظف غير موجود");
+                emp2.branch = b.id;
+                await api("employees", "PUT", { id: empId, branch: b.id });
+                alert("✅ تم نقل " + emp2.name + " إلى " + b.name);
+                location.reload();
+              }} style={{ width: "100%", marginTop: 6, padding: "5px", borderRadius: 6, background: t.okLt, color: t.ok, fontSize: 9, fontWeight: 700, border: "none", cursor: "pointer" }}>+ نقل موظف هنا</button>}
+            </div>
+          </div>; })}</div>
+
         {/* Map Picker Modal */}
         {mapTarget && mapTarget.type === "branch" && (function() { var br = branches.find(function(x) { return x.id === mapTarget.id; }); if (!br) return null; return <MapPicker lat={br.lat} lng={br.lng} radius={br.radius} name={br.name} t={t} onClose={function() { setMapTarget(null); }} onSave={function(lat, lng, rad) { var nb = branches.map(function(x) { return x.id === br.id ? Object.assign({}, x, { lat: lat, lng: lng, radius: rad }) : x; }); saveBranches(nb); setMapTarget(null); }} />; })()}
       </>}

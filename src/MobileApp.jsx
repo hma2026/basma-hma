@@ -49,7 +49,7 @@ const DARK = {
 
 // ═══════ CONSTANTS ═══════
 const APP = "بصمة HMA";
-const VER = "v4.33";
+const VER = "v4.34";
 const CO = "هاني محمد عسيري للإستشارات الهندسية";
 const B = { blue: "#2B5EA7", yellow: "#FDD800", red: "#E2192C", black: "#1A1A1A", blueDk: "#1E4478", blueLt: "#EDF3FB", gold: "#D4A017", diamond: "#7C3AED" };
 const C = LIGHT; // Default light - components use useTheme().t for dynamic
@@ -542,7 +542,7 @@ function CallNotif({ type, title, sub, onAnswer, onDecline }) {
   }, []);
   // Auto dismiss after 25 seconds
   useEffect(() => { const t = setTimeout(() => onDecline(), 25000); return () => clearTimeout(t); }, []);
-  const icons = { checkin: "☀️", break_s: "☕", break_e: "🔄", retry: "⚠️" };
+  const icons = { checkin: "☀️", break_s: "☕", break_e: "🔄", checkout: "🌙", retry: "⚠️" };
   return (<div style={{ position: "fixed", inset: 0, background: "linear-gradient(180deg,#0B0F1A,#1a2332)", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", zIndex: 300, direction: "rtl" }}>
     <style>{`@keyframes rpl{0%{transform:scale(.8);opacity:.5}100%{transform:scale(2.2);opacity:0}} @keyframes shk{0%,100%{transform:rotate(0)}25%{transform:rotate(-6deg)}75%{transform:rotate(6deg)}} @keyframes blk{0%,100%{opacity:1}50%{opacity:.3}}`}</style>
     {[0, 1, 2].map(i => <div key={i} style={{ position: "absolute", width: 180, height: 180, borderRadius: "50%", border: "2px solid rgba(43,94,167,.25)", animation: `rpl 2s ease-out infinite ${i * .5}s` }} />)}
@@ -761,15 +761,10 @@ function Widget({ emp, onApp }) {
       triggerCall("break_e", "🔄 نهاية الاستراحة", "سجّل عودتك");
       return;
     }
-    // CP4: End of work (17:00 = 1020)
+    // CP4: End of work (17:00 = 1020) — trigger call then auto checkout
     if (cur >= 1020 && cur <= 1022 && !cpTrig.current.has(4)) {
       cpTrig.current.add(4);
-      setAcp({ id: 4, l: "الانصراف", ic: "🌙" });
-      setCd(60);
-      setCs("countdown");
-      cdRef.current = setInterval(() => setCd(p => { if (p <= 1) { clearInterval(cdRef.current); doAutoCheckout(); return 0; } return p - 1; }), 1000);
-      // Auto checkout after 5 minutes if no overtime
-      setTimeout(doAutoCheckout, 5 * 60 * 1000);
+      triggerCall("checkout", "🌙 وقت الانصراف", "سجّل انصرافك الآن");
     }
   }, [sH, sM, cs, isLeave]);
 
@@ -795,6 +790,10 @@ function Widget({ emp, onApp }) {
   const onCallDecline = () => {
     const type = lastCallType;
     setCallNotif(null);
+    // Checkout declined — auto checkout after 5 min
+    if (type === "checkout") {
+      setTimeout(doAutoCheckout, 5 * 60 * 1000);
+    }
     // Only retry for checkin (first call), and only if employee didn't check in yet
     if (type === "checkin" && !cpTrig.current.has("retry")) {
       cpTrig.current.add("retry");
@@ -815,7 +814,7 @@ function Widget({ emp, onApp }) {
     let type;
     if (lastCallType === "break_s") type = "الاستراحة";
     else if (lastCallType === "break_e") type = "العودة";
-    else if (lastCallType === "manual_out") type = "الانصراف";
+    else if (lastCallType === "manual_out" || lastCallType === "checkout") type = "الانصراف";
     else if (lastCallType === "manual_in" || !done.includes("الحضور")) type = "الحضور";
     else type = "الانصراف";
     var checkinData = { empId: emp.id, type, lat: gps.lat, lng: gps.lng, facePhoto: true };
@@ -1995,7 +1994,7 @@ function FullApp({ emp, onBack, onLogout }) {
         {/* FAQ */}
         {[
           { q: "كيف أسجّل حضوري؟", a: "اضغط زر \"سجّل حضورك\" الأخضر في الشاشة الرئيسية → سيفتح الكاميرا للتحقق من وجهك → بعد التأكيد يتم تسجيل الحضور تلقائياً مع الموقع." },
-          { q: "كيف أسجّل انصرافي؟", a: "اضغط زر \"سجّل انصرافك\" الأزرق الذي يظهر بعد الساعة 3:30 → تحقق من الوجه → تم. لو نسيت، النظام يسجّلك تلقائياً بعد 5 دقائق من نهاية الدوام." },
+          { q: "كيف أسجّل انصرافي؟", a: "عند نهاية الدوام (5:00 مساءً) يأتيك اتصال تلقائي لتسجيل الانصراف — رد على الاتصال وسجّل بصمة الوجه. يمكنك أيضاً الضغط على زر \"سجّل انصرافك\" الأزرق يدوياً بعد الساعة 3:30. لو نسيت، النظام يسجّلك تلقائياً بعد 5 دقائق." },
           { q: "ماذا يحدث عند بصمة الاستراحة؟", a: "يأتيك اتصال تلقائي قبل الاستراحة وبعدها. رد على الاتصال → سجّل بصمة الوجه. هذا الاتصال إلزامي ولا يمكن إيقافه." },
           { q: "بصمة الوجه لا تتعرّف عليّ", a: "تأكد من: إضاءة جيدة على وجهك، النظر مباشرة للكاميرا، عدم ارتداء نظارات شمسية. لو استمرت المشكلة اضغط \"إعادة تسجيل البصمة\" من صفحة حسابي." },
           { q: "هل التطبيق يتتبّعني خارج الدوام؟", a: "لا. التطبيق يعمل فقط خلال ساعات الدوام الرسمية. خارج هذه الأوقات لا يوجد أي تتبّع." },
@@ -2005,6 +2004,8 @@ function FullApp({ emp, onBack, onLogout }) {
           { q: "كيف أطلب إجازة؟", a: "من تاب الإجازات → طلب إجازة جديدة → حدد النوع والتاريخ → أرسل. الطلب يذهب للمدير المباشر ثم الموارد البشرية." },
           { q: "كيف أغيّر جهازي؟", a: "تغيير الجهاز يحتاج موافقة الإدارة. تواصل مع مدير الموارد البشرية لتفعيل جهازك الجديد." },
           { q: "هل التطبيق إجباري؟", a: "لا. استخدام التطبيق اختياري بالكامل. يحق لك طلب جهاز من الإدارة أو التحضير يدوياً عبر المدير المباشر." },
+          { q: "كيف أرفق ملف مع الطلب؟", a: "عند تقديم طلب إداري، اضغط زر \"إرفاق ملف\" واختر صورة أو PDF (بحد أقصى 2 ميجا). المدير يقدر يعرض المرفق من لوحة الإدارة." },
+          { q: "كيف يتم نقلي لموقع عمل آخر؟", a: "المدير يحدد موقع عملك من لوحة الإدارة → النطاق الجغرافي → الموقع المطلوب → نقل موظف. بعدها GPS يتحقق من الموقع الجديد." },
         ].map(function(faq, i) { return <details key={i} style={{ ...crd, marginBottom: 8, cursor: "pointer" }}><summary style={{ fontSize: 13, fontWeight: 700, color: t.tx, padding: "2px 0", listStyle: "none", display: "flex", justifyContent: "space-between", alignItems: "center" }}><span>❓ {faq.q}</span><span style={{ fontSize: 10, color: t.txM }}>▼</span></summary><div style={{ fontSize: 12, color: t.tx2, marginTop: 10, lineHeight: 1.8, paddingTop: 10, borderTop: "1px solid " + t.sep }}>{faq.a}</div></details>; })}
 
         {/* Contact Support */}
