@@ -49,7 +49,7 @@ const DARK = {
 
 // ═══════ CONSTANTS ═══════
 const APP = "بصمة HMA";
-const VER = "v4.36";
+const VER = "v4.37";
 const CO = "هاني محمد عسيري للإستشارات الهندسية";
 const B = { blue: "#2B5EA7", yellow: "#FDD800", red: "#E2192C", black: "#1A1A1A", blueDk: "#1E4478", blueLt: "#EDF3FB", gold: "#D4A017", diamond: "#7C3AED" };
 const C = LIGHT; // Default light - components use useTheme().t for dynamic
@@ -69,10 +69,10 @@ const LEVELS = [
 const getLevel = pts => [...LEVELS].reverse().find(l => pts >= l.min) || LEVELS[0];
 const EMP_TYPES = { office: "🏢 مكتبي", field: "🏗️ ميداني", mixed: "🔄 مختلط", remote: "🏠 عن بُعد" };
 const CPS = [
-  { id: 1, h: 17, m: 22, l: "الحضور", ic: "☀️" },
-  { id: 2, h: 17, m: 25, l: "الاستراحة", ic: "☕" },
-  { id: 3, h: 17, m: 28, l: "العودة", ic: "🔄" },
-  { id: 4, h: 17, m: 31, l: "الانصراف", ic: "🌙" },
+  { id: 1, h: 8, m: 30, l: "الحضور", ic: "☀️" },
+  { id: 2, h: 12, m: 25, l: "الاستراحة", ic: "☕" },
+  { id: 3, h: 13, m: 5, l: "العودة", ic: "🔄" },
+  { id: 4, h: 17, m: 0, l: "الانصراف", ic: "🌙" },
 ];
 const CHALLENGES = [
   { q: "سبحان الله وبحمده ...", opts: ["سبحان الله العظيم", "الحمد لله", "لا إله إلا الله"], correct: 0, type: "ذكر" },
@@ -231,7 +231,7 @@ async function getFaceDescriptor(imgSrc) {
   if (!_modelsLoaded) return { ok: false, reason: "النماذج لم تُحمَّل بعد" };
   try {
     var img = await faceapi.fetchImage(imgSrc);
-    var opts = new faceapi.TinyFaceDetectorOptions({ inputSize: 416, scoreThreshold: 0.5 });
+    var opts = new faceapi.TinyFaceDetectorOptions({ inputSize: 416, scoreThreshold: 0.2 });
     var results = await faceapi.detectAllFaces(img, opts).withFaceLandmarks(true).withFaceDescriptors();
     if (results.length === 0) return { ok: false, reason: "لم يتم اكتشاف وجه — وجّه الكاميرا لوجهك" };
     if (results.length > 1) return { ok: false, reason: "أكثر من وجه في الصورة — صوّر وجهك فقط" };
@@ -240,9 +240,9 @@ async function getFaceDescriptor(imgSrc) {
     var box = det.detection.box;
     var imgArea = img.width * img.height;
     var faceArea = box.width * box.height;
-    if (faceArea / imgArea < 0.10) return { ok: false, reason: "الوجه بعيد — قرّب الجوال من وجهك" };
+    if (faceArea / imgArea < 0.03) return { ok: false, reason: "الوجه بعيد — قرّب الجوال من وجهك" };
     // Check detection confidence
-    if (det.detection.score < 0.65) return { ok: false, reason: "الصورة غير واضحة — تأكد من الإضاءة" };
+    if (det.detection.score < 0.35) return { ok: false, reason: "الصورة غير واضحة — تأكد من الإضاءة" };
     // Check face angle using landmarks (eyes should be roughly level)
     var landmarks = det.landmarks;
     var leftEye = landmarks.getLeftEye();
@@ -250,7 +250,7 @@ async function getFaceDescriptor(imgSrc) {
     var eyeCenter = function(pts) { var sx = 0, sy = 0; pts.forEach(function(p) { sx += p.x; sy += p.y; }); return { x: sx / pts.length, y: sy / pts.length }; };
     var le = eyeCenter(leftEye), re = eyeCenter(rightEye);
     var angle = Math.abs(Math.atan2(re.y - le.y, re.x - le.x) * 180 / Math.PI);
-    if (angle > 15) return { ok: false, reason: "وجهك مائل — انظر مباشرة للكاميرا" };
+    if (angle > 35) return { ok: false, reason: "وجهك مائل — انظر مباشرة للكاميرا" };
     return {
       ok: true,
       descriptor: Array.from(det.detection.score > 0 ? det.descriptor : []),
@@ -341,7 +341,7 @@ function FaceCamera({ onOk, onNo, empId }) {
       var v = vRef.current;
       if (!v || v.readyState < 2) return;
       try {
-        var dets = await faceapi.detectAllFaces(v, new faceapi.TinyFaceDetectorOptions({ inputSize: 224, scoreThreshold: 0.4 }));
+        var dets = await faceapi.detectAllFaces(v, new faceapi.TinyFaceDetectorOptions({ inputSize: 224, scoreThreshold: 0.2 }));
         setIsLive(dets.length === 1);
       } catch(e) { /* ignore */ }
     }, 800);
@@ -401,9 +401,9 @@ function FaceCamera({ onOk, onNo, empId }) {
       // Compare with stored descriptor (server or cache)
       var result = compareDescriptors(serverDesc, descriptor);
       setMatchPct(result.similarity);
-      console.log("[FaceAPI] Compare: distance=" + result.distance.toFixed(4) + " sim=" + result.similarity + "% threshold=0.25");
-      // Threshold: distance < 0.25 = same person (strict — rejects different people)
-      if (result.distance < 0.25) {
+      console.log("[FaceAPI] Compare: distance=" + result.distance.toFixed(4) + " sim=" + result.similarity + "% threshold=0.45");
+      // Threshold: distance < 0.55 = same person (strict — rejects different people)
+      if (result.distance < 0.55) {
         setSt("ok"); stopCam();
         setTimeout(function() { onOk(photo); }, 1400);
       } else {
@@ -484,6 +484,12 @@ function FaceCamera({ onOk, onNo, empId }) {
 
       {/* Max attempts */}
       {attempts >= MAX_ATTEMPTS && st !== "ok" && <div style={{ color: C.bad, fontSize: 12, fontWeight: 600, marginTop: 12, textAlign: "center" }}>تم تجاوز الحد الأقصى للمحاولات — تواصل مع المدير</div>}
+      {attempts >= 3 && st !== "ok" && <button onClick={function() {
+        // Skip face — log as unverified, notify admin
+        api("violations", "POST", { empId: empId, type: "face_skipped", details: "تم تجاوز بصمة الوجه بعد " + attempts + " محاولات فاشلة", date: new Date().toISOString().split("T")[0] });
+        setSt("ok"); stopCam();
+        setTimeout(function() { onOk("skipped"); }, 500);
+      }} style={{ marginTop: 8, padding: "10px 24px", borderRadius: 10, background: C.warn, color: "#fff", fontSize: 12, fontWeight: 700, border: "none", cursor: "pointer" }}>⚠️ تجاوز البصمة (يتم إبلاغ الإدارة)</button>}
 
       {/* Secondary actions */}
       {st !== "ok" && st !== "checking" && st !== "loading_models" && <div style={{ display: "flex", gap: 16, marginTop: 16 }}>
@@ -678,7 +684,7 @@ function Widget({ emp, onApp }) {
   const breakOffsetAfter = ((empHash + 7) % 4) + 2; // 2-5 minutes after break
 
   // Real time — faster in test mode to catch checkpoints
-  useEffect(() => { const t = setInterval(() => { const n = new Date(); setSH(n.getHours()); setSM(n.getMinutes()); }, 5000); return () => clearInterval(t); }, []);
+  useEffect(() => { const t = setInterval(() => { const n = new Date(); setSH(n.getHours()); setSM(n.getMinutes()); }, 30000); return () => clearInterval(t); }, []);
 
   // GPS tracking during work hours (every 5 min)
   useEffect(() => {
@@ -715,6 +721,18 @@ function Widget({ emp, onApp }) {
     return function() { document.removeEventListener("visibilitychange", handleVisibility); window.removeEventListener("beforeunload", handleUnload); };
   }, []);
 
+  // GPS auto check-in: entering work zone = attendance registered
+  useEffect(() => {
+    if (isLeave || done.includes("الحضور")) return;
+    if (gpsStatus.inR && !gpsStatus.remote) {
+      // Employee entered work zone — auto register attendance
+      api('checkin', 'POST', { empId: emp.id, type: "الحضور", lat: 0, lng: 0, autoGPS: true }).then(function() {
+        setDone(function(p) { return p.includes("الحضور") ? p : p.concat(["الحضور"]); });
+        console.log("[GPS] Auto check-in: employee in work zone");
+      });
+    }
+  }, [gpsStatus.inR]);
+
   // Load today's records
   useEffect(() => {
     const today = new Date().toISOString().split("T")[0];
@@ -724,10 +742,9 @@ function Widget({ emp, onApp }) {
   }, []);
 
   // On leave?
-  var _ws = 17*60+22, _we = 17*60+31; // TEST work period
-  const dur = curMin >= _ws && curMin < _we, aft = curMin >= _we && curMin <= windowEnd, bef = !dur && !aft;
-  const mW = dur ? Math.max(0, curMin - _ws) : aft ? (_we - _ws) : 0;
-  const pct = Math.min(100, Math.max(0, Math.round((mW / Math.max(1, _we - _ws)) * 100)));
+  const dur = sH >= 8 && sH < 17, aft = sH >= 17, bef = sH < 8 || (sH === 8 && sM < 30);
+  const mW = dur ? Math.max(0, (sH - 8) * 60 + sM - 30) : aft ? 510 : 0;
+  const pct = Math.min(100, Math.max(0, Math.round((mW / 510) * 100)));
   const tStr = `${String(sH).padStart(2, "0")}:${String(sM).padStart(2, "0")}`;
   const S = 260, R = 108, cx = 130, cy = 130, RC = 2 * Math.PI * R;
 
@@ -743,21 +760,21 @@ function Widget({ emp, onApp }) {
   useEffect(() => {
     if (cs !== "idle" || isLeave) return;
     const cur = sH * 60 + sM;
-    // CP1: TEST 17:22
-    if (cur >= 17*60+22 && cur <= 17*60+24 && !cpTrig.current.has(1)) {
+    // CP1: Start of work (8:30 = 510)
+    if (cur >= 510 && cur <= 512 && !cpTrig.current.has(1)) {
       cpTrig.current.add(1);
       triggerCall("checkin", "☀️ وقت الحضور", "سجّل حضورك الآن");
       return;
     }
-    // CP2: TEST 17:25
-    const breakCallTime = 17*60+25;
+    // CP2: Before break (12:30 = 750)
+    const breakCallTime = 750 - breakOffsetBefore;
     if (cur >= breakCallTime && cur <= breakCallTime + 2 && !cpTrig.current.has(2)) {
       cpTrig.current.add(2);
       triggerCall("break_s", "☕ وقت الاستراحة", "سجّل قبل الاستراحة");
       return;
     }
-    // CP3: TEST 17:28
-    const returnCallTime = 17*60+28;
+    // CP3: After break (13:00 = 780)
+    const returnCallTime = 780 + breakOffsetAfter;
     if (cur >= returnCallTime && cur <= returnCallTime + 2 && !cpTrig.current.has(3)) {
       cpTrig.current.add(3);
       triggerCall("break_e", "🔄 نهاية الاستراحة", "سجّل عودتك");
@@ -854,14 +871,21 @@ function Widget({ emp, onApp }) {
   const advTime = () => { if (cs !== "idle") return; setSM(p => { let n = p + 15; if (n >= 60) { setSH(h => Math.min(h + 1, 18)); return n - 60; } return n; }); };
 
   const doScan = () => { clearInterval(cdRef.current); setShowFace(true); };
-  const pickAns = i => { if (sel !== null) return; setSel(i); setTimeout(() => { if (i === ch.correct) { api('employees', 'PUT', { id: emp.id, points: (emp.points || 0) + 5 }); } setCs(i === ch.correct ? "correct" : "wrong"); setTimeout(() => { setCs("idle"); setSel(null); setChDone(true); }, 2000); }, 700); };
+  // Challenge point zones: 7:30-7:45=25pts, 7:45-8:00=15pts, 8:00-8:15=10pts
+  var challengeZone = null;
+  if (curMin >= 7*60+30 && curMin < 7*60+45) challengeZone = { pts: 25, label: "🟢 نطاق 25 نقطة", color: C.ok };
+  else if (curMin >= 7*60+45 && curMin < 8*60) challengeZone = { pts: 15, label: "🟡 نطاق 15 نقطة", color: B.gold };
+  else if (curMin >= 8*60 && curMin < 8*60+15) challengeZone = { pts: 10, label: "🔵 نطاق 10 نقاط", color: B.blue };
+  var challengeAvailable = challengeZone && ch && !chDone;
+
+  const pickAns = i => { if (sel !== null) return; setSel(i); var pts = challengeZone ? challengeZone.pts : 5; setTimeout(() => { if (i === ch.correct) { api('employees', 'PUT', { id: emp.id, points: (emp.points || 0) + pts }); } setCs(i === ch.correct ? "correct" : "wrong"); setTimeout(() => { setCs("idle"); setSel(null); setChDone(true); }, 2000); }, 700); };
 
   const outOfRange = !gpsStatus.inR && !gpsStatus.remote && emp.type !== "remote";
   const rCol = outOfRange && cs === "idle" ? C.bad : cs === "countdown" ? B.yellow : cs === "scan" ? B.blue : cs === "done" || cs === "correct" ? C.ok : cs === "challenge" ? B.gold : cs === "wrong" ? C.bad : pct >= 60 ? B.blue : B.yellow;
 
   // Work hours window check
-  var windowStart = 17 * 60 + 0;  // TEST
-  var windowEnd = 20 * 60 + 0;    // TEST
+  var windowStart = 7 * 60 + 15;
+  var windowEnd = 18 * 60 + 15;
   if (emp.flexOT) windowEnd = 20 * 60;
   var curMin = sH * 60 + sM;
   var outsideWindow = curMin < windowStart || curMin > windowEnd;
@@ -879,7 +903,7 @@ function Widget({ emp, onApp }) {
   if (outsideWindow && !done.includes("الحضور")) return (<div style={{ ...FL, background: t.bg, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", color: t.tx }}>
     <div style={{ fontSize: 48 }}>🌙</div>
     <div style={{ fontSize: 20, fontWeight: 800, marginTop: 12, color: t.txM }}>خارج أوقات الدوام</div>
-    <div style={{ fontSize: 13, color: t.txM, marginTop: 8, textAlign: "center", lineHeight: 1.8, maxWidth: 260 }}>"وضع الاختبار — الدوام يبدأ 5:22 مساءً"</div>
+    <div style={{ fontSize: 13, color: t.txM, marginTop: 8, textAlign: "center", lineHeight: 1.8, maxWidth: 260 }}>"التطبيق يعمل من الساعة 7:15 صباحاً" + "\n" + "إلى 6:15 مساءً"</div>
     <div style={{ fontSize: 11, color: t.txM, marginTop: 16 }}>{tStr}</div>
     <button onClick={onApp} style={{ marginTop: 30, padding: "10px 30px", borderRadius: 14, background: t.card, border: "1px solid " + t.sep, color: B.blue, fontSize: 12, cursor: "pointer", fontWeight: 600 }}>التفاصيل ←</button>
     <div style={{ fontSize: 9, color: "rgba(0,0,0,.1)", marginTop: 20 }}>{VER}</div>
@@ -900,6 +924,14 @@ function Widget({ emp, onApp }) {
     </div>
 
     <GpsBadge branch={emp.branch} empType={emp.type} empId={emp.id} onStatusChange={s => setGpsStatus(s)} />
+
+    {/* Challenge zone indicator */}
+    {challengeAvailable && cs === "idle" && (
+      <div onClick={() => setCs("challenge")} style={{ margin: "0 16px 4px", padding: "8px 14px", borderRadius: 12, background: challengeZone.color + "15", border: "1px solid " + challengeZone.color + "33", width: "calc(100% - 32px)", zIndex: 1, cursor: "pointer", textAlign: "center" }}>
+        <div style={{ fontSize: 12, fontWeight: 700, color: challengeZone.color }}>⚡ سؤال التحدي — {challengeZone.label}</div>
+        <div style={{ fontSize: 9, color: t.txM, marginTop: 2 }}>اضغط هنا أو على الدائرة للإجابة</div>
+      </div>
+    )}
 
     {/* SCE Membership Warning */}
     {(() => { const sce = checkSCE(emp); if (!sce || !sce.alert) return null; return (
@@ -935,14 +967,14 @@ function Widget({ emp, onApp }) {
 
     {/* Circle */}
     <div style={{ flex: 1, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", zIndex: 1 }}>
-      <div style={{ position: "relative", width: S, height: S, cursor: cs === "idle" ? "pointer" : "default" }} onClick={cs === "idle" && ch && !chDone && sH >= 7 && sH < 8 ? () => setCs("challenge") : cs === "idle" ? advTime : cs === "countdown" ? doScan : undefined}>
+      <div style={{ position: "relative", width: S, height: S, cursor: cs === "idle" ? "pointer" : "default" }} onClick={cs === "idle" && challengeAvailable ? () => setCs("challenge") : cs === "idle" ? advTime : cs === "countdown" ? doScan : undefined}>
         <svg width={S} height={S} viewBox={`0 0 ${S} ${S}`}>
           <circle cx={cx} cy={cy} r={R} fill="none" stroke={t.sep} strokeWidth="10" />
           <circle cx={cx} cy={cy} r={R} fill="none" stroke={rCol} strokeWidth="10" strokeDasharray={`${(pct / 100) * RC} ${RC}`} strokeLinecap="round" transform={`rotate(-90 ${cx} ${cy})`} style={{ transition: "stroke-dasharray .5s" }} />
           {cs === "scan" && <circle cx={cx} cy={cy} r={R + 6} fill="none" stroke={B.yellow} strokeWidth="2" strokeDasharray="40 30" style={{ animation: "spin 1.5s linear infinite", transformOrigin: `${cx}px ${cy}px` }} />}
         </svg>
         <div style={{ position: "absolute", inset: 0, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center" }}>
-          {cs === "idle" && bef && !outOfRange && <><div style={{ fontSize: 10, color: t.txM }}>قبل الدوام</div><div style={{ fontSize: 38, fontWeight: 800, color: t.tx }}>{Math.max(0, Math.floor((_ws - curMin) / 60))}:{String(Math.max(0, (_ws - curMin) % 60)).padStart(2, "0")}</div></>}
+          {cs === "idle" && bef && !outOfRange && <><div style={{ fontSize: 10, color: t.txM }}>قبل الدوام</div><div style={{ fontSize: 38, fontWeight: 800, color: t.tx }}>{8 - sH}<span style={{ fontSize: 14, color: t.txM }}>س</span></div></>}
           {cs === "idle" && dur && !outOfRange && <><div style={{ fontSize: 10, color: t.txM }}>ساعات العمل</div><div style={{ fontSize: 42, fontWeight: 800, color: t.tx }}>{Math.floor(mW / 60)}<span style={{ fontSize: 14, color: t.txM }}>:{String(mW % 60).padStart(2, "0")}</span></div><div style={{ fontSize: 13, fontWeight: 700, color: rCol }}>{pct}%</div></>}
           {cs === "idle" && aft && !outOfRange && <><div style={{ fontSize: 40 }}>✅</div><div style={{ fontSize: 14, fontWeight: 700, color: C.ok, marginTop: 6 }}>اكتمل الدوام</div></>}
           {cs === "idle" && outOfRange && <><div style={{ fontSize: 36 }}>🚫</div><div style={{ fontSize: 12, fontWeight: 700, color: C.bad, marginTop: 6, textAlign: "center", lineHeight: 1.6 }}>لم تقم بتسجيل{"\n"}الحضور</div><div style={{ fontSize: 9, color: t.txM, marginTop: 4 }}>خارج منطقة العمل</div></>}
@@ -950,7 +982,7 @@ function Widget({ emp, onApp }) {
           {cs === "scan" && <div style={{ fontSize: 48, animation: "pu 1s ease-in-out infinite" }}>🪪</div>}
           {cs === "done" && <><div style={{ fontSize: 44 }}>✅</div><div style={{ fontSize: 15, fontWeight: 800, color: C.ok, marginTop: 6 }}>تم التسجيل</div></>}
           {cs === "challenge" && ch && <div style={{ padding: "0 20px", textAlign: "center" }}><div style={{ fontSize: 9, color: B.gold, fontWeight: 700 }}>⚡ {ch.type}</div><div style={{ fontSize: 12, fontWeight: 700, marginTop: 4, lineHeight: 1.4, color: t.tx }}>{ch.q}</div></div>}
-          {cs === "correct" && <><div style={{ fontSize: 48 }}>🎉</div><div style={{ fontSize: 16, fontWeight: 800, color: C.ok, marginTop: 4 }}>+5 نقاط!</div></>}
+          {cs === "correct" && <><div style={{ fontSize: 48 }}>🎉</div><div style={{ fontSize: 16, fontWeight: 800, color: C.ok, marginTop: 4 }}>+{challengeZone ? challengeZone.pts : 5} نقاط!</div></>}
           {cs === "wrong" && <><div style={{ fontSize: 40 }}>😅</div><div style={{ fontSize: 13, fontWeight: 700, color: C.bad, marginTop: 4 }}>حاول غداً</div></>}
         </div>
       </div>
@@ -971,11 +1003,11 @@ function Widget({ emp, onApp }) {
 
     <div style={{ padding: "8px 20px 20px", width: "100%", zIndex: 1 }}>
       {/* Manual Check-in Button */}
-      {cs === "idle" && !done.includes("الحضور") && !isLeave && sH >= 17 && (
+      {cs === "idle" && !done.includes("الحضور") && !isLeave && sH >= 7 && sH < 10 && (
         <button onClick={function() { setLastCallType("manual_in"); setShowFace(true); }} style={{ width: "100%", padding: "13px", borderRadius: 14, background: C.ok, color: "#fff", fontSize: 15, fontWeight: 700, border: "none", cursor: "pointer", marginBottom: 8, boxShadow: "0 4px 15px rgba(48,209,88,.3)" }}>☀️ سجّل حضورك</button>
       )}
       {/* Manual Check-out Button */}
-      {cs === "idle" && done.includes("الحضور") && !done.includes("الانصراف") && !isLeave && (sH >= 17) && (
+      {cs === "idle" && done.includes("الحضور") && !done.includes("الانصراف") && !isLeave && (sH >= 16 || (sH >= 15 && sM >= 30)) && (
         <button onClick={function() { setLastCallType("manual_out"); setShowFace(true); }} style={{ width: "100%", padding: "13px", borderRadius: 14, background: B.blue, color: "#fff", fontSize: 15, fontWeight: 700, border: "none", cursor: "pointer", marginBottom: 8, boxShadow: "0 4px 15px rgba(43,94,167,.3)" }}>🌙 سجّل انصرافك</button>
       )}
       <button onClick={onApp} style={{ width: "100%", padding: "11px", borderRadius: 14, background: t.card, border: "1px solid " + t.sep, color: B.blue, fontSize: 12, fontWeight: 600, cursor: "pointer" }}>{emp.isManager || emp.isAssistant ? "التفاصيل والإدارة ←" : "التفاصيل والمحفظة ←"}</button>
@@ -1995,7 +2027,7 @@ function FullApp({ emp, onBack, onLogout }) {
 
         {/* FAQ */}
         {[
-          { q: "كيف أسجّل حضوري؟", a: "اضغط زر \"سجّل حضورك\" الأخضر في الشاشة الرئيسية → سيفتح الكاميرا للتحقق من وجهك → بعد التأكيد يتم تسجيل الحضور تلقائياً مع الموقع." },
+          { q: "كيف أسجّل حضوري؟", a: "حضورك يتسجّل تلقائياً بمجرد دخولك منطقة العمل (GPS). الاتصال وبصمة الوجه هي تأكيد فقط. يمكنك أيضاً الضغط على زر \"سجّل حضورك\" يدوياً." },
           { q: "كيف أسجّل انصرافي؟", a: "عند نهاية الدوام (5:00 مساءً) يأتيك اتصال تلقائي لتسجيل الانصراف — رد على الاتصال وسجّل بصمة الوجه. يمكنك أيضاً الضغط على زر \"سجّل انصرافك\" الأزرق يدوياً بعد الساعة 3:30. لو نسيت، النظام يسجّلك تلقائياً بعد 5 دقائق." },
           { q: "ماذا يحدث عند بصمة الاستراحة؟", a: "يأتيك اتصال تلقائي قبل الاستراحة وبعدها. رد على الاتصال → سجّل بصمة الوجه. هذا الاتصال إلزامي ولا يمكن إيقافه." },
           { q: "بصمة الوجه لا تتعرّف عليّ", a: "تأكد من: إضاءة جيدة على وجهك، النظر مباشرة للكاميرا، عدم ارتداء نظارات شمسية. لو استمرت المشكلة اضغط \"إعادة تسجيل البصمة\" من صفحة حسابي." },
@@ -2008,6 +2040,7 @@ function FullApp({ emp, onBack, onLogout }) {
           { q: "هل التطبيق إجباري؟", a: "لا. استخدام التطبيق اختياري بالكامل. يحق لك طلب جهاز من الإدارة أو التحضير يدوياً عبر المدير المباشر." },
           { q: "كيف أرفق ملف مع الطلب؟", a: "عند تقديم طلب إداري، اضغط زر \"إرفاق ملف\" واختر صورة أو PDF (بحد أقصى 2 ميجا). المدير يقدر يعرض المرفق من لوحة الإدارة." },
           { q: "كيف يتم نقلي لموقع عمل آخر؟", a: "المدير يحدد موقع عملك من لوحة الإدارة → النطاق الجغرافي → الموقع المطلوب → نقل موظف. بعدها GPS يتحقق من الموقع الجديد." },
+          { q: "كيف أحصل على نقاط من سؤال التحدي؟", a: "سؤال التحدي يظهر قبل الدوام: من 7:30 تحصل على 25 نقطة، من 7:45 تحصل على 15 نقطة، ومن 8:00 تحصل على 10 نقاط. السؤال يختفي الساعة 8:15." },
         ].map(function(faq, i) { return <details key={i} style={{ ...crd, marginBottom: 8, cursor: "pointer" }}><summary style={{ fontSize: 13, fontWeight: 700, color: t.tx, padding: "2px 0", listStyle: "none", display: "flex", justifyContent: "space-between", alignItems: "center" }}><span>❓ {faq.q}</span><span style={{ fontSize: 10, color: t.txM }}>▼</span></summary><div style={{ fontSize: 12, color: t.tx2, marginTop: 10, lineHeight: 1.8, paddingTop: 10, borderTop: "1px solid " + t.sep }}>{faq.a}</div></details>; })}
 
         {/* Contact Support */}
