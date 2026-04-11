@@ -49,7 +49,7 @@ const DARK = {
 
 // ═══════ CONSTANTS ═══════
 const APP = "بصمة HMA";
-const VER = "v4.35";
+const VER = "v4.36";
 const CO = "هاني محمد عسيري للإستشارات الهندسية";
 const B = { blue: "#2B5EA7", yellow: "#FDD800", red: "#E2192C", black: "#1A1A1A", blueDk: "#1E4478", blueLt: "#EDF3FB", gold: "#D4A017", diamond: "#7C3AED" };
 const C = LIGHT; // Default light - components use useTheme().t for dynamic
@@ -69,10 +69,10 @@ const LEVELS = [
 const getLevel = pts => [...LEVELS].reverse().find(l => pts >= l.min) || LEVELS[0];
 const EMP_TYPES = { office: "🏢 مكتبي", field: "🏗️ ميداني", mixed: "🔄 مختلط", remote: "🏠 عن بُعد" };
 const CPS = [
-  { id: 1, h: 8, m: 30, l: "الحضور", ic: "☀️" },
-  { id: 2, h: 12, m: 25, l: "الاستراحة", ic: "☕" },
-  { id: 3, h: 13, m: 5, l: "العودة", ic: "🔄" },
-  { id: 4, h: 17, m: 0, l: "الانصراف", ic: "🌙" },
+  { id: 1, h: 17, m: 22, l: "الحضور", ic: "☀️" },
+  { id: 2, h: 17, m: 25, l: "الاستراحة", ic: "☕" },
+  { id: 3, h: 17, m: 28, l: "العودة", ic: "🔄" },
+  { id: 4, h: 17, m: 31, l: "الانصراف", ic: "🌙" },
 ];
 const CHALLENGES = [
   { q: "سبحان الله وبحمده ...", opts: ["سبحان الله العظيم", "الحمد لله", "لا إله إلا الله"], correct: 0, type: "ذكر" },
@@ -678,7 +678,7 @@ function Widget({ emp, onApp }) {
   const breakOffsetAfter = ((empHash + 7) % 4) + 2; // 2-5 minutes after break
 
   // Real time — faster in test mode to catch checkpoints
-  useEffect(() => { const t = setInterval(() => { const n = new Date(); setSH(n.getHours()); setSM(n.getMinutes()); }, 30000); return () => clearInterval(t); }, []);
+  useEffect(() => { const t = setInterval(() => { const n = new Date(); setSH(n.getHours()); setSM(n.getMinutes()); }, 5000); return () => clearInterval(t); }, []);
 
   // GPS tracking during work hours (every 5 min)
   useEffect(() => {
@@ -724,9 +724,10 @@ function Widget({ emp, onApp }) {
   }, []);
 
   // On leave?
-  const dur = sH >= 8 && sH < 17, aft = sH >= 17, bef = sH < 8 || (sH === 8 && sM < 30);
-  const mW = dur ? Math.max(0, (sH - 8) * 60 + sM - 30) : aft ? 510 : 0;
-  const pct = Math.min(100, Math.max(0, Math.round((mW / 510) * 100)));
+  var _ws = 17*60+22, _we = 17*60+31; // TEST work period
+  const dur = curMin >= _ws && curMin < _we, aft = curMin >= _we && curMin <= windowEnd, bef = !dur && !aft;
+  const mW = dur ? Math.max(0, curMin - _ws) : aft ? (_we - _ws) : 0;
+  const pct = Math.min(100, Math.max(0, Math.round((mW / Math.max(1, _we - _ws)) * 100)));
   const tStr = `${String(sH).padStart(2, "0")}:${String(sM).padStart(2, "0")}`;
   const S = 260, R = 108, cx = 130, cy = 130, RC = 2 * Math.PI * R;
 
@@ -742,21 +743,21 @@ function Widget({ emp, onApp }) {
   useEffect(() => {
     if (cs !== "idle" || isLeave) return;
     const cur = sH * 60 + sM;
-    // CP1: Start of work (8:30 = 510)
-    if (cur >= 510 && cur <= 512 && !cpTrig.current.has(1)) {
+    // CP1: TEST 17:22
+    if (cur >= 17*60+22 && cur <= 17*60+24 && !cpTrig.current.has(1)) {
       cpTrig.current.add(1);
       triggerCall("checkin", "☀️ وقت الحضور", "سجّل حضورك الآن");
       return;
     }
-    // CP2: Before break (12:30 = 750)
-    const breakCallTime = 750 - breakOffsetBefore;
+    // CP2: TEST 17:25
+    const breakCallTime = 17*60+25;
     if (cur >= breakCallTime && cur <= breakCallTime + 2 && !cpTrig.current.has(2)) {
       cpTrig.current.add(2);
       triggerCall("break_s", "☕ وقت الاستراحة", "سجّل قبل الاستراحة");
       return;
     }
-    // CP3: After break (13:00 = 780)
-    const returnCallTime = 780 + breakOffsetAfter;
+    // CP3: TEST 17:28
+    const returnCallTime = 17*60+28;
     if (cur >= returnCallTime && cur <= returnCallTime + 2 && !cpTrig.current.has(3)) {
       cpTrig.current.add(3);
       triggerCall("break_e", "🔄 نهاية الاستراحة", "سجّل عودتك");
@@ -859,8 +860,8 @@ function Widget({ emp, onApp }) {
   const rCol = outOfRange && cs === "idle" ? C.bad : cs === "countdown" ? B.yellow : cs === "scan" ? B.blue : cs === "done" || cs === "correct" ? C.ok : cs === "challenge" ? B.gold : cs === "wrong" ? C.bad : pct >= 60 ? B.blue : B.yellow;
 
   // Work hours window check
-  var windowStart = 7 * 60 + 15;
-  var windowEnd = 18 * 60 + 15;
+  var windowStart = 17 * 60 + 0;  // TEST
+  var windowEnd = 20 * 60 + 0;    // TEST
   if (emp.flexOT) windowEnd = 20 * 60;
   var curMin = sH * 60 + sM;
   var outsideWindow = curMin < windowStart || curMin > windowEnd;
@@ -878,7 +879,7 @@ function Widget({ emp, onApp }) {
   if (outsideWindow && !done.includes("الحضور")) return (<div style={{ ...FL, background: t.bg, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", color: t.tx }}>
     <div style={{ fontSize: 48 }}>🌙</div>
     <div style={{ fontSize: 20, fontWeight: 800, marginTop: 12, color: t.txM }}>خارج أوقات الدوام</div>
-    <div style={{ fontSize: 13, color: t.txM, marginTop: 8, textAlign: "center", lineHeight: 1.8, maxWidth: 260 }}>"التطبيق يعمل من الساعة 7:15 صباحاً" + "\n" + "إلى 6:15 مساءً"</div>
+    <div style={{ fontSize: 13, color: t.txM, marginTop: 8, textAlign: "center", lineHeight: 1.8, maxWidth: 260 }}>"وضع الاختبار — الدوام يبدأ 5:22 مساءً"</div>
     <div style={{ fontSize: 11, color: t.txM, marginTop: 16 }}>{tStr}</div>
     <button onClick={onApp} style={{ marginTop: 30, padding: "10px 30px", borderRadius: 14, background: t.card, border: "1px solid " + t.sep, color: B.blue, fontSize: 12, cursor: "pointer", fontWeight: 600 }}>التفاصيل ←</button>
     <div style={{ fontSize: 9, color: "rgba(0,0,0,.1)", marginTop: 20 }}>{VER}</div>
@@ -941,7 +942,7 @@ function Widget({ emp, onApp }) {
           {cs === "scan" && <circle cx={cx} cy={cy} r={R + 6} fill="none" stroke={B.yellow} strokeWidth="2" strokeDasharray="40 30" style={{ animation: "spin 1.5s linear infinite", transformOrigin: `${cx}px ${cy}px` }} />}
         </svg>
         <div style={{ position: "absolute", inset: 0, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center" }}>
-          {cs === "idle" && bef && !outOfRange && <><div style={{ fontSize: 10, color: t.txM }}>قبل الدوام</div><div style={{ fontSize: 38, fontWeight: 800, color: t.tx }}>{8 - sH}<span style={{ fontSize: 14, color: t.txM }}>س</span></div></>}
+          {cs === "idle" && bef && !outOfRange && <><div style={{ fontSize: 10, color: t.txM }}>قبل الدوام</div><div style={{ fontSize: 38, fontWeight: 800, color: t.tx }}>{Math.max(0, Math.floor((_ws - curMin) / 60))}:{String(Math.max(0, (_ws - curMin) % 60)).padStart(2, "0")}</div></>}
           {cs === "idle" && dur && !outOfRange && <><div style={{ fontSize: 10, color: t.txM }}>ساعات العمل</div><div style={{ fontSize: 42, fontWeight: 800, color: t.tx }}>{Math.floor(mW / 60)}<span style={{ fontSize: 14, color: t.txM }}>:{String(mW % 60).padStart(2, "0")}</span></div><div style={{ fontSize: 13, fontWeight: 700, color: rCol }}>{pct}%</div></>}
           {cs === "idle" && aft && !outOfRange && <><div style={{ fontSize: 40 }}>✅</div><div style={{ fontSize: 14, fontWeight: 700, color: C.ok, marginTop: 6 }}>اكتمل الدوام</div></>}
           {cs === "idle" && outOfRange && <><div style={{ fontSize: 36 }}>🚫</div><div style={{ fontSize: 12, fontWeight: 700, color: C.bad, marginTop: 6, textAlign: "center", lineHeight: 1.6 }}>لم تقم بتسجيل{"\n"}الحضور</div><div style={{ fontSize: 9, color: t.txM, marginTop: 4 }}>خارج منطقة العمل</div></>}
@@ -970,11 +971,11 @@ function Widget({ emp, onApp }) {
 
     <div style={{ padding: "8px 20px 20px", width: "100%", zIndex: 1 }}>
       {/* Manual Check-in Button */}
-      {cs === "idle" && !done.includes("الحضور") && !isLeave && sH >= 7 && sH < 10 && (
+      {cs === "idle" && !done.includes("الحضور") && !isLeave && sH >= 17 && (
         <button onClick={function() { setLastCallType("manual_in"); setShowFace(true); }} style={{ width: "100%", padding: "13px", borderRadius: 14, background: C.ok, color: "#fff", fontSize: 15, fontWeight: 700, border: "none", cursor: "pointer", marginBottom: 8, boxShadow: "0 4px 15px rgba(48,209,88,.3)" }}>☀️ سجّل حضورك</button>
       )}
       {/* Manual Check-out Button */}
-      {cs === "idle" && done.includes("الحضور") && !done.includes("الانصراف") && !isLeave && (sH >= 16 || (sH >= 15 && sM >= 30)) && (
+      {cs === "idle" && done.includes("الحضور") && !done.includes("الانصراف") && !isLeave && (sH >= 17) && (
         <button onClick={function() { setLastCallType("manual_out"); setShowFace(true); }} style={{ width: "100%", padding: "13px", borderRadius: 14, background: B.blue, color: "#fff", fontSize: 15, fontWeight: 700, border: "none", cursor: "pointer", marginBottom: 8, boxShadow: "0 4px 15px rgba(43,94,167,.3)" }}>🌙 سجّل انصرافك</button>
       )}
       <button onClick={onApp} style={{ width: "100%", padding: "11px", borderRadius: 14, background: t.card, border: "1px solid " + t.sep, color: B.blue, fontSize: 12, fontWeight: 600, cursor: "pointer" }}>{emp.isManager || emp.isAssistant ? "التفاصيل والإدارة ←" : "التفاصيل والمحفظة ←"}</button>
