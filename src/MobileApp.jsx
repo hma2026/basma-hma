@@ -49,7 +49,7 @@ const DARK = {
 
 // ═══════ CONSTANTS ═══════
 const APP = "بصمة HMA";
-const VER = "v4.38";
+const VER = "v4.40";
 const CO = "هاني محمد عسيري للإستشارات الهندسية";
 const B = { blue: "#2B5EA7", yellow: "#FDD800", red: "#E2192C", black: "#1A1A1A", blueDk: "#1E4478", blueLt: "#EDF3FB", gold: "#D4A017", diamond: "#7C3AED" };
 const C = LIGHT; // Default light - components use useTheme().t for dynamic
@@ -677,6 +677,16 @@ function Widget({ emp, onApp }) {
   const [gpsStatus, setGpsStatus] = useState({ inR: true, d: 0 });
   const [lastCallType, setLastCallType] = useState(null);
   const cdRef = useRef(null), cpTrig = useRef(new Set()), retryRef = useRef(null);
+  const _testBase = useRef(null);
+  if (!_testBase.current) { var _n = new Date(); _testBase.current = _n.getHours() * 60 + _n.getMinutes(); }
+  var _tb = _testBase.current;
+  var _T = { cp1: _tb+5, cp2: _tb+7, cp3: _tb+9, cp4: _tb+11, ws: _tb+5, we: _tb+11 };
+  var _testCPS = [
+    { id: 1, h: Math.floor(_T.cp1/60), m: _T.cp1%60, l: "الحضور", ic: "☀️" },
+    { id: 2, h: Math.floor(_T.cp2/60), m: _T.cp2%60, l: "الاستراحة", ic: "☕" },
+    { id: 3, h: Math.floor(_T.cp3/60), m: _T.cp3%60, l: "العودة", ic: "🔄" },
+    { id: 4, h: Math.floor(_T.cp4/60), m: _T.cp4%60, l: "الانصراف", ic: "🌙" },
+  ];
   const level = getLevel(emp.points || 0);
   const isLeave = emp.onLeave;
   // Stable per-employee break offset (2-5 min based on employee ID)
@@ -887,17 +897,6 @@ function Widget({ emp, onApp }) {
   const rCol = outOfRange && cs === "idle" ? C.bad : cs === "countdown" ? B.yellow : cs === "scan" ? B.blue : cs === "done" || cs === "correct" ? C.ok : cs === "challenge" ? B.gold : cs === "wrong" ? C.bad : pct >= 60 ? B.blue : B.yellow;
 
   // Work hours window check
-  // ═══ TEST MODE: dynamic schedule from app load ═══
-  var _testBase = useRef(null);
-  if (!_testBase.current) { var _n = new Date(); _testBase.current = _n.getHours() * 60 + _n.getMinutes(); }
-  var _tb = _testBase.current;
-  var _T = { cp1: _tb+5, cp2: _tb+7, cp3: _tb+9, cp4: _tb+11, ws: _tb+5, we: _tb+11 };
-  var _testCPS = [
-    { id: 1, h: Math.floor(_T.cp1/60), m: _T.cp1%60, l: "الحضور", ic: "☀️" },
-    { id: 2, h: Math.floor(_T.cp2/60), m: _T.cp2%60, l: "الاستراحة", ic: "☕" },
-    { id: 3, h: Math.floor(_T.cp3/60), m: _T.cp3%60, l: "العودة", ic: "🔄" },
-    { id: 4, h: Math.floor(_T.cp4/60), m: _T.cp4%60, l: "الانصراف", ic: "🌙" },
-  ];
   var windowStart = _tb - 2;
   var windowEnd = _tb + 30;
   if (emp.flexOT) windowEnd = 20 * 60;
