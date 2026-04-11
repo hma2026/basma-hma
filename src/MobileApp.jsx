@@ -49,7 +49,7 @@ const DARK = {
 
 // ═══════ CONSTANTS ═══════
 const APP = "بصمة HMA";
-const VER = "v4.34";
+const VER = "v4.35";
 const CO = "هاني محمد عسيري للإستشارات الهندسية";
 const B = { blue: "#2B5EA7", yellow: "#FDD800", red: "#E2192C", black: "#1A1A1A", blueDk: "#1E4478", blueLt: "#EDF3FB", gold: "#D4A017", diamond: "#7C3AED" };
 const C = LIGHT; // Default light - components use useTheme().t for dynamic
@@ -627,6 +627,7 @@ function Reg({ onDone }) {
         api("settings", "PUT", Object.assign({}, settings, { deviceMap: dm }));
       }
       localStorage.setItem("basma_uid", found.id);
+      localStorage.setItem("basma_emp_cache", JSON.stringify(found));
       var faceData = await api("face", "GET", null, "&empId=" + found.id);
       if (faceData && faceData.ok && faceData.descriptor) {
         localStorage.setItem("basma_face_v2", JSON.stringify(faceData.descriptor));
@@ -2331,33 +2332,33 @@ export default function MobileApp() {
       setSc(disclaimerAccepted ? "reg" : "disclaimer");
       return;
     }
-    // ALWAYS try cached employee data first — instant load, no waiting
+    // Load from cache — INSTANT, no API needed
     var cached = localStorage.getItem("basma_emp_cache");
-    var loaded = false;
     if (cached) {
       try {
         var ce = JSON.parse(cached);
-        if (ce && ce.id === uid) { setEmp(ce); setSc("widget"); loaded = true; }
+        if (ce && ce.id === uid) {
+          setEmp(ce);
+          setSc("widget");
+          // Silently refresh in background — NEVER change screen
+          api('employees').then(function(emps) {
+            if (Array.isArray(emps)) {
+              var e = emps.find(function(x) { return x.id === uid; });
+              if (e) { setEmp(e); localStorage.setItem("basma_emp_cache", JSON.stringify(e)); }
+            }
+          }).catch(function() {});
+          return;
+        }
       } catch(e) {}
     }
-    // Refresh from API in background — NEVER kick user out
+    // No cache — must load from API
     api('employees').then(function(emps) {
       if (Array.isArray(emps)) {
         var e = emps.find(function(x) { return x.id === uid; });
-        if (e) {
-          setEmp(e);
-          localStorage.setItem("basma_emp_cache", JSON.stringify(e));
-          if (!loaded) setSc("widget");
-        }
+        if (e) { setEmp(e); localStorage.setItem("basma_emp_cache", JSON.stringify(e)); setSc("widget"); return; }
       }
-      // If API fails and no cache — only then show reg
-      if (!loaded) {
-        var recheckCache = localStorage.getItem("basma_emp_cache");
-        if (!recheckCache) setSc("reg");
-      }
-    }).catch(function() {
-      if (!loaded) setSc("reg");
-    });
+      setSc("reg");
+    }).catch(function() { setSc("reg"); });
   }, []);
 
   const logout = () => { localStorage.removeItem("basma_uid"); localStorage.removeItem("basma_face"); localStorage.removeItem("basma_face_v2"); localStorage.removeItem("basma_emp_cache"); setEmp(null); setSc("reg"); };
