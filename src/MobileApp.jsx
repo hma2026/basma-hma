@@ -49,7 +49,7 @@ const DARK = {
 
 // ═══════ CONSTANTS ═══════
 const APP = "بصمة HMA";
-const VER = "v4.37";
+const VER = "v4.38";
 const CO = "هاني محمد عسيري للإستشارات الهندسية";
 const B = { blue: "#2B5EA7", yellow: "#FDD800", red: "#E2192C", black: "#1A1A1A", blueDk: "#1E4478", blueLt: "#EDF3FB", gold: "#D4A017", diamond: "#7C3AED" };
 const C = LIGHT; // Default light - components use useTheme().t for dynamic
@@ -68,6 +68,7 @@ const LEVELS = [
 ];
 const getLevel = pts => [...LEVELS].reverse().find(l => pts >= l.min) || LEVELS[0];
 const EMP_TYPES = { office: "🏢 مكتبي", field: "🏗️ ميداني", mixed: "🔄 مختلط", remote: "🏠 عن بُعد" };
+// CPS dots - will be overridden in test mode inside Widget
 const CPS = [
   { id: 1, h: 8, m: 30, l: "الحضور", ic: "☀️" },
   { id: 2, h: 12, m: 25, l: "الاستراحة", ic: "☕" },
@@ -684,7 +685,7 @@ function Widget({ emp, onApp }) {
   const breakOffsetAfter = ((empHash + 7) % 4) + 2; // 2-5 minutes after break
 
   // Real time — faster in test mode to catch checkpoints
-  useEffect(() => { const t = setInterval(() => { const n = new Date(); setSH(n.getHours()); setSM(n.getMinutes()); }, 30000); return () => clearInterval(t); }, []);
+  useEffect(() => { const t = setInterval(() => { const n = new Date(); setSH(n.getHours()); setSM(n.getMinutes()); }, 5000); return () => clearInterval(t); }, []);
 
   // GPS tracking during work hours (every 5 min)
   useEffect(() => {
@@ -742,9 +743,9 @@ function Widget({ emp, onApp }) {
   }, []);
 
   // On leave?
-  const dur = sH >= 8 && sH < 17, aft = sH >= 17, bef = sH < 8 || (sH === 8 && sM < 30);
-  const mW = dur ? Math.max(0, (sH - 8) * 60 + sM - 30) : aft ? 510 : 0;
-  const pct = Math.min(100, Math.max(0, Math.round((mW / 510) * 100)));
+  const dur = curMin >= _T.ws && curMin < _T.we, aft = curMin >= _T.we && curMin <= windowEnd, bef = !dur && !aft;
+  const mW = dur ? Math.max(0, curMin - _T.ws) : aft ? (_T.we - _T.ws) : 0;
+  const pct = Math.min(100, Math.max(0, Math.round((mW / Math.max(1, _T.we - _T.ws)) * 100)));
   const tStr = `${String(sH).padStart(2, "0")}:${String(sM).padStart(2, "0")}`;
   const S = 260, R = 108, cx = 130, cy = 130, RC = 2 * Math.PI * R;
 
@@ -760,21 +761,21 @@ function Widget({ emp, onApp }) {
   useEffect(() => {
     if (cs !== "idle" || isLeave) return;
     const cur = sH * 60 + sM;
-    // CP1: Start of work (8:30 = 510)
-    if (cur >= 510 && cur <= 512 && !cpTrig.current.has(1)) {
+    // CP1: TEST dynamic
+    if (cur >= _T.cp1 && cur <= _T.cp1 + 2 && !cpTrig.current.has(1)) {
       cpTrig.current.add(1);
       triggerCall("checkin", "☀️ وقت الحضور", "سجّل حضورك الآن");
       return;
     }
-    // CP2: Before break (12:30 = 750)
-    const breakCallTime = 750 - breakOffsetBefore;
+    // CP2: TEST dynamic
+    const breakCallTime = _T.cp2;
     if (cur >= breakCallTime && cur <= breakCallTime + 2 && !cpTrig.current.has(2)) {
       cpTrig.current.add(2);
       triggerCall("break_s", "☕ وقت الاستراحة", "سجّل قبل الاستراحة");
       return;
     }
-    // CP3: After break (13:00 = 780)
-    const returnCallTime = 780 + breakOffsetAfter;
+    // CP3: TEST dynamic
+    const returnCallTime = _T.cp3;
     if (cur >= returnCallTime && cur <= returnCallTime + 2 && !cpTrig.current.has(3)) {
       cpTrig.current.add(3);
       triggerCall("break_e", "🔄 نهاية الاستراحة", "سجّل عودتك");
@@ -872,10 +873,12 @@ function Widget({ emp, onApp }) {
 
   const doScan = () => { clearInterval(cdRef.current); setShowFace(true); };
   // Challenge point zones: 7:30-7:45=25pts, 7:45-8:00=15pts, 8:00-8:15=10pts
+  // Challenge zones: TEST = relative to schedule, PROD = 7:30-8:15
+  var _chStart = _T.cp1 - 3; // 3 min before work
   var challengeZone = null;
-  if (curMin >= 7*60+30 && curMin < 7*60+45) challengeZone = { pts: 25, label: "🟢 نطاق 25 نقطة", color: C.ok };
-  else if (curMin >= 7*60+45 && curMin < 8*60) challengeZone = { pts: 15, label: "🟡 نطاق 15 نقطة", color: B.gold };
-  else if (curMin >= 8*60 && curMin < 8*60+15) challengeZone = { pts: 10, label: "🔵 نطاق 10 نقاط", color: B.blue };
+  if (curMin >= _chStart && curMin < _chStart + 1) challengeZone = { pts: 25, label: "🟢 نطاق 25 نقطة", color: C.ok };
+  else if (curMin >= _chStart + 1 && curMin < _chStart + 2) challengeZone = { pts: 15, label: "🟡 نطاق 15 نقطة", color: B.gold };
+  else if (curMin >= _chStart + 2 && curMin < _chStart + 3) challengeZone = { pts: 10, label: "🔵 نطاق 10 نقاط", color: B.blue };
   var challengeAvailable = challengeZone && ch && !chDone;
 
   const pickAns = i => { if (sel !== null) return; setSel(i); var pts = challengeZone ? challengeZone.pts : 5; setTimeout(() => { if (i === ch.correct) { api('employees', 'PUT', { id: emp.id, points: (emp.points || 0) + pts }); } setCs(i === ch.correct ? "correct" : "wrong"); setTimeout(() => { setCs("idle"); setSel(null); setChDone(true); }, 2000); }, 700); };
@@ -884,8 +887,19 @@ function Widget({ emp, onApp }) {
   const rCol = outOfRange && cs === "idle" ? C.bad : cs === "countdown" ? B.yellow : cs === "scan" ? B.blue : cs === "done" || cs === "correct" ? C.ok : cs === "challenge" ? B.gold : cs === "wrong" ? C.bad : pct >= 60 ? B.blue : B.yellow;
 
   // Work hours window check
-  var windowStart = 7 * 60 + 15;
-  var windowEnd = 18 * 60 + 15;
+  // ═══ TEST MODE: dynamic schedule from app load ═══
+  var _testBase = useRef(null);
+  if (!_testBase.current) { var _n = new Date(); _testBase.current = _n.getHours() * 60 + _n.getMinutes(); }
+  var _tb = _testBase.current;
+  var _T = { cp1: _tb+5, cp2: _tb+7, cp3: _tb+9, cp4: _tb+11, ws: _tb+5, we: _tb+11 };
+  var _testCPS = [
+    { id: 1, h: Math.floor(_T.cp1/60), m: _T.cp1%60, l: "الحضور", ic: "☀️" },
+    { id: 2, h: Math.floor(_T.cp2/60), m: _T.cp2%60, l: "الاستراحة", ic: "☕" },
+    { id: 3, h: Math.floor(_T.cp3/60), m: _T.cp3%60, l: "العودة", ic: "🔄" },
+    { id: 4, h: Math.floor(_T.cp4/60), m: _T.cp4%60, l: "الانصراف", ic: "🌙" },
+  ];
+  var windowStart = _tb - 2;
+  var windowEnd = _tb + 30;
   if (emp.flexOT) windowEnd = 20 * 60;
   var curMin = sH * 60 + sM;
   var outsideWindow = curMin < windowStart || curMin > windowEnd;
@@ -903,7 +917,7 @@ function Widget({ emp, onApp }) {
   if (outsideWindow && !done.includes("الحضور")) return (<div style={{ ...FL, background: t.bg, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", color: t.tx }}>
     <div style={{ fontSize: 48 }}>🌙</div>
     <div style={{ fontSize: 20, fontWeight: 800, marginTop: 12, color: t.txM }}>خارج أوقات الدوام</div>
-    <div style={{ fontSize: 13, color: t.txM, marginTop: 8, textAlign: "center", lineHeight: 1.8, maxWidth: 260 }}>"التطبيق يعمل من الساعة 7:15 صباحاً" + "\n" + "إلى 6:15 مساءً"</div>
+    <div style={{ fontSize: 13, color: t.txM, marginTop: 8, textAlign: "center", lineHeight: 1.8, maxWidth: 260 }}>"وضع الاختبار — افتح التطبيق وانتظر"</div>
     <div style={{ fontSize: 11, color: t.txM, marginTop: 16 }}>{tStr}</div>
     <button onClick={onApp} style={{ marginTop: 30, padding: "10px 30px", borderRadius: 14, background: t.card, border: "1px solid " + t.sep, color: B.blue, fontSize: 12, cursor: "pointer", fontWeight: 600 }}>التفاصيل ←</button>
     <div style={{ fontSize: 9, color: "rgba(0,0,0,.1)", marginTop: 20 }}>{VER}</div>
@@ -974,7 +988,7 @@ function Widget({ emp, onApp }) {
           {cs === "scan" && <circle cx={cx} cy={cy} r={R + 6} fill="none" stroke={B.yellow} strokeWidth="2" strokeDasharray="40 30" style={{ animation: "spin 1.5s linear infinite", transformOrigin: `${cx}px ${cy}px` }} />}
         </svg>
         <div style={{ position: "absolute", inset: 0, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center" }}>
-          {cs === "idle" && bef && !outOfRange && <><div style={{ fontSize: 10, color: t.txM }}>قبل الدوام</div><div style={{ fontSize: 38, fontWeight: 800, color: t.tx }}>{8 - sH}<span style={{ fontSize: 14, color: t.txM }}>س</span></div></>}
+          {cs === "idle" && bef && !outOfRange && <><div style={{ fontSize: 10, color: t.txM }}>قبل الدوام</div><div style={{ fontSize: 38, fontWeight: 800, color: t.tx }}>{Math.max(0, _T.ws - curMin)}<span style={{ fontSize: 14, color: t.txM }}>د</span></div></>}
           {cs === "idle" && dur && !outOfRange && <><div style={{ fontSize: 10, color: t.txM }}>ساعات العمل</div><div style={{ fontSize: 42, fontWeight: 800, color: t.tx }}>{Math.floor(mW / 60)}<span style={{ fontSize: 14, color: t.txM }}>:{String(mW % 60).padStart(2, "0")}</span></div><div style={{ fontSize: 13, fontWeight: 700, color: rCol }}>{pct}%</div></>}
           {cs === "idle" && aft && !outOfRange && <><div style={{ fontSize: 40 }}>✅</div><div style={{ fontSize: 14, fontWeight: 700, color: C.ok, marginTop: 6 }}>اكتمل الدوام</div></>}
           {cs === "idle" && outOfRange && <><div style={{ fontSize: 36 }}>🚫</div><div style={{ fontSize: 12, fontWeight: 700, color: C.bad, marginTop: 6, textAlign: "center", lineHeight: 1.6 }}>لم تقم بتسجيل{"\n"}الحضور</div><div style={{ fontSize: 9, color: t.txM, marginTop: 4 }}>خارج منطقة العمل</div></>}
@@ -1003,11 +1017,11 @@ function Widget({ emp, onApp }) {
 
     <div style={{ padding: "8px 20px 20px", width: "100%", zIndex: 1 }}>
       {/* Manual Check-in Button */}
-      {cs === "idle" && !done.includes("الحضور") && !isLeave && sH >= 7 && sH < 10 && (
+      {cs === "idle" && !done.includes("الحضور") && !isLeave && !outsideWindow && (
         <button onClick={function() { setLastCallType("manual_in"); setShowFace(true); }} style={{ width: "100%", padding: "13px", borderRadius: 14, background: C.ok, color: "#fff", fontSize: 15, fontWeight: 700, border: "none", cursor: "pointer", marginBottom: 8, boxShadow: "0 4px 15px rgba(48,209,88,.3)" }}>☀️ سجّل حضورك</button>
       )}
       {/* Manual Check-out Button */}
-      {cs === "idle" && done.includes("الحضور") && !done.includes("الانصراف") && !isLeave && (sH >= 16 || (sH >= 15 && sM >= 30)) && (
+      {cs === "idle" && done.includes("الحضور") && !done.includes("الانصراف") && !isLeave && (curMin >= _T.cp3 || done.includes("العودة")) && (
         <button onClick={function() { setLastCallType("manual_out"); setShowFace(true); }} style={{ width: "100%", padding: "13px", borderRadius: 14, background: B.blue, color: "#fff", fontSize: 15, fontWeight: 700, border: "none", cursor: "pointer", marginBottom: 8, boxShadow: "0 4px 15px rgba(43,94,167,.3)" }}>🌙 سجّل انصرافك</button>
       )}
       <button onClick={onApp} style={{ width: "100%", padding: "11px", borderRadius: 14, background: t.card, border: "1px solid " + t.sep, color: B.blue, fontSize: 12, fontWeight: 600, cursor: "pointer" }}>{emp.isManager || emp.isAssistant ? "التفاصيل والإدارة ←" : "التفاصيل والمحفظة ←"}</button>
