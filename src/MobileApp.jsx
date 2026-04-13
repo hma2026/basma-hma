@@ -49,7 +49,7 @@ const DARK = {
 
 // ═══════ CONSTANTS ═══════
 const APP = "بصمة HMA";
-const VER = "v4.40";
+const VER = "v4.41";
 const CO = "هاني محمد عسيري للإستشارات الهندسية";
 const B = { blue: "#2B5EA7", yellow: "#FDD800", red: "#E2192C", black: "#1A1A1A", blueDk: "#1E4478", blueLt: "#EDF3FB", gold: "#D4A017", diamond: "#7C3AED" };
 const C = LIGHT; // Default light - components use useTheme().t for dynamic
@@ -659,7 +659,6 @@ function Widget({ emp, onApp }) {
   const [cs, setCs] = useState("idle"), [done, setDone] = useState([]), [cd, setCd] = useState(60), [acp, setAcp] = useState(null);
   const [ch, setCh] = useState(null);
   const [empSettings, setEmpSettings] = useState({ callRemindIn: false, callRemindOut: false });
-  // Load challenge and employee settings
   useEffect(() => {
     api('settings').then(s => {
       const pool = (s?.questions?.length > 0) ? s.questions : CHALLENGES;
@@ -668,7 +667,6 @@ function Widget({ emp, onApp }) {
       const correctAns = picked.opts[picked.correct || 0];
       const shuffled = [...picked.opts].sort(() => Math.random() - 0.5);
       setCh({ ...picked, opts: shuffled, correct: shuffled.indexOf(correctAns) });
-      // Load employee-specific settings
       if (s?.empPrefs?.[emp.id]) setEmpSettings(s.empPrefs[emp.id]);
     });
   }, []);
@@ -676,355 +674,324 @@ function Widget({ emp, onApp }) {
   const [showFace, setShowFace] = useState(false), [callNotif, setCallNotif] = useState(null);
   const [gpsStatus, setGpsStatus] = useState({ inR: true, d: 0 });
   const [lastCallType, setLastCallType] = useState(null);
+  const [showWelcome, setShowWelcome] = useState(true);
   const cdRef = useRef(null), cpTrig = useRef(new Set()), retryRef = useRef(null);
-  const _testBase = useRef(null);
-  if (!_testBase.current) { var _n = new Date(); _testBase.current = _n.getHours() * 60 + _n.getMinutes(); }
-  var _tb = _testBase.current;
-  var _T = { cp1: _tb+5, cp2: _tb+7, cp3: _tb+9, cp4: _tb+11, ws: _tb+5, we: _tb+11 };
-  var _testCPS = [
-    { id: 1, h: Math.floor(_T.cp1/60), m: _T.cp1%60, l: "الحضور", ic: "☀️" },
-    { id: 2, h: Math.floor(_T.cp2/60), m: _T.cp2%60, l: "الاستراحة", ic: "☕" },
-    { id: 3, h: Math.floor(_T.cp3/60), m: _T.cp3%60, l: "العودة", ic: "🔄" },
-    { id: 4, h: Math.floor(_T.cp4/60), m: _T.cp4%60, l: "الانصراف", ic: "🌙" },
-  ];
   const level = getLevel(emp.points || 0);
   const isLeave = emp.onLeave;
-  // Stable per-employee break offset (2-5 min based on employee ID)
   const empHash = emp.id.split('').reduce((a, c) => a + c.charCodeAt(0), 0);
-  const breakOffsetBefore = (empHash % 4) + 2; // 2-5 minutes before break
-  const breakOffsetAfter = ((empHash + 7) % 4) + 2; // 2-5 minutes after break
+  const breakOffsetBefore = (empHash % 4) + 2;
+  const breakOffsetAfter = ((empHash + 7) % 4) + 2;
 
-  // Real time — faster in test mode to catch checkpoints
-  useEffect(() => { const t = setInterval(() => { const n = new Date(); setSH(n.getHours()); setSM(n.getMinutes()); }, 5000); return () => clearInterval(t); }, []);
+  // Real time
+  useEffect(() => { const t = setInterval(() => { const n = new Date(); setSH(n.getHours()); setSM(n.getMinutes()); }, 30000); return () => clearInterval(t); }, []);
 
-  // GPS tracking during work hours (every 5 min)
+  // GPS tracking
   useEffect(() => {
     if (isLeave) return;
     var gpsInterval = setInterval(async function() {
       var h = new Date().getHours();
-      if (h >= 7 && h < 18) {
-        try {
-          var pos = await getGPS();
-          api("gps_log", "POST", { empId: emp.id, lat: pos.lat, lng: pos.lng });
-        } catch(e) { /* GPS unavailable */ }
-      }
+      if (h >= 7 && h < 18) { try { var pos = await getGPS(); api("gps_log", "POST", { empId: emp.id, lat: pos.lat, lng: pos.lng }); } catch(e) {} }
     }, 5 * 60 * 1000);
     return function() { clearInterval(gpsInterval); };
   }, [isLeave]);
 
-  // App visibility detection — notify when minimized/closed
+  // Visibility detection
   useEffect(() => {
-    var handleVisibility = function() {
-      if (document.hidden) {
-        // App went to background
-        api("gps_log", "POST", { empId: emp.id, lat: 0, lng: 0, event: "app_hidden", ts: new Date().toISOString() });
-      } else {
-        // App came back
-        api("gps_log", "POST", { empId: emp.id, lat: 0, lng: 0, event: "app_visible", ts: new Date().toISOString() });
-      }
-    };
-    document.addEventListener("visibilitychange", handleVisibility);
-    // Before unload — log app close
-    var handleUnload = function() {
-      try { navigator.sendBeacon("/api/data?action=gps_log", new Blob([JSON.stringify({ empId: emp.id, lat: 0, lng: 0, event: "app_closed", ts: new Date().toISOString() })], { type: "application/json" })); } catch(e) {}
-    };
-    window.addEventListener("beforeunload", handleUnload);
-    return function() { document.removeEventListener("visibilitychange", handleVisibility); window.removeEventListener("beforeunload", handleUnload); };
+    var hv = function() { api("gps_log", "POST", { empId: emp.id, lat: 0, lng: 0, event: document.hidden ? "app_hidden" : "app_visible", ts: new Date().toISOString() }); };
+    var hu = function() { try { navigator.sendBeacon("/api/data?action=gps_log", new Blob([JSON.stringify({ empId: emp.id, lat: 0, lng: 0, event: "app_closed", ts: new Date().toISOString() })], { type: "application/json" })); } catch(e) {} };
+    document.addEventListener("visibilitychange", hv);
+    window.addEventListener("beforeunload", hu);
+    return function() { document.removeEventListener("visibilitychange", hv); window.removeEventListener("beforeunload", hu); };
   }, []);
 
-  // GPS auto check-in: entering work zone = attendance registered
+  // GPS auto check-in
   useEffect(() => {
     if (isLeave || done.includes("الحضور")) return;
     if (gpsStatus.inR && !gpsStatus.remote) {
-      // Employee entered work zone — auto register attendance
       api('checkin', 'POST', { empId: emp.id, type: "الحضور", lat: 0, lng: 0, autoGPS: true }).then(function() {
         setDone(function(p) { return p.includes("الحضور") ? p : p.concat(["الحضور"]); });
-        console.log("[GPS] Auto check-in: employee in work zone");
       });
     }
   }, [gpsStatus.inR]);
 
   // Load today's records
   useEffect(() => {
-    const today = new Date().toISOString().split("T")[0];
-    api('attendance', 'GET', null, `&empId=${emp.id}&date=${today}`).then(recs => {
-      if (Array.isArray(recs)) setDone(recs.map(r => r.type));
+    var today = new Date().toISOString().split("T")[0];
+    api('attendance', 'GET', null, '&empId=' + emp.id + '&date=' + today).then(function(recs) {
+      if (Array.isArray(recs)) setDone(recs.map(function(r) { return r.type; }));
     });
   }, []);
 
-  // On leave?
-  const dur = curMin >= _T.ws && curMin < _T.we, aft = curMin >= _T.we && curMin <= windowEnd, bef = !dur && !aft;
-  const mW = dur ? Math.max(0, curMin - _T.ws) : aft ? (_T.we - _T.ws) : 0;
-  const pct = Math.min(100, Math.max(0, Math.round((mW / Math.max(1, _T.we - _T.ws)) * 100)));
-  const tStr = `${String(sH).padStart(2, "0")}:${String(sM).padStart(2, "0")}`;
-  const S = 260, R = 108, cx = 130, cy = 130, RC = 2 * Math.PI * R;
+  // Welcome auto-hide
+  useEffect(() => { if (showWelcome) { var tm = setTimeout(function() { setShowWelcome(false); }, 4000); return function() { clearTimeout(tm); }; } }, [showWelcome]);
 
-  // Call notification system
-  const triggerCall = useCallback((type, title, sub) => {
+  // Time calculations (PRODUCTION)
+  var windowStart = 7 * 60 + 15;
+  var windowEnd = 18 * 60 + 15;
+  if (emp.flexOT) windowEnd = 20 * 60;
+  var curMin = sH * 60 + sM;
+  var outsideWindow = curMin < windowStart || curMin > windowEnd;
+  const dur = sH >= 8 && sH < 17, aft = sH >= 17, bef = sH < 8 || (sH === 8 && sM < 30);
+  const mW = dur ? Math.max(0, (sH - 8) * 60 + sM - 30) : aft ? 510 : 0;
+  const pct = Math.min(100, Math.max(0, Math.round((mW / 510) * 100)));
+  const tStr = String(sH).padStart(2, "0") + ":" + String(sM).padStart(2, "0");
+  const dateStr = new Date().toLocaleDateString("ar-SA", { weekday: "long", year: "numeric", month: "long", day: "numeric" });
+
+  // Membership
+  var MEMS = [{icon:"🔹",name:"عضوية فعّال",color:"#3B82F6",min:0},{icon:"🥈",name:"عضوية فضية",color:"#94A3B8",min:200},{icon:"🥇",name:"عضوية تميّز",color:"#F59E0B",min:500},{icon:"💎",name:"عضوية نخبة",color:"#8B5CF6",min:1200}];
+  var memPts = emp.points || 0;
+  var mem = MEMS[0]; for (var mi = MEMS.length - 1; mi >= 0; mi--) { if (memPts >= MEMS[mi].min) { mem = MEMS[mi]; break; } }
+  var memNext = null; for (var ni = 0; ni < MEMS.length; ni++) { if (MEMS[ni].min > memPts) { memNext = MEMS[ni]; break; } }
+
+  // Challenge zones: 7:30-7:45=25pts, 7:45-8:00=15pts, 8:00-8:15=10pts
+  var challengeZone = null;
+  if (curMin >= 450 && curMin < 465) challengeZone = { pts: 25, label: "25 نقطة", color: "#10B981", bg: "rgba(16,185,129,.08)", bd: "rgba(16,185,129,.2)" };
+  else if (curMin >= 465 && curMin < 480) challengeZone = { pts: 15, label: "15 نقطة", color: "#F59E0B", bg: "rgba(245,158,11,.08)", bd: "rgba(245,158,11,.2)" };
+  else if (curMin >= 480 && curMin < 495) challengeZone = { pts: 10, label: "10 نقاط", color: "#3B82F6", bg: "rgba(37,99,235,.08)", bd: "rgba(37,99,235,.2)" };
+  var challengeAvailable = challengeZone && ch && !chDone;
+
+  const pickAns = function(i) { if (sel !== null) return; setSel(i); var pts2 = challengeZone ? challengeZone.pts : 5; setTimeout(function() { if (i === ch.correct) { api('employees', 'PUT', { id: emp.id, points: (emp.points || 0) + pts2 }); } setCs(i === ch.correct ? "correct" : "wrong"); setTimeout(function() { setCs("idle"); setSel(null); setChDone(true); }, 2000); }, 700); };
+
+  // Call system
+  const icons = { checkin: "☀️", break_s: "☕", break_e: "🔄", checkout: "🌙", retry: "⚠️" };
+  const triggerCall = useCallback(function(type, title, sub) {
     if (isLeave) return;
-    if (!gpsStatus.inR && type !== "checkin") return; // No call if outside range (except first)
+    if (!gpsStatus.inR && type !== "checkin") return;
     setLastCallType(type);
-    setCallNotif({ type, title, sub });
+    setCallNotif({ type: type, title: title, sub: sub });
   }, [isLeave, gpsStatus]);
 
-  // Checkpoint detection
-  useEffect(() => {
+  // Checkpoint detection (PRODUCTION)
+  useEffect(function() {
     if (cs !== "idle" || isLeave) return;
-    const cur = sH * 60 + sM;
-    // CP1: TEST dynamic
-    if (cur >= _T.cp1 && cur <= _T.cp1 + 2 && !cpTrig.current.has(1)) {
-      cpTrig.current.add(1);
-      triggerCall("checkin", "☀️ وقت الحضور", "سجّل حضورك الآن");
-      return;
-    }
-    // CP2: TEST dynamic
-    const breakCallTime = _T.cp2;
-    if (cur >= breakCallTime && cur <= breakCallTime + 2 && !cpTrig.current.has(2)) {
-      cpTrig.current.add(2);
-      triggerCall("break_s", "☕ وقت الاستراحة", "سجّل قبل الاستراحة");
-      return;
-    }
-    // CP3: TEST dynamic
-    const returnCallTime = _T.cp3;
-    if (cur >= returnCallTime && cur <= returnCallTime + 2 && !cpTrig.current.has(3)) {
-      cpTrig.current.add(3);
-      triggerCall("break_e", "🔄 نهاية الاستراحة", "سجّل عودتك");
-      return;
-    }
-    // CP4: End of work (17:00 = 1020) — trigger call then auto checkout
-    if (cur >= 1020 && cur <= 1022 && !cpTrig.current.has(4)) {
-      cpTrig.current.add(4);
-      triggerCall("checkout", "🌙 وقت الانصراف", "سجّل انصرافك الآن");
-    }
+    var cur = sH * 60 + sM;
+    if (cur >= 510 && cur <= 512 && !cpTrig.current.has(1)) { cpTrig.current.add(1); triggerCall("checkin", "☀️ وقت الحضور", "سجّل حضورك الآن"); return; }
+    var bct = 750 - breakOffsetBefore;
+    if (cur >= bct && cur <= bct + 2 && !cpTrig.current.has(2)) { cpTrig.current.add(2); triggerCall("break_s", "☕ وقت الاستراحة", "سجّل قبل الاستراحة"); return; }
+    var rct = 780 + breakOffsetAfter;
+    if (cur >= rct && cur <= rct + 2 && !cpTrig.current.has(3)) { cpTrig.current.add(3); triggerCall("break_e", "🔄 نهاية الاستراحة", "سجّل عودتك"); return; }
+    if (cur >= 1020 && cur <= 1022 && !cpTrig.current.has(4)) { cpTrig.current.add(4); triggerCall("checkout", "🌙 وقت الانصراف", "سجّل انصرافك الآن"); }
   }, [sH, sM, cs, isLeave]);
 
-  useEffect(() => () => { clearInterval(cdRef.current); clearTimeout(retryRef.current); }, []);
+  useEffect(function() { return function() { clearInterval(cdRef.current); clearTimeout(retryRef.current); }; }, []);
 
-  const doAutoCheckout = async () => {
+  var doAutoCheckout = async function() {
     if (done.includes("الانصراف")) return;
-    if (!emp.flexOT) {
-      await api('checkin', 'POST', { empId: emp.id, type: "الانصراف" });
-      setDone(p => [...p, "الانصراف"]);
-      setCs("done");
-      setTimeout(() => setCs("idle"), 2000);
-    }
+    if (!emp.flexOT) { await api('checkin', 'POST', { empId: emp.id, type: "الانصراف" }); setDone(function(p) { return p.concat(["الانصراف"]); }); setCs("done"); setTimeout(function() { setCs("idle"); }, 2000); }
   };
 
-  // Handle call answer → open camera
-  const onCallAnswer = () => {
-    setCallNotif(null);
-    setShowFace(true);
-  };
-
-  // Handle call decline → retry after 10 min for first call only
-  const onCallDecline = () => {
-    const type = lastCallType;
-    setCallNotif(null);
-    // Checkout declined — auto checkout after 5 min
-    if (type === "checkout") {
-      setTimeout(doAutoCheckout, 5 * 60 * 1000);
-    }
-    // Only retry for checkin (first call), and only if employee didn't check in yet
+  var onCallAnswer = function() { setCallNotif(null); setShowFace(true); };
+  var onCallDecline = function() {
+    var type = lastCallType; setCallNotif(null);
+    if (type === "checkout") setTimeout(doAutoCheckout, 5 * 60 * 1000);
     if (type === "checkin" && !cpTrig.current.has("retry")) {
       cpTrig.current.add("retry");
-      retryRef.current = setTimeout(() => {
-        if (!done.includes("الحضور")) {
-          triggerCall("retry", "⚠️ لم تسجّل حضورك", "تنبيه أخير — سجّل الآن");
-        }
-      }, 10 * 60 * 1000); // 10 minutes
+      retryRef.current = setTimeout(function() { if (!done.includes("الحضور")) triggerCall("retry", "⚠️ لم تسجّل حضورك", "تنبيه أخير — سجّل الآن"); }, 10 * 60 * 1000);
     }
   };
 
-  // Camera done → record checkin to server
-  const onFaceDone = async (photo) => {
-    setShowFace(false);
-    setCs("scan");
-    let gps = { lat: 0, lng: 0 };
-    try { gps = await getGPS(); } catch {}
-    let type;
+  var onFaceDone = async function(photo) {
+    setShowFace(false); setCs("scan");
+    var gps = { lat: 0, lng: 0 }; try { gps = await getGPS(); } catch(e) {}
+    var type;
     if (lastCallType === "break_s") type = "الاستراحة";
     else if (lastCallType === "break_e") type = "العودة";
     else if (lastCallType === "manual_out" || lastCallType === "checkout") type = "الانصراف";
     else if (lastCallType === "manual_in" || !done.includes("الحضور")) type = "الحضور";
     else type = "الانصراف";
-    var checkinData = { empId: emp.id, type, lat: gps.lat, lng: gps.lng, facePhoto: true };
-    // Try online first, fallback to offline
+    var checkinData = { empId: emp.id, type: type, lat: gps.lat, lng: gps.lng, facePhoto: true };
     var result = await api('checkin', 'POST', checkinData);
     if (!result || result.error) {
-      // Offline — save locally
       var offline = JSON.parse(localStorage.getItem("basma_offline") || "[]");
-      offline.push({ ...checkinData, ts: new Date().toISOString(), offline: true });
+      offline.push(Object.assign({}, checkinData, { ts: new Date().toISOString(), offline: true }));
       localStorage.setItem("basma_offline", JSON.stringify(offline));
-      console.log("[Offline] Saved locally, will sync later");
     }
-    setTimeout(() => { setDone(p => [...p, type]); setCs("done"); setTimeout(() => { setCs("idle"); setAcp(null); setLastCallType(null); }, 1800); }, 1500);
+    setTimeout(function() { setDone(function(p) { return p.concat([type]); }); setCs("done"); setTimeout(function() { setCs("idle"); setAcp(null); setLastCallType(null); }, 1800); }, 1500);
   };
 
-  // Sync offline check-ins when online
-  useEffect(() => {
-    var syncOffline = async function() {
-      var offline = JSON.parse(localStorage.getItem("basma_offline") || "[]");
-      if (offline.length === 0) return;
-      var remaining = [];
-      for (var i = 0; i < offline.length; i++) {
-        var r = await api('checkin', 'POST', offline[i]);
-        if (!r || r.error) remaining.push(offline[i]);
-      }
-      localStorage.setItem("basma_offline", JSON.stringify(remaining));
-      if (remaining.length < offline.length) console.log("[Offline] Synced " + (offline.length - remaining.length) + " records");
+  // Sync offline
+  useEffect(function() {
+    var sync = async function() {
+      var off = JSON.parse(localStorage.getItem("basma_offline") || "[]");
+      if (!off.length) return; var rem = [];
+      for (var i = 0; i < off.length; i++) { var r = await api('checkin', 'POST', off[i]); if (!r || r.error) rem.push(off[i]); }
+      localStorage.setItem("basma_offline", JSON.stringify(rem));
     };
-    syncOffline();
-    var interval = setInterval(syncOffline, 60000); // Retry every minute
-    return function() { clearInterval(interval); };
+    sync(); var iv = setInterval(sync, 60000); return function() { clearInterval(iv); };
   }, []);
 
-  // Demo: advance time
-  const advTime = () => { if (cs !== "idle") return; setSM(p => { let n = p + 15; if (n >= 60) { setSH(h => Math.min(h + 1, 18)); return n - 60; } return n; }); };
+  var outOfRange = !gpsStatus.inR && !gpsStatus.remote && emp.type !== "remote";
+  var circCol = outOfRange ? C.bad : cs === "scan" ? B.blue : cs === "done" || cs === "correct" ? C.ok : pct >= 60 ? "#10B981" : B.blue;
+  var S = 200, st2 = 10, r2 = (S - st2) / 2, circ2 = 2 * Math.PI * r2, off2 = circ2 - (pct / 100) * circ2;
 
-  const doScan = () => { clearInterval(cdRef.current); setShowFace(true); };
-  // Challenge point zones: 7:30-7:45=25pts, 7:45-8:00=15pts, 8:00-8:15=10pts
-  // Challenge zones: TEST = relative to schedule, PROD = 7:30-8:15
-  var _chStart = _T.cp1 - 3; // 3 min before work
-  var challengeZone = null;
-  if (curMin >= _chStart && curMin < _chStart + 1) challengeZone = { pts: 25, label: "🟢 نطاق 25 نقطة", color: C.ok };
-  else if (curMin >= _chStart + 1 && curMin < _chStart + 2) challengeZone = { pts: 15, label: "🟡 نطاق 15 نقطة", color: B.gold };
-  else if (curMin >= _chStart + 2 && curMin < _chStart + 3) challengeZone = { pts: 10, label: "🔵 نطاق 10 نقاط", color: B.blue };
-  var challengeAvailable = challengeZone && ch && !chDone;
+  // Checkpoint dots data
+  var cpDots = [
+    { ic: "☀️", l: "الحضور", time: "8:30" },
+    { ic: "☕", l: "استراحة", time: "12:25" },
+    { ic: "🔄", l: "العودة", time: "13:05" },
+    { ic: "🌙", l: "انصراف", time: "17:00" },
+  ];
 
-  const pickAns = i => { if (sel !== null) return; setSel(i); var pts = challengeZone ? challengeZone.pts : 5; setTimeout(() => { if (i === ch.correct) { api('employees', 'PUT', { id: emp.id, points: (emp.points || 0) + pts }); } setCs(i === ch.correct ? "correct" : "wrong"); setTimeout(() => { setCs("idle"); setSel(null); setChDone(true); }, 2000); }, 700); };
+  var FD = "'Cairo', sans-serif";
+  var FT = "'Tajawal', sans-serif";
 
-  const outOfRange = !gpsStatus.inR && !gpsStatus.remote && emp.type !== "remote";
-  const rCol = outOfRange && cs === "idle" ? C.bad : cs === "countdown" ? B.yellow : cs === "scan" ? B.blue : cs === "done" || cs === "correct" ? C.ok : cs === "challenge" ? B.gold : cs === "wrong" ? C.bad : pct >= 60 ? B.blue : B.yellow;
-
-  // Work hours window check
-  var windowStart = _tb - 2;
-  var windowEnd = _tb + 30;
-  if (emp.flexOT) windowEnd = 20 * 60;
-  var curMin = sH * 60 + sM;
-  var outsideWindow = curMin < windowStart || curMin > windowEnd;
-
-  // Leave screen
+  // ═══ LEAVE SCREEN ═══
   if (isLeave) return (<div style={{ ...FL, background: t.bg, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", color: t.tx }}>
     <div style={{ fontSize: 48 }}>🏖</div>
     <div style={{ fontSize: 20, fontWeight: 800, marginTop: 12, color: B.blue }}>أنت في إجازة</div>
     <div style={{ fontSize: 13, color: t.txM, marginTop: 8 }}>استمتع بوقتك!</div>
     <div style={{ marginTop: 20, padding: "8px 20px", borderRadius: 12, background: t.card, border: "1px solid " + t.sep }}><span style={{ fontSize: 12, color: B.blue, fontWeight: 700 }}>باقي: {emp.leaveRemaining || "?"} أيام</span></div>
-    <button onClick={onApp} style={{ marginTop: 30, padding: "10px 30px", borderRadius: 14, background: t.card, border: "1px solid " + t.sep, color: B.blue, fontSize: 12, cursor: "pointer", fontWeight: 600 }}>التفاصيل ←</button>
+    <button onClick={onApp} style={{ marginTop: 30, padding: "10px 30px", borderRadius: 14, background: t.card, border: "1px solid " + t.sep, color: B.blue, fontSize: 12, cursor: "pointer", fontWeight: 600, fontFamily: Fn }}>التفاصيل ←</button>
   </div>);
 
-  // Outside work hours screen
+  // ═══ OUTSIDE HOURS ═══
   if (outsideWindow && !done.includes("الحضور")) return (<div style={{ ...FL, background: t.bg, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", color: t.tx }}>
     <div style={{ fontSize: 48 }}>🌙</div>
     <div style={{ fontSize: 20, fontWeight: 800, marginTop: 12, color: t.txM }}>خارج أوقات الدوام</div>
-    <div style={{ fontSize: 13, color: t.txM, marginTop: 8, textAlign: "center", lineHeight: 1.8, maxWidth: 260 }}>"وضع الاختبار — افتح التطبيق وانتظر"</div>
+    <div style={{ fontSize: 13, color: t.txM, marginTop: 8, textAlign: "center", lineHeight: 1.8, maxWidth: 260 }}>التطبيق يعمل من الساعة 7:15 صباحاً{" "}إلى 6:15 مساءً</div>
     <div style={{ fontSize: 11, color: t.txM, marginTop: 16 }}>{tStr}</div>
-    <button onClick={onApp} style={{ marginTop: 30, padding: "10px 30px", borderRadius: 14, background: t.card, border: "1px solid " + t.sep, color: B.blue, fontSize: 12, cursor: "pointer", fontWeight: 600 }}>التفاصيل ←</button>
+    <button onClick={onApp} style={{ marginTop: 30, padding: "10px 30px", borderRadius: 14, background: t.card, border: "1px solid " + t.sep, color: B.blue, fontSize: 12, cursor: "pointer", fontWeight: 600, fontFamily: Fn }}>التفاصيل ←</button>
     <div style={{ fontSize: 9, color: "rgba(0,0,0,.1)", marginTop: 20 }}>{VER}</div>
   </div>);
 
-  return (<div style={{ ...FL, background: t.bg, display: "flex", flexDirection: "column", alignItems: "center", color: t.tx, position: "relative", overflow: "hidden" }}>
-    {showFace && <FaceCamera empId={emp.id} onOk={onFaceDone} onNo={() => { setShowFace(false); setCs("idle"); }} />}
+  // ═══ MAIN SCREEN — NEW DESIGN ═══
+  return (<div style={{ ...FL, background: t.bg, display: "flex", flexDirection: "column", color: t.tx, position: "relative", overflow: "hidden" }}>
+    <link href="https://fonts.googleapis.com/css2?family=Cairo:wght@700;800;900&family=Tajawal:wght@400;500;700;800&display=swap" rel="stylesheet" />
+    {showFace && <FaceCamera empId={emp.id} onOk={onFaceDone} onNo={function() { setShowFace(false); setCs("idle"); }} />}
     {callNotif && <CallNotif type={callNotif.type} title={callNotif.title} sub={callNotif.sub} onAnswer={onCallAnswer} onDecline={onCallDecline} />}
-    <style>{`@keyframes pu{0%,100%{transform:scale(1)}50%{transform:scale(1.05)}} @keyframes spin{to{transform:rotate(360deg)}} button:active{transform:scale(.95)!important}`}</style>
+    <style>{"@keyframes pls{0%,100%{opacity:1}50%{opacity:.4}} @keyframes slideD{from{opacity:0;transform:translateY(-10px)}to{opacity:1;transform:translateY(0)}} @keyframes pu{0%,100%{transform:scale(1)}50%{transform:scale(1.05)}} @keyframes spin{to{transform:rotate(360deg)}} button:active{transform:scale(.95)!important}"}</style>
 
-    {/* Top bar */}
-    <div style={{ width: "100%", padding: "12px 16px 4px", display: "flex", justifyContent: "space-between", alignItems: "center", zIndex: 1 }}>
-      <span style={{ color: t.tx2, fontWeight: 600, fontSize: 13 }}>{tStr}</span>
-      <div style={{ display: "flex", gap: 5, alignItems: "center" }}>
-        <span style={{ padding: "2px 6px", borderRadius: 8, background: B.yellow + "15", fontSize: 9, fontWeight: 800, color: B.gold }}>⭐{emp.points || 0}</span>
-        {level.badge && <span style={{ fontSize: 12 }}>{level.badge}</span>}
-      </div>
-    </div>
-
-    <GpsBadge branch={emp.branch} empType={emp.type} empId={emp.id} onStatusChange={s => setGpsStatus(s)} />
-
-    {/* Challenge zone indicator */}
-    {challengeAvailable && cs === "idle" && (
-      <div onClick={() => setCs("challenge")} style={{ margin: "0 16px 4px", padding: "8px 14px", borderRadius: 12, background: challengeZone.color + "15", border: "1px solid " + challengeZone.color + "33", width: "calc(100% - 32px)", zIndex: 1, cursor: "pointer", textAlign: "center" }}>
-        <div style={{ fontSize: 12, fontWeight: 700, color: challengeZone.color }}>⚡ سؤال التحدي — {challengeZone.label}</div>
-        <div style={{ fontSize: 9, color: t.txM, marginTop: 2 }}>اضغط هنا أو على الدائرة للإجابة</div>
+    {/* Welcome notification */}
+    {showWelcome && gpsStatus.inR && !done.includes("الحضور") && cs === "idle" && (
+      <div style={{ margin: "10px 16px 0", padding: "12px 16px", borderRadius: 14, background: B.blue + "12", border: "1px solid " + B.blue + "22", animation: "slideD .4s ease", zIndex: 2 }}>
+        <div style={{ fontSize: 13, fontWeight: 700, color: B.blue, fontFamily: FT }}>صباح الخير 👋</div>
+        <div style={{ fontSize: 11, color: t.tx2, marginTop: 2, fontFamily: FT }}>أنت في نطاق العمل — يمكنك تسجيل الحضور مبكراً</div>
       </div>
     )}
 
-    {/* SCE Membership Warning */}
-    {(() => { const sce = checkSCE(emp); if (!sce || !sce.alert) return null; return (
-      <div style={{ margin: "0 16px 4px", padding: "8px 12px", borderRadius: 12, background: `${sce.color}15`, border: `1px solid ${sce.color}33`, width: "calc(100% - 32px)", zIndex: 1, display: "flex", alignItems: "center", gap: 8 }}>
+    {/* Header: Logo + Date/Time */}
+    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "14px 20px 0" }}>
+      <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+        <Logo s={28} />
+        <div style={{ fontSize: 13, fontWeight: 800, color: B.blue, fontFamily: FD, letterSpacing: .3 }}>بصمة HMA</div>
+      </div>
+      <div style={{ textAlign: "left" }}>
+        <div style={{ fontSize: 9, color: t.txM, fontFamily: FT }}>{dateStr}</div>
+        <div style={{ fontSize: 16, fontWeight: 800, color: t.tx, fontFamily: FD }}>{tStr}</div>
+      </div>
+    </div>
+
+    {/* Membership — big centered */}
+    <div style={{ textAlign: "center", padding: "12px 0 6px" }}>
+      <div style={{ display: "inline-flex", flexDirection: "column", alignItems: "center", background: t.card, borderRadius: 20, padding: "10px 28px", border: "1px solid " + t.sep }}>
+        <div style={{ fontSize: 36, lineHeight: 1 }}>{mem.icon}</div>
+        <div style={{ fontSize: 14, fontWeight: 800, color: mem.color, marginTop: 2, fontFamily: FD }}>{mem.name}</div>
+        <div style={{ fontSize: 10, color: t.txM, marginTop: 2, fontFamily: FT }}>{"⭐ " + memPts + " نقطة" + (memNext ? " — " + (memNext.min - memPts) + " للترقية" : " — القمة!")}</div>
+        {memNext && <div style={{ width: 120, height: 4, borderRadius: 2, background: dk ? "#1E293B" : "#F0F2F8", marginTop: 6, overflow: "hidden" }}><div style={{ height: "100%", borderRadius: 2, background: mem.color, width: Math.min(100, ((memPts - mem.min) / (memNext.min - mem.min)) * 100) + "%", transition: "width .5s" }} /></div>}
+      </div>
+    </div>
+
+    {/* GPS Status */}
+    <GpsBadge branch={emp.branch} empType={emp.type} empId={emp.id} onStatusChange={function(s) { setGpsStatus(s); }} />
+
+    {/* GPS in-range message */}
+    {gpsStatus.inR && !outOfRange && cs === "idle" && (
+      <div style={{ margin: "0 16px 4px", padding: "10px 14px", borderRadius: 12, display: "flex", alignItems: "center", gap: 8, background: "rgba(16,185,129,.08)", border: "1px solid rgba(16,185,129,.15)" }}>
+        <div style={{ width: 8, height: 8, borderRadius: "50%", background: "#10B981", animation: "pls 2s infinite" }} />
+        <span style={{ fontSize: 12, fontWeight: 600, color: "#10B981", fontFamily: FT, flex: 1 }}>📍 في نطاق العمل — {BR[emp.branch] || emp.branch} ({gpsStatus.d || 0} م)</span>
+        {(emp.streak || 0) > 0 && <span style={{ fontSize: 10, fontWeight: 700, color: B.gold, fontFamily: FT }}>🔥 {emp.streak} يوم</span>}
+      </div>
+    )}
+
+    {/* Challenge zone indicator */}
+    {challengeAvailable && cs === "idle" && (
+      <div onClick={function() { setCs("challenge"); }} style={{ margin: "4px 16px", padding: "12px 16px", borderRadius: 14, cursor: "pointer", background: challengeZone.bg, border: "1.5px solid " + challengeZone.bd, textAlign: "center", zIndex: 1 }}>
+        <div style={{ fontSize: 14, fontWeight: 700, color: challengeZone.color, fontFamily: FD }}>⚡ سؤال التحدي — {challengeZone.label}</div>
+        <div style={{ fontSize: 10, color: t.txM, marginTop: 2, fontFamily: FT }}>اضغط للإجابة وكسب النقاط</div>
+      </div>
+    )}
+
+    {/* SCE Warning */}
+    {(function() { var sce = checkSCE(emp); if (!sce || !sce.alert) return null; return (
+      <div style={{ margin: "4px 16px", padding: "8px 12px", borderRadius: 12, background: sce.color + "15", border: "1px solid " + sce.color + "33", display: "flex", alignItems: "center", gap: 8 }}>
         <span style={{ fontSize: 14 }}>{sce.icon}</span>
-        <div style={{ flex: 1 }}>
-          <div style={{ fontSize: 10, fontWeight: 700, color: sce.color }}>عضوية الهيئة السعودية للمهندسين</div>
-          <div style={{ fontSize: 9, color: t.tx2 }}>{sce.text}</div>
-        </div>
-        {sce.status === "expired" && <span style={{ fontSize: 8, padding: "2px 6px", borderRadius: 4, background: C.bad, color: "#fff", fontWeight: 700 }}>⚠️ منتهية</span>}
+        <div style={{ flex: 1 }}><div style={{ fontSize: 10, fontWeight: 700, color: sce.color }}>عضوية الهيئة السعودية للمهندسين</div><div style={{ fontSize: 9, color: t.tx2 }}>{sce.text}</div></div>
       </div>
     ); })()}
 
-    {/* Out of range warning with exception request */}
-    {!gpsStatus.inR && !gpsStatus.remote && emp.type !== "remote" && cs === "idle" && (
-      <div style={{ margin: "0 16px 4px", padding: "10px 14px", borderRadius: 14, background: t.badLt, border: `1px solid ${C.bad}33`, width: "calc(100% - 32px)", zIndex: 1 }}>
+    {/* Out of range warning */}
+    {outOfRange && cs === "idle" && (
+      <div style={{ margin: "4px 16px", padding: "10px 14px", borderRadius: 14, background: t.badLt, border: "1px solid " + C.bad + "33" }}>
         <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
           <span style={{ fontSize: 16 }}>🚫</span>
-          <div>
-            <div style={{ fontSize: 12, fontWeight: 700, color: C.bad }}>لم تقم بتسجيل الحضور</div>
-            <div style={{ fontSize: 10, color: t.tx2, marginTop: 1 }}>خارج منطقة العمل {gpsStatus.d > 0 ? `(${gpsStatus.d}م)` : ""}</div>
-          </div>
+          <div><div style={{ fontSize: 12, fontWeight: 700, color: C.bad }}>خارج منطقة العمل</div><div style={{ fontSize: 10, color: t.tx2, marginTop: 1 }}>{gpsStatus.d > 0 ? "باقي " + gpsStatus.d + " متر للوصول" : ""}</div></div>
         </div>
-        <button onClick={async () => {
-          const reason = prompt("سبب الاستثناء:");
-          if (reason) {
-            await api('exceptions', 'POST', { empId: emp.id, reason, date: new Date().toISOString().split("T")[0], distance: gpsStatus.d });
-            alert("✅ تم إرسال طلب الاستثناء لمدير النظام");
-          }
-        }} style={{ marginTop: 8, width: "100%", padding: "7px", borderRadius: 10, background: t.card, border: "1px solid " + t.sep, color: C.bad, fontSize: 11, fontWeight: 600, cursor: "pointer" }}>📝 طلب استثناء</button>
+        <button onClick={async function() { var reason = prompt("سبب الاستثناء:"); if (reason) { await api('exceptions', 'POST', { empId: emp.id, reason: reason, date: new Date().toISOString().split("T")[0], distance: gpsStatus.d }); alert("✅ تم إرسال طلب الاستثناء"); } }} style={{ marginTop: 8, width: "100%", padding: "7px", borderRadius: 10, background: t.card, border: "1px solid " + t.sep, color: C.bad, fontSize: 11, fontWeight: 600, cursor: "pointer", fontFamily: Fn }}>📝 طلب استثناء</button>
       </div>
     )}
 
     {/* Circle */}
     <div style={{ flex: 1, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", zIndex: 1 }}>
-      <div style={{ position: "relative", width: S, height: S, cursor: cs === "idle" ? "pointer" : "default" }} onClick={cs === "idle" && challengeAvailable ? () => setCs("challenge") : cs === "idle" ? advTime : cs === "countdown" ? doScan : undefined}>
-        <svg width={S} height={S} viewBox={`0 0 ${S} ${S}`}>
-          <circle cx={cx} cy={cy} r={R} fill="none" stroke={t.sep} strokeWidth="10" />
-          <circle cx={cx} cy={cy} r={R} fill="none" stroke={rCol} strokeWidth="10" strokeDasharray={`${(pct / 100) * RC} ${RC}`} strokeLinecap="round" transform={`rotate(-90 ${cx} ${cy})`} style={{ transition: "stroke-dasharray .5s" }} />
-          {cs === "scan" && <circle cx={cx} cy={cy} r={R + 6} fill="none" stroke={B.yellow} strokeWidth="2" strokeDasharray="40 30" style={{ animation: "spin 1.5s linear infinite", transformOrigin: `${cx}px ${cy}px` }} />}
+      <div style={{ position: "relative", width: S, height: S, cursor: cs === "idle" ? "pointer" : "default" }} onClick={cs === "idle" && challengeAvailable ? function() { setCs("challenge"); } : undefined}>
+        <svg width={S} height={S} style={{ transform: "rotate(-90deg)" }}>
+          <circle cx={S/2} cy={S/2} r={r2} fill="none" stroke={dk ? "#1E293B" : "#E2E8F0"} strokeWidth={st2} />
+          <circle cx={S/2} cy={S/2} r={r2} fill="none" stroke={circCol} strokeWidth={st2} strokeLinecap="round" strokeDasharray={circ2} strokeDashoffset={off2} style={{ transition: "stroke-dashoffset 1s ease" }} />
+          {cs === "scan" && <circle cx={S/2} cy={S/2} r={r2 + 6} fill="none" stroke={B.yellow} strokeWidth="2" strokeDasharray="40 30" style={{ animation: "spin 1.5s linear infinite", transformOrigin: S/2 + "px " + S/2 + "px" }} />}
         </svg>
-        <div style={{ position: "absolute", inset: 0, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center" }}>
-          {cs === "idle" && bef && !outOfRange && <><div style={{ fontSize: 10, color: t.txM }}>قبل الدوام</div><div style={{ fontSize: 38, fontWeight: 800, color: t.tx }}>{Math.max(0, _T.ws - curMin)}<span style={{ fontSize: 14, color: t.txM }}>د</span></div></>}
-          {cs === "idle" && dur && !outOfRange && <><div style={{ fontSize: 10, color: t.txM }}>ساعات العمل</div><div style={{ fontSize: 42, fontWeight: 800, color: t.tx }}>{Math.floor(mW / 60)}<span style={{ fontSize: 14, color: t.txM }}>:{String(mW % 60).padStart(2, "0")}</span></div><div style={{ fontSize: 13, fontWeight: 700, color: rCol }}>{pct}%</div></>}
-          {cs === "idle" && aft && !outOfRange && <><div style={{ fontSize: 40 }}>✅</div><div style={{ fontSize: 14, fontWeight: 700, color: C.ok, marginTop: 6 }}>اكتمل الدوام</div></>}
-          {cs === "idle" && outOfRange && <><div style={{ fontSize: 36 }}>🚫</div><div style={{ fontSize: 12, fontWeight: 700, color: C.bad, marginTop: 6, textAlign: "center", lineHeight: 1.6 }}>لم تقم بتسجيل{"\n"}الحضور</div><div style={{ fontSize: 9, color: t.txM, marginTop: 4 }}>خارج منطقة العمل</div></>}
-          {cs === "countdown" && <><div style={{ fontSize: 11, color: B.gold, fontWeight: 700 }}>{acp?.ic} {acp?.l}</div><div style={{ fontSize: 56, fontWeight: 800, color: t.tx, fontVariantNumeric: "tabular-nums" }}>{cd}</div><div style={{ fontSize: 11, color: t.txM }}>اضغط للبصمة</div></>}
+        <div style={{ position: "absolute", inset: 0, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", textAlign: "center" }}>
+          {cs === "idle" && bef && !outOfRange && <><div style={{ fontSize: 11, color: t.txM, fontFamily: FT }}>قبل الدوام</div><div style={{ fontSize: 38, fontWeight: 800, color: t.tx, fontFamily: FD, lineHeight: 1 }}>{8 - sH > 0 ? (8 - sH) + ":" + String(60 - sM).padStart(2, "0") : "0:" + String(30 - sM).padStart(2, "0")}</div><div style={{ fontSize: 11, color: circCol, fontWeight: 600, marginTop: 4, fontFamily: FT }}>الحضور 8:30</div></>}
+          {cs === "idle" && dur && !outOfRange && <><div style={{ fontSize: 11, color: t.txM, fontFamily: FT }}>أثناء الدوام</div><div style={{ fontSize: 42, fontWeight: 800, color: circCol, fontFamily: FD, lineHeight: 1 }}>{pct}%</div><div style={{ fontSize: 10, color: t.tx2, marginTop: 4, fontFamily: FT }}>{Math.floor(mW / 60)}:{String(mW % 60).padStart(2, "0")} من 8:30</div></>}
+          {cs === "idle" && aft && !outOfRange && <><div style={{ fontSize: 11, color: t.txM, fontFamily: FT }}>انتهى الدوام</div><div style={{ fontSize: 40, fontWeight: 800, color: "#7C3AED", fontFamily: FD, lineHeight: 1 }}>✓</div><div style={{ fontSize: 11, color: t.tx2, marginTop: 4, fontFamily: FT }}>أحسنت!</div></>}
+          {cs === "idle" && outOfRange && <><div style={{ fontSize: 36 }}>🚫</div><div style={{ fontSize: 12, fontWeight: 700, color: C.bad, marginTop: 6, textAlign: "center", lineHeight: 1.6 }}>خارج منطقة العمل</div></>}
           {cs === "scan" && <div style={{ fontSize: 48, animation: "pu 1s ease-in-out infinite" }}>🪪</div>}
-          {cs === "done" && <><div style={{ fontSize: 44 }}>✅</div><div style={{ fontSize: 15, fontWeight: 800, color: C.ok, marginTop: 6 }}>تم التسجيل</div></>}
-          {cs === "challenge" && ch && <div style={{ padding: "0 20px", textAlign: "center" }}><div style={{ fontSize: 9, color: B.gold, fontWeight: 700 }}>⚡ {ch.type}</div><div style={{ fontSize: 12, fontWeight: 700, marginTop: 4, lineHeight: 1.4, color: t.tx }}>{ch.q}</div></div>}
-          {cs === "correct" && <><div style={{ fontSize: 48 }}>🎉</div><div style={{ fontSize: 16, fontWeight: 800, color: C.ok, marginTop: 4 }}>+{challengeZone ? challengeZone.pts : 5} نقاط!</div></>}
+          {cs === "done" && <><div style={{ fontSize: 44 }}>✅</div><div style={{ fontSize: 15, fontWeight: 800, color: C.ok, marginTop: 6, fontFamily: FD }}>تم التسجيل</div></>}
+          {cs === "challenge" && ch && <div style={{ padding: "0 20px" }}><div style={{ fontSize: 9, color: B.gold, fontWeight: 700 }}>⚡ {ch.type}</div><div style={{ fontSize: 12, fontWeight: 700, marginTop: 4, lineHeight: 1.4, color: t.tx }}>{ch.q}</div></div>}
+          {cs === "correct" && <><div style={{ fontSize: 48 }}>🎉</div><div style={{ fontSize: 16, fontWeight: 800, color: C.ok, marginTop: 4, fontFamily: FD }}>+{challengeZone ? challengeZone.pts : 5} نقاط!</div></>}
           {cs === "wrong" && <><div style={{ fontSize: 40 }}>😅</div><div style={{ fontSize: 13, fontWeight: 700, color: C.bad, marginTop: 4 }}>حاول غداً</div></>}
         </div>
       </div>
 
       {/* Challenge answers */}
-      {cs === "challenge" && ch && <div style={{ display: "flex", gap: 8, marginTop: 12, padding: "0 12px" }}>{ch.opts.map((opt, i) => {
-        const ic = sel === i && i === ch.correct, iw = sel === i && i !== ch.correct;
-        return <button key={i} onClick={() => pickAns(i)} style={{ flex: 1, padding: "10px 6px", borderRadius: 12, background: ic ? t.okLt : iw ? t.badLt : "#fff", border: `1.5px solid ${ic ? C.ok : iw ? C.bad : t.sep}`, color: ic ? C.ok : iw ? C.bad : t.tx2, fontSize: 11, fontWeight: 700, cursor: "pointer", textAlign: "center" }}>{opt}</button>;
+      {cs === "challenge" && ch && <div style={{ display: "flex", gap: 8, marginTop: 12, padding: "0 16px" }}>{ch.opts.map(function(opt, i) {
+        var ic = sel === i && i === ch.correct, iw = sel === i && i !== ch.correct;
+        return <button key={i} onClick={function() { pickAns(i); }} style={{ flex: 1, padding: "10px 6px", borderRadius: 12, background: ic ? t.okLt : iw ? t.badLt : t.card, border: "1.5px solid " + (ic ? C.ok : iw ? C.bad : t.sep), color: ic ? C.ok : iw ? C.bad : t.tx2, fontSize: 11, fontWeight: 700, cursor: "pointer", textAlign: "center", fontFamily: FT }}>{opt}</button>;
       })}</div>}
+      {(cs === "challenge" || cs === "wrong") && <span onClick={function() { setCs("idle"); setSel(null); setChDone(true); }} style={{ fontSize: 11, color: t.txM, cursor: "pointer", marginTop: 8, fontFamily: FT }}>تجاوز</span>}
 
-      {(cs === "challenge" || cs === "wrong") && <span onClick={() => { setCs("idle"); setSel(null); setChDone(true); }} style={{ fontSize: 11, color: t.txM, cursor: "pointer", marginTop: 8 }}>تجاوز</span>}
-
-      {/* Checkpoints */}
-      {cs === "idle" && <div style={{ display: "flex", gap: 12, marginTop: 14 }}>{CPS.map(cp => { const d = done.includes(cp.l); return (<div key={cp.id} style={{ textAlign: "center" }}><div style={{ width: 30, height: 30, borderRadius: "50%", background: d ? t.okLt : "#fff", border: `2px solid ${d ? C.ok : t.sep}`, display: "flex", alignItems: "center", justifyContent: "center", fontSize: d ? 11 : 7, color: d ? C.ok : t.txM, fontWeight: 700 }}>{d ? "✓" : `${cp.h}:${String(cp.m).padStart(2, "0")}`}</div><div style={{ fontSize: 7, color: t.txM, marginTop: 2 }}>{cp.l}</div></div>); })}</div>}
-
-      <div style={{ display: "flex", alignItems: "center", gap: 5, marginTop: 10 }}><Logo s={14} /><span style={{ fontSize: 10, fontWeight: 600, color: t.tx2 }}>{emp.name?.split(" ").slice(0, 2).join(" ")}</span></div>
+      {/* Checkpoint dots */}
+      {cs === "idle" && <div style={{ display: "flex", justifyContent: "center", gap: 14, marginTop: 12, padding: "0 20px" }}>
+        {cpDots.map(function(x, i) { var dn = done.includes(x.l); return (
+          <div key={i} style={{ textAlign: "center", flex: 1 }}>
+            <div style={{ width: 36, height: 36, borderRadius: "50%", margin: "0 auto 4px", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 13, background: dn ? t.okLt : dk ? "#1E293B" : "#F0F2F8", border: dn ? "2px solid " + C.ok : "1px solid " + t.sep, transition: "all .3s" }}>{dn ? <span style={{ color: C.ok, fontWeight: 800, fontSize: 12 }}>✓</span> : x.ic}</div>
+            <div style={{ fontSize: 9, color: dn ? C.ok : t.txM, fontWeight: 600, fontFamily: FT }}>{x.l}</div>
+            <div style={{ fontSize: 7, color: t.txM, opacity: .6, fontFamily: FT }}>{x.time}</div>
+          </div>
+        ); })}
+      </div>}
     </div>
 
-    <div style={{ padding: "8px 20px 20px", width: "100%", zIndex: 1 }}>
-      {/* Manual Check-in Button */}
-      {cs === "idle" && !done.includes("الحضور") && !isLeave && !outsideWindow && (
-        <button onClick={function() { setLastCallType("manual_in"); setShowFace(true); }} style={{ width: "100%", padding: "13px", borderRadius: 14, background: C.ok, color: "#fff", fontSize: 15, fontWeight: 700, border: "none", cursor: "pointer", marginBottom: 8, boxShadow: "0 4px 15px rgba(48,209,88,.3)" }}>☀️ سجّل حضورك</button>
+    {/* Motivational message */}
+    {cs === "idle" && <div style={{ margin: "6px 16px", padding: "10px 14px", borderRadius: 12, textAlign: "center", background: dur ? B.gold + "10" : aft ? C.ok + "10" : B.blue + "10", fontFamily: FT }}>
+      <span style={{ fontSize: 11, fontWeight: 600, color: dur ? B.gold : aft ? C.ok : B.blue }}>
+        {bef && gpsStatus.inR && "✅ أنت في نطاق العمل — يمكنك تسجيل الحضور مبكراً"}
+        {bef && !gpsStatus.inR && "🌅 صباح الخير — توجّه لموقع العمل"}
+        {dur && "🔥 سلسلة " + (emp.streak || 0) + " يوم — أنت من الأكثر انضباطاً!"}
+        {aft && "🏆 يوم ممتاز! كل البصمات مكتملة"}
+      </span>
+    </div>}
+
+    {/* Action buttons */}
+    <div style={{ padding: "4px 20px 8px", width: "100%", zIndex: 1 }}>
+      {cs === "idle" && !done.includes("الحضور") && !isLeave && sH >= 7 && sH < 10 && (
+        <button onClick={function() { setLastCallType("manual_in"); setShowFace(true); }} style={{ width: "100%", padding: 14, borderRadius: 16, border: "none", fontSize: 16, fontWeight: 800, cursor: "pointer", fontFamily: FD, background: "linear-gradient(135deg,#10B981,#059669)", color: "#fff", marginBottom: 8 }}>☀️ سجّل حضورك الآن</button>
       )}
-      {/* Manual Check-out Button */}
-      {cs === "idle" && done.includes("الحضور") && !done.includes("الانصراف") && !isLeave && (curMin >= _T.cp3 || done.includes("العودة")) && (
-        <button onClick={function() { setLastCallType("manual_out"); setShowFace(true); }} style={{ width: "100%", padding: "13px", borderRadius: 14, background: B.blue, color: "#fff", fontSize: 15, fontWeight: 700, border: "none", cursor: "pointer", marginBottom: 8, boxShadow: "0 4px 15px rgba(43,94,167,.3)" }}>🌙 سجّل انصرافك</button>
+      {cs === "idle" && done.includes("الحضور") && !done.includes("الانصراف") && !isLeave && (sH >= 16 || (sH >= 15 && sM >= 30)) && (
+        <button onClick={function() { setLastCallType("manual_out"); setShowFace(true); }} style={{ width: "100%", padding: 14, borderRadius: 16, border: "none", fontSize: 14, fontWeight: 700, cursor: "pointer", fontFamily: FD, background: "linear-gradient(135deg,#2563EB,#7C3AED)", color: "#fff", marginBottom: 8 }}>🌙 سجّل انصرافك</button>
       )}
-      <button onClick={onApp} style={{ width: "100%", padding: "11px", borderRadius: 14, background: t.card, border: "1px solid " + t.sep, color: B.blue, fontSize: 12, fontWeight: 600, cursor: "pointer" }}>{emp.isManager || emp.isAssistant ? "التفاصيل والإدارة ←" : "التفاصيل والمحفظة ←"}</button>
+      <button onClick={onApp} style={{ width: "100%", padding: 12, borderRadius: 14, background: t.card, border: "1px solid " + t.sep, color: B.blue, fontSize: 13, fontWeight: 700, cursor: "pointer", fontFamily: FT }}>{emp.isManager || emp.isAssistant ? "التفاصيل والإدارة ←" : "التفاصيل والمحفظة ←"}</button>
     </div>
+
+    <div style={{ textAlign: "center", padding: "2px 0 8px", fontSize: 9, color: t.txM, opacity: .3 }}>{VER}</div>
   </div>);
 }
 
