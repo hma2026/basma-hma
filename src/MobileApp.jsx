@@ -17,41 +17,41 @@ const ThemeCtx = createContext({ dark: false, t: null, toggle: () => {} });
 const useTheme = () => useContext(ThemeCtx);
 
 const LIGHT = {
-  bg: "#F2F2F7", card: "#FFFFFF", cardBrd: "rgba(0,0,0,0.05)",
-  cardSh: "0 1px 3px rgba(0,0,0,0.08)",
-  tx: "#000000", tx2: "#6E6E73", txM: "#8E8E93",
-  sep: "#E5E5EA", ac: "#0A84FF",
-  ok: "#30D158", okLt: "rgba(48,209,88,0.1)",
-  warn: "#FF9F0A", warnLt: "rgba(255,159,10,0.1)",
-  bad: "#FF3B30", badLt: "rgba(255,59,48,0.08)",
-  info: "#5AC8FA", infoLt: "rgba(90,200,250,0.1)",
-  acLt: "rgba(10,132,255,0.1)",
-  track: "#E5E5EA", nav: "#F2F2F7", navBrd: "rgba(0,0,0,0.1)",
-  inp: "#FFFFFF", inpBrd: "#E5E5EA",
-  gold: "#FF9F0A", silver: "#8E8E93", bronze: "#0A84FF",
-  headerBg: "rgba(242,242,247,0.85)",
+  bg: "#F5F2ED", card: "#FFFFFF", cardBrd: "rgba(26,29,43,0.06)",
+  cardSh: "0 2px 8px rgba(26,29,43,0.06)",
+  tx: "#1A1D2B", tx2: "#5C6070", txM: "#8B8FA3",
+  sep: "#E4E0DA", ac: "#B5703C",
+  ok: "#2D9F6F", okLt: "rgba(45,159,111,0.1)",
+  warn: "#D4956A", warnLt: "rgba(212,149,106,0.1)",
+  bad: "#C0392B", badLt: "rgba(192,57,43,0.08)",
+  info: "#4A90C4", infoLt: "rgba(74,144,196,0.1)",
+  acLt: "rgba(181,112,60,0.1)",
+  track: "#E4E0DA", nav: "#F5F2ED", navBrd: "rgba(26,29,43,0.08)",
+  inp: "#FFFFFF", inpBrd: "#E4E0DA",
+  gold: "#D4956A", silver: "#8B8FA3", bronze: "#B5703C",
+  headerBg: "rgba(245,242,237,0.9)",
 };
 const DARK = {
-  bg: "#000000", card: "#1C1C1E", cardBrd: "rgba(255,255,255,0.1)",
-  cardSh: "none",
-  tx: "#FFFFFF", tx2: "#98989D", txM: "#636366",
-  sep: "#2C2C2E", ac: "#0A84FF",
-  ok: "#30D158", okLt: "rgba(48,209,88,0.15)",
-  warn: "#FF9F0A", warnLt: "rgba(255,159,10,0.15)",
-  bad: "#FF453A", badLt: "rgba(255,69,58,0.12)",
-  info: "#64D2FF", infoLt: "rgba(100,210,255,0.12)",
-  acLt: "rgba(10,132,255,0.18)",
-  track: "#2C2C2E", nav: "#1C1C1E", navBrd: "rgba(255,255,255,0.1)",
-  inp: "#2C2C2E", inpBrd: "rgba(255,255,255,0.1)",
-  gold: "#FFD60A", silver: "#98989D", bronze: "#0A84FF",
-  headerBg: "rgba(28,28,30,0.85)",
+  bg: "#0A0E1A", card: "#141B2D", cardBrd: "rgba(212,149,106,0.12)",
+  cardSh: "0 2px 12px rgba(0,0,0,0.3)",
+  tx: "#F0F0F5", tx2: "#8B93A7", txM: "#5A6278",
+  sep: "#1E2640", ac: "#D4956A",
+  ok: "#34D399", okLt: "rgba(52,211,153,0.12)",
+  warn: "#D4956A", warnLt: "rgba(212,149,106,0.12)",
+  bad: "#F87171", badLt: "rgba(248,113,113,0.1)",
+  info: "#67B8E3", infoLt: "rgba(103,184,227,0.1)",
+  acLt: "rgba(212,149,106,0.15)",
+  track: "#1E2640", nav: "#0F1525", navBrd: "rgba(212,149,106,0.1)",
+  inp: "#1A2238", inpBrd: "rgba(212,149,106,0.15)",
+  gold: "#D4956A", silver: "#8B93A7", bronze: "#B5703C",
+  headerBg: "rgba(10,14,26,0.9)",
 };
 
 // ═══════ CONSTANTS ═══════
 const APP = "بصمة HMA";
-const VER = "v4.41";
+const VER = "v4.42";
 const CO = "هاني محمد عسيري للإستشارات الهندسية";
-const B = { blue: "#2B5EA7", yellow: "#FDD800", red: "#E2192C", black: "#1A1A1A", blueDk: "#1E4478", blueLt: "#EDF3FB", gold: "#D4A017", diamond: "#7C3AED" };
+const B = { blue: "#2B5EA7", yellow: "#D4956A", red: "#C0392B", black: "#0A0E1A", blueDk: "#1A2238", blueLt: "#F0EDE8", gold: "#D4956A", diamond: "#8B5CF6" };
 const C = LIGHT; // Default light - components use useTheme().t for dynamic
 const Fn = "'IBM Plex Sans Arabic',-apple-system,'Segoe UI',sans-serif";
 const FL = { position: "absolute", inset: 0, minHeight: "100vh", fontFamily: Fn };
@@ -738,16 +738,16 @@ function Widget({ emp, onApp }) {
   const dateStr = new Date().toLocaleDateString("ar-SA", { weekday: "long", year: "numeric", month: "long", day: "numeric" });
 
   // Membership
-  var MEMS = [{icon:"🔹",name:"عضوية فعّال",color:"#3B82F6",min:0},{icon:"🥈",name:"عضوية فضية",color:"#94A3B8",min:200},{icon:"🥇",name:"عضوية تميّز",color:"#F59E0B",min:500},{icon:"💎",name:"عضوية نخبة",color:"#8B5CF6",min:1200}];
+  var MEMS = [{icon:"🔹",name:"عضوية فعّال",color:"#4A90C4",min:0},{icon:"🥈",name:"عضوية فضية",color:"#8B93A7",min:200},{icon:"🥇",name:"عضوية تميّز",color:"#D4956A",min:500},{icon:"💎",name:"عضوية نخبة",color:"#8B5CF6",min:1200}];
   var memPts = emp.points || 0;
   var mem = MEMS[0]; for (var mi = MEMS.length - 1; mi >= 0; mi--) { if (memPts >= MEMS[mi].min) { mem = MEMS[mi]; break; } }
   var memNext = null; for (var ni = 0; ni < MEMS.length; ni++) { if (MEMS[ni].min > memPts) { memNext = MEMS[ni]; break; } }
 
   // Challenge zones: 7:30-7:45=25pts, 7:45-8:00=15pts, 8:00-8:15=10pts
   var challengeZone = null;
-  if (curMin >= 450 && curMin < 465) challengeZone = { pts: 25, label: "25 نقطة", color: "#10B981", bg: "rgba(16,185,129,.08)", bd: "rgba(16,185,129,.2)" };
-  else if (curMin >= 465 && curMin < 480) challengeZone = { pts: 15, label: "15 نقطة", color: "#F59E0B", bg: "rgba(245,158,11,.08)", bd: "rgba(245,158,11,.2)" };
-  else if (curMin >= 480 && curMin < 495) challengeZone = { pts: 10, label: "10 نقاط", color: "#3B82F6", bg: "rgba(37,99,235,.08)", bd: "rgba(37,99,235,.2)" };
+  if (curMin >= 450 && curMin < 465) challengeZone = { pts: 25, label: "25 نقطة", color: t.ok, bg: t.okLt, bd: t.ok + "33" };
+  else if (curMin >= 465 && curMin < 480) challengeZone = { pts: 15, label: "15 نقطة", color: t.warn, bg: t.warnLt, bd: t.warn + "33" };
+  else if (curMin >= 480 && curMin < 495) challengeZone = { pts: 10, label: "10 نقاط", color: t.info, bg: t.infoLt, bd: t.info + "33" };
   var challengeAvailable = challengeZone && ch && !chDone;
 
   const pickAns = function(i) { if (sel !== null) return; setSel(i); var pts2 = challengeZone ? challengeZone.pts : 5; setTimeout(function() { if (i === ch.correct) { api('employees', 'PUT', { id: emp.id, points: (emp.points || 0) + pts2 }); } setCs(i === ch.correct ? "correct" : "wrong"); setTimeout(function() { setCs("idle"); setSel(null); setChDone(true); }, 2000); }, 700); };
@@ -821,7 +821,7 @@ function Widget({ emp, onApp }) {
   }, []);
 
   var outOfRange = !gpsStatus.inR && !gpsStatus.remote && emp.type !== "remote";
-  var circCol = outOfRange ? C.bad : cs === "scan" ? B.blue : cs === "done" || cs === "correct" ? C.ok : pct >= 60 ? "#10B981" : B.blue;
+  var circCol = outOfRange ? C.bad : cs === "scan" ? B.blue : cs === "done" || cs === "correct" ? C.ok : pct >= 60 ? t.ok : t.ac;
   var S = 200, st2 = 10, r2 = (S - st2) / 2, circ2 = 2 * Math.PI * r2, off2 = circ2 - (pct / 100) * circ2;
 
   // Checkpoint dots data
@@ -887,7 +887,7 @@ function Widget({ emp, onApp }) {
         <div style={{ fontSize: 36, lineHeight: 1 }}>{mem.icon}</div>
         <div style={{ fontSize: 14, fontWeight: 800, color: mem.color, marginTop: 2, fontFamily: FD }}>{mem.name}</div>
         <div style={{ fontSize: 10, color: t.txM, marginTop: 2, fontFamily: FT }}>{"⭐ " + memPts + " نقطة" + (memNext ? " — " + (memNext.min - memPts) + " للترقية" : " — القمة!")}</div>
-        {memNext && <div style={{ width: 120, height: 4, borderRadius: 2, background: dk ? "#1E293B" : "#F0F2F8", marginTop: 6, overflow: "hidden" }}><div style={{ height: "100%", borderRadius: 2, background: mem.color, width: Math.min(100, ((memPts - mem.min) / (memNext.min - mem.min)) * 100) + "%", transition: "width .5s" }} /></div>}
+        {memNext && <div style={{ width: 120, height: 4, borderRadius: 2, background: t.track, marginTop: 6, overflow: "hidden" }}><div style={{ height: "100%", borderRadius: 2, background: mem.color, width: Math.min(100, ((memPts - mem.min) / (memNext.min - mem.min)) * 100) + "%", transition: "width .5s" }} /></div>}
       </div>
     </div>
 
@@ -896,9 +896,9 @@ function Widget({ emp, onApp }) {
 
     {/* GPS in-range message */}
     {gpsStatus.inR && !outOfRange && cs === "idle" && (
-      <div style={{ margin: "0 16px 4px", padding: "10px 14px", borderRadius: 12, display: "flex", alignItems: "center", gap: 8, background: "rgba(16,185,129,.08)", border: "1px solid rgba(16,185,129,.15)" }}>
-        <div style={{ width: 8, height: 8, borderRadius: "50%", background: "#10B981", animation: "pls 2s infinite" }} />
-        <span style={{ fontSize: 12, fontWeight: 600, color: "#10B981", fontFamily: FT, flex: 1 }}>📍 في نطاق العمل — {BR[emp.branch] || emp.branch} ({gpsStatus.d || 0} م)</span>
+      <div style={{ margin: "0 16px 4px", padding: "10px 14px", borderRadius: 12, display: "flex", alignItems: "center", gap: 8, background: t.okLt, border: "1px solid " + t.ok + "20" }}>
+        <div style={{ width: 8, height: 8, borderRadius: "50%", background: t.ok, animation: "pls 2s infinite" }} />
+        <span style={{ fontSize: 12, fontWeight: 600, color: t.ok, fontFamily: FT, flex: 1 }}>📍 في نطاق العمل — {BR[emp.branch] || emp.branch} ({gpsStatus.d || 0} م)</span>
         {(emp.streak || 0) > 0 && <span style={{ fontSize: 10, fontWeight: 700, color: B.gold, fontFamily: FT }}>🔥 {emp.streak} يوم</span>}
       </div>
     )}
@@ -934,14 +934,14 @@ function Widget({ emp, onApp }) {
     <div style={{ flex: 1, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", zIndex: 1 }}>
       <div style={{ position: "relative", width: S, height: S, cursor: cs === "idle" ? "pointer" : "default" }} onClick={cs === "idle" && challengeAvailable ? function() { setCs("challenge"); } : undefined}>
         <svg width={S} height={S} style={{ transform: "rotate(-90deg)" }}>
-          <circle cx={S/2} cy={S/2} r={r2} fill="none" stroke={dk ? "#1E293B" : "#E2E8F0"} strokeWidth={st2} />
+          <circle cx={S/2} cy={S/2} r={r2} fill="none" stroke={t.track} strokeWidth={st2} />
           <circle cx={S/2} cy={S/2} r={r2} fill="none" stroke={circCol} strokeWidth={st2} strokeLinecap="round" strokeDasharray={circ2} strokeDashoffset={off2} style={{ transition: "stroke-dashoffset 1s ease" }} />
           {cs === "scan" && <circle cx={S/2} cy={S/2} r={r2 + 6} fill="none" stroke={B.yellow} strokeWidth="2" strokeDasharray="40 30" style={{ animation: "spin 1.5s linear infinite", transformOrigin: S/2 + "px " + S/2 + "px" }} />}
         </svg>
         <div style={{ position: "absolute", inset: 0, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", textAlign: "center" }}>
           {cs === "idle" && bef && !outOfRange && <><div style={{ fontSize: 11, color: t.txM, fontFamily: FT }}>قبل الدوام</div><div style={{ fontSize: 38, fontWeight: 800, color: t.tx, fontFamily: FD, lineHeight: 1 }}>{8 - sH > 0 ? (8 - sH) + ":" + String(60 - sM).padStart(2, "0") : "0:" + String(30 - sM).padStart(2, "0")}</div><div style={{ fontSize: 11, color: circCol, fontWeight: 600, marginTop: 4, fontFamily: FT }}>الحضور 8:30</div></>}
           {cs === "idle" && dur && !outOfRange && <><div style={{ fontSize: 11, color: t.txM, fontFamily: FT }}>أثناء الدوام</div><div style={{ fontSize: 42, fontWeight: 800, color: circCol, fontFamily: FD, lineHeight: 1 }}>{pct}%</div><div style={{ fontSize: 10, color: t.tx2, marginTop: 4, fontFamily: FT }}>{Math.floor(mW / 60)}:{String(mW % 60).padStart(2, "0")} من 8:30</div></>}
-          {cs === "idle" && aft && !outOfRange && <><div style={{ fontSize: 11, color: t.txM, fontFamily: FT }}>انتهى الدوام</div><div style={{ fontSize: 40, fontWeight: 800, color: "#7C3AED", fontFamily: FD, lineHeight: 1 }}>✓</div><div style={{ fontSize: 11, color: t.tx2, marginTop: 4, fontFamily: FT }}>أحسنت!</div></>}
+          {cs === "idle" && aft && !outOfRange && <><div style={{ fontSize: 11, color: t.txM, fontFamily: FT }}>انتهى الدوام</div><div style={{ fontSize: 40, fontWeight: 800, color: t.ac, fontFamily: FD, lineHeight: 1 }}>✓</div><div style={{ fontSize: 11, color: t.tx2, marginTop: 4, fontFamily: FT }}>أحسنت!</div></>}
           {cs === "idle" && outOfRange && <><div style={{ fontSize: 36 }}>🚫</div><div style={{ fontSize: 12, fontWeight: 700, color: C.bad, marginTop: 6, textAlign: "center", lineHeight: 1.6 }}>خارج منطقة العمل</div></>}
           {cs === "scan" && <div style={{ fontSize: 48, animation: "pu 1s ease-in-out infinite" }}>🪪</div>}
           {cs === "done" && <><div style={{ fontSize: 44 }}>✅</div><div style={{ fontSize: 15, fontWeight: 800, color: C.ok, marginTop: 6, fontFamily: FD }}>تم التسجيل</div></>}
@@ -962,7 +962,7 @@ function Widget({ emp, onApp }) {
       {cs === "idle" && <div style={{ display: "flex", justifyContent: "center", gap: 14, marginTop: 12, padding: "0 20px" }}>
         {cpDots.map(function(x, i) { var dn = done.includes(x.l); return (
           <div key={i} style={{ textAlign: "center", flex: 1 }}>
-            <div style={{ width: 36, height: 36, borderRadius: "50%", margin: "0 auto 4px", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 13, background: dn ? t.okLt : dk ? "#1E293B" : "#F0F2F8", border: dn ? "2px solid " + C.ok : "1px solid " + t.sep, transition: "all .3s" }}>{dn ? <span style={{ color: C.ok, fontWeight: 800, fontSize: 12 }}>✓</span> : x.ic}</div>
+            <div style={{ width: 36, height: 36, borderRadius: "50%", margin: "0 auto 4px", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 13, background: dn ? t.okLt : t.track, border: dn ? "2px solid " + C.ok : "1px solid " + t.sep, transition: "all .3s" }}>{dn ? <span style={{ color: C.ok, fontWeight: 800, fontSize: 12 }}>✓</span> : x.ic}</div>
             <div style={{ fontSize: 9, color: dn ? C.ok : t.txM, fontWeight: 600, fontFamily: FT }}>{x.l}</div>
             <div style={{ fontSize: 7, color: t.txM, opacity: .6, fontFamily: FT }}>{x.time}</div>
           </div>
@@ -983,10 +983,10 @@ function Widget({ emp, onApp }) {
     {/* Action buttons */}
     <div style={{ padding: "4px 20px 8px", width: "100%", zIndex: 1 }}>
       {cs === "idle" && !done.includes("الحضور") && !isLeave && sH >= 7 && sH < 10 && (
-        <button onClick={function() { setLastCallType("manual_in"); setShowFace(true); }} style={{ width: "100%", padding: 14, borderRadius: 16, border: "none", fontSize: 16, fontWeight: 800, cursor: "pointer", fontFamily: FD, background: "linear-gradient(135deg,#10B981,#059669)", color: "#fff", marginBottom: 8 }}>☀️ سجّل حضورك الآن</button>
+        <button onClick={function() { setLastCallType("manual_in"); setShowFace(true); }} style={{ width: "100%", padding: 14, borderRadius: 16, border: "none", fontSize: 16, fontWeight: 800, cursor: "pointer", fontFamily: FD, background: "linear-gradient(135deg,#D4956A,#B5703C)", color: "#fff", marginBottom: 8 }}>☀️ سجّل حضورك الآن</button>
       )}
       {cs === "idle" && done.includes("الحضور") && !done.includes("الانصراف") && !isLeave && (sH >= 16 || (sH >= 15 && sM >= 30)) && (
-        <button onClick={function() { setLastCallType("manual_out"); setShowFace(true); }} style={{ width: "100%", padding: 14, borderRadius: 16, border: "none", fontSize: 14, fontWeight: 700, cursor: "pointer", fontFamily: FD, background: "linear-gradient(135deg,#2563EB,#7C3AED)", color: "#fff", marginBottom: 8 }}>🌙 سجّل انصرافك</button>
+        <button onClick={function() { setLastCallType("manual_out"); setShowFace(true); }} style={{ width: "100%", padding: 14, borderRadius: 16, border: "none", fontSize: 14, fontWeight: 700, cursor: "pointer", fontFamily: FD, background: "linear-gradient(135deg,#2B5EA7,#1A2238)", color: "#fff", marginBottom: 8 }}>🌙 سجّل انصرافك</button>
       )}
       <button onClick={onApp} style={{ width: "100%", padding: 12, borderRadius: 14, background: t.card, border: "1px solid " + t.sep, color: B.blue, fontSize: 13, fontWeight: 700, cursor: "pointer", fontFamily: FT }}>{emp.isManager || emp.isAssistant ? "التفاصيل والإدارة ←" : "التفاصيل والمحفظة ←"}</button>
     </div>
