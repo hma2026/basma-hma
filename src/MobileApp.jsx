@@ -32,9 +32,9 @@ const LIGHT = {
   headerBg: "rgba(245,242,237,0.9)",
 };
 const DARK = {
-  bg: "#0A0E1A", card: "#141B2D", cardBrd: "rgba(212,149,106,0.12)",
+  bg: "#0A0E1A", card: "#151D30", cardBrd: "rgba(212,149,106,0.12)",
   cardSh: "0 2px 12px rgba(0,0,0,0.3)",
-  tx: "#F0F0F5", tx2: "#8B93A7", txM: "#5A6278",
+  tx: "#FFFFFF", tx2: "#B0BAD0", txM: "#7B88A5",
   sep: "#1E2640", ac: "#D4956A",
   ok: "#34D399", okLt: "rgba(52,211,153,0.12)",
   warn: "#D4956A", warnLt: "rgba(212,149,106,0.12)",
@@ -49,7 +49,7 @@ const DARK = {
 
 // ═══════ CONSTANTS ═══════
 const APP = "بصمة HMA";
-const VER = "v4.42";
+const VER = "v4.43";
 const CO = "هاني محمد عسيري للإستشارات الهندسية";
 const B = { blue: "#2B5EA7", yellow: "#D4956A", red: "#C0392B", black: "#0A0E1A", blueDk: "#1A2238", blueLt: "#F0EDE8", gold: "#D4956A", diamond: "#8B5CF6" };
 const C = LIGHT; // Default light - components use useTheme().t for dynamic
@@ -704,10 +704,12 @@ function Widget({ emp, onApp }) {
     return function() { document.removeEventListener("visibilitychange", hv); window.removeEventListener("beforeunload", hu); };
   }, []);
 
-  // GPS auto check-in
-  useEffect(() => {
-    if (isLeave || done.includes("الحضور")) return;
+  // GPS auto check-in (once only per session)
+  var gpsCheckedIn = useRef(false);
+  useEffect(function() {
+    if (isLeave || done.includes("الحضور") || gpsCheckedIn.current) return;
     if (gpsStatus.inR && !gpsStatus.remote) {
+      gpsCheckedIn.current = true;
       api('checkin', 'POST', { empId: emp.id, type: "الحضور", lat: 0, lng: 0, autoGPS: true }).then(function() {
         setDone(function(p) { return p.includes("الحضور") ? p : p.concat(["الحضور"]); });
       });
@@ -1192,14 +1194,14 @@ function FullApp({ emp, onBack, onLogout }) {
 
   return (<div style={{ ...FL, background: t.bg, display: "flex", flexDirection: "column" }}>
     <Stripe h={4} />
-    <div style={{ padding: "8px 14px", display: "flex", alignItems: "center", gap: 8, background: t.card, borderBottom: "1px solid " + t.sep }}>
+    <div style={{ padding: "8px 14px", display: "flex", alignItems: "center", gap: 8, background: t.headerBg, borderBottom: "1px solid " + t.sep, position: "sticky", top: 0, zIndex: 50, backdropFilter: "blur(10px)", WebkitBackdropFilter: "blur(10px)" }}>
       <button onClick={onBack} style={{ background: "none", border: "none", fontSize: 18, cursor: "pointer" }}>→</button>
       <Logo s={22} />
       <div style={{ flex: 1, fontSize: 13, fontWeight: 700, color: t.tx }}>{emp.name}</div>
       {level.badge && <span style={{ fontSize: 12 }}>{level.badge}</span>}
     </div>
 
-    <div style={{ flex: 1, overflowY: "auto", padding: "12px 14px 90px" }}>
+    <div style={{ flex: 1, overflowY: "auto", padding: "12px 14px 80px", WebkitOverflowScrolling: "touch" }}>
 
       {/* ADMIN TAB */}
       {tab === "admin" && <div>
@@ -1299,7 +1301,7 @@ function FullApp({ emp, onBack, onLogout }) {
               <span style={{ fontSize: 12, fontWeight: 700, color: C.warn }}>⏳ {adminRequests.filter(function(r) { return r.status === "pending"; }).length} طلب بانتظار الاعتماد</span>
             </div>
             {adminRequests.filter(function(r) { return r.status === "pending"; }).map(function(r) {
-              var types = { experience_letter: "📄 شهادة خبرة", intro_letter: "📋 خطاب تعريف", salary_cert: "💰 شهادة راتب", advance: "💵 سلفة", compensation: "⏰ تعويض", overtime: "🕐 أوفرتايم", device_change: "📱 تغيير جهاز", other: "📝 أخرى" };
+              var types = { experience_letter: "📄 شهادة خبرة", intro_letter: "📋 خطاب تعريف", salary_cert: "💰 شهادة راتب", advance: "💵 سلفة", compensation: "⏰ تعويض", overtime: "🕐 أوفرتايم", device_change: "📱 تغيير جهاز", similar_face: "👤 وجه مشابه", other: "📝 أخرى" };
               return <div key={r.id} style={{ ...crd, marginBottom: 6 }}>
                 <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
                   <div>
@@ -1892,7 +1894,7 @@ function FullApp({ emp, onBack, onLogout }) {
 
         {adminRequests.length > 0 && <div style={{ ...crd }}>
           <div style={{ fontSize: 13, fontWeight: 700, marginBottom: 10 }}>📋 طلباتي السابقة</div>
-          {adminRequests.map(function(r) { var types = { experience_letter: "📄 شهادة خبرة", intro_letter: "📋 خطاب تعريف", salary_cert: "💰 شهادة راتب", advance: "💵 سلفة", compensation: "⏰ تعويض", other: "📝 أخرى" }; return <div key={r.id} style={{ padding: 10, borderRadius: 8, background: t.bg, marginBottom: 6 }}>
+          {adminRequests.map(function(r) { var types = { experience_letter: "📄 شهادة خبرة", intro_letter: "📋 خطاب تعريف", salary_cert: "💰 شهادة راتب", advance: "💵 سلفة", compensation: "⏰ تعويض", device_change: "📱 تغيير جهاز", similar_face: "👤 وجه مشابه", other: "📝 أخرى" }; return <div key={r.id} style={{ padding: 10, borderRadius: 8, background: t.bg, marginBottom: 6 }}>
             <div style={{ display: "flex", justifyContent: "space-between" }}>
               <div style={{ fontSize: 12, fontWeight: 600 }}>{types[r.type] || r.type}</div>
               <span style={{ padding: "2px 8px", borderRadius: 6, fontSize: 9, fontWeight: 700, background: r.status === "approved" ? t.okLt : r.status === "rejected" ? t.badLt : t.warnLt, color: r.status === "approved" ? C.ok : r.status === "rejected" ? C.bad : C.warn }}>{r.status === "approved" ? "مُوافق" : r.status === "rejected" ? "مرفوض" : "قيد المراجعة"}</span>
@@ -2037,8 +2039,8 @@ function FullApp({ emp, onBack, onLogout }) {
     </div>
 
     {/* Tab bar */}
-    <div style={{ display: "flex", justifyContent: "space-around", padding: "4px 0 12px", background: t.card, borderTop: "1px solid " + t.sep, position: "fixed", bottom: 0, left: 0, right: 0, maxWidth: 480, margin: "0 auto" }}>
-      {tabs.map(tb => { const a = tab === tb.id; return (<button key={tb.id} onClick={() => setTab(tb.id)} style={{ background: "none", border: "none", cursor: "pointer", display: "flex", flexDirection: "column", alignItems: "center", gap: 1, padding: "4px 8px", position: "relative" }}>{a && <div style={{ position: "absolute", top: -4, width: 18, height: 3, borderRadius: 2, background: B.blue }} />}<span style={{ fontSize: 15, filter: a ? "none" : "grayscale(.7) opacity(.4)" }}>{tb.i}</span><span style={{ fontSize: 8, fontWeight: 700, color: a ? B.blue : t.txM }}>{tb.l}</span></button>); })}
+    <div style={{ display: "flex", justifyContent: "space-around", padding: "6px 0 14px", background: t.nav, borderTop: "1px solid " + t.sep, position: "fixed", bottom: 0, left: 0, right: 0, maxWidth: 480, margin: "0 auto", zIndex: 100, backdropFilter: "blur(10px)", WebkitBackdropFilter: "blur(10px)" }}>
+      {tabs.map(tb => { const a = tab === tb.id; return (<button key={tb.id} onClick={() => setTab(tb.id)} style={{ background: "none", border: "none", cursor: "pointer", display: "flex", flexDirection: "column", alignItems: "center", gap: 1, padding: "4px 8px", position: "relative" }}>{a && <div style={{ position: "absolute", top: -4, width: 18, height: 3, borderRadius: 2, background: B.blue }} />}<span style={{ fontSize: 16, filter: a ? "none" : "grayscale(.5) opacity(.5)" }}>{tb.i}</span><span style={{ fontSize: 9, fontWeight: 700, color: a ? t.ac : t.txM }}>{tb.l}</span></button>); })}
     </div>
   </div>);
 }
