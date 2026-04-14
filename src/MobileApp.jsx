@@ -6,10 +6,10 @@ import React, { useState, useEffect, useRef, useCallback } from "react";
    + Face Verify + Challenge + Toasts
    ═══════════════════════════════════════════ */
 
-const VER = "4.60";
+const VER = "4.61";
 
 /* ── Colors ── */
-const C = {
+const LIGHT = {
   hdr1: "#1a3a6e", hdr2: "#2b5ea7", hdr3: "#3a7bd5",
   green: "#2d9f6f", greenDark: "#27ae60",
   orange: "#e67e22", orangeDark: "#d35400",
@@ -18,6 +18,16 @@ const C = {
   bg: "#f0f2f7", card: "#fff", text: "#1a1a1a", sub: "#888",
   gold: "#ffd700",
 };
+const DARK = {
+  hdr1: "#0d1b33", hdr2: "#162d52", hdr3: "#1e3f6e",
+  green: "#2d9f6f", greenDark: "#27ae60",
+  orange: "#e67e22", orangeDark: "#d35400",
+  red: "#e74c3c", redDark: "#c0392b",
+  blue: "#3a7bd5", blueBright: "#5a9ae6",
+  bg: "#111827", card: "#1e293b", text: "#e2e8f0", sub: "#94a3b8",
+  gold: "#ffd700",
+};
+var C = LIGHT;
 
 /* ── Inject Global CSS ── */
 if (typeof document !== "undefined" && !document.getElementById("basma-css")) {
@@ -134,6 +144,7 @@ function MobileAppInner() {
   const [user, setUser] = useState(null);
   const [page, setPage] = useState("home");
   const [branch, setBranch] = useState(null);
+  const [darkMode, setDarkMode] = useState(function(){ return localStorage.getItem("basma_dark") === "1"; });
   const [todayAtt, setTodayAtt] = useState([]);
   const [allAtt, setAllAtt] = useState([]);
   const [now, setNow] = useState(new Date());
@@ -156,6 +167,16 @@ function MobileAppInner() {
   const [allEmps, setAllEmps] = useState([]);
   const [pwaPrompt, setPwaPrompt] = useState(null);
   const [initDone, setInitDone] = useState(false);
+
+  // Apply dark mode
+  useEffect(function() {
+    C = darkMode ? DARK : LIGHT;
+    S = buildS();
+    document.body.style.background = C.bg;
+    localStorage.setItem("basma_dark", darkMode ? "1" : "0");
+  }, [darkMode]);
+
+  function toggleDark() { setDarkMode(function(d){ return !d; }); }
 
   function showToast(msg, type = "success") {
     setToast({ msg, type });
@@ -354,7 +375,7 @@ function MobileAppInner() {
       <div key={page} style={{ flex: 1, display: "flex", flexDirection: "column", animation: "pageIn .3s ease" }}>
         {page === "home" && <HomePage user={user} branch={branch} now={now} todayAtt={todayAtt} allAtt={allAtt} gps={gps} gpsDist={gpsDist} streak={streak} loading={loading} refreshing={refreshing} dayState={getDayState()} checkpoints={getCheckpoints()} isOffDay={isOffDay()} pendingCount={myLeaves.filter(function(l){ return l.status === "pending"; }).length + myTickets.filter(function(t){ return t.status === "pending"; }).length} teamToday={teamToday} pwaPrompt={pwaPrompt} onPwaInstall={async function(){ if(pwaPrompt){pwaPrompt.prompt();await pwaPrompt.userChoice;setPwaPrompt(null);} }} onCheckin={requestCheckin} onChallenge={() => setChallengeOpen(true)} onLeave={() => setLeaveModal(true)} onRefresh={refresh} />}
         {page === "report" && <ReportPage user={user} allAtt={allAtt} todayAtt={todayAtt} branch={branch} isOffDay={isOffDay()} myLeaves={myLeaves} />}
-        {page === "profile" && <ProfilePage user={user} branch={branch} onLogout={logout} onTicket={() => setTicketModal(true)} myTickets={myTickets} />}
+        {page === "profile" && <ProfilePage user={user} branch={branch} onLogout={logout} onTicket={() => setTicketModal(true)} myTickets={myTickets} darkMode={darkMode} toggleDark={toggleDark} />}
       </div>
 
       <BottomNav page={page} setPage={setPage} />
@@ -484,6 +505,15 @@ function HomePage({ user, branch, now, todayAtt, allAtt, gps, gpsDist, streak, l
             <div style={S.clockInner}>
               <div style={S.clockTime}>{time}<span style={{ fontSize: 18, opacity: .6 }}>{":" + sec}</span></div>
               <div style={S.clockAmpm}>{ampm}</div>
+              {dayState === "during" && branch && (function() {
+                var remaining = timeToMin(branch.end) - (now.getHours() * 60 + now.getMinutes());
+                if (remaining > 0) {
+                  var rh = Math.floor(remaining / 60);
+                  var rm = remaining % 60;
+                  return React.createElement("div", { style: { fontSize: 9, color: "rgba(255,255,255,.5)", marginTop: -2, marginBottom: 2 } }, "متبقي " + rh + ":" + String(rm).padStart(2,"0"));
+                }
+                return null;
+              })()}
               {btnAction ? (
                 <button onClick={() => !loading && onCheckin(btnAction, btnLabel)} disabled={loading} style={S.clockBtn}>
                   {loading ? <span className="basma-pulse">⏳</span> : btnText}
@@ -793,7 +823,7 @@ function ReportPage({ user, allAtt, todayAtt, branch, isOffDay, myLeaves }) {
 }
 
 /* ═══════════ PROFILE ═══════════ */
-function ProfilePage({ user, branch, onLogout, onTicket, myTickets }) {
+function ProfilePage({ user, branch, onLogout, onTicket, myTickets, darkMode, toggleDark }) {
   const typeMap = { office: "🏢 مكتبي", field: "🏗️ ميداني", mixed: "🔀 مختلط", remote: "🏠 عن بعد" };
   const badge = memberBadge(user.points || 0);
   const rows = [
@@ -832,6 +862,12 @@ function ProfilePage({ user, branch, onLogout, onTicket, myTickets }) {
 
         <div style={S.card} className="basma-fadein-d2">
           <div style={S.cardTitle}>الإعدادات</div>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "10px 0", borderBottom: "1px solid " + C.bg }}>
+            <span style={{ fontSize: 13, fontWeight: 600 }}>🌙 الوضع الليلي</span>
+            <div onClick={toggleDark} style={{ width: 44, height: 24, borderRadius: 12, background: darkMode ? C.blue : "#ddd", position: "relative", cursor: "pointer", transition: "background .3s" }}>
+              <div style={{ width: 18, height: 18, borderRadius: 9, background: "#fff", position: "absolute", top: 3, transition: "all .3s", left: darkMode ? 3 : undefined, right: darkMode ? undefined : 3, boxShadow: "0 1px 3px rgba(0,0,0,.2)" }} />
+            </div>
+          </div>
           <ToggleRow label="📞 تذكير بالحضور" storeKey="remind_in" border={true} />
           <ToggleRow label="📞 تذكير بالانصراف" storeKey="remind_out" border={true} />
           <FaceResetRow empId={user.id} />
@@ -1556,7 +1592,7 @@ function BottomNav({ page, setPage }) {
 }
 
 /* ═══════════ STYLES ═══════════ */
-var S = {
+function buildS() { return {
   phone: { width: "100%", maxWidth: 430, minHeight: "100vh", margin: "0 auto", background: C.bg, position: "relative", display: "flex", flexDirection: "column" },
 
   header: { background: "linear-gradient(180deg,"+C.hdr1+" 0%,"+C.hdr2+" 50%,"+C.hdr3+" 100%)", padding: "20px 20px 60px", position: "relative", overflow: "hidden" },
@@ -1582,8 +1618,8 @@ var S = {
   gpsRow: { display: "flex", alignItems: "center", gap: 6, padding: "4px 4px 10px" },
   challengeCard: { background: "linear-gradient(135deg,"+C.green+","+C.greenDark+")", borderRadius: 16, padding: 14, marginBottom: 12, textAlign: "center", color: "#fff", cursor: "pointer" },
 
-  card: { background: "#fff", borderRadius: 20, padding: 18, marginBottom: 12, boxShadow: "0 2px 12px rgba(0,0,0,.06)" },
-  cardTitle: { fontSize: 15, fontWeight: 800, fontFamily: "'Cairo',sans-serif", marginBottom: 12, display: "flex", justifyContent: "space-between", alignItems: "center" },
+  card: { background: C.card, borderRadius: 20, padding: 18, marginBottom: 12, boxShadow: "0 2px 12px rgba(0,0,0,.06)" },
+  cardTitle: { fontSize: 15, fontWeight: 800, fontFamily: "'Cairo',sans-serif", marginBottom: 12, display: "flex", justifyContent: "space-between", alignItems: "center", color: C.text },
 
   summaryGrid: { display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 8, textAlign: "center" },
   cpRow: { display: "flex", gap: 8, marginTop: 12 },
@@ -1591,12 +1627,13 @@ var S = {
   detailHeader: { background: "linear-gradient(180deg,"+C.hdr1+","+C.hdr2+")", padding: "14px 18px", display: "flex", alignItems: "center", gap: 10 },
   detailTitle: { flex: 1, textAlign: "center", color: "#fff", fontSize: 16, fontWeight: 800, fontFamily: "'Cairo',sans-serif" },
 
-  nav: { position: "fixed", bottom: 0, left: 0, right: 0, maxWidth: 430, margin: "0 auto", background: "#fff", borderTop: "1px solid #eee", display: "flex", justifyContent: "space-around", padding: "8px 0 16px", zIndex: 100 },
+  nav: { position: "fixed", bottom: 0, left: 0, right: 0, maxWidth: 430, margin: "0 auto", background: C.card, borderTop: "1px solid " + (C.bg === "#111827" ? "#1e293b" : "#eee"), display: "flex", justifyContent: "space-around", padding: "8px 0 16px", zIndex: 100 },
   navItem: { display: "flex", flexDirection: "column", alignItems: "center", gap: 2, background: "none", border: "none", padding: "4px 12px", cursor: "pointer", fontFamily: "'Tajawal',sans-serif" },
   navBar: { position: "absolute", top: -1, width: 24, height: 3, borderRadius: 2, background: C.blue },
 
   loginInput: { width: "100%", padding: "14px 16px", borderRadius: 14, background: "rgba(255,255,255,.1)", border: "1px solid rgba(255,255,255,.2)", color: "#fff", fontSize: 15, fontWeight: 600, fontFamily: "'Tajawal',sans-serif", outline: "none", textAlign: "center", direction: "ltr" },
 
   overlay: { position: "fixed", inset: 0, background: "rgba(0,0,0,.5)", zIndex: 200, display: "flex", alignItems: "flex-end", justifyContent: "center", padding: 16 },
-  modal: { background: "#fff", borderRadius: 24, padding: 24, width: "100%", maxWidth: 380 },
-};
+  modal: { background: C.card, borderRadius: 24, padding: 24, width: "100%", maxWidth: 380 },
+}; }
+var S = buildS();
