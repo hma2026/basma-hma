@@ -6,7 +6,7 @@ import React, { useState, useEffect, useRef, useCallback } from "react";
    + Face Verify + Challenge + Toasts
    ═══════════════════════════════════════════ */
 
-const VER = "4.54";
+const VER = "4.55";
 
 /* ── Colors ── */
 const C = {
@@ -60,11 +60,11 @@ function formatArabicDate(d) {
 }
 
 function formatTime(d) {
-  let h = d.getHours(), m = d.getMinutes();
+  let h = d.getHours(), m = d.getMinutes(), s = d.getSeconds();
   const ampm = h >= 12 ? "م" : "ص";
   if (h > 12) h -= 12;
   if (h === 0) h = 12;
-  return { time: String(h).padStart(2, "0") + ":" + String(m).padStart(2, "0"), ampm };
+  return { time: String(h).padStart(2, "0") + ":" + String(m).padStart(2, "0"), sec: String(s).padStart(2, "0"), ampm };
 }
 
 function formatTimeStr(ts) {
@@ -127,6 +127,8 @@ export default function MobileApp() {
   const [leaveModal, setLeaveModal] = useState(false);
   const [ticketModal, setTicketModal] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
+  const [myLeaves, setMyLeaves] = useState([]);
+  const [myTickets, setMyTickets] = useState([]);
   const [initDone, setInitDone] = useState(false);
 
   function showToast(msg, type = "success") {
@@ -202,6 +204,15 @@ export default function MobileApp() {
         else break;
       }
       setStreak(s);
+      // Fetch leaves and tickets
+      try {
+        const allLeaves = await api("leaves");
+        setMyLeaves((allLeaves || []).filter(function(l){ return l.empId === emp.id; }));
+      } catch(e) { /**/ }
+      try {
+        const allTickets = await api("tickets");
+        setMyTickets((allTickets || []).filter(function(t){ return t.empId === emp.id; }));
+      } catch(e) { /**/ }
     } catch { /**/ }
   }
 
@@ -275,9 +286,9 @@ export default function MobileApp() {
     <div style={S.phone}>
       {!online && <div style={{ background: C.red, color: "#fff", textAlign: "center", padding: "6px 0", fontSize: 11, fontWeight: 700 }}>⚠️ لا يوجد اتصال بالإنترنت</div>}
 
-      {page === "home" && <HomePage user={user} branch={branch} now={now} todayAtt={todayAtt} allAtt={allAtt} gps={gps} gpsDist={gpsDist} streak={streak} loading={loading} refreshing={refreshing} dayState={getDayState()} checkpoints={getCheckpoints()} isOffDay={isOffDay()} onCheckin={requestCheckin} onChallenge={() => setChallengeOpen(true)} onLeave={() => setLeaveModal(true)} onRefresh={refresh} />}
-      {page === "report" && <ReportPage user={user} allAtt={allAtt} todayAtt={todayAtt} branch={branch} isOffDay={isOffDay()} />}
-      {page === "profile" && <ProfilePage user={user} branch={branch} onLogout={logout} onTicket={() => setTicketModal(true)} />}
+      {page === "home" && <HomePage user={user} branch={branch} now={now} todayAtt={todayAtt} allAtt={allAtt} gps={gps} gpsDist={gpsDist} streak={streak} loading={loading} refreshing={refreshing} dayState={getDayState()} checkpoints={getCheckpoints()} isOffDay={isOffDay()} pendingCount={myLeaves.filter(function(l){ return l.status === "pending"; }).length + myTickets.filter(function(t){ return t.status === "pending"; }).length} onCheckin={requestCheckin} onChallenge={() => setChallengeOpen(true)} onLeave={() => setLeaveModal(true)} onRefresh={refresh} />}
+      {page === "report" && <ReportPage user={user} allAtt={allAtt} todayAtt={todayAtt} branch={branch} isOffDay={isOffDay()} myLeaves={myLeaves} />}
+      {page === "profile" && <ProfilePage user={user} branch={branch} onLogout={logout} onTicket={() => setTicketModal(true)} myTickets={myTickets} />}
 
       <BottomNav page={page} setPage={setPage} />
 
@@ -336,8 +347,8 @@ function LoginScreen({ onLogin, loading }) {
 }
 
 /* ═══════════ HOME ═══════════ */
-function HomePage({ user, branch, now, todayAtt, allAtt, gps, gpsDist, streak, loading, refreshing, dayState, checkpoints, isOffDay, onCheckin, onChallenge, onLeave, onRefresh }) {
-  const { time, ampm } = formatTime(now);
+function HomePage({ user, branch, now, todayAtt, allAtt, gps, gpsDist, streak, loading, refreshing, dayState, checkpoints, isOffDay, pendingCount, onCheckin, onChallenge, onLeave, onRefresh }) {
+  const { time, sec, ampm } = formatTime(now);
   const badge = memberBadge(user.points || 0);
   const inRange = branch && gpsDist !== null && gpsDist <= (branch.radius || 150);
 
@@ -387,6 +398,12 @@ function HomePage({ user, branch, now, todayAtt, allAtt, gps, gpsDist, streak, l
           <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
             <span style={{ fontSize: 12, color: "rgba(255,255,255,.7)" }}>{badge.icon + " " + badge.label}</span>
             <span style={{ fontSize: 11, color: C.gold, fontWeight: 800 }}>{"⭐" + (user.points || 0)}</span>
+            {pendingCount > 0 && (
+              <div style={{ position: "relative", marginRight: 2 }}>
+                <span style={{ fontSize: 16 }}>🔔</span>
+                <div style={{ position: "absolute", top: -4, right: -6, width: 16, height: 16, borderRadius: 8, background: C.red, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 9, fontWeight: 800, color: "#fff" }}>{pendingCount}</div>
+              </div>
+            )}
           </div>
         </div>
         <div style={S.clockWrap}>
@@ -396,7 +413,7 @@ function HomePage({ user, branch, now, todayAtt, allAtt, gps, gpsDist, streak, l
               <circle cx={SIZE/2} cy={SIZE/2} r={R} fill="none" stroke={ringCol} strokeWidth={STROKE} strokeLinecap="round" strokeDasharray={CIRC} strokeDashoffset={ringOff} style={{ transition: "stroke-dashoffset 1s ease" }} />
             </svg>
             <div style={S.clockInner}>
-              <div style={S.clockTime}>{time}</div>
+              <div style={S.clockTime}>{time}<span style={{ fontSize: 18, opacity: .6 }}>{":" + sec}</span></div>
               <div style={S.clockAmpm}>{ampm}</div>
               {btnAction ? (
                 <button onClick={() => !loading && onCheckin(btnAction, btnLabel)} disabled={loading} style={S.clockBtn}>
@@ -475,7 +492,7 @@ function HomePage({ user, branch, now, todayAtt, allAtt, gps, gpsDist, streak, l
 }
 
 /* ═══════════ REPORT ═══════════ */
-function ReportPage({ user, allAtt, todayAtt, branch, isOffDay }) {
+function ReportPage({ user, allAtt, todayAtt, branch, isOffDay, myLeaves }) {
   const thisMonth = todayStr().slice(0, 7);
   const monthAtt = allAtt.filter(r => r.date && r.date.startsWith(thisMonth));
   const checkins = monthAtt.filter(r => r.type === "checkin");
@@ -570,6 +587,27 @@ function ReportPage({ user, allAtt, todayAtt, branch, isOffDay }) {
           })}
         </div>
 
+        {myLeaves && myLeaves.length > 0 && (
+          <div style={S.card}>
+            <div style={S.cardTitle}>إجازاتي</div>
+            {myLeaves.slice(0, 5).map(function(l, i) {
+              var statusMap = { pending: { label: "قيد المراجعة", color: C.orange, icon: "⏳" }, approved: { label: "مقبولة", color: C.green, icon: "✓" }, rejected: { label: "مرفوضة", color: C.red, icon: "✗" } };
+              var s = statusMap[l.status] || statusMap.pending;
+              var typeLabels = { annual: "سنوية", sick: "مرضية", emergency: "طارئة", personal: "شخصية" };
+              return (
+                <div key={l.id || i} style={{ display: "flex", alignItems: "center", gap: 10, padding: "10px 0", borderBottom: i < myLeaves.length - 1 ? "1px solid " + C.bg : "none" }}>
+                  <div style={{ width: 36, height: 36, borderRadius: 10, background: s.color + "15", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 16 }}>{s.icon}</div>
+                  <div style={{ flex: 1 }}>
+                    <div style={{ fontSize: 12, fontWeight: 700 }}>{typeLabels[l.type] || l.type}</div>
+                    <div style={{ fontSize: 10, color: C.sub }}>{l.from + " → " + l.to}</div>
+                  </div>
+                  <span style={{ fontSize: 10, fontWeight: 700, color: s.color, padding: "3px 8px", borderRadius: 8, background: s.color + "12" }}>{s.label}</span>
+                </div>
+              );
+            })}
+          </div>
+        )}
+
         <button onClick={exportCSV} style={{ width: "100%", padding: 14, borderRadius: 16, background: "linear-gradient(135deg,"+C.blue+","+C.blueBright+")", color: "#fff", fontSize: 15, fontWeight: 800, border: "none", cursor: "pointer", fontFamily: "'Cairo',sans-serif", marginBottom: 12 }}>
           📊 تصدير التقرير
         </button>
@@ -579,7 +617,7 @@ function ReportPage({ user, allAtt, todayAtt, branch, isOffDay }) {
 }
 
 /* ═══════════ PROFILE ═══════════ */
-function ProfilePage({ user, branch, onLogout, onTicket }) {
+function ProfilePage({ user, branch, onLogout, onTicket, myTickets }) {
   const typeMap = { office: "🏢 مكتبي", field: "🏗️ ميداني", mixed: "🔀 مختلط", remote: "🏠 عن بعد" };
   const badge = memberBadge(user.points || 0);
   const rows = [
@@ -636,8 +674,29 @@ function ProfilePage({ user, branch, onLogout, onTicket }) {
           </div>
         )}
 
+        {myTickets && myTickets.length > 0 && (
+          <div style={S.card} className="basma-fadein-d3">
+            <div style={S.cardTitle}>تذاكري</div>
+            {myTickets.slice(0, 5).map(function(t, i) {
+              var statusMap = { pending: { label: "قيد المراجعة", color: C.orange }, open: { label: "مفتوحة", color: C.blue }, resolved: { label: "تم الحل", color: C.green }, closed: { label: "مغلقة", color: C.sub } };
+              var st = statusMap[t.status] || statusMap.pending;
+              var prioMap = { low: "🟢", normal: "🔵", high: "🔴" };
+              return (
+                <div key={t.id || i} style={{ display: "flex", alignItems: "center", gap: 10, padding: "10px 0", borderBottom: i < Math.min(myTickets.length, 5) - 1 ? "1px solid " + C.bg : "none" }}>
+                  <span style={{ fontSize: 14 }}>{prioMap[t.priority] || "🔵"}</span>
+                  <div style={{ flex: 1 }}>
+                    <div style={{ fontSize: 12, fontWeight: 700 }}>{t.subject}</div>
+                    <div style={{ fontSize: 10, color: C.sub }}>{t.ts ? t.ts.split("T")[0] : ""}</div>
+                  </div>
+                  <span style={{ fontSize: 10, fontWeight: 700, color: st.color, padding: "3px 8px", borderRadius: 8, background: st.color + "12" }}>{st.label}</span>
+                </div>
+              );
+            })}
+          </div>
+        )}
+
         <button onClick={onTicket} style={{ width: "100%", padding: 14, borderRadius: 16, background: "linear-gradient(135deg,"+C.orange+",#FF8021)", color: "#fff", fontSize: 15, fontWeight: 800, border: "none", cursor: "pointer", fontFamily: "'Cairo',sans-serif", marginBottom: 8 }}>
-          🎫 تذكرة دعم
+          🎫 تذكرة دعم جديدة
         </button>
 
         <button onClick={onLogout} style={{ width: "100%", padding: 14, borderRadius: 16, border: "2px solid " + C.red, background: "transparent", color: C.red, fontSize: 15, fontWeight: 800, cursor: "pointer", fontFamily: "'Cairo',sans-serif" }}>
