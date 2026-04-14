@@ -6,7 +6,7 @@ import React, { useState, useEffect, useRef, useCallback } from "react";
    + Face Verify + Challenge + Toasts
    ═══════════════════════════════════════════ */
 
-const VER = "4.51";
+const VER = "4.52";
 
 /* ── Colors ── */
 const C = {
@@ -259,7 +259,7 @@ export default function MobileApp() {
       {!online && <div style={{ background: C.red, color: "#fff", textAlign: "center", padding: "6px 0", fontSize: 11, fontWeight: 700 }}>⚠️ لا يوجد اتصال بالإنترنت</div>}
 
       {page === "home" && <HomePage user={user} branch={branch} now={now} todayAtt={todayAtt} allAtt={allAtt} gps={gps} gpsDist={gpsDist} streak={streak} loading={loading} dayState={getDayState()} checkpoints={getCheckpoints()} onCheckin={requestCheckin} onChallenge={() => setChallengeOpen(true)} />}
-      {page === "report" && <ReportPage user={user} allAtt={allAtt} branch={branch} />}
+      {page === "report" && <ReportPage user={user} allAtt={allAtt} todayAtt={todayAtt} branch={branch} />}
       {page === "profile" && <ProfilePage user={user} branch={branch} onLogout={logout} />}
 
       <BottomNav page={page} setPage={setPage} />
@@ -427,13 +427,17 @@ function HomePage({ user, branch, now, todayAtt, allAtt, gps, gpsDist, streak, l
             <Checkpoint icon="🌙" label="انصراف" time={cpTime("checkout")} done={checkpoints.checkout} />
           </div>
         </div>
+
+        {checkpoints.checkin && (
+          <WorkHoursCard todayAtt={todayAtt} now={now} branch={branch} dayState={dayState} />
+        )}
       </div>
     </div>
   );
 }
 
 /* ═══════════ REPORT ═══════════ */
-function ReportPage({ user, allAtt, branch }) {
+function ReportPage({ user, allAtt, todayAtt, branch }) {
   const thisMonth = todayStr().slice(0, 7);
   const monthAtt = allAtt.filter(r => r.date && r.date.startsWith(thisMonth));
   const checkins = monthAtt.filter(r => r.type === "checkin");
@@ -447,6 +451,28 @@ function ReportPage({ user, allAtt, branch }) {
   const recent = [...monthAtt].sort((a, b) => new Date(b.ts) - new Date(a.ts)).slice(0, 8);
   const typeMap = { checkin: { label: "حاضر", color: C.green, icon: "👷" }, break_start: { label: "استراحة", color: C.orange, icon: "☕" }, break_end: { label: "عودة", color: C.blue, icon: "🔄" }, checkout: { label: "انصراف", color: C.hdr1, icon: "🌙" } };
 
+  // Today summary
+  const todayCheckin = (todayAtt || []).some(r => r.type === "checkin");
+  const todayLate = branch && (todayAtt || []).some(r => r.type === "checkin" && (new Date(r.ts).getHours()*60+new Date(r.ts).getMinutes()) > timeToMin(branch.start)+5);
+  const todayAbsent = !todayCheckin && new Date().getHours() >= (branch ? timeToMin(branch.end)/60 : 17);
+
+  // Export CSV
+  function exportCSV() {
+    var rows = ["التاريخ,النوع,الوقت"];
+    monthAtt.forEach(function(r) {
+      var typeLabel = typeMap[r.type] ? typeMap[r.type].label : r.type;
+      rows.push(r.date + "," + typeLabel + "," + formatTimeStr(r.ts));
+    });
+    var csv = "\uFEFF" + rows.join("\n");
+    var blob = new Blob([csv], { type: "text/csv;charset=utf-8" });
+    var url = URL.createObjectURL(blob);
+    var a = document.createElement("a");
+    a.href = url;
+    a.download = "basma-report-" + thisMonth + ".csv";
+    a.click();
+    URL.revokeObjectURL(url);
+  }
+
   return (
     <div style={{ flex: 1, paddingBottom: 80 }}>
       <div style={S.detailHeader}>
@@ -455,7 +481,19 @@ function ReportPage({ user, allAtt, branch }) {
         <div style={{ width: 60 }} />
       </div>
       <div style={{ padding: "16px 16px 0" }}>
-        <div style={{ display: "flex", justifyContent: "center", marginBottom: 14 }} className="basma-fadein">
+
+        {/* ── ملخص اليوم ── */}
+        <div style={S.card} className="basma-fadein">
+          <div style={S.cardTitle}><span>ملخص اليوم</span><span style={{ fontSize: 11, color: C.sub }}>{todayStr()}</span></div>
+          <div style={S.summaryGrid}>
+            <SummaryItem num={todayCheckin ? 1 : 0} label="حاضر" cls="ok" />
+            <SummaryItem num={todayLate ? 1 : 0} label="متأخر" cls="warn" />
+            <SummaryItem num={todayAbsent ? 1 : 0} label="غائب" cls="bad" />
+            <SummaryItem num={0} label="إجازة" cls="info" />
+          </div>
+        </div>
+
+        <div style={{ display: "flex", justifyContent: "center", marginBottom: 14 }} className="basma-fadein-d1">
           <div style={{ background: "#fff", padding: "8px 18px", borderRadius: 12, fontSize: 12, fontWeight: 700, color: C.blue, boxShadow: "0 2px 8px rgba(0,0,0,.06)" }}>
             {"1 " + monthName + " — " + lastDay + " " + monthName + " ▾"}
           </div>
@@ -494,7 +532,7 @@ function ReportPage({ user, allAtt, branch }) {
           })}
         </div>
 
-        <button style={{ width: "100%", padding: 14, borderRadius: 16, background: "linear-gradient(135deg,"+C.blue+","+C.blueBright+")", color: "#fff", fontSize: 15, fontWeight: 800, border: "none", cursor: "pointer", fontFamily: "'Cairo',sans-serif", marginBottom: 12 }}>
+        <button onClick={exportCSV} style={{ width: "100%", padding: 14, borderRadius: 16, background: "linear-gradient(135deg,"+C.blue+","+C.blueBright+")", color: "#fff", fontSize: 15, fontWeight: 800, border: "none", cursor: "pointer", fontFamily: "'Cairo',sans-serif", marginBottom: 12 }}>
           📊 تصدير التقرير
         </button>
       </div>
@@ -716,6 +754,55 @@ function ChallengeModal({ user, onClose, onPoints }) {
 }
 
 /* ═══════════ SMALL COMPONENTS ═══════════ */
+
+function WorkHoursCard({ todayAtt, now, branch, dayState }) {
+  var checkinRec = todayAtt.find(function(r){ return r.type === "checkin"; });
+  var checkoutRec = todayAtt.find(function(r){ return r.type === "checkout"; });
+  var breakStartRec = todayAtt.find(function(r){ return r.type === "break_start"; });
+  var breakEndRec = todayAtt.find(function(r){ return r.type === "break_end"; });
+
+  if (!checkinRec) return null;
+
+  var checkinTime = new Date(checkinRec.ts);
+  var endTime = checkoutRec ? new Date(checkoutRec.ts) : now;
+  var totalMs = endTime - checkinTime;
+
+  // Subtract break time
+  if (breakStartRec && breakEndRec) {
+    totalMs -= (new Date(breakEndRec.ts) - new Date(breakStartRec.ts));
+  } else if (breakStartRec && !breakEndRec && !checkoutRec) {
+    totalMs -= (now - new Date(breakStartRec.ts));
+  }
+
+  var totalMin = Math.max(0, Math.floor(totalMs / 60000));
+  var hrs = Math.floor(totalMin / 60);
+  var mins = totalMin % 60;
+
+  var expectedMin = branch ? (timeToMin(branch.end) - timeToMin(branch.start) - 30) : 480;
+  var progressPct = Math.min(100, Math.round((totalMin / expectedMin) * 100));
+
+  return (
+    <div style={S.card} className="basma-fadein-d2">
+      <div style={S.cardTitle}><span>ساعات العمل</span><span style={{ fontSize: 11, color: dayState === "after" ? C.green : C.blue, fontWeight: 700 }}>{checkoutRec ? "✓ مكتمل" : "⏱ جاري"}</span></div>
+      <div style={{ display: "flex", alignItems: "center", gap: 14 }}>
+        <div style={{ width: 60, height: 60, borderRadius: 16, background: "linear-gradient(135deg,"+C.blue+"18,"+C.blueBright+"10)", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center" }}>
+          <div style={{ fontSize: 20, fontWeight: 900, fontFamily: "'Cairo',sans-serif", color: C.blue }}>{hrs}</div>
+          <div style={{ fontSize: 8, color: C.sub, fontWeight: 600, marginTop: -2 }}>{":" + String(mins).padStart(2,"0") + " ساعة"}</div>
+        </div>
+        <div style={{ flex: 1 }}>
+          <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 6 }}>
+            <span style={{ fontSize: 11, color: C.sub }}>{"حضور: " + formatTimeStr(checkinRec.ts)}</span>
+            <span style={{ fontSize: 11, color: C.sub }}>{checkoutRec ? "انصراف: " + formatTimeStr(checkoutRec.ts) : "—"}</span>
+          </div>
+          <div style={{ height: 6, borderRadius: 3, background: "#eee", overflow: "hidden" }}>
+            <div style={{ height: "100%", borderRadius: 3, background: "linear-gradient(90deg,"+C.blue+","+C.blueBright+")", width: progressPct + "%", transition: "width 1s ease" }} />
+          </div>
+          <div style={{ fontSize: 9, color: C.sub, marginTop: 4, textAlign: "left", direction: "ltr" }}>{progressPct + "% من الدوام"}</div>
+        </div>
+      </div>
+    </div>
+  );
+}
 
 function SummaryItem({ num, label, cls }) {
   var colors = { ok: C.green, warn: C.orange, bad: C.red, info: C.blue };
