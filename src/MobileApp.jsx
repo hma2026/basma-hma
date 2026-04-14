@@ -32,9 +32,9 @@ const LIGHT = {
   headerBg: "rgba(245,242,237,0.9)",
 };
 const DARK = {
-  bg: "#0A0E1A", card: "#151D30", cardBrd: "rgba(212,149,106,0.12)",
+  bg: "#0A0E1A", card: "#172035", cardBrd: "rgba(212,149,106,0.12)",
   cardSh: "0 2px 12px rgba(0,0,0,0.3)",
-  tx: "#FFFFFF", tx2: "#B0BAD0", txM: "#7B88A5",
+  tx: "#FFFFFF", tx2: "#D4DAE8", txM: "#A0AABF",
   sep: "#1E2640", ac: "#D4956A",
   ok: "#34D399", okLt: "rgba(52,211,153,0.12)",
   warn: "#D4956A", warnLt: "rgba(212,149,106,0.12)",
@@ -49,21 +49,21 @@ const DARK = {
 
 // ═══════ CONSTANTS ═══════
 const APP = "بصمة HMA";
-const VER = "v4.44";
+const VER = "v4.46";
 const CO = "هاني محمد عسيري للإستشارات الهندسية";
 const B = { blue: "#2B5EA7", yellow: "#D4956A", red: "#C0392B", black: "#0A0E1A", blueDk: "#1A2238", blueLt: "#F0EDE8", gold: "#D4956A", diamond: "#8B5CF6" };
 const C = LIGHT; // Default light - components use useTheme().t for dynamic
 const Fn = "'IBM Plex Sans Arabic',-apple-system,'Segoe UI',sans-serif";
 const FL = { position: "absolute", inset: 0, minHeight: "100vh", fontFamily: Fn };
 const PB = { background: "#0A84FF", border: "none", borderRadius: 12, color: "#fff", padding: "13px", fontSize: 17, fontWeight: 600, cursor: "pointer", height: 44 };
-const inp = { width: "100%", padding: "12px 14px", borderRadius: 12, border: "1px solid #E5E5EA", fontSize: 15, fontWeight: 600, color: "#000", outline: "none", fontFamily: Fn, background: "#FFFFFF" };
+const inp = { width: "100%", padding: "12px 14px", borderRadius: 12, fontSize: 15, fontWeight: 600, outline: "none", fontFamily: Fn };
 // Card style helper - components override with theme
 const getCrd = (t) => ({ background: t.card, borderRadius: 14, padding: "16px", border: "1px solid " + t.cardBrd, boxShadow: t.cardSh });
-const crd = { background: "#FFFFFF", borderRadius: 14, padding: "16px", border: "1px solid rgba(0,0,0,0.05)", boxShadow: "0 1px 3px rgba(0,0,0,0.08)" };
+// crd defined per-component with theme
 const BR = { jed: "جدة", riy: "الرياض", ist: "اسطنبول", gaz: "غازي عنتاب" };
 const LEVELS = [
   { name: "عضوية فعّال", badge: "🔹", color: C.ac, min: 0 },
-  { name: "عضوية تميّز", badge: "🥈", color: "#8E8E93", min: 750 },
+  { name: "عضوية تميّز", badge: "🥈", color: t.txM, min: 750 },
   { name: "عضوية نخبة", badge: "🥇", color: "#FF9F0A", min: 1500 },
 ];
 const getLevel = pts => [...LEVELS].reverse().find(l => pts >= l.min) || LEVELS[0];
@@ -447,8 +447,8 @@ function FaceCamera({ onOk, onNo, empId }) {
         {/* Guide ring */}
         <div style={{ position: "absolute", inset: -6, borderRadius: "50%", border: "2px dashed rgba(255,255,255,.08)" }} />
 
-        <div style={{ width: 260, height: 260, borderRadius: "50%", overflow: "hidden", border: "4px solid " + borderColor, background: "#111", transition: "border-color .4s", position: "relative" }}>
-          {(st === "loading_models" || st === "model_error" || st === "cam_error") && <div style={{ position: "absolute", inset: 0, borderRadius: "50%", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 8, background: "#111", zIndex: 2 }}>
+        <div style={{ width: 260, height: 260, borderRadius: "50%", overflow: "hidden", border: "4px solid " + borderColor, background: t.bg, transition: "border-color .4s", position: "relative" }}>
+          {(st === "loading_models" || st === "model_error" || st === "cam_error") && <div style={{ position: "absolute", inset: 0, borderRadius: "50%", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 8, background: t.bg, zIndex: 2 }}>
             {st === "loading_models" && <div style={{ width: 32, height: 32, border: "3px solid rgba(255,255,255,.1)", borderTopColor: B.blue, borderRadius: "50%", animation: "spin .8s linear infinite" }} />}
             {st === "model_error" && <span style={{ fontSize: 36 }}>⚠️</span>}
             {st === "cam_error" && <span style={{ fontSize: 36 }}>📷</span>}
@@ -475,7 +475,7 @@ function FaceCamera({ onOk, onNo, empId }) {
 
       {/* Action buttons */}
       <div style={{ display: "flex", gap: 10, marginTop: 16 }}>
-        {st === "ready" && <button onClick={attempts >= MAX_ATTEMPTS ? undefined : snap} disabled={attempts >= MAX_ATTEMPTS} style={{ padding: "12px 32px", borderRadius: 50, background: attempts >= MAX_ATTEMPTS ? "#555" : isLive ? C.ok : B.blue, color: "#fff", fontSize: 15, fontWeight: 700, border: "none", cursor: attempts >= MAX_ATTEMPTS ? "not-allowed" : "pointer", opacity: attempts >= MAX_ATTEMPTS ? 0.5 : 1, transition: "background .3s" }}>{isLive ? "التقاط ✓" : "التقاط"}</button>}
+        {st === "ready" && <button onClick={attempts >= MAX_ATTEMPTS ? undefined : snap} disabled={attempts >= MAX_ATTEMPTS} style={{ padding: "12px 32px", borderRadius: 50, background: attempts >= MAX_ATTEMPTS ? t.txM : isLive ? C.ok : B.blue, color: "#fff", fontSize: 15, fontWeight: 700, border: "none", cursor: attempts >= MAX_ATTEMPTS ? "not-allowed" : "pointer", opacity: attempts >= MAX_ATTEMPTS ? 0.5 : 1, transition: "background .3s" }}>{isLive ? "التقاط ✓" : "التقاط"}</button>}
         {st === "snapped" && <>
           <button onClick={confirm} style={{ padding: "12px 28px", borderRadius: 50, background: C.ok, color: "#fff", fontSize: 15, fontWeight: 700, border: "none", cursor: "pointer" }}>تأكيد</button>
           <button onClick={function() { setPhoto(null); setSt("ready"); setErr(""); }} style={{ padding: "12px 28px", borderRadius: 50, background: "rgba(255,255,255,.1)", color: "#fff", fontSize: 15, fontWeight: 700, border: "none", cursor: "pointer" }}>إعادة</button>
@@ -646,7 +646,7 @@ function Reg({ onDone }) {
   };
   if (showCam) return <FaceCamera empId={found.id} onOk={() => onDone(found)} onNo={() => setShowCam(false)} />;
   return (<div style={{ ...FL, background: t.card, display: "flex", flexDirection: "column" }}><Stripe h={5} /><div style={{ flex: 1, padding: 24, display: "flex", flexDirection: "column", justifyContent: "center" }}>
-    {st === 0 && <div style={{ textAlign: "center" }}><Logo s={70} /><div style={{ fontSize: 11, color: "#000", fontWeight: 600, marginTop: 10 }}>مكتب هاني محمد عسيري للاستشارات الهندسية</div><div style={{ fontSize: 20, fontWeight: 800, color: B.blue, marginTop: 6 }}>أهلاً بك في {APP}</div><div style={{ fontSize: 12, color: t.txM, marginTop: 6 }}>أدخل الرقم الوظيفي</div><input value={eid} onChange={e => { setEid(e.target.value.toUpperCase()); setErr(""); }} placeholder="E001" style={{ ...inp, textAlign: "center", letterSpacing: 3, fontSize: 20, marginTop: 16 }} onKeyDown={e => e.key === "Enter" && go()} />{err && <div style={{ color: C.bad, fontSize: 12, marginTop: 8, fontWeight: 600 }}>{err}</div>}<button onClick={go} style={{ ...PB, width: "100%", marginTop: 18 }}>التالي</button><div style={{ fontSize: 12, color: t.txM, marginTop: 14 }}>{new Date().toLocaleDateString("ar-SA", { weekday: "long", year: "numeric", month: "long", day: "numeric" })}</div><div style={{ fontSize: 9, color: "rgba(0,0,0,.15)", marginTop: 20 }}>{VER}</div></div>}
+    {st === 0 && <div style={{ textAlign: "center" }}><Logo s={70} /><div style={{ fontSize: 11, color: t.tx, fontWeight: 600, marginTop: 10 }}>مكتب هاني محمد عسيري للاستشارات الهندسية</div><div style={{ fontSize: 20, fontWeight: 800, color: B.blue, marginTop: 6 }}>أهلاً بك في {APP}</div><div style={{ fontSize: 12, color: t.txM, marginTop: 6 }}>أدخل الرقم الوظيفي</div><input value={eid} onChange={e => { setEid(e.target.value.toUpperCase()); setErr(""); }} placeholder="E001" style={{ ...inp, textAlign: "center", letterSpacing: 3, fontSize: 20, marginTop: 16 }} onKeyDown={e => e.key === "Enter" && go()} />{err && <div style={{ color: C.bad, fontSize: 12, marginTop: 8, fontWeight: 600 }}>{err}</div>}<button onClick={go} style={{ ...PB, width: "100%", marginTop: 18 }}>التالي</button><div style={{ fontSize: 12, color: t.txM, marginTop: 14 }}>{new Date().toLocaleDateString("ar-SA", { weekday: "long", year: "numeric", month: "long", day: "numeric" })}</div><div style={{ fontSize: 9, color: t.txM, marginTop: 20 }}>{VER}</div></div>}
     {st === 1 && found && <div style={{ textAlign: "center" }}><div style={{ background: t.okLt, borderRadius: 12, padding: 12, marginBottom: 16 }}><div style={{ fontSize: 14, fontWeight: 700, color: C.ok }}>✓ {found.name}</div><div style={{ fontSize: 11, color: t.tx2, marginTop: 2 }}>{found.role} — {BR[found.branch]} — {EMP_TYPES[found.type] || "🏢 مكتبي"}</div></div><div style={{ fontSize: 28 }}>🔑</div><div style={{ fontSize: 12, color: t.txM, marginTop: 6 }}>رمز التفعيل</div><input value={code} onChange={e => { setCode(e.target.value); setErr(""); }} placeholder="6 أرقام" maxLength={6} style={{ ...inp, textAlign: "center", letterSpacing: 6, fontSize: 22, marginTop: 12 }} onKeyDown={e => e.key === "Enter" && doLogin()} />{err && <div style={{ color: C.bad, fontSize: 12, marginTop: 8, fontWeight: 600 }}>{err}</div>}<button onClick={doLogin} style={{ ...PB, width: "100%", marginTop: 18 }}>دخول</button><button onClick={() => { setSt(0); setFound(null); setCode(""); setErr(""); }} style={{ marginTop: 10, background: "none", border: "none", color: t.txM, fontSize: 12, cursor: "pointer" }}>← رجوع</button></div>}
   </div></div>);
 }
@@ -1201,6 +1201,7 @@ function FullApp({ emp, onBack, onLogout }) {
       <Logo s={22} />
     </div>
 
+    <style>{`input,select,textarea{background:var(--inp-bg);color:var(--inp-tx);border:1px solid var(--inp-brd)!important}:root{--inp-bg:${t.inp};--inp-tx:${t.tx};--inp-brd:${t.inpBrd}}`}</style>
     <div style={{ flex: 1, overflowY: "auto", padding: "12px 14px 80px", WebkitOverflowScrolling: "touch" }}>
 
       {/* ADMIN TAB */}
@@ -2179,19 +2180,19 @@ function ProfileTab({ emp, emps, level, onLogout, loadData }) {
         <div style={{ fontSize: 13, fontWeight: 600, color: t.tx2, marginBottom: 10 }}>الإعدادات</div>
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "10px 0", borderBottom: "1px solid " + t.sep }}>
           <span style={{ fontSize: 14, color: t.tx }}>الوضع الليلي</span>
-          <button onClick={toggleTheme} style={{ width: 50, height: 28, borderRadius: 14, background: dk ? "#30D158" : "#E5E5EA", border: "none", cursor: "pointer", position: "relative" }}>
+          <button onClick={toggleTheme} style={{ width: 50, height: 28, borderRadius: 14, background: dk ? "t.ok" : "t.track", border: "none", cursor: "pointer", position: "relative" }}>
             <div style={{ width: 22, height: 22, borderRadius: 11, background: "#fff", position: "absolute", top: 3, transition: "all .2s", ...(dk ? { left: 25 } : { left: 3 }), boxShadow: "0 1px 3px rgba(0,0,0,.2)" }} />
           </button>
         </div>
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "10px 0", borderBottom: "1px solid " + t.sep }}>
           <div><span style={{ fontSize: 14, color: t.tx }}>📞 تذكير بالحضور</span><div style={{ fontSize: 9, color: t.txM }}>اتصال تذكيري وقت الحضور (اختياري)</div></div>
-          <button onClick={async function() { var v = !(JSON.parse(localStorage.getItem("basma_prefs_" + emp.id) || "{}").callRemindIn); var prefs = JSON.parse(localStorage.getItem("basma_prefs_" + emp.id) || "{}"); prefs.callRemindIn = v; localStorage.setItem("basma_prefs_" + emp.id, JSON.stringify(prefs)); api("settings", "GET").then(function(s) { var ep = (s?.empPrefs) || {}; ep[emp.id] = prefs; api("settings", "PUT", Object.assign({}, s || {}, { empPrefs: ep })); }); loadData(); }} style={{ width: 50, height: 28, borderRadius: 14, background: JSON.parse(localStorage.getItem("basma_prefs_" + emp.id) || "{}").callRemindIn ? "#30D158" : "#E5E5EA", border: "none", cursor: "pointer", position: "relative" }}>
+          <button onClick={async function() { var v = !(JSON.parse(localStorage.getItem("basma_prefs_" + emp.id) || "{}").callRemindIn); var prefs = JSON.parse(localStorage.getItem("basma_prefs_" + emp.id) || "{}"); prefs.callRemindIn = v; localStorage.setItem("basma_prefs_" + emp.id, JSON.stringify(prefs)); api("settings", "GET").then(function(s) { var ep = (s?.empPrefs) || {}; ep[emp.id] = prefs; api("settings", "PUT", Object.assign({}, s || {}, { empPrefs: ep })); }); loadData(); }} style={{ width: 50, height: 28, borderRadius: 14, background: JSON.parse(localStorage.getItem("basma_prefs_" + emp.id) || "{}").callRemindIn ? "t.ok" : "t.track", border: "none", cursor: "pointer", position: "relative" }}>
             <div style={{ width: 22, height: 22, borderRadius: 11, background: "#fff", position: "absolute", top: 3, transition: "all .2s", ...(JSON.parse(localStorage.getItem("basma_prefs_" + emp.id) || "{}").callRemindIn ? { left: 25 } : { left: 3 }), boxShadow: "0 1px 3px rgba(0,0,0,.2)" }} />
           </button>
         </div>
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "10px 0", borderBottom: "1px solid " + t.sep }}>
           <div><span style={{ fontSize: 14, color: t.tx }}>📞 تذكير بالانصراف</span><div style={{ fontSize: 9, color: t.txM }}>اتصال تذكيري وقت الانصراف (اختياري)</div></div>
-          <button onClick={async function() { var v = !(JSON.parse(localStorage.getItem("basma_prefs_" + emp.id) || "{}").callRemindOut); var prefs = JSON.parse(localStorage.getItem("basma_prefs_" + emp.id) || "{}"); prefs.callRemindOut = v; localStorage.setItem("basma_prefs_" + emp.id, JSON.stringify(prefs)); api("settings", "GET").then(function(s) { var ep = (s?.empPrefs) || {}; ep[emp.id] = prefs; api("settings", "PUT", Object.assign({}, s || {}, { empPrefs: ep })); }); loadData(); }} style={{ width: 50, height: 28, borderRadius: 14, background: JSON.parse(localStorage.getItem("basma_prefs_" + emp.id) || "{}").callRemindOut ? "#30D158" : "#E5E5EA", border: "none", cursor: "pointer", position: "relative" }}>
+          <button onClick={async function() { var v = !(JSON.parse(localStorage.getItem("basma_prefs_" + emp.id) || "{}").callRemindOut); var prefs = JSON.parse(localStorage.getItem("basma_prefs_" + emp.id) || "{}"); prefs.callRemindOut = v; localStorage.setItem("basma_prefs_" + emp.id, JSON.stringify(prefs)); api("settings", "GET").then(function(s) { var ep = (s?.empPrefs) || {}; ep[emp.id] = prefs; api("settings", "PUT", Object.assign({}, s || {}, { empPrefs: ep })); }); loadData(); }} style={{ width: 50, height: 28, borderRadius: 14, background: JSON.parse(localStorage.getItem("basma_prefs_" + emp.id) || "{}").callRemindOut ? "t.ok" : "t.track", border: "none", cursor: "pointer", position: "relative" }}>
             <div style={{ width: 22, height: 22, borderRadius: 11, background: "#fff", position: "absolute", top: 3, transition: "all .2s", ...(JSON.parse(localStorage.getItem("basma_prefs_" + emp.id) || "{}").callRemindOut ? { left: 25 } : { left: 3 }), boxShadow: "0 1px 3px rgba(0,0,0,.2)" }} />
           </button>
         </div>
@@ -2316,7 +2317,7 @@ function ProfileTab({ emp, emps, level, onLogout, loadData }) {
       {deps.length === 0 && !showAddDep && <div style={{ ...crd, textAlign: "center", color: t.txM, fontSize: 11 }}>لا يوجد مرافقين مسجّلين</div>}
       {deps.map(d => (
         <div key={d.id} style={{ ...crd, marginBottom: 6, display: "flex", alignItems: "center", gap: 8 }}>
-          <div style={{ width: 32, height: 32, borderRadius: "50%", background: "#F0F4F8", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 14 }}>{d.relation === "زوج" || d.relation === "زوجة" ? "💑" : d.relation === "أب" || d.relation === "أم" ? "👴" : "👶"}</div>
+          <div style={{ width: 32, height: 32, borderRadius: "50%", background: t.cardAlt || "#F0F4F8", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 14 }}>{d.relation === "زوج" || d.relation === "زوجة" ? "💑" : d.relation === "أب" || d.relation === "أم" ? "👴" : "👶"}</div>
           <div style={{ flex: 1 }}>
             <div style={{ fontSize: 12, fontWeight: 700 }}>{d.name}</div>
             <div style={{ fontSize: 9, color: t.txM }}>{d.relation} · {d.dob}</div>
