@@ -132,7 +132,7 @@ function UpdateScreen() {
       </div>
 
       <button onClick={() => { window.location.hash = ""; window.location.search = ""; }} style={{ marginTop: 20, padding: "10px 24px", borderRadius: 12, background: "#FFFFFF", border: "1px solid #E5E5EA", color: "#0A84FF", fontSize: 15, fontWeight: 600, cursor: "pointer" }}>رجوع للتطبيق</button>
-      <div style={{ marginTop: 12, fontSize: 11, color: "#8E8E93" }}>v4.47 · basma-hma.vercel.app</div>
+      <div style={{ marginTop: 12, fontSize: 11, color: "#8E8E93" }}>v4.48 · basma-hma.vercel.app</div>
     </div>
   );
 }

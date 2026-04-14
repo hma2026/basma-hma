@@ -51,7 +51,7 @@ const DARK = {
 
 // ═══════ CONSTANTS ═══════
 const APP = "بصمة HMA";
-const VER = "v4.47";
+const VER = "v4.48";
 const CO = "هاني محمد عسيري للإستشارات الهندسية";
 const B = { blue: "#2B5EA7", yellow: "#D4956A", red: "#C0392B", black: "#0A0E1A", blueDk: "#1A2238", blueLt: "#F0EDE8", gold: "#D4956A", diamond: "#8B5CF6" };
 const C = LIGHT; // Default light - components use useTheme().t for dynamic
@@ -65,7 +65,7 @@ const getCrd = (t) => ({ background: t.card, borderRadius: 14, padding: "16px", 
 const BR = { jed: "جدة", riy: "الرياض", ist: "اسطنبول", gaz: "غازي عنتاب" };
 const LEVELS = [
   { name: "عضوية فعّال", badge: "🔹", color: C.ac, min: 0 },
-  { name: "عضوية تميّز", badge: "🥈", color: t.txM, min: 750 },
+  { name: "عضوية تميّز", badge: "🥈", color: "#8B93A7", min: 750 },
   { name: "عضوية نخبة", badge: "🥇", color: "#FF9F0A", min: 1500 },
 ];
 const getLevel = pts => [...LEVELS].reverse().find(l => pts >= l.min) || LEVELS[0];
