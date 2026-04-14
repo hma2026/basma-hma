@@ -6,7 +6,7 @@ import React, { useState, useEffect, useRef, useCallback } from "react";
    + Face Verify + Challenge + Toasts
    ═══════════════════════════════════════════ */
 
-const VER = "4.62";
+const VER = "4.70";
 
 /* ── Colors ── */
 const LIGHT = {
@@ -92,23 +92,50 @@ function timeToMin(str) {
   return h * 60 + m;
 }
 
+/* ── Membership Levels (المتفق عليه) ── */
+const MEMBERSHIP = [
+  { id: 0, name: "عضوية فعّال", icon: "🔹", color: "#2b5ea7", bg: "#2b5ea718", min: 0 },
+  { id: 1, name: "عضوية تميّز", icon: "🥈", color: "#6B7280", bg: "#F3F4F6", min: 750 },
+  { id: 2, name: "عضوية نخبة", icon: "🥇", color: "#D4A017", bg: "#FFF3C4", min: 1500 },
+];
+
 function memberBadge(points) {
-  if (points >= 1000) return {
-    icon: "🥇", label: "تميّز", color: C.gold, tier: 3,
-    next: null, nextLabel: null, progress: 100,
-    perks: ["تجاوز بصمة الوجه", "أولوية الإجازات", "تسامح 15 دقيقة تأخر", "بدون مخالفة خارج النطاق", "شارة التميّز الذهبية"]
-  };
-  if (points >= 500) return {
-    icon: "🥈", label: "فضي", color: "#c0c0c0", tier: 2,
-    next: 1000, nextLabel: "تميّز 🥇", progress: Math.round(((points - 500) / 500) * 100),
-    perks: ["تجاوز بصمة الوجه", "أولوية الإجازات", "شارة فضية"]
-  };
+  var lvl = MEMBERSHIP[0];
+  for (var i = MEMBERSHIP.length - 1; i >= 0; i--) {
+    if (points >= MEMBERSHIP[i].min) { lvl = MEMBERSHIP[i]; break; }
+  }
+  var nextLvl = MEMBERSHIP[lvl.id + 1] || null;
+  var progress = nextLvl ? Math.round(((points - lvl.min) / (nextLvl.min - lvl.min)) * 100) : 100;
   return {
-    icon: "🔹", label: "أساسي", color: "#80b4f0", tier: 1,
-    next: 500, nextLabel: "فضي 🥈", progress: Math.round((points / 500) * 100),
-    perks: ["الميزات الأساسية"]
+    icon: lvl.icon, label: lvl.name, color: lvl.color, bg: lvl.bg, tier: lvl.id,
+    next: nextLvl ? nextLvl.min : null,
+    nextLabel: nextLvl ? nextLvl.name + " " + nextLvl.icon : null,
+    progress: Math.min(100, progress),
+    remaining: nextLvl ? nextLvl.min - points : 0,
   };
 }
+
+/* ── Points Rules (نظام النقاط المتفق عليه) ── */
+const POINTS = {
+  checkin_ontime: 10,      // بصمة بوقتها
+  checkin_early: 10,       // بونص بصمة مبكرة (أول 15 ثانية)
+  challenge_correct: 25,   // تحدي الصباح — إجابة صحيحة
+  adhkar: 5,               // أذكار رمضان
+  profile_complete: 50,    // اكتمال الملف الشخصي (مرة واحدة)
+  app_daily_use: 2,        // استخدام التطبيق يومياً
+};
+
+/* ── Points Criteria Weights (أوزان معايير العضوية) ── */
+const CRITERIA_WEIGHTS = {
+  attendance: 40,   // حضور وانصراف
+  challenge: 15,    // تحدي الصباح والتفاعل
+  profile: 15,      // اكتمال الملف الشخصي
+  apps: 15,         // استخدام تطبيقات المكتب (كوادر + بصمة)
+  ai: 15,           // الذكاء الاصطناعي (مستقبلاً)
+};
+
+/* ── Membership Note ── */
+const MEMBERSHIP_NOTE = "هذه العضوية مقياس ذاتي تلقائي لانضباط الموظف والتزامه باستخدام وسائل وتطبيقات المكتب — وليست مقياساً للأداء الوظيفي السنوي.";
 
 function haversine(lat1, lon1, lat2, lon2) {
   const R = 6371e3, toRad = x => x * Math.PI / 180;
@@ -117,17 +144,73 @@ function haversine(lat1, lon1, lat2, lon2) {
   return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
 }
 
-/* ── Challenge Questions ── */
+/* ── Challenge Questions (5 أنواع متفق عليها) ── */
 const CHALLENGES = [
-  { q: "ما هي أقصى مدة للخرسانة قبل الصب؟", opts: ["30 دقيقة","60 دقيقة","90 دقيقة","120 دقيقة"], correct: 2 },
-  { q: "ما هو الحد الأدنى لغطاء الخرسانة للأعمدة؟", opts: ["25 مم","40 مم","50 مم","75 مم"], correct: 1 },
-  { q: "ما هو معامل الأمان المعتمد للأساسات؟", opts: ["1.5","2.0","2.5","3.0"], correct: 3 },
-  { q: "كم يوم يلزم لمعالجة الخرسانة بالماء؟", opts: ["3 أيام","5 أيام","7 أيام","14 يوم"], correct: 2 },
-  { q: "ما هي نسبة الماء إلى الأسمنت المثالية؟", opts: ["0.30","0.40","0.45","0.55"], correct: 2 },
-  { q: "أي نوع تربة يحتاج أكبر عمق حفر؟", opts: ["صخرية","رملية","طينية","مختلطة"], correct: 2 },
-  { q: "ما الحد الأقصى لانحراف العمود الرأسي؟", opts: ["L/200","L/300","L/500","L/1000"], correct: 2 },
-  { q: "متى يتم فك شدات الأسقف؟", opts: ["7 أيام","14 يوم","21 يوم","28 يوم"], correct: 2 },
+  { q: "أكمل: سبحان الله وبحمده ...", opts: ["سبحان الله العظيم","الحمد لله رب العالمين","لا إله إلا الله"], correct: 0, type: "ذكر" },
+  { q: "دعاء الصباح: اللهم بك أصبحنا وبك ...", opts: ["أمسينا","حيينا","توكلنا"], correct: 0, type: "ذكر" },
+  { q: "ما وحدة قياس قوة الخرسانة؟", opts: ["نيوتن","ميجا باسكال","كيلو جرام"], correct: 1, type: "هندسي" },
+  { q: "ما هو الحد الأدنى لغطاء الخرسانة للأعمدة؟", opts: ["25 مم","40 مم","75 مم"], correct: 1, type: "هندسي" },
+  { q: "كم يوم يلزم لمعالجة الخرسانة بالماء؟", opts: ["3 أيام","7 أيام","14 يوم"], correct: 1, type: "هندسي" },
+  { q: "ما الشيء الذي يمشي بلا أرجل؟", opts: ["الماء","الوقت","الهواء"], correct: 1, type: "لغز" },
+  { q: "كم عدد أركان الإسلام؟", opts: ["ثلاثة","خمسة","سبعة"], correct: 1, type: "سؤال" },
+  { q: "كم ركعة صلاة التراويح؟", opts: ["8 أو 20","12","6"], correct: 0, type: "معلومة" },
+  { q: "ما هي نسبة الماء إلى الأسمنت المثالية؟", opts: ["0.30","0.45","0.60"], correct: 1, type: "هندسي" },
+  { q: "ما أول شي يُراجع عند استلام موقع جديد؟", opts: ["المخططات","الميزانية","المعدات"], correct: 0, type: "هندسي" },
 ];
+
+/* ── Mascot Messages ── */
+const MASCOT = {
+  idle: "صباح الخير! يوم عمل موفّق ☀️",
+  challenge: "حان وقت تحدي الصباح! ⚡",
+  correct: "إجابة صحيحة! ممتاز 🎉",
+  wrong: "حاول مرة ثانية غداً 💪",
+  checkin: "وقت تسجيل الحضور! 📍",
+  scanning: "انظر إلى الكاميرا... 📸",
+  done: "تم التسجيل بنجاح! ✓",
+  streak: "استمر! أنت في سلسلة رائعة 🔥",
+  offday: "يوم إجازة — استمتع بوقتك 🏖️",
+};
+
+/* ── Adhkar (Ramadan) ── */
+const ADHKAR = [
+  "سبحان الله وبحمده، سبحان الله العظيم",
+  "لا حول ولا قوة إلا بالله",
+  "اللهم إنك عفو تحب العفو فاعفُ عني",
+  "رب اغفر لي وتب عليّ إنك أنت التواب الرحيم",
+  "اللهم بارك لنا في رمضان وبلّغنا ليلة القدر",
+];
+
+/* ── Coupons (امتيازات العضوية) ── */
+const COUPONS = [
+  { id: 1, brand: "مطعم البيك", discount: "خصم 15%", icon: "🍔", pts: 50, cat: "مطاعم", minTier: 0 },
+  { id: 2, brand: "كافيه سبشالتي", discount: "قهوة مجانية", icon: "☕", pts: 15, cat: "مطاعم", minTier: 0 },
+  { id: 3, brand: "غسيل سيارات بريق", discount: "غسلة مجانية", icon: "🚗", pts: 30, cat: "خدمات", minTier: 0 },
+  { id: 4, brand: "مكتبة جرير", discount: "خصم 20%", icon: "📚", pts: 80, cat: "تسوق", minTier: 0 },
+  { id: 5, brand: "صالة فيتنس تايم", discount: "شهر مجاني", icon: "💪", pts: 200, cat: "رياضة", minTier: 1 },
+  { id: 6, brand: "مركز صيانة", discount: "خصم 30%", icon: "📱", pts: 60, cat: "خدمات", minTier: 1 },
+  { id: 7, brand: "مطعم الرومانسية", discount: "وجبة عائلية", icon: "🍽", pts: 120, cat: "مطاعم", minTier: 1 },
+  { id: 8, brand: "فندق إقامة VIP", discount: "ليلة مجانية", icon: "🏨", pts: 500, cat: "سفر", minTier: 2 },
+];
+
+const RAMADAN_COUPONS = [
+  { id: 101, brand: "بوفيه إفطار فندقي", discount: "خصم 40%", icon: "🌙", pts: 80, cat: "رمضان", minTier: 0 },
+  { id: 102, brand: "تمور العجوة", discount: "علبة هدية", icon: "🌴", pts: 40, cat: "رمضان", minTier: 0 },
+  { id: 103, brand: "قهوة عربية فاخرة", discount: "علبة مجانية", icon: "☕", pts: 60, cat: "رمضان", minTier: 1 },
+];
+
+/* ── GPS Tracking Config ── */
+const GPS_TRACK_INTERVAL = 300000; // كل 5 دقائق
+const GPS_OFFLINE_KEY = "basma_gps_queue"; // مفتاح التخزين المحلي للمواقع بدون نت
+
+function queueGpsOffline(record) {
+  try {
+    var queue = JSON.parse(localStorage.getItem(GPS_OFFLINE_KEY) || "[]");
+    queue.push(record);
+    // Keep max 288 records (24 hours × 12 per hour)
+    if (queue.length > 288) queue = queue.slice(-288);
+    localStorage.setItem(GPS_OFFLINE_KEY, JSON.stringify(queue));
+  } catch(e) { /**/ }
+}
 
 
 /* ═══════════ ERROR BOUNDARY ═══════════ */
@@ -261,6 +344,52 @@ function MobileAppInner() {
     return () => clearInterval(t);
   }, [user]);
 
+  // GPS tracking every 5 minutes + offline queue
+  useEffect(() => {
+    if (!user || !navigator.geolocation) return;
+    function trackGps() {
+      navigator.geolocation.getCurrentPosition(function(pos) {
+        var record = { empId: user.id, lat: pos.coords.latitude, lng: pos.coords.longitude, ts: new Date().toISOString(), accuracy: pos.coords.accuracy };
+        if (navigator.onLine) {
+          // Send directly
+          api("gps_log", { method: "POST", body: record }).catch(function(){
+            // If send fails, queue locally
+            queueGpsOffline(record);
+          });
+        } else {
+          // Store locally for later upload
+          queueGpsOffline(record);
+        }
+      }, function(){}, { enableHighAccuracy: true, timeout: 15000 });
+    }
+    // Track immediately + every 5 minutes
+    trackGps();
+    var t = setInterval(trackGps, GPS_TRACK_INTERVAL);
+    return function() { clearInterval(t); };
+  }, [user]);
+
+  // Sync offline GPS queue when back online
+  useEffect(() => {
+    function syncGpsQueue() {
+      try {
+        var queue = JSON.parse(localStorage.getItem(GPS_OFFLINE_KEY) || "[]");
+        if (queue.length === 0) return;
+        // Send all queued records
+        var remaining = [];
+        queue.forEach(function(record) {
+          api("gps_log", { method: "POST", body: record }).catch(function() {
+            remaining.push(record);
+          });
+        });
+        // Keep failed ones
+        setTimeout(function() {
+          localStorage.setItem(GPS_OFFLINE_KEY, JSON.stringify(remaining));
+        }, 5000);
+      } catch(e) { /**/ }
+    }
+    if (online && user) syncGpsQueue();
+  }, [online, user]);
+
   async function loadData(emp) {
     try {
       const branches = await api("branches");
@@ -334,33 +463,73 @@ function MobileAppInner() {
     if (!user) return;
     setLoading(true);
     try {
-      // Geofence check — Gold members (tier 3) exempt from violations
-      var outsideRange = branch && gpsDist !== null && gpsDist > (branch.radius || 150);
       var badge = memberBadge(user.points || 0);
-      if (outsideRange && (type === "checkin" || type === "checkout") && badge.tier < 3) {
-        try {
-          await api("violations", { method: "POST", body: { empId: user.id, type: "geofence", details: "تسجيل من خارج النطاق (" + gpsDist + " م)", date: todayStr() } });
-        } catch(e) { /**/ }
+      var outsideRange = branch && gpsDist !== null && gpsDist > (branch.radius || 150);
+
+      // Geofence violation — عضوية نخبة معفاة
+      if (outsideRange && (type === "checkin" || type === "checkout") && badge.tier < 2) {
+        try { await api("violations", { method: "POST", body: { empId: user.id, type: "geofence", details: "تسجيل من خارج النطاق (" + gpsDist + " م)", date: todayStr() } }); } catch(e) { /**/ }
       }
 
-      const body = { empId: user.id, type, lat: gps?.lat, lng: gps?.lng, facePhoto };
-      const r = await api("checkin", { method: "POST", body });
+      var checkinBody = { empId: user.id, type: type, lat: gps ? gps.lat : null, lng: gps ? gps.lng : null, facePhoto: facePhoto };
+
+      // Offline support — تخزين محلي + رفع لاحق
+      if (!navigator.onLine) {
+        var offlineRec = { ...checkinBody, ts: new Date().toISOString(), date: todayStr(), id: "OFF_" + Date.now(), offline: true };
+        var offQ = JSON.parse(localStorage.getItem("basma_checkin_queue") || "[]");
+        offQ.push(offlineRec);
+        localStorage.setItem("basma_checkin_queue", JSON.stringify(offQ));
+        setTodayAtt(function(prev) { return [].concat(prev, [offlineRec]); });
+        showToast("📴 تم الحفظ محلياً — سيُرفع عند عودة الاتصال");
+        if (navigator.vibrate) navigator.vibrate([100, 50, 100]);
+        setLoading(false);
+        return;
+      }
+
+      var r = await api("checkin", { method: "POST", body: checkinBody });
       if (r.ok) {
-        var newAtt = [...todayAtt, r.record];
-        setTodayAtt(newAtt);
-        const labels = { checkin: "تم تسجيل الحضور ✓", break_start: "بداية الاستراحة ☕", break_end: "تم تسجيل العودة 🔄", checkout: "تم تسجيل الانصراف 🌙" };
+        setTodayAtt(function(prev) { return [].concat(prev, [r.record]); });
+        var labels = { checkin: MASCOT.done, break_start: "بداية الاستراحة ☕", break_end: "تم تسجيل العودة 🔄", checkout: "تم تسجيل الانصراف 🌙" };
         showToast(labels[type] || "تم التسجيل ✓");
         if (navigator.vibrate) navigator.vibrate([100, 50, 100]);
-        if (outsideRange && badge.tier < 3) setTimeout(function(){ showToast("⚠️ تم التسجيل من خارج نطاق العمل", "warning"); }, 3200);
-        const emps = await api("employees");
-        const me = emps.find(e => e.id === user.id);
+        if (outsideRange && badge.tier < 2) setTimeout(function(){ showToast("⚠️ تم التسجيل من خارج نطاق العمل", "warning"); }, 3200);
+
+        // Bonus points — بصمة مبكرة (أول 15 ثانية من بداية الدوام)
+        if (type === "checkin" && branch) {
+          var startMin = timeToMin(branch.start);
+          var nowMin = now.getHours() * 60 + now.getMinutes();
+          var diff = nowMin - startMin;
+          if (diff >= 0 && diff * 60 + now.getSeconds() <= 15) {
+            showToast("🎯 بونص بصمة مبكرة! +" + POINTS.checkin_early + " نقطة", "success");
+          }
+        }
+
+        // Refresh employee data
+        var emps = await api("employees");
+        var me = emps.find(function(e) { return e.id === user.id; });
         if (me) { setUser(me); localStorage.setItem("basma_user", JSON.stringify(me)); }
-        // Show daily summary after checkout
+
         if (type === "checkout") setTimeout(function(){ setDaySummary(true); }, 1500);
       } else { showToast("حدث خطأ في التسجيل", "error"); }
-    } catch { showToast("خطأ في الاتصال", "error"); }
+    } catch(e) { showToast("خطأ في الاتصال — تم الحفظ محلياً", "error"); }
     finally { setLoading(false); }
   }
+
+  // Sync offline checkin queue when back online
+  useEffect(function() {
+    if (!online || !user) return;
+    var queue = JSON.parse(localStorage.getItem("basma_checkin_queue") || "[]");
+    if (queue.length === 0) return;
+    var synced = 0;
+    queue.forEach(function(rec) {
+      api("checkin", { method: "POST", body: rec }).then(function() { synced++; }).catch(function(){});
+    });
+    localStorage.setItem("basma_checkin_queue", "[]");
+    setTimeout(function() {
+      if (synced > 0) showToast("☁️ تم رفع " + synced + " بصمة محفوظة", "success");
+      loadData(user);
+    }, 3000);
+  }, [online]);
 
   function logout() {
     setUser(null); setBranch(null); setTodayAtt([]); setAllAtt([]);
@@ -1515,42 +1684,75 @@ function ToggleRow({ label, storeKey, border }) {
 
 function MembershipCard({ points }) {
   var badge = memberBadge(points);
-  var tierColors = { 1: C.blue, 2: "#c0c0c0", 3: C.gold };
-  var tierBg = { 1: C.blue + "12", 2: "#c0c0c018", 3: C.gold + "18" };
-  var tc = tierColors[badge.tier] || C.blue;
+  var tc = badge.color;
+  var availableCoupons = COUPONS.filter(function(c){ return c.minTier <= badge.tier; }).length;
 
   return (
-    <div style={{ ...S.card, background: tierBg[badge.tier] || C.card, border: "1.5px solid " + tc + "30" }} className="basma-fadein-d1">
-      <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 12 }}>
-        <div style={{ width: 48, height: 48, borderRadius: 16, background: tc + "20", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 28 }}>{badge.icon}</div>
-        <div style={{ flex: 1 }}>
-          <div style={{ fontSize: 16, fontWeight: 900, fontFamily: "'Cairo',sans-serif", color: tc }}>{"عضوية " + badge.label}</div>
-          <div style={{ fontSize: 11, color: C.sub }}>{"⭐ " + points + " نقطة"}</div>
+    <div style={{ marginBottom: 12 }}>
+      {/* Main badge card */}
+      <div style={{ ...S.card, background: badge.bg, border: "1.5px solid " + tc + "30", marginBottom: 8 }} className="basma-fadein-d1">
+        <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 12 }}>
+          <div style={{ width: 52, height: 52, borderRadius: 18, background: tc + "20", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 30 }}>{badge.icon}</div>
+          <div style={{ flex: 1 }}>
+            <div style={{ fontSize: 16, fontWeight: 900, fontFamily: "'Cairo',sans-serif", color: tc }}>{badge.label}</div>
+            <div style={{ fontSize: 11, color: C.sub }}>{"⭐ " + points + " نقطة"}</div>
+          </div>
+          <div style={{ textAlign: "center" }}>
+            <div style={{ fontSize: 18, fontWeight: 900, color: tc }}>{availableCoupons}</div>
+            <div style={{ fontSize: 8, color: C.sub }}>كوبون متاح</div>
+          </div>
+        </div>
+
+        {badge.next && (
+          <div style={{ marginBottom: 12 }}>
+            <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 4 }}>
+              <span style={{ fontSize: 9, color: C.sub }}>{"التقدم نحو " + badge.nextLabel}</span>
+              <span style={{ fontSize: 9, fontWeight: 700, color: tc }}>{badge.progress + "%"}</span>
+            </div>
+            <div style={{ height: 6, borderRadius: 3, background: "rgba(0,0,0,.06)", overflow: "hidden" }}>
+              <div style={{ height: "100%", borderRadius: 3, background: tc, width: badge.progress + "%", transition: "width .5s" }} />
+            </div>
+            <div style={{ fontSize: 9, color: C.sub, marginTop: 3 }}>{"باقي " + badge.remaining + " نقطة للترقية"}</div>
+          </div>
+        )}
+
+        {/* Criteria weights */}
+        <div style={{ fontSize: 10, fontWeight: 700, color: tc, marginBottom: 6 }}>مصادر النقاط</div>
+        <div style={{ display: "flex", gap: 4, marginBottom: 8 }}>
+          {[
+            { label: "حضور", pct: CRITERIA_WEIGHTS.attendance, color: C.green },
+            { label: "تحدي", pct: CRITERIA_WEIGHTS.challenge, color: C.orange },
+            { label: "ملف", pct: CRITERIA_WEIGHTS.profile, color: C.blue },
+            { label: "تطبيقات", pct: CRITERIA_WEIGHTS.apps, color: "#8B5CF6" },
+            { label: "AI", pct: CRITERIA_WEIGHTS.ai, color: C.sub },
+          ].map(function(cr, idx) {
+            return (
+              <div key={idx} style={{ flex: cr.pct, height: 20, borderRadius: 4, background: cr.color + "25", display: "flex", alignItems: "center", justifyContent: "center" }}>
+                <span style={{ fontSize: 7, fontWeight: 700, color: cr.color }}>{cr.label + " " + cr.pct + "%"}</span>
+              </div>
+            );
+          })}
+        </div>
+
+        {/* All levels */}
+        <div style={{ display: "flex", gap: 6 }}>
+          {MEMBERSHIP.map(function(lvl) {
+            var isActive = badge.tier === lvl.id;
+            return (
+              <div key={lvl.id} style={{ flex: 1, padding: "6px 4px", borderRadius: 10, background: isActive ? lvl.color + "18" : "rgba(0,0,0,.03)", border: isActive ? "2px solid " + lvl.color : "1px solid rgba(0,0,0,.05)", textAlign: "center" }}>
+                <div style={{ fontSize: 16 }}>{lvl.icon}</div>
+                <div style={{ fontSize: 8, fontWeight: 700, color: isActive ? lvl.color : C.sub }}>{lvl.name.replace("عضوية ","")}</div>
+                <div style={{ fontSize: 7, color: C.sub }}>{lvl.min + " نقطة"}</div>
+              </div>
+            );
+          })}
         </div>
       </div>
 
-      {badge.next && (
-        <div style={{ marginBottom: 12 }}>
-          <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 4 }}>
-            <span style={{ fontSize: 9, color: C.sub }}>{"التقدم نحو " + badge.nextLabel}</span>
-            <span style={{ fontSize: 9, fontWeight: 700, color: tc }}>{badge.progress + "%"}</span>
-          </div>
-          <div style={{ height: 6, borderRadius: 3, background: "rgba(0,0,0,.06)", overflow: "hidden" }}>
-            <div style={{ height: "100%", borderRadius: 3, background: tc, width: badge.progress + "%", transition: "width .5s" }} />
-          </div>
-          <div style={{ fontSize: 9, color: C.sub, marginTop: 3 }}>{"باقي " + (badge.next - points) + " نقطة للترقية"}</div>
-        </div>
-      )}
-
-      <div style={{ fontSize: 11, fontWeight: 800, fontFamily: "'Cairo',sans-serif", color: tc, marginBottom: 8 }}>الامتيازات</div>
-      {badge.perks.map(function(perk, i) {
-        return (
-          <div key={i} style={{ display: "flex", alignItems: "center", gap: 8, padding: "5px 0" }}>
-            <div style={{ width: 6, height: 6, borderRadius: 3, background: tc }} />
-            <span style={{ fontSize: 11, fontWeight: 600, color: C.text }}>{perk}</span>
-          </div>
-        );
-      })}
+      {/* Membership note */}
+      <div style={{ padding: "8px 12px", borderRadius: 10, background: "rgba(0,0,0,.03)", border: "1px solid rgba(0,0,0,.05)" }}>
+        <div style={{ fontSize: 9, color: C.sub, lineHeight: 1.6, textAlign: "center" }}>{"⚖️ " + MEMBERSHIP_NOTE}</div>
+      </div>
     </div>
   );
 }
