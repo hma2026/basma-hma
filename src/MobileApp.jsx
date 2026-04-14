@@ -6,7 +6,7 @@ import React, { useState, useEffect, useRef, useCallback } from "react";
    + Face Verify + Challenge + Toasts
    ═══════════════════════════════════════════ */
 
-const VER = "4.52";
+const VER = "4.53";
 
 /* ── Colors ── */
 const C = {
@@ -124,11 +124,28 @@ export default function MobileApp() {
   const [confirmModal, setConfirmModal] = useState(null);
   const [faceModal, setFaceModal] = useState(null);
   const [challengeOpen, setChallengeOpen] = useState(false);
+  const [leaveModal, setLeaveModal] = useState(false);
+  const [ticketModal, setTicketModal] = useState(false);
+  const [refreshing, setRefreshing] = useState(false);
   const [initDone, setInitDone] = useState(false);
 
   function showToast(msg, type = "success") {
     setToast({ msg, type });
     setTimeout(() => setToast(null), 3000);
+  }
+
+  function isOffDay() {
+    if (!branch) return false;
+    const dayMap = { sunday: 0, monday: 1, tuesday: 2, wednesday: 3, thursday: 4, friday: 5, saturday: 6 };
+    return now.getDay() === (dayMap[branch.offDay] !== undefined ? dayMap[branch.offDay] : 5);
+  }
+
+  async function refresh() {
+    if (!user || refreshing) return;
+    setRefreshing(true);
+    await loadData(user);
+    setRefreshing(false);
+    showToast("تم التحديث ✓");
   }
 
   useEffect(() => {
@@ -258,9 +275,9 @@ export default function MobileApp() {
     <div style={S.phone}>
       {!online && <div style={{ background: C.red, color: "#fff", textAlign: "center", padding: "6px 0", fontSize: 11, fontWeight: 700 }}>⚠️ لا يوجد اتصال بالإنترنت</div>}
 
-      {page === "home" && <HomePage user={user} branch={branch} now={now} todayAtt={todayAtt} allAtt={allAtt} gps={gps} gpsDist={gpsDist} streak={streak} loading={loading} dayState={getDayState()} checkpoints={getCheckpoints()} onCheckin={requestCheckin} onChallenge={() => setChallengeOpen(true)} />}
-      {page === "report" && <ReportPage user={user} allAtt={allAtt} todayAtt={todayAtt} branch={branch} />}
-      {page === "profile" && <ProfilePage user={user} branch={branch} onLogout={logout} />}
+      {page === "home" && <HomePage user={user} branch={branch} now={now} todayAtt={todayAtt} allAtt={allAtt} gps={gps} gpsDist={gpsDist} streak={streak} loading={loading} refreshing={refreshing} dayState={getDayState()} checkpoints={getCheckpoints()} isOffDay={isOffDay()} onCheckin={requestCheckin} onChallenge={() => setChallengeOpen(true)} onLeave={() => setLeaveModal(true)} onRefresh={refresh} />}
+      {page === "report" && <ReportPage user={user} allAtt={allAtt} todayAtt={todayAtt} branch={branch} isOffDay={isOffDay()} />}
+      {page === "profile" && <ProfilePage user={user} branch={branch} onLogout={logout} onTicket={() => setTicketModal(true)} />}
 
       <BottomNav page={page} setPage={setPage} />
 
@@ -268,6 +285,8 @@ export default function MobileApp() {
       {confirmModal && <ConfirmModal label={confirmModal.label} onConfirm={confirmCheckin} onCancel={() => setConfirmModal(null)} />}
       {faceModal && <FaceModal onVerified={(photo) => doCheckin(faceModal.type, photo)} onSkip={() => doCheckin(faceModal.type)} onCancel={() => setFaceModal(null)} />}
       {challengeOpen && <ChallengeModal user={user} onClose={() => setChallengeOpen(false)} onPoints={(pts) => { const u = { ...user, points: (user.points||0)+pts }; setUser(u); localStorage.setItem("basma_user", JSON.stringify(u)); showToast("🎉 +" + pts + " نقطة!"); }} />}
+      {leaveModal && <LeaveModal user={user} onClose={() => setLeaveModal(false)} onSubmit={async (data) => { try { await api("leaves", { method: "POST", body: { empId: user.id, ...data } }); setLeaveModal(false); showToast("تم إرسال طلب الإجازة ✓"); } catch { showToast("خطأ في الإرسال", "error"); } }} />}
+      {ticketModal && <TicketModal user={user} onClose={() => setTicketModal(false)} onSubmit={async (data) => { try { await api("tickets", { method: "POST", body: { empId: user.id, empName: user.name, ...data } }); setTicketModal(false); showToast("تم إرسال التذكرة ✓"); } catch { showToast("خطأ في الإرسال", "error"); } }} />}
     </div>
   );
 }
@@ -317,7 +336,7 @@ function LoginScreen({ onLogin, loading }) {
 }
 
 /* ═══════════ HOME ═══════════ */
-function HomePage({ user, branch, now, todayAtt, allAtt, gps, gpsDist, streak, loading, dayState, checkpoints, onCheckin, onChallenge }) {
+function HomePage({ user, branch, now, todayAtt, allAtt, gps, gpsDist, streak, loading, refreshing, dayState, checkpoints, isOffDay, onCheckin, onChallenge, onLeave, onRefresh }) {
   const { time, ampm } = formatTime(now);
   const badge = memberBadge(user.points || 0);
   const inRange = branch && gpsDist !== null && gpsDist <= (branch.radius || 150);
@@ -411,6 +430,13 @@ function HomePage({ user, branch, now, todayAtt, allAtt, gps, gpsDist, streak, l
           {streak > 0 && <span style={{ marginRight: "auto", fontSize: 11, fontWeight: 800, color: C.orange }}>{"🔥 " + streak + " يوم"}</span>}
         </div>
 
+        {isOffDay && (
+          <div style={{ background: "linear-gradient(135deg,"+C.blue+"18,"+C.blueBright+"10)", borderRadius: 14, padding: "10px 14px", marginBottom: 10, display: "flex", alignItems: "center", gap: 8, border: "1px solid "+C.blue+"25" }}>
+            <span style={{ fontSize: 16 }}>🏖️</span>
+            <span style={{ fontSize: 12, fontWeight: 700, color: C.blue }}>يوم إجازة — استمتع بوقتك!</span>
+          </div>
+        )}
+
         {dayState === "before" && (
           <div onClick={onChallenge} style={S.challengeCard} className="basma-fadein-d1">
             <div style={{ fontSize: 14, fontWeight: 800 }}>⚡ سؤال التحدي — 25 نقطة</div>
@@ -431,13 +457,25 @@ function HomePage({ user, branch, now, todayAtt, allAtt, gps, gpsDist, streak, l
         {checkpoints.checkin && (
           <WorkHoursCard todayAtt={todayAtt} now={now} branch={branch} dayState={dayState} />
         )}
+
+        {/* ── Quick Actions ── */}
+        <div style={{ display: "flex", gap: 8, marginBottom: 12 }} className="basma-fadein-d2">
+          <button onClick={onLeave} style={{ flex: 1, padding: "12px 8px", borderRadius: 14, background: "#fff", border: "none", boxShadow: "0 2px 8px rgba(0,0,0,.05)", display: "flex", alignItems: "center", justifyContent: "center", gap: 6, cursor: "pointer" }}>
+            <span style={{ fontSize: 16 }}>📝</span>
+            <span style={{ fontSize: 12, fontWeight: 700, color: C.text }}>طلب إجازة</span>
+          </button>
+          <button onClick={onRefresh} disabled={refreshing} style={{ flex: 1, padding: "12px 8px", borderRadius: 14, background: "#fff", border: "none", boxShadow: "0 2px 8px rgba(0,0,0,.05)", display: "flex", alignItems: "center", justifyContent: "center", gap: 6, cursor: "pointer" }}>
+            <span style={{ fontSize: 16 }}>{refreshing ? "⏳" : "🔄"}</span>
+            <span style={{ fontSize: 12, fontWeight: 700, color: C.text }}>{refreshing ? "جارِ التحديث..." : "تحديث البيانات"}</span>
+          </button>
+        </div>
       </div>
     </div>
   );
 }
 
 /* ═══════════ REPORT ═══════════ */
-function ReportPage({ user, allAtt, todayAtt, branch }) {
+function ReportPage({ user, allAtt, todayAtt, branch, isOffDay }) {
   const thisMonth = todayStr().slice(0, 7);
   const monthAtt = allAtt.filter(r => r.date && r.date.startsWith(thisMonth));
   const checkins = monthAtt.filter(r => r.type === "checkin");
@@ -454,7 +492,7 @@ function ReportPage({ user, allAtt, todayAtt, branch }) {
   // Today summary
   const todayCheckin = (todayAtt || []).some(r => r.type === "checkin");
   const todayLate = branch && (todayAtt || []).some(r => r.type === "checkin" && (new Date(r.ts).getHours()*60+new Date(r.ts).getMinutes()) > timeToMin(branch.start)+5);
-  const todayAbsent = !todayCheckin && new Date().getHours() >= (branch ? timeToMin(branch.end)/60 : 17);
+  const todayAbsent = !todayCheckin && !isOffDay && new Date().getHours() >= (branch ? timeToMin(branch.end)/60 : 17);
 
   // Export CSV
   function exportCSV() {
@@ -541,7 +579,7 @@ function ReportPage({ user, allAtt, todayAtt, branch }) {
 }
 
 /* ═══════════ PROFILE ═══════════ */
-function ProfilePage({ user, branch, onLogout }) {
+function ProfilePage({ user, branch, onLogout, onTicket }) {
   const typeMap = { office: "🏢 مكتبي", field: "🏗️ ميداني", mixed: "🔀 مختلط", remote: "🏠 عن بعد" };
   const badge = memberBadge(user.points || 0);
   const rows = [
@@ -597,6 +635,10 @@ function ProfilePage({ user, branch, onLogout }) {
             </div>
           </div>
         )}
+
+        <button onClick={onTicket} style={{ width: "100%", padding: 14, borderRadius: 16, background: "linear-gradient(135deg,"+C.orange+",#FF8021)", color: "#fff", fontSize: 15, fontWeight: 800, border: "none", cursor: "pointer", fontFamily: "'Cairo',sans-serif", marginBottom: 8 }}>
+          🎫 تذكرة دعم
+        </button>
 
         <button onClick={onLogout} style={{ width: "100%", padding: 14, borderRadius: 16, border: "2px solid " + C.red, background: "transparent", color: C.red, fontSize: 15, fontWeight: 800, cursor: "pointer", fontFamily: "'Cairo',sans-serif" }}>
           🚪 تسجيل خروج
@@ -748,6 +790,121 @@ function ChallengeModal({ user, onClose, onPoints }) {
             {isCorrect ? "🎉 إجابة صحيحة! +25 نقطة" : "❌ إجابة خاطئة — حظاً أوفر غداً"}
           </div>
         )}
+      </div>
+    </div>
+  );
+}
+
+/* ═══════════ LEAVE + TICKET MODALS ═══════════ */
+
+function LeaveModal({ user, onClose, onSubmit }) {
+  var [type, setType] = useState("annual");
+  var [from, setFrom] = useState(todayStr());
+  var [to, setTo] = useState(todayStr());
+  var [reason, setReason] = useState("");
+  var [submitting, setSubmitting] = useState(false);
+
+  var leaveTypes = [
+    { id: "annual", label: "سنوية", icon: "🏖️" },
+    { id: "sick", label: "مرضية", icon: "🏥" },
+    { id: "emergency", label: "طارئة", icon: "⚡" },
+    { id: "personal", label: "شخصية", icon: "👤" },
+  ];
+
+  async function submit() {
+    if (!from || !to) return;
+    setSubmitting(true);
+    await onSubmit({ type: type, from: from, to: to, reason: reason });
+    setSubmitting(false);
+  }
+
+  return (
+    <div style={S.overlay} onClick={onClose}>
+      <div className="basma-slideup" style={{ ...S.modal, maxWidth: 380 }} onClick={function(e){ e.stopPropagation(); }}>
+        <div style={{ fontSize: 16, fontWeight: 800, fontFamily: "'Cairo',sans-serif", textAlign: "center", marginBottom: 16 }}>📝 طلب إجازة</div>
+
+        <div style={{ display: "flex", gap: 6, marginBottom: 14 }}>
+          {leaveTypes.map(function(lt) {
+            var active = type === lt.id;
+            return (
+              <button key={lt.id} onClick={function(){ setType(lt.id); }} style={{ flex: 1, padding: "8px 4px", borderRadius: 12, background: active ? C.blue + "15" : "#f5f5f5", border: active ? "2px solid " + C.blue : "2px solid transparent", fontSize: 10, fontWeight: 700, color: active ? C.blue : C.sub, cursor: "pointer", textAlign: "center" }}>
+                <div style={{ fontSize: 16 }}>{lt.icon}</div>
+                {lt.label}
+              </button>
+            );
+          })}
+        </div>
+
+        <div style={{ display: "flex", gap: 8, marginBottom: 10 }}>
+          <div style={{ flex: 1 }}>
+            <div style={{ fontSize: 10, color: C.sub, fontWeight: 600, marginBottom: 4 }}>من</div>
+            <input type="date" value={from} onChange={function(e){ setFrom(e.target.value); }} style={{ width: "100%", padding: 10, borderRadius: 10, border: "1px solid #eee", fontSize: 13, fontFamily: "'Tajawal',sans-serif" }} />
+          </div>
+          <div style={{ flex: 1 }}>
+            <div style={{ fontSize: 10, color: C.sub, fontWeight: 600, marginBottom: 4 }}>إلى</div>
+            <input type="date" value={to} onChange={function(e){ setTo(e.target.value); }} style={{ width: "100%", padding: 10, borderRadius: 10, border: "1px solid #eee", fontSize: 13, fontFamily: "'Tajawal',sans-serif" }} />
+          </div>
+        </div>
+
+        <div style={{ marginBottom: 14 }}>
+          <div style={{ fontSize: 10, color: C.sub, fontWeight: 600, marginBottom: 4 }}>السبب (اختياري)</div>
+          <textarea value={reason} onChange={function(e){ setReason(e.target.value); }} placeholder="اكتب سبب الإجازة..." rows={2} style={{ width: "100%", padding: 10, borderRadius: 10, border: "1px solid #eee", fontSize: 13, fontFamily: "'Tajawal',sans-serif", resize: "none" }} />
+        </div>
+
+        <div style={{ display: "flex", gap: 8 }}>
+          <button onClick={onClose} style={{ flex: 1, padding: 12, borderRadius: 14, border: "2px solid #eee", background: "#fff", color: C.sub, fontSize: 14, fontWeight: 700, cursor: "pointer" }}>إلغاء</button>
+          <button onClick={submit} disabled={submitting} style={{ flex: 1, padding: 12, borderRadius: 14, border: "none", background: "linear-gradient(135deg,"+C.blue+","+C.blueBright+")", color: "#fff", fontSize: 14, fontWeight: 700, cursor: "pointer", opacity: submitting ? .6 : 1 }}>
+            {submitting ? "جارِ الإرسال..." : "إرسال الطلب"}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function TicketModal({ user, onClose, onSubmit }) {
+  var [subject, setSubject] = useState("");
+  var [message, setMessage] = useState("");
+  var [priority, setPriority] = useState("normal");
+  var [submitting, setSubmitting] = useState(false);
+
+  async function submit() {
+    if (!subject || !message) return;
+    setSubmitting(true);
+    await onSubmit({ subject: subject, message: message, priority: priority });
+    setSubmitting(false);
+  }
+
+  return (
+    <div style={S.overlay} onClick={onClose}>
+      <div className="basma-slideup" style={{ ...S.modal, maxWidth: 380 }} onClick={function(e){ e.stopPropagation(); }}>
+        <div style={{ fontSize: 16, fontWeight: 800, fontFamily: "'Cairo',sans-serif", textAlign: "center", marginBottom: 16 }}>🎫 تذكرة دعم</div>
+
+        <div style={{ display: "flex", gap: 6, marginBottom: 14 }}>
+          {[{id:"low",label:"منخفض",c:C.green},{id:"normal",label:"عادي",c:C.blue},{id:"high",label:"عاجل",c:C.red}].map(function(p) {
+            var active = priority === p.id;
+            return (
+              <button key={p.id} onClick={function(){ setPriority(p.id); }} style={{ flex: 1, padding: "8px 4px", borderRadius: 10, background: active ? p.c + "15" : "#f5f5f5", border: active ? "2px solid " + p.c : "2px solid transparent", fontSize: 11, fontWeight: 700, color: active ? p.c : C.sub, cursor: "pointer" }}>
+                {p.label}
+              </button>
+            );
+          })}
+        </div>
+
+        <div style={{ marginBottom: 10 }}>
+          <input value={subject} onChange={function(e){ setSubject(e.target.value); }} placeholder="الموضوع" style={{ width: "100%", padding: 12, borderRadius: 10, border: "1px solid #eee", fontSize: 14, fontFamily: "'Tajawal',sans-serif" }} />
+        </div>
+
+        <div style={{ marginBottom: 14 }}>
+          <textarea value={message} onChange={function(e){ setMessage(e.target.value); }} placeholder="اكتب رسالتك هنا..." rows={3} style={{ width: "100%", padding: 12, borderRadius: 10, border: "1px solid #eee", fontSize: 13, fontFamily: "'Tajawal',sans-serif", resize: "none" }} />
+        </div>
+
+        <div style={{ display: "flex", gap: 8 }}>
+          <button onClick={onClose} style={{ flex: 1, padding: 12, borderRadius: 14, border: "2px solid #eee", background: "#fff", color: C.sub, fontSize: 14, fontWeight: 700, cursor: "pointer" }}>إلغاء</button>
+          <button onClick={submit} disabled={submitting || !subject || !message} style={{ flex: 1, padding: 12, borderRadius: 14, border: "none", background: "linear-gradient(135deg,"+C.orange+",#FF8021)", color: "#fff", fontSize: 14, fontWeight: 700, cursor: "pointer", opacity: (submitting || !subject || !message) ? .6 : 1 }}>
+            {submitting ? "جارِ الإرسال..." : "إرسال"}
+          </button>
+        </div>
       </div>
     </div>
   );
