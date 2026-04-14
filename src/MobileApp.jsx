@@ -6,7 +6,7 @@ import React, { useState, useEffect, useRef, useCallback } from "react";
    + Face Verify + Challenge + Toasts
    ═══════════════════════════════════════════ */
 
-const VER = "4.57";
+const VER = "4.58";
 
 /* ── Colors ── */
 const C = {
@@ -126,6 +126,7 @@ export default function MobileApp() {
   const [challengeOpen, setChallengeOpen] = useState(false);
   const [leaveModal, setLeaveModal] = useState(false);
   const [ticketModal, setTicketModal] = useState(false);
+  const [daySummary, setDaySummary] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
   const [myLeaves, setMyLeaves] = useState([]);
   const [myTickets, setMyTickets] = useState([]);
@@ -253,16 +254,28 @@ export default function MobileApp() {
     if (!user) return;
     setLoading(true);
     try {
+      // Geofence check
+      var outsideRange = branch && gpsDist !== null && gpsDist > (branch.radius || 150);
+      if (outsideRange && (type === "checkin" || type === "checkout")) {
+        try {
+          await api("violations", { method: "POST", body: { empId: user.id, type: "geofence", details: "تسجيل من خارج النطاق (" + gpsDist + " م)", date: todayStr() } });
+        } catch(e) { /**/ }
+      }
+
       const body = { empId: user.id, type, lat: gps?.lat, lng: gps?.lng, facePhoto };
       const r = await api("checkin", { method: "POST", body });
       if (r.ok) {
-        setTodayAtt(prev => [...prev, r.record]);
+        var newAtt = [...todayAtt, r.record];
+        setTodayAtt(newAtt);
         const labels = { checkin: "تم تسجيل الحضور ✓", break_start: "بداية الاستراحة ☕", break_end: "تم تسجيل العودة 🔄", checkout: "تم تسجيل الانصراف 🌙" };
         showToast(labels[type] || "تم التسجيل ✓");
         if (navigator.vibrate) navigator.vibrate([100, 50, 100]);
+        if (outsideRange) setTimeout(function(){ showToast("⚠️ تم التسجيل من خارج نطاق العمل", "warning"); }, 3200);
         const emps = await api("employees");
         const me = emps.find(e => e.id === user.id);
         if (me) { setUser(me); localStorage.setItem("basma_user", JSON.stringify(me)); }
+        // Show daily summary after checkout
+        if (type === "checkout") setTimeout(function(){ setDaySummary(true); }, 1500);
       } else { showToast("حدث خطأ في التسجيل", "error"); }
     } catch { showToast("خطأ في الاتصال", "error"); }
     finally { setLoading(false); }
@@ -306,6 +319,7 @@ export default function MobileApp() {
       {challengeOpen && <ChallengeModal user={user} onClose={() => setChallengeOpen(false)} onPoints={(pts) => { const u = { ...user, points: (user.points||0)+pts }; setUser(u); localStorage.setItem("basma_user", JSON.stringify(u)); showToast("🎉 +" + pts + " نقطة!"); }} />}
       {leaveModal && <LeaveModal user={user} onClose={() => setLeaveModal(false)} onSubmit={async (data) => { try { await api("leaves", { method: "POST", body: { empId: user.id, ...data } }); setLeaveModal(false); showToast("تم إرسال طلب الإجازة ✓"); } catch { showToast("خطأ في الإرسال", "error"); } }} />}
       {ticketModal && <TicketModal user={user} onClose={() => setTicketModal(false)} onSubmit={async (data) => { try { await api("tickets", { method: "POST", body: { empId: user.id, empName: user.name, ...data } }); setTicketModal(false); showToast("تم إرسال التذكرة ✓"); } catch { showToast("خطأ في الإرسال", "error"); } }} />}
+      {daySummary && <DaySummaryModal todayAtt={todayAtt} branch={branch} user={user} onClose={() => setDaySummary(false)} />}
     </div>
   );
 }
@@ -775,6 +789,12 @@ function ProfilePage({ user, branch, onLogout, onTicket, myTickets }) {
           🎫 تذكرة دعم جديدة
         </button>
 
+        {(user.isManager || user.isAssistant) && (
+          <button onClick={function(){ window.location.hash = "admin"; }} style={{ width: "100%", padding: 14, borderRadius: 16, background: "linear-gradient(135deg,"+C.hdr1+","+C.hdr2+")", color: "#fff", fontSize: 15, fontWeight: 800, border: "none", cursor: "pointer", fontFamily: "'Cairo',sans-serif", marginBottom: 8 }}>
+            🛡️ لوحة الإدارة
+          </button>
+        )}
+
         <button onClick={onLogout} style={{ width: "100%", padding: 14, borderRadius: 16, border: "2px solid " + C.red, background: "transparent", color: C.red, fontSize: 15, fontWeight: 800, cursor: "pointer", fontFamily: "'Cairo',sans-serif" }}>
           🚪 تسجيل خروج
         </button>
@@ -1040,6 +1060,81 @@ function ChallengeModal({ user, onClose, onPoints }) {
             {isCorrect ? "🎉 إجابة صحيحة! +25 نقطة" : "❌ إجابة خاطئة — حظاً أوفر غداً"}
           </div>
         )}
+      </div>
+    </div>
+  );
+}
+
+/* ═══════════ DAY SUMMARY MODAL ═══════════ */
+
+function DaySummaryModal({ todayAtt, branch, user, onClose }) {
+  var checkinRec = todayAtt.find(function(r){ return r.type === "checkin"; });
+  var checkoutRec = todayAtt.find(function(r){ return r.type === "checkout"; });
+  var breakStartRec = todayAtt.find(function(r){ return r.type === "break_start"; });
+  var breakEndRec = todayAtt.find(function(r){ return r.type === "break_end"; });
+
+  var totalMs = 0;
+  if (checkinRec && checkoutRec) {
+    totalMs = new Date(checkoutRec.ts) - new Date(checkinRec.ts);
+    if (breakStartRec && breakEndRec) totalMs -= (new Date(breakEndRec.ts) - new Date(breakStartRec.ts));
+  }
+  var totalMin = Math.max(0, Math.floor(totalMs / 60000));
+  var hrs = Math.floor(totalMin / 60);
+  var mins = totalMin % 60;
+  var expectedMin = branch ? (timeToMin(branch.end) - timeToMin(branch.start) - 30) : 480;
+  var overtime = Math.max(0, totalMin - expectedMin);
+  var otHrs = Math.floor(overtime / 60);
+  var otMin = overtime % 60;
+
+  var isLate = branch && checkinRec && (new Date(checkinRec.ts).getHours() * 60 + new Date(checkinRec.ts).getMinutes()) > timeToMin(branch.start) + 5;
+
+  return (
+    <div style={S.overlay} onClick={onClose}>
+      <div className="basma-slideup" style={{ ...S.modal, maxWidth: 360 }} onClick={function(e){ e.stopPropagation(); }}>
+        <div style={{ textAlign: "center", marginBottom: 16 }}>
+          <div style={{ fontSize: 48, marginBottom: 8 }}>🎉</div>
+          <div style={{ fontSize: 18, fontWeight: 900, fontFamily: "'Cairo',sans-serif", color: C.green }}>اكتمل الدوام!</div>
+          <div style={{ fontSize: 11, color: C.sub, marginTop: 4 }}>{formatArabicDate(new Date())}</div>
+        </div>
+
+        <div style={{ display: "flex", gap: 8, marginBottom: 14 }}>
+          <div style={{ flex: 1, background: C.green + "12", borderRadius: 14, padding: "12px 8px", textAlign: "center" }}>
+            <div style={{ fontSize: 22, fontWeight: 900, fontFamily: "'Cairo',sans-serif", color: C.green }}>{hrs + ":" + String(mins).padStart(2, "0")}</div>
+            <div style={{ fontSize: 9, color: C.sub, marginTop: 2 }}>ساعات العمل</div>
+          </div>
+          {overtime > 0 && (
+            <div style={{ flex: 1, background: C.blue + "12", borderRadius: 14, padding: "12px 8px", textAlign: "center" }}>
+              <div style={{ fontSize: 22, fontWeight: 900, fontFamily: "'Cairo',sans-serif", color: C.blue }}>{otHrs + ":" + String(otMin).padStart(2, "0")}</div>
+              <div style={{ fontSize: 9, color: C.sub, marginTop: 2 }}>إضافي</div>
+            </div>
+          )}
+          <div style={{ flex: 1, background: (isLate ? C.orange : C.green) + "12", borderRadius: 14, padding: "12px 8px", textAlign: "center" }}>
+            <div style={{ fontSize: 22, fontWeight: 900, fontFamily: "'Cairo',sans-serif", color: isLate ? C.orange : C.green }}>{isLate ? "متأخر" : "منضبط"}</div>
+            <div style={{ fontSize: 9, color: C.sub, marginTop: 2 }}>الحضور</div>
+          </div>
+        </div>
+
+        <div style={{ background: C.bg, borderRadius: 14, padding: 12, marginBottom: 14 }}>
+          {[
+            ["حضور", checkinRec ? formatTimeStr(checkinRec.ts) : "—", "☀️"],
+            ["استراحة", breakStartRec ? formatTimeStr(breakStartRec.ts) : "—", "☕"],
+            ["عودة", breakEndRec ? formatTimeStr(breakEndRec.ts) : "—", "🔄"],
+            ["انصراف", checkoutRec ? formatTimeStr(checkoutRec.ts) : "—", "🌙"],
+          ].map(function(row, i) {
+            return (
+              <div key={i} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "6px 0", borderBottom: i < 3 ? "1px solid rgba(0,0,0,.05)" : "none" }}>
+                <span style={{ fontSize: 12, fontWeight: 600 }}>{row[2] + " " + row[0]}</span>
+                <span style={{ fontSize: 13, fontWeight: 700, color: C.text }}>{row[1]}</span>
+              </div>
+            );
+          })}
+        </div>
+
+        <div style={{ textAlign: "center", fontSize: 11, color: C.sub, marginBottom: 12 }}>{"⭐ النقاط: " + (user.points || 0) + " نقطة"}</div>
+
+        <button onClick={onClose} style={{ width: "100%", padding: 14, borderRadius: 16, background: "linear-gradient(135deg," + C.green + "," + C.greenDark + ")", color: "#fff", fontSize: 15, fontWeight: 800, border: "none", cursor: "pointer", fontFamily: "'Cairo',sans-serif" }}>
+          إلى اللقاء 👋
+        </button>
       </div>
     </div>
   );
