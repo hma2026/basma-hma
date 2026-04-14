@@ -419,16 +419,6 @@ function HomePage({ user, branch, now, todayAtt, allAtt, gps, gpsDist, streak, l
         )}
 
         <div style={S.card} className="basma-fadein-d1">
-          <div style={S.cardTitle}><span>ملخص اليوم</span><span style={{ fontSize: 12, color: C.blue }}>›</span></div>
-          <div style={S.summaryGrid}>
-            <SummaryItem num={checkpoints.checkin ? 1 : 0} label="حاضر" cls="ok" />
-            <SummaryItem num={todayLate ? 1 : 0} label="متأخر" cls="warn" />
-            <SummaryItem num={!checkpoints.checkin && dayState === "after" ? 1 : 0} label="غائب" cls="bad" />
-            <SummaryItem num={0} label="إجازة" cls="info" />
-          </div>
-        </div>
-
-        <div style={S.card} className="basma-fadein-d2">
           <div style={S.cardTitle}>نقاط البصمة</div>
           <div style={S.cpRow}>
             <Checkpoint icon="☀️" label="حضور" time={cpTime("checkin")} done={checkpoints.checkin} />
