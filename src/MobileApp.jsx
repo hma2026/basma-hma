@@ -6,7 +6,7 @@ import React, { useState, useEffect, useRef, useCallback } from "react";
    + Face Verify + Challenge + Toasts
    ═══════════════════════════════════════════ */
 
-const VER = "4.55";
+const VER = "4.56";
 
 /* ── Colors ── */
 const C = {
@@ -528,6 +528,48 @@ function ReportPage({ user, allAtt, todayAtt, branch, isOffDay, myLeaves }) {
     URL.revokeObjectURL(url);
   }
 
+  // Overtime calculation
+  var overtimeMin = 0;
+  var expectedDailyMin = branch ? (timeToMin(branch.end) - timeToMin(branch.start) - 30) : 480;
+  var checkinDates = new Set(checkins.map(function(r){ return r.date; }));
+  checkinDates.forEach(function(date) {
+    var dayRecs = monthAtt.filter(function(r){ return r.date === date; });
+    var cin = dayRecs.find(function(r){ return r.type === "checkin"; });
+    var cout = dayRecs.find(function(r){ return r.type === "checkout"; });
+    if (cin && cout) {
+      var worked = (new Date(cout.ts) - new Date(cin.ts)) / 60000;
+      var bStart = dayRecs.find(function(r){ return r.type === "break_start"; });
+      var bEnd = dayRecs.find(function(r){ return r.type === "break_end"; });
+      if (bStart && bEnd) worked -= (new Date(bEnd.ts) - new Date(bStart.ts)) / 60000;
+      if (worked > expectedDailyMin) overtimeMin += (worked - expectedDailyMin);
+    }
+  });
+  var overtimeHrs = Math.round(overtimeMin / 60);
+
+  // Approved leave days
+  var approvedLeaves = (myLeaves || []).filter(function(l){ return l.status === "approved"; });
+  var leaveDays = 0;
+  approvedLeaves.forEach(function(l) {
+    if (l.from && l.to) {
+      var d1 = new Date(l.from), d2 = new Date(l.to);
+      leaveDays += Math.max(1, Math.round((d2 - d1) / 86400000) + 1);
+    }
+  });
+
+  // Calendar data — which days have attendance
+  var yr = new Date().getFullYear(), mo = new Date().getMonth();
+  var firstDow = new Date(yr, mo, 1).getDay();
+  var daysInMonth = new Date(yr, mo + 1, 0).getDate();
+  var calDays = [];
+  for (var ci = 0; ci < firstDow; ci++) calDays.push(null);
+  for (var cd = 1; cd <= daysInMonth; cd++) {
+    var ds = yr + "-" + String(mo+1).padStart(2,"0") + "-" + String(cd).padStart(2,"0");
+    var hasAtt = monthAtt.some(function(r){ return r.date === ds && r.type === "checkin"; });
+    var isLate = branch && monthAtt.some(function(r){ return r.date === ds && r.type === "checkin" && (new Date(r.ts).getHours()*60+new Date(r.ts).getMinutes()) > timeToMin(branch.start)+5; });
+    var isToday = ds === todayStr();
+    calDays.push({ day: cd, hasAtt: hasAtt, isLate: isLate, isToday: isToday });
+  }
+
   return (
     <div style={{ flex: 1, paddingBottom: 80 }}>
       <div style={S.detailHeader}>
@@ -564,8 +606,32 @@ function ReportPage({ user, allAtt, todayAtt, branch, isOffDay, myLeaves }) {
           <div style={S.cardTitle}>إحصائيات الشهر</div>
           <div style={{ display: "flex", gap: 1, background: C.bg, borderRadius: 16, overflow: "hidden" }}>
             <MonthStat num={attendPct + "%"} label="نسبة الحضور" color={C.green} />
-            <MonthStat num="0" label="ساعات إضافية" color={C.blue} />
-            <MonthStat num="0" label="أيام إجازة" color={C.orange} />
+            <MonthStat num={overtimeHrs} label="ساعات إضافية" color={C.blue} />
+            <MonthStat num={leaveDays} label="أيام إجازة" color={C.orange} />
+          </div>
+        </div>
+
+        {/* ── التقويم الشهري ── */}
+        <div style={S.card} className="basma-fadein-d2">
+          <div style={S.cardTitle}><span>التقويم</span><span style={{ fontSize: 11, color: C.sub }}>{monthName + " " + yr}</span></div>
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(7, 1fr)", gap: 2, textAlign: "center" }}>
+            {["أحد","اثن","ثلا","أرب","خمي","جمع","سبت"].map(function(d){ return <div key={d} style={{ fontSize: 8, color: C.sub, fontWeight: 700, padding: 4 }}>{d}</div>; })}
+            {calDays.map(function(cd, idx) {
+              if (!cd) return <div key={"e"+idx} />;
+              var bg = cd.isToday ? C.blue : cd.hasAtt ? (cd.isLate ? C.orange+"20" : C.green+"20") : "transparent";
+              var color = cd.isToday ? "#fff" : cd.hasAtt ? (cd.isLate ? C.orange : C.green) : "#ccc";
+              var border = cd.isToday ? "none" : cd.hasAtt ? "1px solid " + (cd.isLate ? C.orange+"40" : C.green+"40") : "1px solid #eee";
+              return (
+                <div key={cd.day} style={{ width: "100%", aspectRatio: "1", borderRadius: 8, background: bg, border: border, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 11, fontWeight: 700, color: color }}>
+                  {cd.day}
+                </div>
+              );
+            })}
+          </div>
+          <div style={{ display: "flex", gap: 12, justifyContent: "center", marginTop: 10 }}>
+            <span style={{ fontSize: 9, color: C.green }}>● حاضر</span>
+            <span style={{ fontSize: 9, color: C.orange }}>● متأخر</span>
+            <span style={{ fontSize: 9, color: C.blue }}>● اليوم</span>
           </div>
         </div>
 
@@ -657,7 +723,8 @@ function ProfilePage({ user, branch, onLogout, onTicket, myTickets }) {
         <div style={S.card} className="basma-fadein-d2">
           <div style={S.cardTitle}>الإعدادات</div>
           <ToggleRow label="📞 تذكير بالحضور" storeKey="remind_in" border={true} />
-          <ToggleRow label="📞 تذكير بالانصراف" storeKey="remind_out" border={false} />
+          <ToggleRow label="📞 تذكير بالانصراف" storeKey="remind_out" border={true} />
+          <FaceResetRow empId={user.id} />
         </div>
 
         {user.sceNumber && (
@@ -1189,6 +1256,30 @@ function ToggleRow({ label, storeKey, border }) {
       <div onClick={toggle} style={{ width: 44, height: 24, borderRadius: 12, background: on ? C.green : "#ddd", position: "relative", cursor: "pointer", transition: "background .3s" }}>
         <div style={{ width: 18, height: 18, borderRadius: 9, background: "#fff", position: "absolute", top: 3, transition: "all .3s", left: on ? 3 : undefined, right: on ? undefined : 3, boxShadow: "0 1px 3px rgba(0,0,0,.2)" }} />
       </div>
+    </div>
+  );
+}
+
+function FaceResetRow({ empId }) {
+  var [resetting, setResetting] = useState(false);
+  var [done, setDone] = useState(false);
+
+  async function reset() {
+    if (!confirm("هل تريد إعادة تعيين بصمة الوجه؟ سيُطلب منك تسجيل وجهك مرة أخرى عند البصمة القادمة.")) return;
+    setResetting(true);
+    try {
+      await api("face", { method: "DELETE", params: { empId: empId } });
+      setDone(true);
+    } catch(e) { /**/ }
+    setResetting(false);
+  }
+
+  return (
+    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "10px 0" }}>
+      <span style={{ fontSize: 13, fontWeight: 600 }}>📸 بصمة الوجه</span>
+      <button onClick={reset} disabled={resetting || done} style={{ padding: "5px 14px", borderRadius: 10, border: done ? "1px solid " + C.green : "1px solid " + C.red + "50", background: done ? C.green + "10" : C.red + "08", color: done ? C.green : C.red, fontSize: 11, fontWeight: 700, cursor: resetting || done ? "default" : "pointer" }}>
+        {done ? "✓ تم الحذف" : resetting ? "جارِ..." : "إعادة تعيين"}
+      </button>
     </div>
   );
 }
