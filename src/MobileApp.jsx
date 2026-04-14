@@ -315,13 +315,14 @@ function SplashScreen() {
 
 /* ═══════════ LOGIN ═══════════ */
 function LoginScreen({ onLogin, loading }) {
-  const [empId, setEmpId] = useState("");
+  const [empId, setEmpId] = useState(function(){ return localStorage.getItem("basma_last_empid") || ""; });
   const [code, setCode] = useState("");
   const [err, setErr] = useState("");
 
   async function submit() {
     setErr("");
     if (!empId || !code) { setErr("أدخل رقم الموظف والرمز"); return; }
+    localStorage.setItem("basma_last_empid", empId.toUpperCase());
     const e = await onLogin(empId.toUpperCase(), code);
     if (e) setErr(e);
   }
