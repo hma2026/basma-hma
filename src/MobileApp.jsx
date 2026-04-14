@@ -30,6 +30,7 @@ const LIGHT = {
   inp: "#FFFFFF", inpBrd: "#E4E0DA",
   gold: "#D4956A", silver: "#8B8FA3", bronze: "#B5703C",
   headerBg: "rgba(245,242,237,0.9)",
+  cardAlt: "#F0EDE8",
 };
 const DARK = {
   bg: "#0A0E1A", card: "#172035", cardBrd: "rgba(212,149,106,0.12)",
@@ -45,18 +46,19 @@ const DARK = {
   inp: "#1A2238", inpBrd: "rgba(212,149,106,0.15)",
   gold: "#D4956A", silver: "#8B93A7", bronze: "#B5703C",
   headerBg: "rgba(10,14,26,0.9)",
+  cardAlt: "#1E2640",
 };
 
 // ═══════ CONSTANTS ═══════
 const APP = "بصمة HMA";
-const VER = "v4.46";
+const VER = "v4.47";
 const CO = "هاني محمد عسيري للإستشارات الهندسية";
 const B = { blue: "#2B5EA7", yellow: "#D4956A", red: "#C0392B", black: "#0A0E1A", blueDk: "#1A2238", blueLt: "#F0EDE8", gold: "#D4956A", diamond: "#8B5CF6" };
 const C = LIGHT; // Default light - components use useTheme().t for dynamic
 const Fn = "'IBM Plex Sans Arabic',-apple-system,'Segoe UI',sans-serif";
 const FL = { position: "absolute", inset: 0, minHeight: "100vh", fontFamily: Fn };
 const PB = { background: "#0A84FF", border: "none", borderRadius: 12, color: "#fff", padding: "13px", fontSize: 17, fontWeight: 600, cursor: "pointer", height: 44 };
-const inp = { width: "100%", padding: "12px 14px", borderRadius: 12, fontSize: 15, fontWeight: 600, outline: "none", fontFamily: Fn };
+const inp = { width: "100%", padding: "12px 14px", borderRadius: 12, fontSize: 15, fontWeight: 600, outline: "none", fontFamily: Fn, border: "1px solid #ccc" };
 // Card style helper - components override with theme
 const getCrd = (t) => ({ background: t.card, borderRadius: 14, padding: "16px", border: "1px solid " + t.cardBrd, boxShadow: t.cardSh });
 // crd defined per-component with theme
@@ -1201,7 +1203,6 @@ function FullApp({ emp, onBack, onLogout }) {
       <Logo s={22} />
     </div>
 
-    <style>{`input,select,textarea{background:var(--inp-bg);color:var(--inp-tx);border:1px solid var(--inp-brd)!important}:root{--inp-bg:${t.inp};--inp-tx:${t.tx};--inp-brd:${t.inpBrd}}`}</style>
     <div style={{ flex: 1, overflowY: "auto", padding: "12px 14px 80px", WebkitOverflowScrolling: "touch" }}>
 
       {/* ADMIN TAB */}
@@ -1387,7 +1388,7 @@ function FullApp({ emp, onBack, onLogout }) {
               <div style={{ display: "flex", flexWrap: "wrap", gap: 4 }}>
                 {emps.filter(e => e.type === "field" || e.type === "mixed").map(e => {
                   const assigned = (p.employees || []).includes(e.id);
-                  return <button key={e.id} onClick={() => emp.isManager && toggleProjectEmp(p.id, e.id)} style={{ padding: "4px 10px", borderRadius: 8, fontSize: 10, fontWeight: 600, border: `1px solid ${assigned ? C.ok : t.sep}`, background: assigned ? t.okLt : "#F2F2F7", color: assigned ? C.ok : t.txM, cursor: emp.isManager ? "pointer" : "default" }}>{assigned ? "✓ " : ""}{e.name?.split(" ")[0]}</button>;
+                  return <button key={e.id} onClick={() => emp.isManager && toggleProjectEmp(p.id, e.id)} style={{ padding: "4px 10px", borderRadius: 8, fontSize: 10, fontWeight: 600, border: `1px solid ${assigned ? C.ok : t.sep}`, background: assigned ? t.okLt : t.cardAlt, color: assigned ? C.ok : t.txM, cursor: emp.isManager ? "pointer" : "default" }}>{assigned ? "✓ " : ""}{e.name?.split(" ")[0]}</button>;
                 })}
               </div>
               {emps.filter(e => e.type === "field" || e.type === "mixed").length === 0 && <div style={{ fontSize: 10, color: t.txM }}>لا يوجد موظفين ميدانيين أو مختلطين</div>}
@@ -1655,7 +1656,7 @@ function FullApp({ emp, onBack, onLogout }) {
                 <div style={{ fontSize: 12, fontWeight: 700, marginTop: 4 }}>{q.q}</div>
                 <div style={{ display: "flex", gap: 4, marginTop: 6, flexWrap: "wrap" }}>
                   {q.opts.map((o, j) => (
-                    <span key={j} style={{ padding: "3px 8px", borderRadius: 6, fontSize: 9, fontWeight: 600, background: j === 0 ? t.okLt : "#F2F2F7", color: j === 0 ? C.ok : t.txM, border: `1px solid ${j === 0 ? C.ok + "33" : t.sep}` }}>{j === 0 ? "✓ " : ""}{o}</span>
+                    <span key={j} style={{ padding: "3px 8px", borderRadius: 6, fontSize: 9, fontWeight: 600, background: j === 0 ? t.okLt : t.cardAlt, color: j === 0 ? C.ok : t.txM, border: `1px solid ${j === 0 ? C.ok + "33" : t.sep}` }}>{j === 0 ? "✓ " : ""}{o}</span>
                   ))}
                 </div>
               </div>
@@ -2417,6 +2418,7 @@ export default function MobileApp() {
   const logout = () => { localStorage.removeItem("basma_uid"); localStorage.removeItem("basma_face"); localStorage.removeItem("basma_face_v2"); localStorage.removeItem("basma_emp_cache"); setEmp(null); setSc("reg"); };
   return (<ThemeCtx.Provider value={{ dark: isDark, t, toggle: toggleTheme }}>
     <div style={{ direction: "rtl", fontFamily: Fn, maxWidth: 480, margin: "0 auto", minHeight: "100vh", background: t.bg }}>
+    <style>{`input,select,textarea{background:${t.inp} !important;color:${t.tx} !important;border-color:${t.inpBrd} !important}`}</style>
     <style>{`*{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent}::-webkit-scrollbar{width:0}button:active{opacity:0.8!important}input::placeholder{color:${t.txM}}`}</style>
     {sc === "init" && <Splash onDone={() => {}} />}
     {sc === "disclaimer" && <Disclaimer onAccept={() => setSc("reg")} />}
