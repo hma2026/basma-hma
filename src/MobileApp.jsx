@@ -6,7 +6,7 @@ import React, { useState, useEffect, useRef, useCallback } from "react";
    + Face Verify + Challenge + Toasts
    ═══════════════════════════════════════════ */
 
-const VER = "4.56";
+const VER = "4.57";
 
 /* ── Colors ── */
 const C = {
@@ -188,6 +188,13 @@ export default function MobileApp() {
     if (gps && branch) setGpsDist(Math.round(haversine(gps.lat, gps.lng, branch.lat, branch.lng)));
   }, [gps, branch]);
 
+  // Auto-refresh every 5 minutes
+  useEffect(() => {
+    if (!user) return;
+    const t = setInterval(() => { loadData(user); }, 300000);
+    return () => clearInterval(t);
+  }, [user]);
+
   async function loadData(emp) {
     try {
       const branches = await api("branches");
@@ -252,6 +259,7 @@ export default function MobileApp() {
         setTodayAtt(prev => [...prev, r.record]);
         const labels = { checkin: "تم تسجيل الحضور ✓", break_start: "بداية الاستراحة ☕", break_end: "تم تسجيل العودة 🔄", checkout: "تم تسجيل الانصراف 🌙" };
         showToast(labels[type] || "تم التسجيل ✓");
+        if (navigator.vibrate) navigator.vibrate([100, 50, 100]);
         const emps = await api("employees");
         const me = emps.find(e => e.id === user.id);
         if (me) { setUser(me); localStorage.setItem("basma_user", JSON.stringify(me)); }
