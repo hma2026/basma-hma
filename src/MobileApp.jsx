@@ -6,7 +6,7 @@ import React, { useState, useEffect, useRef, useCallback } from "react";
    + Face Verify + Challenge + Toasts
    ═══════════════════════════════════════════ */
 
-const VER = "4.53";
+const VER = "4.54";
 
 /* ── Colors ── */
 const C = {
@@ -283,7 +283,7 @@ export default function MobileApp() {
 
       {toast && <Toast msg={toast.msg} type={toast.type} />}
       {confirmModal && <ConfirmModal label={confirmModal.label} onConfirm={confirmCheckin} onCancel={() => setConfirmModal(null)} />}
-      {faceModal && <FaceModal onVerified={(photo) => doCheckin(faceModal.type, photo)} onSkip={() => doCheckin(faceModal.type)} onCancel={() => setFaceModal(null)} />}
+      {faceModal && <FaceModal empId={user.id} onVerified={(photo) => doCheckin(faceModal.type, photo)} onSkip={() => doCheckin(faceModal.type)} onCancel={() => setFaceModal(null)} />}
       {challengeOpen && <ChallengeModal user={user} onClose={() => setChallengeOpen(false)} onPoints={(pts) => { const u = { ...user, points: (user.points||0)+pts }; setUser(u); localStorage.setItem("basma_user", JSON.stringify(u)); showToast("🎉 +" + pts + " نقطة!"); }} />}
       {leaveModal && <LeaveModal user={user} onClose={() => setLeaveModal(false)} onSubmit={async (data) => { try { await api("leaves", { method: "POST", body: { empId: user.id, ...data } }); setLeaveModal(false); showToast("تم إرسال طلب الإجازة ✓"); } catch { showToast("خطأ في الإرسال", "error"); } }} />}
       {ticketModal && <TicketModal user={user} onClose={() => setTicketModal(false)} onSubmit={async (data) => { try { await api("tickets", { method: "POST", body: { empId: user.id, empName: user.name, ...data } }); setTicketModal(false); showToast("تم إرسال التذكرة ✓"); } catch { showToast("خطأ في الإرسال", "error"); } }} />}
@@ -676,34 +676,124 @@ function ConfirmModal({ label, onConfirm, onCancel }) {
   );
 }
 
-function FaceModal({ onVerified, onSkip, onCancel }) {
+function FaceModal({ empId, onVerified, onSkip, onCancel }) {
   var videoRef = useRef(null);
   var canvasRef = useRef(null);
-  var [status, setStatus] = useState("init");
+  var [status, setStatus] = useState("init"); // init, loading_models, ready, detecting, captured, matched, mismatch, registering, error
   var [stream, setStream] = useState(null);
+  var [msg, setMsg] = useState("جارِ تشغيل الكاميرا...");
+  var [storedDesc, setStoredDesc] = useState(null); // null = not checked, false = no face stored, array = stored descriptor
+  var faceapi = typeof window !== "undefined" ? window.faceapi : null;
 
   useEffect(function() {
     var s = null;
+    var cancelled = false;
     (async function() {
+      // 1. Check stored face
+      try {
+        var r = await api("face", { params: { empId: empId } });
+        if (!cancelled) setStoredDesc(r.ok && r.descriptor ? r.descriptor : false);
+      } catch(e) { if (!cancelled) setStoredDesc(false); }
+
+      // 2. Start camera
       try {
         s = await navigator.mediaDevices.getUserMedia({ video: { facingMode: "user", width: 320, height: 320 } });
+        if (cancelled) { s.getTracks().forEach(function(t){ t.stop(); }); return; }
         setStream(s);
-        if (videoRef.current) { videoRef.current.srcObject = s; }
-        setStatus("ready");
-      } catch(e) { setStatus("error"); }
+        if (videoRef.current) videoRef.current.srcObject = s;
+      } catch(e) { if (!cancelled) { setStatus("error"); setMsg("لا يمكن الوصول للكاميرا"); } return; }
+
+      // 3. Load face-api models if available
+      if (faceapi && faceapi.nets) {
+        try {
+          setMsg("جارِ تحميل نماذج التعرف...");
+          setStatus("loading_models");
+          var MODEL_URL = "https://cdn.jsdelivr.net/npm/@vladmandic/face-api@1.7.14/model";
+          await Promise.all([
+            faceapi.nets.tinyFaceDetector.load(MODEL_URL),
+            faceapi.nets.faceLandmark68TinyNet.load(MODEL_URL),
+            faceapi.nets.faceRecognitionNet.load(MODEL_URL),
+          ]);
+          if (!cancelled) { setStatus("ready"); setMsg("وجّه وجهك للكاميرا ثم اضغط التقاط"); }
+        } catch(e) {
+          if (!cancelled) { setStatus("ready"); setMsg("التقط صورتك (بدون تعرف تلقائي)"); }
+        }
+      } else {
+        if (!cancelled) { setStatus("ready"); setMsg("التقط صورتك"); }
+      }
     })();
-    return function() { if (s) s.getTracks().forEach(function(t){ t.stop(); }); };
+    return function() { cancelled = true; if (s) s.getTracks().forEach(function(t){ t.stop(); }); };
   }, []);
 
-  function capture() {
+  async function capture() {
     if (!videoRef.current || !canvasRef.current) return;
+    setStatus("detecting");
+    setMsg("جارِ التحليل...");
+
     var ctx = canvasRef.current.getContext("2d");
     canvasRef.current.width = 320;
     canvasRef.current.height = 320;
     ctx.drawImage(videoRef.current, 0, 0, 320, 320);
     var photo = canvasRef.current.toDataURL("image/jpeg", 0.6);
-    setStatus("captured");
+
+    // Try face detection with face-api
+    var descriptor = null;
+    if (faceapi && faceapi.nets && faceapi.nets.tinyFaceDetector.isLoaded) {
+      try {
+        var detection = await faceapi.detectSingleFace(canvasRef.current, new faceapi.TinyFaceDetectorOptions())
+          .withFaceLandmarks(true)
+          .withFaceDescriptor();
+        if (detection) {
+          descriptor = Array.from(detection.descriptor);
+        }
+      } catch(e) { /* fallback to photo only */ }
+    }
+
     if (stream) stream.getTracks().forEach(function(t){ t.stop(); });
+
+    // No face detected at all
+    if (!descriptor && faceapi && faceapi.nets && faceapi.nets.tinyFaceDetector.isLoaded) {
+      setStatus("error");
+      setMsg("لم يتم اكتشاف وجه — حاول مرة أخرى");
+      return;
+    }
+
+    // Registration mode (no stored face)
+    if (storedDesc === false && descriptor) {
+      setStatus("registering");
+      setMsg("جارِ تسجيل الوجه...");
+      try {
+        await api("face", { method: "POST", body: { empId: empId, descriptor: descriptor } });
+      } catch(e) { /* continue anyway */ }
+      setStatus("captured");
+      setMsg("✓ تم تسجيل الوجه بنجاح!");
+      setTimeout(function(){ onVerified(photo); }, 800);
+      return;
+    }
+
+    // Verification mode (has stored face)
+    if (storedDesc && descriptor) {
+      var sum = 0;
+      for (var i = 0; i < 128; i++) {
+        sum += Math.pow(descriptor[i] - storedDesc[i], 2);
+      }
+      var distance = Math.sqrt(sum);
+      var matchPct = Math.max(0, Math.round((1 - distance / 1.2) * 100));
+
+      if (matchPct >= 55) {
+        setStatus("matched");
+        setMsg("✓ تطابق " + matchPct + "% — تم التحقق");
+        setTimeout(function(){ onVerified(photo); }, 800);
+      } else {
+        setStatus("mismatch");
+        setMsg("✗ تطابق " + matchPct + "% فقط — غير مطابق");
+      }
+      return;
+    }
+
+    // Fallback: no face-api or no descriptor - just proceed with photo
+    setStatus("captured");
+    setMsg("✓ تم التقاط الصورة");
     setTimeout(function(){ onVerified(photo); }, 600);
   }
 
@@ -712,23 +802,44 @@ function FaceModal({ onVerified, onSkip, onCancel }) {
     onCancel();
   }
 
+  var borderColor = status === "matched" || status === "captured" ? C.green : status === "mismatch" ? C.red : C.blue;
+  var isFirst = storedDesc === false;
+
   return (
     <div style={S.overlay} onClick={handleClose}>
       <div className="basma-slideup" style={{ ...S.modal, maxWidth: 340 }} onClick={function(e){ e.stopPropagation(); }}>
-        <div style={{ fontSize: 16, fontWeight: 800, fontFamily: "'Cairo',sans-serif", textAlign: "center", marginBottom: 12 }}>📸 التحقق بالوجه</div>
-        <div style={{ width: 200, height: 200, borderRadius: "50%", overflow: "hidden", margin: "0 auto 16px", border: "4px solid " + (status === "captured" ? C.green : C.blue), position: "relative", background: "#000" }}>
+        <div style={{ fontSize: 16, fontWeight: 800, fontFamily: "'Cairo',sans-serif", textAlign: "center", marginBottom: 4 }}>
+          {isFirst ? "📸 تسجيل الوجه" : "📸 التحقق بالوجه"}
+        </div>
+        {isFirst && <div style={{ fontSize: 10, color: C.orange, textAlign: "center", marginBottom: 8, fontWeight: 600 }}>أول مرة — سيتم حفظ وجهك للتحقق لاحقاً</div>}
+
+        <div style={{ width: 200, height: 200, borderRadius: "50%", overflow: "hidden", margin: "0 auto 12px", border: "4px solid " + borderColor, position: "relative", background: "#000", transition: "border-color .3s" }}>
           <video ref={videoRef} autoPlay playsInline muted style={{ width: "100%", height: "100%", objectFit: "cover", transform: "scaleX(-1)" }} />
-          {status === "captured" && (
+          {(status === "matched" || status === "captured") && (
             <div style={{ position: "absolute", inset: 0, background: "rgba(45,159,111,.3)", display: "flex", alignItems: "center", justifyContent: "center" }}>
               <span style={{ fontSize: 48, color: "#fff" }}>✓</span>
+            </div>
+          )}
+          {status === "mismatch" && (
+            <div style={{ position: "absolute", inset: 0, background: "rgba(231,76,60,.3)", display: "flex", alignItems: "center", justifyContent: "center" }}>
+              <span style={{ fontSize: 48, color: "#fff" }}>✗</span>
             </div>
           )}
         </div>
         <canvas ref={canvasRef} style={{ display: "none" }} />
 
-        {status === "error" && (
-          <div style={{ textAlign: "center", marginBottom: 12 }}>
-            <div style={{ fontSize: 12, color: C.red, fontWeight: 600, marginBottom: 8 }}>لا يمكن الوصول للكاميرا</div>
+        <div style={{ textAlign: "center", fontSize: 12, fontWeight: 600, color: status === "matched" || status === "captured" ? C.green : status === "mismatch" ? C.red : status === "error" ? C.red : C.sub, marginBottom: 12 }} className={status === "init" || status === "loading_models" || status === "detecting" || status === "registering" ? "basma-pulse" : ""}>
+          {msg}
+        </div>
+
+        {status === "error" && !msg.includes("كاميرا") && (
+          <div style={{ display: "flex", gap: 8 }}>
+            <button onClick={handleClose} style={{ flex: 1, padding: 12, borderRadius: 14, border: "2px solid #eee", background: "#fff", color: C.sub, fontSize: 13, fontWeight: 700, cursor: "pointer" }}>إلغاء</button>
+            <button onClick={function(){ setStatus("ready"); setMsg("وجّه وجهك ثم اضغط التقاط"); }} style={{ flex: 1, padding: 12, borderRadius: 14, border: "none", background: "linear-gradient(135deg,"+C.blue+","+C.blueBright+")", color: "#fff", fontSize: 13, fontWeight: 700, cursor: "pointer" }}>إعادة المحاولة</button>
+          </div>
+        )}
+        {status === "error" && msg.includes("كاميرا") && (
+          <div style={{ textAlign: "center" }}>
             <button onClick={function(){ if (stream) stream.getTracks().forEach(function(t){ t.stop(); }); onSkip(); }} style={{ padding: "10px 24px", borderRadius: 12, background: C.orange, color: "#fff", fontSize: 13, fontWeight: 700, border: "none", cursor: "pointer" }}>
               متابعة بدون صورة
             </button>
@@ -740,8 +851,12 @@ function FaceModal({ onVerified, onSkip, onCancel }) {
             <button onClick={capture} style={{ flex: 1, padding: 12, borderRadius: 14, border: "none", background: "linear-gradient(135deg,"+C.green+","+C.greenDark+")", color: "#fff", fontSize: 13, fontWeight: 700, cursor: "pointer" }}>📸 التقاط</button>
           </div>
         )}
-        {status === "captured" && <div style={{ textAlign: "center", color: C.green, fontSize: 14, fontWeight: 700 }}>جارِ التسجيل...</div>}
-        {status === "init" && <div style={{ textAlign: "center", color: C.sub, fontSize: 12 }} className="basma-pulse">جارِ تشغيل الكاميرا...</div>}
+        {status === "mismatch" && (
+          <div style={{ display: "flex", gap: 8 }}>
+            <button onClick={handleClose} style={{ flex: 1, padding: 12, borderRadius: 14, border: "2px solid #eee", background: "#fff", color: C.sub, fontSize: 13, fontWeight: 700, cursor: "pointer" }}>إلغاء</button>
+            <button onClick={function(){ if (stream) stream.getTracks().forEach(function(t){ t.stop(); }); onSkip(); }} style={{ flex: 1, padding: 12, borderRadius: 14, border: "none", background: C.orange, color: "#fff", fontSize: 13, fontWeight: 700, cursor: "pointer" }}>متابعة بدون تحقق</button>
+          </div>
+        )}
       </div>
     </div>
   );
