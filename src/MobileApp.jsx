@@ -6,7 +6,7 @@ import React, { useState, useEffect, useRef, useCallback } from "react";
    + Face Verify + Challenge + Toasts
    ═══════════════════════════════════════════ */
 
-const VER = "4.61";
+const VER = "4.62";
 
 /* ── Colors ── */
 const LIGHT = {
@@ -93,9 +93,21 @@ function timeToMin(str) {
 }
 
 function memberBadge(points) {
-  if (points >= 1000) return { icon: "🥇", label: "تميّز", color: C.gold };
-  if (points >= 500) return { icon: "🥈", label: "فضي", color: "#c0c0c0" };
-  return { icon: "🔹", label: "أساسي", color: "#80b4f0" };
+  if (points >= 1000) return {
+    icon: "🥇", label: "تميّز", color: C.gold, tier: 3,
+    next: null, nextLabel: null, progress: 100,
+    perks: ["تجاوز بصمة الوجه", "أولوية الإجازات", "تسامح 15 دقيقة تأخر", "بدون مخالفة خارج النطاق", "شارة التميّز الذهبية"]
+  };
+  if (points >= 500) return {
+    icon: "🥈", label: "فضي", color: "#c0c0c0", tier: 2,
+    next: 1000, nextLabel: "تميّز 🥇", progress: Math.round(((points - 500) / 500) * 100),
+    perks: ["تجاوز بصمة الوجه", "أولوية الإجازات", "شارة فضية"]
+  };
+  return {
+    icon: "🔹", label: "أساسي", color: "#80b4f0", tier: 1,
+    next: 500, nextLabel: "فضي 🥈", progress: Math.round((points / 500) * 100),
+    perks: ["الميزات الأساسية"]
+  };
 }
 
 function haversine(lat1, lon1, lat2, lon2) {
@@ -310,6 +322,9 @@ function MobileAppInner() {
   function confirmCheckin() {
     const { type } = confirmModal;
     setConfirmModal(null);
+    var badge = memberBadge(user.points || 0);
+    // Silver+ (tier >= 2): skip face verification
+    if (badge.tier >= 2) { doCheckin(type); return; }
     if (type === "checkin" || type === "checkout") { setFaceModal({ type }); }
     else { doCheckin(type); }
   }
@@ -319,9 +334,10 @@ function MobileAppInner() {
     if (!user) return;
     setLoading(true);
     try {
-      // Geofence check
+      // Geofence check — Gold members (tier 3) exempt from violations
       var outsideRange = branch && gpsDist !== null && gpsDist > (branch.radius || 150);
-      if (outsideRange && (type === "checkin" || type === "checkout")) {
+      var badge = memberBadge(user.points || 0);
+      if (outsideRange && (type === "checkin" || type === "checkout") && badge.tier < 3) {
         try {
           await api("violations", { method: "POST", body: { empId: user.id, type: "geofence", details: "تسجيل من خارج النطاق (" + gpsDist + " م)", date: todayStr() } });
         } catch(e) { /**/ }
@@ -335,7 +351,7 @@ function MobileAppInner() {
         const labels = { checkin: "تم تسجيل الحضور ✓", break_start: "بداية الاستراحة ☕", break_end: "تم تسجيل العودة 🔄", checkout: "تم تسجيل الانصراف 🌙" };
         showToast(labels[type] || "تم التسجيل ✓");
         if (navigator.vibrate) navigator.vibrate([100, 50, 100]);
-        if (outsideRange) setTimeout(function(){ showToast("⚠️ تم التسجيل من خارج نطاق العمل", "warning"); }, 3200);
+        if (outsideRange && badge.tier < 3) setTimeout(function(){ showToast("⚠️ تم التسجيل من خارج نطاق العمل", "warning"); }, 3200);
         const emps = await api("employees");
         const me = emps.find(e => e.id === user.id);
         if (me) { setUser(me); localStorage.setItem("basma_user", JSON.stringify(me)); }
@@ -467,9 +483,10 @@ function HomePage({ user, branch, now, todayAtt, allAtt, gps, gpsDist, streak, l
   const thisMonth = todayStr().slice(0, 7);
   const monthAtt = allAtt.filter(r => r.date && r.date.startsWith(thisMonth));
   const presentDays = new Set(monthAtt.filter(r => r.type === "checkin").map(r => r.date)).size;
-  const lateDays = branch ? monthAtt.filter(r => r.type === "checkin" && (new Date(r.ts).getHours() * 60 + new Date(r.ts).getMinutes()) > timeToMin(branch.start) + 5).length : 0;
+  const lateTol = badge.tier >= 3 ? 15 : 5;
+  const lateDays = branch ? monthAtt.filter(r => r.type === "checkin" && (new Date(r.ts).getHours() * 60 + new Date(r.ts).getMinutes()) > timeToMin(branch.start) + lateTol).length : 0;
   const attendPct = presentDays > 0 ? Math.round((presentDays / Math.max(1, new Date().getDate())) * 100) : 0;
-  const todayLate = branch && todayAtt.some(r => r.type === "checkin" && (new Date(r.ts).getHours() * 60 + new Date(r.ts).getMinutes()) > timeToMin(branch.start) + 5);
+  const todayLate = branch && todayAtt.some(r => r.type === "checkin" && (new Date(r.ts).getHours() * 60 + new Date(r.ts).getMinutes()) > timeToMin(branch.start) + lateTol);
 
   function cpTime(type) {
     const r = todayAtt.find(a => a.type === type);
@@ -859,6 +876,9 @@ function ProfilePage({ user, branch, onLogout, onTicket, myTickets, darkMode, to
             );
           })}
         </div>
+
+        {/* ── Membership Card ── */}
+        <MembershipCard points={user.points || 0} />
 
         <div style={S.card} className="basma-fadein-d2">
           <div style={S.cardTitle}>الإعدادات</div>
@@ -1489,6 +1509,48 @@ function ToggleRow({ label, storeKey, border }) {
       <div onClick={toggle} style={{ width: 44, height: 24, borderRadius: 12, background: on ? C.green : "#ddd", position: "relative", cursor: "pointer", transition: "background .3s" }}>
         <div style={{ width: 18, height: 18, borderRadius: 9, background: "#fff", position: "absolute", top: 3, transition: "all .3s", left: on ? 3 : undefined, right: on ? undefined : 3, boxShadow: "0 1px 3px rgba(0,0,0,.2)" }} />
       </div>
+    </div>
+  );
+}
+
+function MembershipCard({ points }) {
+  var badge = memberBadge(points);
+  var tierColors = { 1: C.blue, 2: "#c0c0c0", 3: C.gold };
+  var tierBg = { 1: C.blue + "12", 2: "#c0c0c018", 3: C.gold + "18" };
+  var tc = tierColors[badge.tier] || C.blue;
+
+  return (
+    <div style={{ ...S.card, background: tierBg[badge.tier] || C.card, border: "1.5px solid " + tc + "30" }} className="basma-fadein-d1">
+      <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 12 }}>
+        <div style={{ width: 48, height: 48, borderRadius: 16, background: tc + "20", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 28 }}>{badge.icon}</div>
+        <div style={{ flex: 1 }}>
+          <div style={{ fontSize: 16, fontWeight: 900, fontFamily: "'Cairo',sans-serif", color: tc }}>{"عضوية " + badge.label}</div>
+          <div style={{ fontSize: 11, color: C.sub }}>{"⭐ " + points + " نقطة"}</div>
+        </div>
+      </div>
+
+      {badge.next && (
+        <div style={{ marginBottom: 12 }}>
+          <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 4 }}>
+            <span style={{ fontSize: 9, color: C.sub }}>{"التقدم نحو " + badge.nextLabel}</span>
+            <span style={{ fontSize: 9, fontWeight: 700, color: tc }}>{badge.progress + "%"}</span>
+          </div>
+          <div style={{ height: 6, borderRadius: 3, background: "rgba(0,0,0,.06)", overflow: "hidden" }}>
+            <div style={{ height: "100%", borderRadius: 3, background: tc, width: badge.progress + "%", transition: "width .5s" }} />
+          </div>
+          <div style={{ fontSize: 9, color: C.sub, marginTop: 3 }}>{"باقي " + (badge.next - points) + " نقطة للترقية"}</div>
+        </div>
+      )}
+
+      <div style={{ fontSize: 11, fontWeight: 800, fontFamily: "'Cairo',sans-serif", color: tc, marginBottom: 8 }}>الامتيازات</div>
+      {badge.perks.map(function(perk, i) {
+        return (
+          <div key={i} style={{ display: "flex", alignItems: "center", gap: 8, padding: "5px 0" }}>
+            <div style={{ width: 6, height: 6, borderRadius: 3, background: tc }} />
+            <span style={{ fontSize: 11, fontWeight: 600, color: C.text }}>{perk}</span>
+          </div>
+        );
+      })}
     </div>
   );
 }
