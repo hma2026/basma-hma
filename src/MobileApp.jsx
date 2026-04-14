@@ -49,7 +49,7 @@ const DARK = {
 
 // ═══════ CONSTANTS ═══════
 const APP = "بصمة HMA";
-const VER = "v4.43";
+const VER = "v4.44";
 const CO = "هاني محمد عسيري للإستشارات الهندسية";
 const B = { blue: "#2B5EA7", yellow: "#D4956A", red: "#C0392B", black: "#0A0E1A", blueDk: "#1A2238", blueLt: "#F0EDE8", gold: "#D4956A", diamond: "#8B5CF6" };
 const C = LIGHT; // Default light - components use useTheme().t for dynamic
@@ -108,7 +108,7 @@ function checkSCE(emp) {
 
 // ═══════ SMALL COMPONENTS ═══════
 function Logo({ s = 24 }) { const h = s / 2, g = s * .02, r = s * .06, f = s * .28; return (<svg width={s} height={s} viewBox={`0 0 ${s} ${s}`}><rect x={0} y={0} width={h - g} height={h - g} rx={r} fill={B.blue} /><rect x={h + g} y={0} width={h - g} height={h - g} rx={r} fill={B.yellow} /><rect x={0} y={h + g} width={h - g} height={h - g} rx={r} fill={B.red} /><rect x={h + g} y={h + g} width={h - g} height={h - g} rx={r} fill={B.black} /><text x={h * .5} y={h * .68} textAnchor="middle" fill="#fff" fontSize={f} fontWeight="900" fontFamily="Arial">H</text><text x={h * 1.5 + g} y={h * .68} textAnchor="middle" fill={B.black} fontSize={f} fontWeight="900" fontFamily="Arial">M</text><text x={h * .5} y={h * 1.68 + g} textAnchor="middle" fill="#fff" fontSize={f} fontWeight="900" fontFamily="Arial">A</text><text x={h * 1.5 + g} y={h * 1.52 + g} textAnchor="middle" fill="#fff" fontSize={f * .45} fontWeight="800" fontFamily="Arial">ENG</text></svg>); }
-function Stripe({ h = 4 }) { return <div style={{ display: "flex", height: h, flexShrink: 0 }}><div style={{ flex: 1, background: B.blue }} /><div style={{ flex: 1, background: B.yellow }} /><div style={{ flex: 1, background: B.red }} /></div>; }
+function Stripe({ h = 3 }) { return <div style={{ height: h, flexShrink: 0, background: "linear-gradient(90deg, #2B5EA7, #D4956A, #C0392B)", opacity: 0.7 }} />; }
 
 // ═══════ GPS BADGE ═══════
 function GpsBadge({ branch, empType, empId, onStatusChange }) {
@@ -1193,12 +1193,12 @@ function FullApp({ emp, onBack, onLogout }) {
     : [{ id: "alerts", i: "🔔", l: "الإشعارات" }, { id: "custody_tab", i: "📦", l: "عهدي" }, { id: "leaves_tab", i: "🏖", l: "الإجازات" }, { id: "requests_tab", i: "📝", l: "طلبات" }, { id: "attendance", i: "📊", l: "الحضور" }, { id: "support", i: "💬", l: "الدعم" }, { id: "profile", i: "👤", l: "حسابي" }];
 
   return (<div style={{ ...FL, background: t.bg, display: "flex", flexDirection: "column" }}>
-    <Stripe h={4} />
-    <div style={{ padding: "8px 14px", display: "flex", alignItems: "center", gap: 8, background: t.headerBg, borderBottom: "1px solid " + t.sep, position: "sticky", top: 0, zIndex: 50, backdropFilter: "blur(10px)", WebkitBackdropFilter: "blur(10px)" }}>
-      <button onClick={onBack} style={{ background: "none", border: "none", fontSize: 18, cursor: "pointer" }}>→</button>
+    <Stripe h={3} />
+    <div style={{ padding: "10px 14px", display: "flex", alignItems: "center", gap: 10, background: t.headerBg, borderBottom: "1px solid " + t.sep, position: "sticky", top: 0, zIndex: 50, backdropFilter: "blur(10px)", WebkitBackdropFilter: "blur(10px)" }}>
+      <button onClick={onBack} style={{ background: t.acLt, border: "none", fontSize: 13, cursor: "pointer", padding: "7px 14px", borderRadius: 10, color: t.ac, fontWeight: 700, fontFamily: Fn, display: "flex", alignItems: "center", gap: 4 }}>→ رجوع</button>
+      <div style={{ flex: 1 }} />
+      <div style={{ fontSize: 14, fontWeight: 800, color: t.tx, fontFamily: "'Cairo',sans-serif" }}>{emp.name}</div>
       <Logo s={22} />
-      <div style={{ flex: 1, fontSize: 13, fontWeight: 700, color: t.tx }}>{emp.name}</div>
-      {level.badge && <span style={{ fontSize: 12 }}>{level.badge}</span>}
     </div>
 
     <div style={{ flex: 1, overflowY: "auto", padding: "12px 14px 80px", WebkitOverflowScrolling: "touch" }}>
@@ -1712,18 +1712,54 @@ function FullApp({ emp, onBack, onLogout }) {
 
       {/* ATTENDANCE */}
       {tab === "attendance" && <div>
-        <div style={{ fontSize: 14, fontWeight: 700, marginBottom: 8 }}>📊 سجل الحضور</div>
+        <div style={{ ...crd, marginBottom: 12, textAlign: "center" }}>
+          <div style={{ fontSize: 16, fontWeight: 800, marginBottom: 4, fontFamily: "'Cairo',sans-serif" }}>📊 سجل الحضور</div>
+          <div style={{ fontSize: 10, color: t.txM }}>بصماتي اليوم — {new Date().toLocaleDateString("ar-SA")}</div>
+        </div>
 
-        {/* My attendance today - for all users */}
-        <div style={{ fontSize: 12, fontWeight: 600, color: t.tx2, marginBottom: 6 }}>بصماتي اليوم:</div>
-        {att.filter(r => r.empId === emp.id).length === 0 && <div style={{ ...crd, textAlign: "center", color: t.txM, fontSize: 12, marginBottom: 10 }}>لا توجد بصمات اليوم</div>}
-        {att.filter(r => r.empId === emp.id).map((r, i) => (
-          <div key={i} style={{ ...crd, marginBottom: 6, display: "flex", alignItems: "center", gap: 10 }}>
-            <div style={{ width: 30, height: 30, borderRadius: "50%", background: t.okLt, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 12 }}>✓</div>
-            <div style={{ flex: 1 }}><div style={{ fontSize: 12, fontWeight: 700 }}>{r.type}</div><div style={{ fontSize: 10, color: t.txM }}>{new Date(r.ts).toLocaleTimeString("ar-SA", { hour: "2-digit", minute: "2-digit" })}</div></div>
-            {r.manual && <span style={{ fontSize: 9, padding: "2px 6px", borderRadius: 6, background: t.warnLt, color: C.warn, fontWeight: 600 }}>يدوي</span>}
-          </div>
-        ))}
+        {/* Timeline view */}
+        {(function() {
+          var myAtt = att.filter(function(r) { return r.empId === emp.id; });
+          var expected = [
+            { type: "الحضور", time: "8:30", ic: "☀️" },
+            { type: "الاستراحة", time: "12:25", ic: "☕" },
+            { type: "العودة", time: "13:05", ic: "🔄" },
+            { type: "الانصراف", time: "17:00", ic: "🌙" },
+          ];
+          return <div style={{ padding: "0 8px" }}>
+            {expected.map(function(exp, i) {
+              var rec = myAtt.find(function(r) { return r.type === exp.type; });
+              var done2 = !!rec;
+              var actualTime = rec ? new Date(rec.ts).toLocaleTimeString("ar-SA", { hour: "2-digit", minute: "2-digit" }) : "--:--";
+              var isAuto = rec && rec.autoGPS;
+              return <div key={i} style={{ display: "flex", alignItems: "stretch", gap: 12, marginBottom: 0 }}>
+                {/* Timeline line */}
+                <div style={{ display: "flex", flexDirection: "column", alignItems: "center", width: 30 }}>
+                  <div style={{ width: 30, height: 30, borderRadius: "50%", background: done2 ? t.okLt : t.cardAlt, border: done2 ? "2px solid " + t.ok : "2px dashed " + t.sep, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 13, flexShrink: 0 }}>
+                    {done2 ? <span style={{ color: t.ok, fontWeight: 800, fontSize: 13 }}>✓</span> : exp.ic}
+                  </div>
+                  {i < 3 && <div style={{ width: 2, flex: 1, minHeight: 20, background: done2 ? t.ok + "40" : t.sep, margin: "4px 0" }} />}
+                </div>
+                {/* Content */}
+                <div style={{ flex: 1, paddingBottom: 16 }}>
+                  <div style={{ ...crd, padding: "10px 14px" }}>
+                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                      <div>
+                        <div style={{ fontSize: 13, fontWeight: 700, color: done2 ? t.ok : t.txM }}>{exp.ic} {exp.type}</div>
+                        <div style={{ fontSize: 10, color: t.txM, marginTop: 2 }}>المتوقع: {exp.time}</div>
+                      </div>
+                      <div style={{ textAlign: "left" }}>
+                        <div style={{ fontSize: 15, fontWeight: 800, color: done2 ? t.ok : t.txM }}>{actualTime}</div>
+                        {isAuto && <span style={{ fontSize: 8, padding: "2px 6px", borderRadius: 4, background: t.acLt, color: t.ac, fontWeight: 600 }}>GPS تلقائي</span>}
+                        {rec && rec.manual && <span style={{ fontSize: 8, padding: "2px 6px", borderRadius: 4, background: t.warnLt, color: t.warn, fontWeight: 600 }}>يدوي</span>}
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>;
+            })}
+          </div>;
+        })()}
 
         {/* MANUAL ATTENDANCE - Admin only */}
         {emp.isManager && <>
@@ -1948,7 +1984,7 @@ function FullApp({ emp, onBack, onLogout }) {
           <div style={{ fontSize: 13, fontWeight: 700, marginBottom: 10 }}>⚠️ سجل المخالفات</div>
           {violations.map(function(v) { return <div key={v.id} style={{ padding: 10, borderRadius: 8, background: t.bg, marginBottom: 6 }}>
             <div style={{ display: "flex", justifyContent: "space-between" }}>
-              <div style={{ fontSize: 12, fontWeight: 600, color: t.tx }}>{v.type === "late" ? "⏰ تأخر" : v.type === "absent" ? "🚫 غياب" : v.type === "missed_break" ? "☕ فاتته الاستراحة" : v.type === "out_of_range" ? "📍 خارج النطاق" : "⚠️ " + (v.type || "مخالفة")}</div>
+              <div style={{ fontSize: 12, fontWeight: 600, color: t.tx }}>{v.type === "late" ? "⏰ تأخر" : v.type === "absent" ? "🚫 غياب" : v.type === "missed_break" ? "☕ فاتته الاستراحة" : v.type === "out_of_range" ? "📍 خارج النطاق" : v.type === "similar_face" ? "👤 وجه مشابه" : v.type === "face_mismatch" ? "👤 عدم تطابق الوجه" : v.type === "face_skipped" ? "⚠️ تجاوز البصمة" : v.type === "duplicate_face" ? "👤 وجه مكرر" : "⚠️ " + (v.type || "مخالفة")}</div>
               <span style={{ fontSize: 9, color: t.txM }}>{v.date || (v.ts ? new Date(v.ts).toLocaleDateString("ar-SA") : "")}</span>
             </div>
             {v.details && <div style={{ fontSize: 10, color: t.tx2, marginTop: 4 }}>{v.details}</div>}
@@ -2165,7 +2201,7 @@ function ProfileTab({ emp, emps, level, onLogout, loadData }) {
           <span style={{ fontSize: 14, color: t.ac }}>العربية</span>
         </div>
       </div>
-      <button onClick={onLogout} style={{ width: "100%", padding: 11, borderRadius: 12, background: t.badLt, border: "none", color: t.bad, fontSize: 14, fontWeight: 600, cursor: "pointer", marginTop: 14, height: 44 }}>تسجيل خروج</button>
+      <button onClick={onLogout} style={{ width: "100%", padding: 13, borderRadius: 14, background: "transparent", border: "1.5px solid " + t.bad, color: t.bad, fontSize: 14, fontWeight: 700, cursor: "pointer", marginTop: 14, height: 46, fontFamily: Fn }}>🚪 تسجيل خروج</button>
     </div>}
 
     {/* FILES */}
