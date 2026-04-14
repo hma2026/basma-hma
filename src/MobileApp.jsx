@@ -6,7 +6,7 @@ import React, { useState, useEffect, useRef, useCallback } from "react";
    + Face Verify + Challenge + Toasts
    ═══════════════════════════════════════════ */
 
-const VER = "4.58";
+const VER = "4.59";
 
 /* ── Colors ── */
 const C = {
@@ -28,6 +28,7 @@ if (typeof document !== "undefined" && !document.getElementById("basma-css")) {
     "@keyframes slideUp{from{opacity:0;transform:translateY(100%)}to{opacity:1;transform:translateY(0)}}",
     "@keyframes slideDown{from{opacity:0;transform:translateY(-20px)}to{opacity:1;transform:translateY(0)}}",
     "@keyframes pulse{0%,100%{opacity:1}50%{opacity:.5}}",
+    "@keyframes pageIn{from{opacity:0;transform:translateX(8px)}to{opacity:1;transform:translateX(0)}}",
     ".basma-fadein{animation:fadeIn .4s ease both}",
     ".basma-fadein-d1{animation:fadeIn .4s ease .1s both}",
     ".basma-fadein-d2{animation:fadeIn .4s ease .2s both}",
@@ -307,9 +308,11 @@ export default function MobileApp() {
     <div style={S.phone}>
       {!online && <div style={{ background: C.red, color: "#fff", textAlign: "center", padding: "6px 0", fontSize: 11, fontWeight: 700 }}>⚠️ لا يوجد اتصال بالإنترنت</div>}
 
-      {page === "home" && <HomePage user={user} branch={branch} now={now} todayAtt={todayAtt} allAtt={allAtt} gps={gps} gpsDist={gpsDist} streak={streak} loading={loading} refreshing={refreshing} dayState={getDayState()} checkpoints={getCheckpoints()} isOffDay={isOffDay()} pendingCount={myLeaves.filter(function(l){ return l.status === "pending"; }).length + myTickets.filter(function(t){ return t.status === "pending"; }).length} onCheckin={requestCheckin} onChallenge={() => setChallengeOpen(true)} onLeave={() => setLeaveModal(true)} onRefresh={refresh} />}
-      {page === "report" && <ReportPage user={user} allAtt={allAtt} todayAtt={todayAtt} branch={branch} isOffDay={isOffDay()} myLeaves={myLeaves} />}
-      {page === "profile" && <ProfilePage user={user} branch={branch} onLogout={logout} onTicket={() => setTicketModal(true)} myTickets={myTickets} />}
+      <div key={page} style={{ flex: 1, display: "flex", flexDirection: "column", animation: "pageIn .3s ease" }}>
+        {page === "home" && <HomePage user={user} branch={branch} now={now} todayAtt={todayAtt} allAtt={allAtt} gps={gps} gpsDist={gpsDist} streak={streak} loading={loading} refreshing={refreshing} dayState={getDayState()} checkpoints={getCheckpoints()} isOffDay={isOffDay()} pendingCount={myLeaves.filter(function(l){ return l.status === "pending"; }).length + myTickets.filter(function(t){ return t.status === "pending"; }).length} onCheckin={requestCheckin} onChallenge={() => setChallengeOpen(true)} onLeave={() => setLeaveModal(true)} onRefresh={refresh} />}
+        {page === "report" && <ReportPage user={user} allAtt={allAtt} todayAtt={todayAtt} branch={branch} isOffDay={isOffDay()} myLeaves={myLeaves} />}
+        {page === "profile" && <ProfilePage user={user} branch={branch} onLogout={logout} onTicket={() => setTicketModal(true)} myTickets={myTickets} />}
+      </div>
 
       <BottomNav page={page} setPage={setPage} />
 
@@ -658,6 +661,9 @@ function ReportPage({ user, allAtt, todayAtt, branch, isOffDay, myLeaves }) {
           </div>
         </div>
 
+        {/* ── مخطط الأسبوع ── */}
+        <WeeklyChart allAtt={monthAtt} branch={branch} />
+
         <div style={S.card} className="basma-fadein-d3">
           <div style={S.cardTitle}>آخر البصمات</div>
           {recent.length === 0 && <div style={{ textAlign: "center", color: C.sub, fontSize: 13, padding: 20 }}>لا توجد بصمات بعد</div>}
@@ -798,7 +804,13 @@ function ProfilePage({ user, branch, onLogout, onTicket, myTickets }) {
         <button onClick={onLogout} style={{ width: "100%", padding: 14, borderRadius: 16, border: "2px solid " + C.red, background: "transparent", color: C.red, fontSize: 15, fontWeight: 800, cursor: "pointer", fontFamily: "'Cairo',sans-serif" }}>
           🚪 تسجيل خروج
         </button>
-        <div style={{ textAlign: "center", color: "rgba(0,0,0,.2)", fontSize: 10, marginTop: 16, marginBottom: 12 }}>{"v" + VER}</div>
+        <div style={{ textAlign: "center", marginTop: 16, marginBottom: 12, padding: 12, background: "#fff", borderRadius: 16 }}>
+          <div style={{ fontSize: 20, marginBottom: 4 }}>🕐</div>
+          <div style={{ fontSize: 13, fontWeight: 800, fontFamily: "'Cairo',sans-serif" }}>بصمة HMA</div>
+          <div style={{ fontSize: 10, color: C.sub, marginTop: 2 }}>نظام الحضور والانصراف الذكي</div>
+          <div style={{ fontSize: 10, color: C.sub, marginTop: 2 }}>هاني محمد عسيري للاستشارات الهندسية</div>
+          <div style={{ fontSize: 9, color: "#ccc", marginTop: 6 }}>{"v" + VER + " · basma-hma.vercel.app"}</div>
+        </div>
       </div>
     </div>
   );
@@ -1359,6 +1371,58 @@ function ToggleRow({ label, storeKey, border }) {
       <span style={{ fontSize: 13, fontWeight: 600 }}>{label}</span>
       <div onClick={toggle} style={{ width: 44, height: 24, borderRadius: 12, background: on ? C.green : "#ddd", position: "relative", cursor: "pointer", transition: "background .3s" }}>
         <div style={{ width: 18, height: 18, borderRadius: 9, background: "#fff", position: "absolute", top: 3, transition: "all .3s", left: on ? 3 : undefined, right: on ? undefined : 3, boxShadow: "0 1px 3px rgba(0,0,0,.2)" }} />
+      </div>
+    </div>
+  );
+}
+
+function WeeklyChart({ allAtt, branch }) {
+  // Get last 7 days
+  var days = [];
+  var maxHrs = 0;
+  for (var i = 6; i >= 0; i--) {
+    var d = new Date();
+    d.setDate(d.getDate() - i);
+    var ds = d.toISOString().split("T")[0];
+    var dayName = AR_DAYS[d.getDay()].slice(0, 3);
+    var dayRecs = allAtt.filter(function(r){ return r.date === ds; });
+    var cin = dayRecs.find(function(r){ return r.type === "checkin"; });
+    var cout = dayRecs.find(function(r){ return r.type === "checkout"; });
+    var hrs = 0;
+    if (cin && cout) {
+      var ms = new Date(cout.ts) - new Date(cin.ts);
+      var bS = dayRecs.find(function(r){ return r.type === "break_start"; });
+      var bE = dayRecs.find(function(r){ return r.type === "break_end"; });
+      if (bS && bE) ms -= (new Date(bE.ts) - new Date(bS.ts));
+      hrs = Math.max(0, ms / 3600000);
+    } else if (cin && i === 0) {
+      hrs = Math.max(0, (new Date() - new Date(cin.ts)) / 3600000);
+    }
+    if (hrs > maxHrs) maxHrs = hrs;
+    var isLate = branch && cin && (new Date(cin.ts).getHours() * 60 + new Date(cin.ts).getMinutes()) > timeToMin(branch.start) + 5;
+    days.push({ dayName: dayName, hrs: hrs, isLate: isLate, isToday: i === 0 });
+  }
+  var expected = branch ? (timeToMin(branch.end) - timeToMin(branch.start) - 30) / 60 : 8;
+  var barMax = Math.max(maxHrs, expected) * 1.1;
+
+  return (
+    <div style={S.card} className="basma-fadein-d2">
+      <div style={S.cardTitle}><span>ساعات الأسبوع</span><span style={{ fontSize: 11, color: C.sub }}>آخر 7 أيام</span></div>
+      <div style={{ display: "flex", alignItems: "flex-end", gap: 6, height: 100, padding: "0 4px" }}>
+        {days.map(function(day, idx) {
+          var pct = barMax > 0 ? Math.round((day.hrs / barMax) * 100) : 0;
+          var col = day.hrs === 0 ? "#e0e0e0" : day.isLate ? C.orange : day.hrs >= expected ? C.green : C.blue;
+          return (
+            <div key={idx} style={{ flex: 1, display: "flex", flexDirection: "column", alignItems: "center", gap: 3 }}>
+              <div style={{ fontSize: 8, fontWeight: 700, color: day.hrs > 0 ? C.text : "#ccc" }}>{day.hrs > 0 ? day.hrs.toFixed(1) : ""}</div>
+              <div style={{ width: "100%", borderRadius: 6, background: col, height: Math.max(4, pct) + "%", minHeight: 4, transition: "height .5s ease", opacity: day.isToday ? 1 : 0.7 }} />
+              <div style={{ fontSize: 8, fontWeight: 700, color: day.isToday ? C.blue : C.sub }}>{day.dayName}</div>
+            </div>
+          );
+        })}
+      </div>
+      <div style={{ height: 1, background: "#eee", marginTop: 4, position: "relative" }}>
+        <div style={{ position: "absolute", top: -8, left: 0, fontSize: 8, color: C.green }}>{expected + "h"}</div>
       </div>
     </div>
   );
