@@ -6,7 +6,7 @@ import React, { useState, useEffect, useRef, useCallback } from "react";
    + Face Verify + Challenge + Toasts
    ═══════════════════════════════════════════ */
 
-const VER = "4.59";
+const VER = "4.60";
 
 /* ── Colors ── */
 const C = {
@@ -108,8 +108,29 @@ const CHALLENGES = [
 ];
 
 
+/* ═══════════ ERROR BOUNDARY ═══════════ */
+class ErrorBoundary extends React.Component {
+  constructor(props) { super(props); this.state = { hasError: false, error: null }; }
+  static getDerivedStateFromError(error) { return { hasError: true, error: error }; }
+  render() {
+    if (this.state.hasError) {
+      return React.createElement("div", { style: { minHeight: "100vh", background: C.bg, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", padding: 24, textAlign: "center" } },
+        React.createElement("div", { style: { fontSize: 48, marginBottom: 16 } }, "⚠️"),
+        React.createElement("div", { style: { fontSize: 18, fontWeight: 800, fontFamily: "'Cairo',sans-serif", marginBottom: 8 } }, "حدث خطأ غير متوقع"),
+        React.createElement("div", { style: { fontSize: 12, color: C.sub, marginBottom: 20 } }, String(this.state.error && this.state.error.message || "")),
+        React.createElement("button", { onClick: function(){ window.location.reload(); }, style: { padding: "12px 32px", borderRadius: 14, background: "linear-gradient(135deg,"+C.blue+","+C.blueBright+")", color: "#fff", fontSize: 14, fontWeight: 700, border: "none", cursor: "pointer" } }, "🔄 إعادة تحميل")
+      );
+    }
+    return this.props.children;
+  }
+}
+
 /* ═══════════ MAIN COMPONENT ═══════════ */
 export default function MobileApp() {
+  return React.createElement(ErrorBoundary, null, React.createElement(MobileAppInner, null));
+}
+
+function MobileAppInner() {
   const [user, setUser] = useState(null);
   const [page, setPage] = useState("home");
   const [branch, setBranch] = useState(null);
@@ -131,6 +152,9 @@ export default function MobileApp() {
   const [refreshing, setRefreshing] = useState(false);
   const [myLeaves, setMyLeaves] = useState([]);
   const [myTickets, setMyTickets] = useState([]);
+  const [teamToday, setTeamToday] = useState([]);
+  const [allEmps, setAllEmps] = useState([]);
+  const [pwaPrompt, setPwaPrompt] = useState(null);
   const [initDone, setInitDone] = useState(false);
 
   function showToast(msg, type = "success") {
@@ -174,6 +198,13 @@ export default function MobileApp() {
     window.addEventListener("online", on);
     window.addEventListener("offline", off);
     return () => { window.removeEventListener("online", on); window.removeEventListener("offline", off); };
+  }, []);
+
+  // PWA install prompt
+  useEffect(() => {
+    function handlePrompt(e) { e.preventDefault(); setPwaPrompt(e); }
+    window.addEventListener("beforeinstallprompt", handlePrompt);
+    return () => window.removeEventListener("beforeinstallprompt", handlePrompt);
   }, []);
 
   useEffect(() => {
@@ -222,6 +253,18 @@ export default function MobileApp() {
         const allTickets = await api("tickets");
         setMyTickets((allTickets || []).filter(function(t){ return t.empId === emp.id; }));
       } catch(e) { /**/ }
+      // Fetch team data for managers
+      if (emp.isManager || emp.isAssistant) {
+        try {
+          var emps = await api("employees");
+          setAllEmps(emps || []);
+          var todayAllAtt = await api("attendance", { params: { date: todayStr() } });
+          var presentIds = new Set((todayAllAtt || []).filter(function(r){ return r.type === "checkin"; }).map(function(r){ return r.empId; }));
+          setTeamToday((emps || []).map(function(e) {
+            return { id: e.id, name: e.name, role: e.role, present: presentIds.has(e.id) };
+          }));
+        } catch(e) { /**/ }
+      }
     } catch { /**/ }
   }
 
@@ -309,7 +352,7 @@ export default function MobileApp() {
       {!online && <div style={{ background: C.red, color: "#fff", textAlign: "center", padding: "6px 0", fontSize: 11, fontWeight: 700 }}>⚠️ لا يوجد اتصال بالإنترنت</div>}
 
       <div key={page} style={{ flex: 1, display: "flex", flexDirection: "column", animation: "pageIn .3s ease" }}>
-        {page === "home" && <HomePage user={user} branch={branch} now={now} todayAtt={todayAtt} allAtt={allAtt} gps={gps} gpsDist={gpsDist} streak={streak} loading={loading} refreshing={refreshing} dayState={getDayState()} checkpoints={getCheckpoints()} isOffDay={isOffDay()} pendingCount={myLeaves.filter(function(l){ return l.status === "pending"; }).length + myTickets.filter(function(t){ return t.status === "pending"; }).length} onCheckin={requestCheckin} onChallenge={() => setChallengeOpen(true)} onLeave={() => setLeaveModal(true)} onRefresh={refresh} />}
+        {page === "home" && <HomePage user={user} branch={branch} now={now} todayAtt={todayAtt} allAtt={allAtt} gps={gps} gpsDist={gpsDist} streak={streak} loading={loading} refreshing={refreshing} dayState={getDayState()} checkpoints={getCheckpoints()} isOffDay={isOffDay()} pendingCount={myLeaves.filter(function(l){ return l.status === "pending"; }).length + myTickets.filter(function(t){ return t.status === "pending"; }).length} teamToday={teamToday} pwaPrompt={pwaPrompt} onPwaInstall={async function(){ if(pwaPrompt){pwaPrompt.prompt();await pwaPrompt.userChoice;setPwaPrompt(null);} }} onCheckin={requestCheckin} onChallenge={() => setChallengeOpen(true)} onLeave={() => setLeaveModal(true)} onRefresh={refresh} />}
         {page === "report" && <ReportPage user={user} allAtt={allAtt} todayAtt={todayAtt} branch={branch} isOffDay={isOffDay()} myLeaves={myLeaves} />}
         {page === "profile" && <ProfilePage user={user} branch={branch} onLogout={logout} onTicket={() => setTicketModal(true)} myTickets={myTickets} />}
       </div>
@@ -373,7 +416,7 @@ function LoginScreen({ onLogin, loading }) {
 }
 
 /* ═══════════ HOME ═══════════ */
-function HomePage({ user, branch, now, todayAtt, allAtt, gps, gpsDist, streak, loading, refreshing, dayState, checkpoints, isOffDay, pendingCount, onCheckin, onChallenge, onLeave, onRefresh }) {
+function HomePage({ user, branch, now, todayAtt, allAtt, gps, gpsDist, streak, loading, refreshing, dayState, checkpoints, isOffDay, pendingCount, teamToday, pwaPrompt, onPwaInstall, onCheckin, onChallenge, onLeave, onRefresh }) {
   const { time, sec, ampm } = formatTime(now);
   const badge = memberBadge(user.points || 0);
   const inRange = branch && gpsDist !== null && gpsDist <= (branch.radius || 150);
@@ -512,6 +555,44 @@ function HomePage({ user, branch, now, todayAtt, allAtt, gps, gpsDist, streak, l
             <span style={{ fontSize: 12, fontWeight: 700, color: C.text }}>{refreshing ? "جارِ التحديث..." : "تحديث البيانات"}</span>
           </button>
         </div>
+
+        {/* ── Team Today (managers only) ── */}
+        {teamToday && teamToday.length > 0 && (user.isManager || user.isAssistant) && (
+          <div style={S.card} className="basma-fadein-d3">
+            <div style={S.cardTitle}>
+              <span>فريق العمل</span>
+              <span style={{ fontSize: 11, color: C.green, fontWeight: 700 }}>{teamToday.filter(function(t){ return t.present; }).length + "/" + teamToday.length + " حاضر"}</span>
+            </div>
+            {teamToday.map(function(member, i) {
+              return (
+                <div key={member.id} style={{ display: "flex", alignItems: "center", gap: 10, padding: "8px 0", borderBottom: i < teamToday.length - 1 ? "1px solid " + C.bg : "none" }}>
+                  <div style={{ width: 32, height: 32, borderRadius: 10, background: member.present ? C.green + "18" : C.red + "10", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 14 }}>
+                    {member.present ? "✓" : "—"}
+                  </div>
+                  <div style={{ flex: 1 }}>
+                    <div style={{ fontSize: 12, fontWeight: 700, color: member.present ? C.text : "#bbb" }}>{member.name}</div>
+                    <div style={{ fontSize: 9, color: C.sub }}>{member.role}</div>
+                  </div>
+                  <span style={{ fontSize: 9, fontWeight: 700, color: member.present ? C.green : C.red, padding: "2px 8px", borderRadius: 6, background: member.present ? C.green + "12" : C.red + "08" }}>
+                    {member.present ? "حاضر" : "غائب"}
+                  </span>
+                </div>
+              );
+            })}
+          </div>
+        )}
+
+        {/* ── PWA Install Banner ── */}
+        {pwaPrompt && (
+          <div style={{ background: "linear-gradient(135deg,"+C.hdr2+","+C.hdr3+")", borderRadius: 16, padding: 14, marginBottom: 12, display: "flex", alignItems: "center", gap: 10, color: "#fff" }} className="basma-fadein-d3">
+            <span style={{ fontSize: 24 }}>📲</span>
+            <div style={{ flex: 1 }}>
+              <div style={{ fontSize: 13, fontWeight: 800 }}>ثبّت التطبيق</div>
+              <div style={{ fontSize: 10, opacity: .7 }}>أضف بصمة HMA لشاشتك الرئيسية</div>
+            </div>
+            <button onClick={onPwaInstall} style={{ padding: "8px 16px", borderRadius: 10, background: C.gold, color: C.hdr1, fontSize: 11, fontWeight: 800, border: "none", cursor: "pointer" }}>تثبيت</button>
+          </div>
+        )}
       </div>
     </div>
   );
