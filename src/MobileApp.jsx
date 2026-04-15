@@ -6,7 +6,7 @@ import React, { useState, useEffect, useRef, useCallback } from "react";
    + Face Verify + Challenge + Toasts
    ═══════════════════════════════════════════ */
 
-const VER = "4.70";
+const VER = "4.71";
 
 /* ── Colors ── */
 const LIGHT = {
@@ -558,8 +558,9 @@ function MobileAppInner() {
       {!online && <div style={{ background: C.red, color: "#fff", textAlign: "center", padding: "6px 0", fontSize: 11, fontWeight: 700 }}>⚠️ لا يوجد اتصال بالإنترنت</div>}
 
       <div key={page} style={{ flex: 1, display: "flex", flexDirection: "column", animation: "pageIn .3s ease" }}>
-        {page === "home" && <HomePage user={user} branch={branch} now={now} todayAtt={todayAtt} allAtt={allAtt} gps={gps} gpsDist={gpsDist} streak={streak} loading={loading} refreshing={refreshing} dayState={getDayState()} checkpoints={getCheckpoints()} isOffDay={isOffDay()} pendingCount={myLeaves.filter(function(l){ return l.status === "pending"; }).length + myTickets.filter(function(t){ return t.status === "pending"; }).length} teamToday={teamToday} pwaPrompt={pwaPrompt} onPwaInstall={async function(){ if(pwaPrompt){pwaPrompt.prompt();await pwaPrompt.userChoice;setPwaPrompt(null);} }} onCheckin={requestCheckin} onChallenge={() => setChallengeOpen(true)} onLeave={() => setLeaveModal(true)} onRefresh={refresh} />}
+        {page === "home" && <HomePage user={user} branch={branch} now={now} todayAtt={todayAtt} allAtt={allAtt} gps={gps} gpsDist={gpsDist} streak={streak} loading={loading} refreshing={refreshing} dayState={getDayState()} checkpoints={getCheckpoints()} isOffDay={isOffDay()} pendingCount={myLeaves.filter(function(l){ return l.status === "pending"; }).length + myTickets.filter(function(t){ return t.status === "pending"; }).length} teamToday={teamToday} pwaPrompt={pwaPrompt} onPwaInstall={async function(){ if(pwaPrompt){pwaPrompt.prompt();await pwaPrompt.userChoice;setPwaPrompt(null);} }} onCheckin={requestCheckin} onChallenge={function(pts) { var u = { ...user, points: (user.points||0)+pts }; setUser(u); localStorage.setItem("basma_user", JSON.stringify(u)); showToast("🎉 +" + pts + " نقطة!"); }} onLeave={() => setLeaveModal(true)} onRefresh={refresh} />}
         {page === "report" && <ReportPage user={user} allAtt={allAtt} todayAtt={todayAtt} branch={branch} isOffDay={isOffDay()} myLeaves={myLeaves} />}
+        {page === "benefits" && <BenefitsPage user={user} />}
         {page === "profile" && <ProfilePage user={user} branch={branch} onLogout={logout} onTicket={() => setTicketModal(true)} myTickets={myTickets} darkMode={darkMode} toggleDark={toggleDark} />}
       </div>
 
@@ -627,6 +628,22 @@ function HomePage({ user, branch, now, todayAtt, allAtt, gps, gpsDist, streak, l
   const badge = memberBadge(user.points || 0);
   const inRange = branch && gpsDist !== null && gpsDist <= (branch.radius || 150);
 
+  // Challenge state — inside the circle
+  var [challengeQ] = useState(function() { return CHALLENGES[Math.floor(Math.random() * CHALLENGES.length)]; });
+  var [challengeAnswer, setChallengeAnswer] = useState(null); // null = not answered, true = correct, false = wrong
+  var challengeDoneToday = localStorage.getItem("basma_challenge_" + todayStr()) === "1";
+  var showChallenge = dayState === "before" && !challengeDoneToday && challengeAnswer === null;
+
+  function answerChallenge(idx) {
+    if (challengeAnswer !== null) return;
+    var correct = idx === challengeQ.correct;
+    setChallengeAnswer(correct);
+    localStorage.setItem("basma_challenge_" + todayStr(), "1");
+    if (correct) {
+      onChallenge(POINTS.challenge_correct);
+    }
+  }
+
   const SIZE = 200, STROKE = 10, R = (SIZE - STROKE) / 2, CIRC = 2 * Math.PI * R;
   let pct = dayState === "before" ? 5 : dayState === "after" ? 100 : 50;
   if (branch && dayState === "during") {
@@ -689,23 +706,41 @@ function HomePage({ user, branch, now, todayAtt, allAtt, gps, gpsDist, streak, l
               <circle cx={SIZE/2} cy={SIZE/2} r={R} fill="none" stroke={ringCol} strokeWidth={STROKE} strokeLinecap="round" strokeDasharray={CIRC} strokeDashoffset={ringOff} style={{ transition: "stroke-dashoffset 1s ease" }} />
             </svg>
             <div style={S.clockInner}>
-              <div style={S.clockTime}>{time}<span style={{ fontSize: 18, opacity: .6 }}>{":" + sec}</span></div>
-              <div style={S.clockAmpm}>{ampm}</div>
-              {dayState === "during" && branch && (function() {
-                var remaining = timeToMin(branch.end) - (now.getHours() * 60 + now.getMinutes());
-                if (remaining > 0) {
-                  var rh = Math.floor(remaining / 60);
-                  var rm = remaining % 60;
-                  return React.createElement("div", { style: { fontSize: 9, color: "rgba(255,255,255,.5)", marginTop: -2, marginBottom: 2 } }, "متبقي " + rh + ":" + String(rm).padStart(2,"0"));
-                }
-                return null;
-              })()}
-              {btnAction ? (
-                <button onClick={() => !loading && onCheckin(btnAction, btnLabel)} disabled={loading} style={S.clockBtn}>
-                  {loading ? <span className="basma-pulse">⏳</span> : btnText}
-                </button>
+              {showChallenge ? (
+                /* ── Challenge inside circle ── */
+                <div style={{ textAlign: "center", padding: "0 12px" }}>
+                  <div style={{ fontSize: 8, fontWeight: 700, color: "rgba(255,255,255,.5)", marginBottom: 2 }}>{"⚡ " + challengeQ.type}</div>
+                  <div style={{ fontSize: 12, fontWeight: 800, color: "#fff", lineHeight: 1.5 }}>{challengeQ.q}</div>
+                </div>
+              ) : challengeAnswer !== null && dayState === "before" ? (
+                /* ── Challenge result ── */
+                <div style={{ textAlign: "center" }}>
+                  <div style={{ fontSize: 28 }}>{challengeAnswer ? "🎉" : "😅"}</div>
+                  <div style={{ fontSize: 11, fontWeight: 800, color: "#fff" }}>{challengeAnswer ? MASCOT.correct : MASCOT.wrong}</div>
+                  {challengeAnswer && <div style={{ fontSize: 10, color: C.gold, marginTop: 2 }}>{"+" + POINTS.challenge_correct + " نقطة"}</div>}
+                </div>
               ) : (
-                <div style={{ ...S.clockBtn, opacity: .6, cursor: "default" }}>{btnText}</div>
+                /* ── Normal clock ── */
+                <div style={{ textAlign: "center" }}>
+                  <div style={S.clockTime}>{time}<span style={{ fontSize: 18, opacity: .6 }}>{":" + sec}</span></div>
+                  <div style={S.clockAmpm}>{ampm}</div>
+                  {dayState === "during" && branch && (function() {
+                    var remaining = timeToMin(branch.end) - (now.getHours() * 60 + now.getMinutes());
+                    if (remaining > 0) {
+                      var rh = Math.floor(remaining / 60);
+                      var rm = remaining % 60;
+                      return React.createElement("div", { style: { fontSize: 9, color: "rgba(255,255,255,.5)", marginTop: -2, marginBottom: 2 } }, "متبقي " + rh + ":" + String(rm).padStart(2,"0"));
+                    }
+                    return null;
+                  })()}
+                  {btnAction ? (
+                    <button onClick={function(){ if(!loading) onCheckin(btnAction, btnLabel); }} disabled={loading} style={S.clockBtn}>
+                      {loading ? React.createElement("span", { className: "basma-pulse" }, "⏳") : btnText}
+                    </button>
+                  ) : (
+                    <div style={{ ...S.clockBtn, opacity: .6, cursor: "default" }}>{btnText}</div>
+                  )}
+                </div>
               )}
             </div>
           </div>
@@ -739,11 +774,23 @@ function HomePage({ user, branch, now, todayAtt, allAtt, gps, gpsDist, streak, l
           </div>
         )}
 
-        {dayState === "before" && (
-          <div onClick={onChallenge} style={S.challengeCard} className="basma-fadein-d1">
-            <div style={{ fontSize: 14, fontWeight: 800 }}>⚡ سؤال التحدي — 25 نقطة</div>
-            <div style={{ fontSize: 10, opacity: .8, marginTop: 3 }}>اضغط للإجابة وكسب النقاط</div>
+        {/* ── Challenge Answer Options (3 خيارات) ── */}
+        {showChallenge && (
+          <div style={{ display: "flex", flexDirection: "column", gap: 6, marginBottom: 12 }} className="basma-fadein-d1">
+            {challengeQ.opts.map(function(opt, idx) {
+              return (
+                <button key={idx} onClick={function(){ answerChallenge(idx); }} style={{ padding: "12px 16px", borderRadius: 14, background: "#fff", border: "2px solid rgba(0,0,0,.06)", fontSize: 13, fontWeight: 700, color: C.text, cursor: "pointer", textAlign: "center", fontFamily: "'Tajawal',sans-serif", boxShadow: "0 2px 8px rgba(0,0,0,.04)" }}>
+                  {opt}
+                </button>
+              );
+            })}
+            <div style={{ textAlign: "center", fontSize: 9, color: C.sub }}>{"⚡ تحدي الصباح — " + POINTS.challenge_correct + " نقطة"}</div>
           </div>
+        )}
+
+        {/* ── Mascot message ── */}
+        {dayState === "before" && !showChallenge && challengeAnswer === null && challengeDoneToday && (
+          <div style={{ textAlign: "center", padding: "8px 0 12px", fontSize: 12, color: C.green, fontWeight: 700 }}>{"✓ أجبت على تحدي اليوم — " + MASCOT.idle}</div>
         )}
 
         <div style={S.card} className="basma-fadein-d1">
@@ -1117,6 +1164,85 @@ function ProfilePage({ user, branch, onLogout, onTicket, myTickets, darkMode, to
           <div style={{ fontSize: 10, color: C.sub, marginTop: 2 }}>هاني محمد عسيري للاستشارات الهندسية</div>
           <div style={{ fontSize: 9, color: "#ccc", marginTop: 6 }}>{"v" + VER + " · basma-hma.vercel.app"}</div>
         </div>
+      </div>
+    </div>
+  );
+}
+
+/* ═══════════ BENEFITS PAGE (امتيازات العضوية) ═══════════ */
+function BenefitsPage({ user }) {
+  var badge = memberBadge(user.points || 0);
+  var [filter, setFilter] = useState("all");
+  var isRamadan = false; // TODO: detect Ramadan from Hijri date
+  var allCoupons = isRamadan ? COUPONS.concat(RAMADAN_COUPONS) : COUPONS;
+  var cats = ["all"].concat(Array.from(new Set(allCoupons.map(function(c){ return c.cat; }))));
+  var filtered = filter === "all" ? allCoupons : allCoupons.filter(function(c){ return c.cat === filter; });
+
+  return (
+    <div style={{ flex: 1, paddingBottom: 80 }}>
+      <div style={S.detailHeader}>
+        <div style={{ width: 60 }} />
+        <div style={S.detailTitle}>🎖 امتيازات العضوية</div>
+        <div style={{ width: 60 }} />
+      </div>
+      <div style={{ padding: "16px 16px 0" }}>
+
+        {/* Current level summary */}
+        <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 14, padding: "12px 14px", background: badge.bg, borderRadius: 16, border: "1.5px solid " + badge.color + "30" }} className="basma-fadein">
+          <span style={{ fontSize: 28 }}>{badge.icon}</span>
+          <div style={{ flex: 1 }}>
+            <div style={{ fontSize: 14, fontWeight: 800, color: badge.color }}>{badge.label}</div>
+            <div style={{ fontSize: 10, color: C.sub }}>{"⭐ " + (user.points || 0) + " نقطة"}</div>
+          </div>
+          <div style={{ fontSize: 10, fontWeight: 700, color: C.sub }}>
+            {filtered.filter(function(c){ return c.minTier <= badge.tier; }).length + " متاح من " + filtered.length}
+          </div>
+        </div>
+
+        {/* Category filter */}
+        <div style={{ display: "flex", gap: 4, marginBottom: 14, overflowX: "auto", paddingBottom: 4 }} className="basma-fadein-d1">
+          {cats.map(function(cat) {
+            var active = filter === cat;
+            var catLabels = { all: "الكل", "مطاعم": "🍔 مطاعم", "خدمات": "🔧 خدمات", "رياضة": "💪 رياضة", "تسوق": "🛍 تسوق", "سفر": "✈️ سفر", "رمضان": "🌙 رمضان" };
+            return (
+              <button key={cat} onClick={function(){ setFilter(cat); }} style={{ padding: "6px 14px", borderRadius: 10, background: active ? C.blue : C.card, color: active ? "#fff" : C.sub, fontSize: 10, fontWeight: 700, border: active ? "none" : "1px solid rgba(0,0,0,.06)", cursor: "pointer", whiteSpace: "nowrap" }}>
+                {catLabels[cat] || cat}
+              </button>
+            );
+          })}
+        </div>
+
+        {/* Coupons grid */}
+        <div style={{ display: "flex", flexDirection: "column", gap: 8 }} className="basma-fadein-d2">
+          {filtered.map(function(coupon) {
+            var available = coupon.minTier <= badge.tier;
+            var canAfford = (user.points || 0) >= coupon.pts;
+            var tierName = MEMBERSHIP[coupon.minTier] ? MEMBERSHIP[coupon.minTier].name.replace("عضوية ","") : "فعّال";
+            return (
+              <div key={coupon.id} style={{ display: "flex", alignItems: "center", gap: 12, padding: 14, borderRadius: 16, background: C.card, border: available ? "1.5px solid " + C.green + "30" : "1px solid rgba(0,0,0,.06)", opacity: available ? 1 : 0.5, boxShadow: "0 2px 8px rgba(0,0,0,.04)" }}>
+                <div style={{ width: 44, height: 44, borderRadius: 14, background: available ? C.green + "12" : "rgba(0,0,0,.04)", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 22 }}>{coupon.icon}</div>
+                <div style={{ flex: 1 }}>
+                  <div style={{ fontSize: 13, fontWeight: 700, color: C.text }}>{coupon.brand}</div>
+                  <div style={{ fontSize: 11, color: available ? C.green : C.sub, fontWeight: 600 }}>{coupon.discount}</div>
+                  {!available && <div style={{ fontSize: 8, color: C.orange }}>{"يتطلب " + tierName}</div>}
+                </div>
+                <div style={{ textAlign: "center" }}>
+                  <div style={{ fontSize: 14, fontWeight: 900, color: canAfford && available ? C.green : C.sub }}>{coupon.pts}</div>
+                  <div style={{ fontSize: 8, color: C.sub }}>نقطة</div>
+                  {available && canAfford && (
+                    <button style={{ marginTop: 4, padding: "3px 10px", borderRadius: 8, background: C.green, color: "#fff", fontSize: 9, fontWeight: 700, border: "none", cursor: "pointer" }}>استبدال</button>
+                  )}
+                </div>
+              </div>
+            );
+          })}
+        </div>
+
+        {isRamadan && (
+          <div style={{ textAlign: "center", marginTop: 12, padding: 10, borderRadius: 12, background: "#FFF3C4", fontSize: 11, fontWeight: 700, color: "#D4A017" }}>
+            🌙 عروض رمضان الخاصة متاحة!
+          </div>
+        )}
       </div>
     </div>
   );
@@ -1836,6 +1962,7 @@ function FaceResetRow({ empId }) {
 function BottomNav({ page, setPage }) {
   var items = [
     { id: "home", icon: "🏠", label: "الرئيسية" },
+    { id: "benefits", icon: "🎖", label: "الامتيازات" },
     { id: "report", icon: "📊", label: "تقريري" },
     { id: "profile", icon: "👤", label: "حسابي" },
   ];
