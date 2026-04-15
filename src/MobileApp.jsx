@@ -6,7 +6,16 @@ import React, { useState, useEffect, useRef, useCallback } from "react";
    + Face Verify + Challenge + Toasts
    ═══════════════════════════════════════════ */
 
-const VER = "4.80";
+/* ═══════════ APP CONFIG (إعدادات التطبيق) ═══════════ */
+const APP_CONFIG = {
+  VER: "4.80",
+  NAME: "بصمة HMA",
+  FULL_NAME: "نظام الحضور والانصراف الذكي",
+  COMPANY: "هاني محمد عسيري للاستشارات الهندسية",
+  URL: "basma-hma.vercel.app",
+  KADWAR_URL: "https://hma.engineer",
+};
+const VER = APP_CONFIG.VER;
 
 /* ── Colors ── */
 const LIGHT = {
@@ -1289,6 +1298,14 @@ function ProfilePage({ user, branch, onLogout, onTicket, myTickets, darkMode, to
           <ToggleRow label="📞 تذكير بالحضور" storeKey="remind_in" border={true} />
           <ToggleRow label="📞 تذكير بالانصراف" storeKey="remind_out" border={true} />
           <FaceResetRow empId={user.id} />
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "10px 0", borderTop: "1px solid " + C.bg }}>
+            <span style={{ fontSize: 13, fontWeight: 600 }}>📱 إصدار التطبيق</span>
+            <span style={{ fontSize: 12, fontWeight: 800, color: C.blue }}>{"v" + VER}</span>
+          </div>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "10px 0", borderTop: "1px solid " + C.bg }}>
+            <span style={{ fontSize: 13, fontWeight: 600 }}>🏢 المكتب</span>
+            <span style={{ fontSize: 10, color: C.sub }}>{APP_CONFIG.COMPANY}</span>
+          </div>
         </div>
 
         {user.sceNumber && (
