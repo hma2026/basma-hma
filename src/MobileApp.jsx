@@ -6,7 +6,7 @@ import React, { useState, useEffect, useRef, useCallback } from "react";
    + Face Verify + Challenge + Toasts
    ═══════════════════════════════════════════ */
 
-const VER = "4.71";
+const VER = "4.72";
 
 /* ── Colors ── */
 const LIGHT = {
@@ -200,17 +200,49 @@ const RAMADAN_COUPONS = [
 
 /* ── GPS Tracking Config ── */
 const GPS_TRACK_INTERVAL = 300000; // كل 5 دقائق
-const GPS_OFFLINE_KEY = "basma_gps_queue"; // مفتاح التخزين المحلي للمواقع بدون نت
+const GPS_OFFLINE_KEY = "basma_gps_queue";
 
 function queueGpsOffline(record) {
   try {
     var queue = JSON.parse(localStorage.getItem(GPS_OFFLINE_KEY) || "[]");
     queue.push(record);
-    // Keep max 288 records (24 hours × 12 per hour)
     if (queue.length > 288) queue = queue.slice(-288);
     localStorage.setItem(GPS_OFFLINE_KEY, JSON.stringify(queue));
   } catch(e) { /**/ }
 }
+
+/* ── Call Notification System (4 أوقات متفق عليها) ── */
+// اتصال 1: بداية الدوام بالضبط
+// اتصال 2: بعد 10 دقائق لو ما حضر (فقط لو في النطاق)
+// اتصال 3: قبل الاستراحة بـ 2-7 دقائق (عشوائي لكل موظف)
+// اتصال 4: بعد انتهاء الاستراحة بـ 2-7 دقائق (عشوائي)
+// لا اتصال عند الانصراف — فقط الدائرة
+// لا اتصال لو الموظف في إجازة
+const CALL_RETRY_DELAY = 10; // دقائق
+const BREAK_RANDOM_MIN = 2;
+const BREAK_RANDOM_MAX = 7;
+
+function getBreakOffset() {
+  return BREAK_RANDOM_MIN + Math.floor(Math.random() * (BREAK_RANDOM_MAX - BREAK_RANDOM_MIN + 1));
+}
+
+/* ── Labor Law Violations (لائحة العمل السعودية) ── */
+const VIOLATION_ESCALATION = [
+  { level: 1, type: "تنبيه إلكتروني", action: "تنبيه شفهي", response: "إلكتروني", icon: "💬" },
+  { level: 2, type: "إنذار إلكتروني أول", action: "إنذار كتابي", response: "إلكتروني", icon: "⚠️" },
+  { level: 3, type: "إنذار كتابي", action: "إنذار كتابي + خصم يوم", response: "كتابي + إفادة موقعة", icon: "📋" },
+  { level: 4, type: "إنذار نهائي", action: "إنذار نهائي + خصم 3 أيام", response: "إفادة ورقية موقعة مصورة", icon: "🔴" },
+  { level: 5, type: "إنهاء خدمات", action: "إنهاء العلاقة التعاقدية", response: "—", icon: "❌" },
+];
+
+const VIOLATION_TYPES = {
+  late: { label: "تأخر في الحضور", category: "انضباط" },
+  absent: { label: "غياب بدون إذن", category: "انضباط" },
+  early_leave: { label: "انصراف مبكر", category: "انضباط" },
+  geofence: { label: "تسجيل من خارج النطاق", category: "انضباط" },
+  no_face: { label: "عدم التحقق بالوجه", category: "أمان" },
+  missed_break: { label: "عدم تسجيل الاستراحة", category: "انضباط" },
+};
 
 
 /* ═══════════ ERROR BOUNDARY ═══════════ */
@@ -261,6 +293,7 @@ function MobileAppInner() {
   const [teamToday, setTeamToday] = useState([]);
   const [allEmps, setAllEmps] = useState([]);
   const [pwaPrompt, setPwaPrompt] = useState(null);
+  const [callBanner, setCallBanner] = useState(null); // { type, msg }
   const [initDone, setInitDone] = useState(false);
 
   // Apply dark mode
@@ -389,6 +422,67 @@ function MobileAppInner() {
     }
     if (online && user) syncGpsQueue();
   }, [online, user]);
+
+  // ═══ Call Notification Engine (4 أوقات) ═══
+  useEffect(function() {
+    if (!user || !branch) return;
+    var breakOffset = getBreakOffset(); // random 2-7 min per session
+    var callShown = {};
+
+    function checkCalls() {
+      var mins = now.getHours() * 60 + now.getMinutes();
+      var startMin = timeToMin(branch.start);
+      var endMin = timeToMin(branch.end);
+      var breakSMin = branch.breakS ? timeToMin(branch.breakS) : startMin + 240;
+      var breakEMin = branch.breakE ? timeToMin(branch.breakE) : breakSMin + 30;
+      var hasCheckin = todayAtt.some(function(r){ return r.type === "checkin"; });
+      var hasBreakS = todayAtt.some(function(r){ return r.type === "break_start"; });
+      var hasBreakE = todayAtt.some(function(r){ return r.type === "break_end"; });
+      var onLeave = user.onLeave;
+
+      if (onLeave) return; // لا اتصال لو في إجازة
+
+      // اتصال 1: بداية الدوام بالضبط
+      if (mins === startMin && !hasCheckin && !callShown.call1) {
+        callShown.call1 = true;
+        setCallBanner({ type: "checkin", msg: MASCOT.checkin });
+        if (navigator.vibrate) navigator.vibrate([300, 100, 300, 100, 300]);
+      }
+      // اتصال 2: بعد 10 دقائق لو ما حضر (فقط لو في النطاق)
+      if (mins === startMin + CALL_RETRY_DELAY && !hasCheckin && !callShown.call2) {
+        var inR = gpsDist !== null && gpsDist <= (branch.radius || 150);
+        if (inR) {
+          callShown.call2 = true;
+          setCallBanner({ type: "retry", msg: "⏰ لم تسجّل حضورك بعد!" });
+          if (navigator.vibrate) navigator.vibrate([500, 200, 500]);
+        }
+      }
+      // اتصال 3: قبل الاستراحة بـ breakOffset دقائق
+      if (mins === breakSMin - breakOffset && !hasBreakS && hasCheckin && !callShown.call3) {
+        callShown.call3 = true;
+        setCallBanner({ type: "break", msg: "☕ وقت الاستراحة قريب — سجّل!" });
+        if (navigator.vibrate) navigator.vibrate([200, 100, 200]);
+      }
+      // اتصال 4: بعد انتهاء الاستراحة بـ breakOffset دقائق
+      if (mins === breakEMin + breakOffset && !hasBreakE && hasBreakS && !callShown.call4) {
+        callShown.call4 = true;
+        setCallBanner({ type: "breakEnd", msg: "🔄 انتهت الاستراحة — سجّل عودتك!" });
+        if (navigator.vibrate) navigator.vibrate([200, 100, 200]);
+      }
+      // خارج النطاق عند الحضور — دائرة حمراء
+      if (mins >= startMin && mins <= startMin + 15 && !hasCheckin) {
+        var outside = gpsDist !== null && gpsDist > (branch.radius || 150);
+        if (outside && !callShown.outRange) {
+          callShown.outRange = true;
+          // لا اتصال — فقط تنبيه بصري (الدائرة حمراء + رسالة)
+        }
+      }
+    }
+
+    var interval = setInterval(checkCalls, 30000); // check every 30 sec
+    checkCalls(); // check immediately
+    return function() { clearInterval(interval); };
+  }, [user, branch, now, todayAtt, gpsDist]);
 
   async function loadData(emp) {
     try {
@@ -567,6 +661,7 @@ function MobileAppInner() {
       <BottomNav page={page} setPage={setPage} />
 
       {toast && <Toast msg={toast.msg} type={toast.type} />}
+      {callBanner && <CallBanner type={callBanner.type} msg={callBanner.msg} onDismiss={function(){ setCallBanner(null); }} />}
       {confirmModal && <ConfirmModal label={confirmModal.label} onConfirm={confirmCheckin} onCancel={() => setConfirmModal(null)} />}
       {faceModal && <FaceModal empId={user.id} onVerified={(photo) => doCheckin(faceModal.type, photo)} onSkip={() => doCheckin(faceModal.type)} onCancel={() => setFaceModal(null)} />}
       {challengeOpen && <ChallengeModal user={user} onClose={() => setChallengeOpen(false)} onPoints={(pts) => { const u = { ...user, points: (user.points||0)+pts }; setUser(u); localStorage.setItem("basma_user", JSON.stringify(u)); showToast("🎉 +" + pts + " نقطة!"); }} />}
@@ -651,7 +746,8 @@ function HomePage({ user, branch, now, todayAtt, allAtt, gps, gpsDist, streak, l
     pct = Math.min(100, Math.round(((mins - timeToMin(branch.start)) / (timeToMin(branch.end) - timeToMin(branch.start))) * 100));
   }
   const ringOff = CIRC - (pct / 100) * CIRC;
-  const ringCol = dayState === "during" ? "#5ec47a" : dayState === "after" ? C.gold : "#80b4f0";
+  var outsideNoCheckin = !checkpoints.checkin && gpsDist !== null && branch && gpsDist > (branch.radius || 150);
+  const ringCol = outsideNoCheckin ? C.red : dayState === "during" ? "#5ec47a" : dayState === "after" ? C.gold : "#80b4f0";
 
   let btnText, btnAction, btnLabel;
   if (dayState === "before") { btnText = "☀️ سجّل حضورك"; btnAction = "checkin"; btnLabel = "تسجيل الحضور"; }
@@ -724,7 +820,13 @@ function HomePage({ user, branch, now, todayAtt, allAtt, gps, gpsDist, streak, l
                 <div style={{ textAlign: "center" }}>
                   <div style={S.clockTime}>{time}<span style={{ fontSize: 18, opacity: .6 }}>{":" + sec}</span></div>
                   <div style={S.clockAmpm}>{ampm}</div>
-                  {dayState === "during" && branch && (function() {
+                  {outsideNoCheckin && dayState !== "after" && (
+                    <div style={{ fontSize: 9, fontWeight: 800, color: "#FF6B6B", marginTop: -2, marginBottom: 2 }}>لم تقم بتسجيل الحضور</div>
+                  )}
+                  {outsideNoCheckin && gpsDist && (
+                    <div style={{ fontSize: 8, color: "rgba(255,255,255,.4)" }}>{"خارج منطقة العمل (" + gpsDist + " م)"}</div>
+                  )}
+                  {dayState === "during" && branch && !outsideNoCheckin && (function() {
                     var remaining = timeToMin(branch.end) - (now.getHours() * 60 + now.getMinutes());
                     if (remaining > 0) {
                       var rh = Math.floor(remaining / 60);
@@ -1255,6 +1357,31 @@ function Toast({ msg, type }) {
   return (
     <div className="basma-slidedown" style={{ position: "fixed", top: 16, left: "50%", transform: "translateX(-50%)", zIndex: 999, background: bg, color: "#fff", padding: "10px 24px", borderRadius: 14, fontSize: 13, fontWeight: 700, boxShadow: "0 4px 20px rgba(0,0,0,.25)", fontFamily: "'Tajawal',sans-serif", maxWidth: "90vw", textAlign: "center" }}>
       {msg}
+    </div>
+  );
+}
+
+/* ── Call Banner (اتصال تنبيهي) ── */
+function CallBanner({ type, msg, onDismiss }) {
+  var icons = { checkin: "📞", retry: "📞", break: "☕", breakEnd: "🔄" };
+  var colors = { checkin: C.green, retry: C.red, break: C.orange, breakEnd: C.blue };
+
+  useEffect(function() {
+    // Auto-dismiss after 30 seconds
+    var t = setTimeout(onDismiss, 30000);
+    return function() { clearTimeout(t); };
+  }, []);
+
+  return (
+    <div style={{ position: "fixed", inset: 0, zIndex: 300, background: "rgba(0,0,0,.7)", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", padding: 24 }} onClick={onDismiss}>
+      <div className="basma-pulse" style={{ width: 100, height: 100, borderRadius: "50%", background: (colors[type] || C.blue) + "30", display: "flex", alignItems: "center", justifyContent: "center", marginBottom: 20, border: "3px solid " + (colors[type] || C.blue) }}>
+        <span style={{ fontSize: 42 }}>{icons[type] || "📞"}</span>
+      </div>
+      <div style={{ color: "#fff", fontSize: 20, fontWeight: 900, fontFamily: "'Cairo',sans-serif", marginBottom: 8, textAlign: "center" }}>{msg}</div>
+      <div style={{ color: "rgba(255,255,255,.5)", fontSize: 12, marginBottom: 24 }}>اضغط لإغلاق التنبيه</div>
+      <button onClick={onDismiss} style={{ padding: "12px 40px", borderRadius: 16, background: colors[type] || C.blue, color: "#fff", fontSize: 15, fontWeight: 800, border: "none", cursor: "pointer", fontFamily: "'Cairo',sans-serif" }}>
+        حسناً ✓
+      </button>
     </div>
   );
 }
