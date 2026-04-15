@@ -298,6 +298,7 @@ function MobileAppInner() {
   const [daySummary, setDaySummary] = useState(false);
   const [preAbsModal, setPreAbsModal] = useState(false);
   const [manualAttModal, setManualAttModal] = useState(false);
+  const [permModal, setPermModal] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
   const [myLeaves, setMyLeaves] = useState([]);
   const [myTickets, setMyTickets] = useState([]);
@@ -669,7 +670,7 @@ function MobileAppInner() {
       {!online && <div style={{ background: C.red, color: "#fff", textAlign: "center", padding: "6px 0", fontSize: 11, fontWeight: 700 }}>⚠️ لا يوجد اتصال بالإنترنت</div>}
 
       <div key={page} style={{ flex: 1, display: "flex", flexDirection: "column", animation: "pageIn .3s ease" }}>
-        {page === "home" && <HomePage user={user} branch={branch} now={now} todayAtt={todayAtt} allAtt={allAtt} gps={gps} gpsDist={gpsDist} streak={streak} loading={loading} refreshing={refreshing} dayState={getDayState()} checkpoints={getCheckpoints()} isOffDay={isOffDay()} pendingCount={myLeaves.filter(function(l){ return l.status === "pending"; }).length + myTickets.filter(function(t){ return t.status === "pending"; }).length} teamToday={teamToday} pwaPrompt={pwaPrompt} onPwaInstall={async function(){ if(pwaPrompt){pwaPrompt.prompt();await pwaPrompt.userChoice;setPwaPrompt(null);} }} onCheckin={requestCheckin} onChallenge={function(pts) { var u = { ...user, points: (user.points||0)+pts }; setUser(u); localStorage.setItem("basma_user", JSON.stringify(u)); showToast("🎉 +" + pts + " نقطة!"); }} onLeave={() => setLeaveModal(true)} onRefresh={refresh} onPreAbsence={function(){ setPreAbsModal(true); }} onManualAtt={function(){ setManualAttModal(true); }} kadwarNotifs={kadwarNotifs} />}
+        {page === "home" && <HomePage user={user} branch={branch} now={now} todayAtt={todayAtt} allAtt={allAtt} gps={gps} gpsDist={gpsDist} streak={streak} loading={loading} refreshing={refreshing} dayState={getDayState()} checkpoints={getCheckpoints()} isOffDay={isOffDay()} pendingCount={myLeaves.filter(function(l){ return l.status === "pending"; }).length + myTickets.filter(function(t){ return t.status === "pending"; }).length} teamToday={teamToday} pwaPrompt={pwaPrompt} onPwaInstall={async function(){ if(pwaPrompt){pwaPrompt.prompt();await pwaPrompt.userChoice;setPwaPrompt(null);} }} onCheckin={requestCheckin} onChallenge={function(pts) { var u = { ...user, points: (user.points||0)+pts }; setUser(u); localStorage.setItem("basma_user", JSON.stringify(u)); showToast("🎉 +" + pts + " نقطة!"); }} onLeave={() => setLeaveModal(true)} onRefresh={refresh} onPreAbsence={function(){ setPreAbsModal(true); }} onManualAtt={function(){ setManualAttModal(true); }} onPermission={function(){ setPermModal(true); }} kadwarNotifs={kadwarNotifs} />}
         {page === "report" && <ReportPage user={user} allAtt={allAtt} todayAtt={todayAtt} branch={branch} isOffDay={isOffDay()} myLeaves={myLeaves} allEmps={allEmps} />}
         {page === "benefits" && <BenefitsPage user={user} />}
         {page === "profile" && <ProfilePage user={user} branch={branch} onLogout={logout} onTicket={() => setTicketModal(true)} myTickets={myTickets} darkMode={darkMode} toggleDark={toggleDark} />}
@@ -687,6 +688,7 @@ function MobileAppInner() {
       {daySummary && <DaySummaryModal todayAtt={todayAtt} branch={branch} user={user} onClose={() => setDaySummary(false)} />}
       {preAbsModal && <PreAbsenceModal allEmps={allEmps} user={user} onClose={function(){ setPreAbsModal(false); }} onSubmit={async function(data) { try { await api("pre_absence", { method: "POST", body: { ...data, reportedBy: user.id } }); setPreAbsModal(false); showToast("✅ تم تسجيل الإفادة المسبقة"); } catch(e) { showToast("خطأ في الإرسال", "error"); } }} />}
       {manualAttModal && <ManualAttModal allEmps={allEmps} user={user} onClose={function(){ setManualAttModal(false); }} onSubmit={async function(data) { try { await api("manual_checkin", { method: "POST", body: { ...data, adminId: user.id } }); setManualAttModal(false); showToast("✅ تم التحضير اليدوي"); loadData(user); } catch(e) { showToast("خطأ", "error"); } }} />}
+      {permModal && <PermissionModal user={user} branch={branch} onClose={function(){ setPermModal(false); }} onSubmit={async function(data) { try { await api("permissions", { method: "POST", body: { empId: user.id, ...data, date: todayStr() } }); setPermModal(false); showToast("✅ تم إرسال طلب الإذن"); } catch(e) { showToast("خطأ في الإرسال", "error"); } }} />}
     </div>
   );
 }
@@ -737,7 +739,7 @@ function LoginScreen({ onLogin, loading }) {
 }
 
 /* ═══════════ HOME ═══════════ */
-function HomePage({ user, branch, now, todayAtt, allAtt, gps, gpsDist, streak, loading, refreshing, dayState, checkpoints, isOffDay, pendingCount, teamToday, pwaPrompt, onPwaInstall, onCheckin, onChallenge, onLeave, onRefresh, onPreAbsence, onManualAtt, kadwarNotifs }) {
+function HomePage({ user, branch, now, todayAtt, allAtt, gps, gpsDist, streak, loading, refreshing, dayState, checkpoints, isOffDay, pendingCount, teamToday, pwaPrompt, onPwaInstall, onCheckin, onChallenge, onLeave, onRefresh, onPreAbsence, onManualAtt, onPermission, kadwarNotifs }) {
   const { time, sec, ampm } = formatTime(now);
   const badge = memberBadge(user.points || 0);
   const inRange = branch && gpsDist !== null && gpsDist <= (branch.radius || 150);
@@ -758,7 +760,7 @@ function HomePage({ user, branch, now, todayAtt, allAtt, gps, gpsDist, streak, l
     }
   }
 
-  const SIZE = 200, STROKE = 10, R = (SIZE - STROKE) / 2, CIRC = 2 * Math.PI * R;
+  const SIZE = 240, STROKE = 10, R = (SIZE - STROKE) / 2, CIRC = 2 * Math.PI * R;
   let pct = dayState === "before" ? 5 : dayState === "after" ? 100 : 50;
   if (branch && dayState === "during") {
     const mins = now.getHours() * 60 + now.getMinutes();
@@ -795,7 +797,7 @@ function HomePage({ user, branch, now, todayAtt, allAtt, gps, gpsDist, streak, l
   }
 
   return (
-    <div style={{ flex: 1, paddingBottom: 80 }}>
+    <div style={{ flex: 1, paddingBottom: 80, minHeight: "100vh", display: "flex", flexDirection: "column" }}>
       <div style={S.header}>
         <div style={S.headerCurve} />
         <div style={S.headerTop}>
@@ -873,17 +875,6 @@ function HomePage({ user, branch, now, todayAtt, allAtt, gps, gpsDist, streak, l
         <BranchHolidayBanner branch={branch} />
         <OccasionBanner user={user} />
 
-        <div style={S.statsRow} className="basma-fadein">
-          <div style={{ ...S.statCard, background: "linear-gradient(135deg,"+C.green+","+C.greenDark+")" }}>
-            <div style={S.statIcon}>✓</div>
-            <div><div style={S.statNum}>{attendPct + "%"}</div><div style={S.statLabel}>نسبة الحضور</div></div>
-          </div>
-          <div style={{ ...S.statCard, background: "linear-gradient(135deg,"+C.orange+","+C.orangeDark+")" }}>
-            <div style={S.statIcon}>⏰</div>
-            <div><div style={S.statNum}>{lateDays}</div><div style={S.statLabel}>أيام تأخر</div></div>
-          </div>
-        </div>
-
         <div style={S.gpsRow}>
           <div style={{ width: 8, height: 8, borderRadius: "50%", background: gps ? (inRange ? C.green : C.red) : C.orange, transition: "background .3s" }} />
           <span style={{ fontSize: 11, fontWeight: 700, color: gps ? (inRange ? C.green : C.red) : C.orange }}>
@@ -941,19 +932,15 @@ function HomePage({ user, branch, now, todayAtt, allAtt, gps, gpsDist, streak, l
         {/* ── Points Log ── */}
         <PointsLogCard user={user} allAtt={allAtt} />
 
-        {/* ── Violations + Delegation ── */}
-        <ViolationsCard user={user} />
-        <DelegationCard user={user} />
-
         {/* ── Quick Actions ── */}
         <div style={{ display: "flex", gap: 8, marginBottom: 12 }} className="basma-fadein-d2">
           <button onClick={onLeave} style={{ flex: 1, padding: "12px 8px", borderRadius: 14, background: "#fff", border: "none", boxShadow: "0 2px 8px rgba(0,0,0,.05)", display: "flex", alignItems: "center", justifyContent: "center", gap: 6, cursor: "pointer" }}>
             <span style={{ fontSize: 16 }}>📝</span>
             <span style={{ fontSize: 12, fontWeight: 700, color: C.text }}>طلب إجازة</span>
           </button>
-          <button onClick={onRefresh} disabled={refreshing} style={{ flex: 1, padding: "12px 8px", borderRadius: 14, background: "#fff", border: "none", boxShadow: "0 2px 8px rgba(0,0,0,.05)", display: "flex", alignItems: "center", justifyContent: "center", gap: 6, cursor: "pointer" }}>
-            <span style={{ fontSize: 16 }}>{refreshing ? "⏳" : "🔄"}</span>
-            <span style={{ fontSize: 12, fontWeight: 700, color: C.text }}>{refreshing ? "جارِ التحديث..." : "تحديث البيانات"}</span>
+          <button onClick={onPermission} style={{ flex: 1, padding: "12px 8px", borderRadius: 14, background: "#fff", border: "none", boxShadow: "0 2px 8px rgba(0,0,0,.05)", display: "flex", alignItems: "center", justifyContent: "center", gap: 6, cursor: "pointer" }}>
+            <span style={{ fontSize: 16 }}>🙋</span>
+            <span style={{ fontSize: 12, fontWeight: 700, color: C.text }}>طلب إذن</span>
           </button>
         </div>
 
@@ -1214,6 +1201,10 @@ function ReportPage({ user, allAtt, todayAtt, branch, isOffDay, myLeaves, allEmp
             })}
           </div>
         )}
+
+        {/* ── المخالفات والانتدابات ── */}
+        <ViolationsCard user={user} />
+        <DelegationCard user={user} />
 
         <button onClick={exportCSV} style={{ width: "100%", padding: 14, borderRadius: 16, background: "linear-gradient(135deg,"+C.blue+","+C.blueBright+")", color: "#fff", fontSize: 15, fontWeight: 800, border: "none", cursor: "pointer", fontFamily: "'Cairo',sans-serif", marginBottom: 12 }}>
           📊 تصدير التقرير
@@ -1925,6 +1916,62 @@ function ManualAttModal({ allEmps, user, onClose, onSubmit }) {
           <button onClick={onClose} style={{ flex: 1, padding: 12, borderRadius: 14, border: "2px solid #eee", background: "#fff", color: C.sub, fontSize: 14, fontWeight: 700, cursor: "pointer" }}>إلغاء</button>
           <button onClick={function(){ if(empId) onSubmit({ empId: empId, type: type, date: date }); }} disabled={!empId} style={{ flex: 1, padding: 12, borderRadius: 14, border: "none", background: empId ? "linear-gradient(135deg,"+C.blue+","+C.blueBright+")" : "#eee", color: empId ? "#fff" : "#aaa", fontSize: 14, fontWeight: 700, cursor: empId ? "pointer" : "default" }}>
             تسجيل ✓
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/* ═══════════ PERMISSION REQUEST (طلب إذن) ═══════════ */
+function PermissionModal({ user, branch, onClose, onSubmit }) {
+  var [type, setType] = useState("early_leave");
+  var [time, setTime] = useState("");
+  var [reason, setReason] = useState("");
+
+  var types = [
+    { id: "early_leave", label: "انصراف مبكر", icon: "🚶" },
+    { id: "late_arrival", label: "حضور متأخر", icon: "⏰" },
+    { id: "personal", label: "إذن شخصي", icon: "🙋" },
+    { id: "medical", label: "مراجعة طبية", icon: "🏥" },
+  ];
+
+  return (
+    <div style={S.overlay} onClick={onClose}>
+      <div className="basma-slideup" style={{ ...S.modal, maxWidth: 380 }} onClick={function(e){ e.stopPropagation(); }}>
+        <div style={{ fontSize: 16, fontWeight: 800, fontFamily: "'Cairo',sans-serif", textAlign: "center", marginBottom: 14 }}>🙋 طلب إذن</div>
+
+        <div style={{ display: "flex", gap: 4, marginBottom: 12 }}>
+          {types.map(function(t) {
+            var active = type === t.id;
+            return (
+              <button key={t.id} onClick={function(){ setType(t.id); }} style={{ flex: 1, padding: "8px 4px", borderRadius: 10, background: active ? C.blue + "15" : "#f5f5f5", border: active ? "2px solid " + C.blue : "2px solid transparent", fontSize: 9, fontWeight: 700, color: active ? C.blue : C.sub, cursor: "pointer", textAlign: "center" }}>
+                <div style={{ fontSize: 14 }}>{t.icon}</div>{t.label}
+              </button>
+            );
+          })}
+        </div>
+
+        <div style={{ marginBottom: 10 }}>
+          <div style={{ fontSize: 10, color: C.sub, fontWeight: 600, marginBottom: 4 }}>
+            {type === "early_leave" ? "وقت الانصراف المطلوب" : type === "late_arrival" ? "وقت الحضور المتوقع" : "مدة الإذن (بالدقائق)"}
+          </div>
+          <input type="time" value={time} onChange={function(e){ setTime(e.target.value); }} style={{ width: "100%", padding: 10, borderRadius: 10, border: "1px solid #eee", fontSize: 13, fontFamily: "'Tajawal',sans-serif" }} />
+        </div>
+
+        <div style={{ marginBottom: 14 }}>
+          <div style={{ fontSize: 10, color: C.sub, fontWeight: 600, marginBottom: 4 }}>السبب</div>
+          <textarea value={reason} onChange={function(e){ setReason(e.target.value); }} placeholder="سبب الإذن..." rows={2} style={{ width: "100%", padding: 10, borderRadius: 10, border: "1px solid #eee", fontSize: 13, fontFamily: "'Tajawal',sans-serif", resize: "none" }} />
+        </div>
+
+        <div style={{ fontSize: 9, color: C.sub, marginBottom: 12, padding: 8, borderRadius: 8, background: C.blue + "08" }}>
+          📋 سيُرسل الطلب للمدير المباشر للموافقة — يُحسم من رصيد الإجازات إن تجاوز ساعتين
+        </div>
+
+        <div style={{ display: "flex", gap: 8 }}>
+          <button onClick={onClose} style={{ flex: 1, padding: 12, borderRadius: 14, border: "2px solid #eee", background: "#fff", color: C.sub, fontSize: 14, fontWeight: 700, cursor: "pointer" }}>إلغاء</button>
+          <button onClick={function(){ if(time && reason) onSubmit({ type: type, time: time, reason: reason }); }} disabled={!time || !reason} style={{ flex: 1, padding: 12, borderRadius: 14, border: "none", background: time && reason ? "linear-gradient(135deg,"+C.blue+","+C.blueBright+")" : "#eee", color: time && reason ? "#fff" : "#aaa", fontSize: 14, fontWeight: 700, cursor: time && reason ? "pointer" : "default" }}>
+            إرسال الطلب
           </button>
         </div>
       </div>

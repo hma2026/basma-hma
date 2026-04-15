@@ -191,14 +191,14 @@ export default function AdminApp() {
   const [leaves, setLeaves] = useState(LEAVE_INIT);
   const [search, setSearch] = useState("");
   const [brFilter, setBrFilter] = useState("all");
+  const [hrQuestions, setHrQuestions] = useState([]);
+  const [newQ, setNewQ] = useState({ type: "ذكر", q: "", correct: "", wrong1: "", wrong2: "" });
   const [selEmp, setSelEmp] = useState(null);
   const [events, setEvents] = useState(EVENTS);
   const [branches, setBranches] = useState(BRANCHES);
   const [emps, setEmps] = useState(EMPS);
   const [mapTarget, setMapTarget] = useState(null);
   const [settingsTab, setSettingsTab] = useState("general");
-  const [questions, setQuestions] = useState([]);
-  const [newQ, setNewQ] = useState({ q: "", opts: ["", "", "", ""], correct: 0 });
   const [emailLists, setEmailLists] = useState([
     { id: 1, name: "الموارد البشرية", email: "hr@hma.engineer", color: B.blue },
     { id: 2, name: "الشؤون القانونية", email: "legal@hma.engineer", color: t.bad },
@@ -236,7 +236,7 @@ export default function AdminApp() {
           if (stData.docRouting) setDocRouting(stData.docRouting);
           if (stData.empOverrides) setEmpOverrides(stData.empOverrides);
           if (stData.observed) setObserved(stData.observed);
-          if (Array.isArray(stData.questions)) setQuestions(stData.questions);
+          if (Array.isArray(stData.questions)) setHrQuestions(stData.questions);
         }
       } catch(e) { console.error("Load error:", e); }
       setLoading(false);
@@ -255,7 +255,7 @@ export default function AdminApp() {
     if (updates.docRouting) setDocRouting(updates.docRouting);
     if (updates.empOverrides) setEmpOverrides(updates.empOverrides);
     if (updates.observed) setObserved(updates.observed);
-    if (updates.questions !== undefined) setQuestions(updates.questions);
+    if (updates.questions !== undefined) setHrQuestions(updates.questions);
   };
   var saveEvent = async function(ev) { await api('events', 'POST', ev); var evs = await api('events'); if (Array.isArray(evs)) setEvents(evs); };
   var deleteEvent = async function(id) { await api('events', 'DELETE', null, '&id=' + id); var evs = await api('events'); if (Array.isArray(evs)) setEvents(evs); };
@@ -316,6 +316,7 @@ export default function AdminApp() {
     { id: "geofence", icon: "📍", label: "النطاق الجغرافي" },
     { id: "reports", icon: "📄", label: "التقارير" },
     { id: "events", icon: "🎉", label: "المناسبات" },
+    { id: "questions", icon: "❓", label: "أسئلة الصباح" },
     { id: "settings", icon: "⚙️", label: "الإعدادات" },
   ];
 
@@ -698,21 +699,100 @@ export default function AdminApp() {
         </div>)}</div>
       </>}
 
-      {/* ═══ EVENTS ═══ */}
+      {/* ═══ EVENTS (المناسبات الإدارية) ═══ */}
       {tab === "events" && <>
-        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 14 }}><span style={{ fontSize: 14, fontWeight: 700 }}>إدارة المناسبات</span><button style={{ padding: "8px 16px", borderRadius: 10, background: B.blue, color: "#fff", fontSize: 12, fontWeight: 700, border: "none", cursor: "pointer" }}>+ مناسبة جديدة</button></div>
-        {events.map(ev => <div key={ev.id} style={{ background: t.card, borderRadius: 14, padding: "14px 16px", border: "1px solid " + t.sep, marginBottom: 8, display: "flex", alignItems: "center", gap: 12 }}>
-          <div style={{ width: 44, height: 44, borderRadius: 12, background: "#0B0F1A", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 22 }}>{ev.emoji}</div>
-          <div style={{ flex: 1 }}><div style={{ fontSize: 13, fontWeight: 700 }}>{ev.name}</div><div style={{ fontSize: 10, color: t.txM }}>{ev.date}</div>{ev.upgrade && <span style={{ padding: "2px 6px", borderRadius: 4, background: "#EDE9FE", fontSize: 9, fontWeight: 700, color: "#7C3AED" }}>💎 ترقية نخبة</span>}</div>
-          <Toggle on={ev.active} onClick={() => setEvents(es => es.map(x => x.id === ev.id ? { ...x, active: !x.active } : x))} />
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 14 }}><span style={{ fontSize: 14, fontWeight: 700 }}>إدارة المناسبات</span><button onClick={() => setEvents(es => [...es, { id: Date.now(), name: "مناسبة جديدة", emoji: "🎉", date: "", active: false, upgrade: false, upgradeDuration: 24, bgColor: "#1a3a6e", gifUrl: "", gifPosition: "overlay" }])} style={{ padding: "8px 16px", borderRadius: 10, background: B.blue, color: "#fff", fontSize: 12, fontWeight: 700, border: "none", cursor: "pointer" }}>+ مناسبة جديدة</button></div>
+        {events.map((ev, ei) => <div key={ev.id} style={{ background: t.card, borderRadius: 14, padding: "16px", border: "1px solid " + t.sep, marginBottom: 10 }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 10 }}>
+            <div style={{ width: 48, height: 48, borderRadius: 14, background: ev.bgColor || "#0B0F1A", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 24 }}>{ev.emoji}</div>
+            <div style={{ flex: 1 }}>
+              <input value={ev.name} onChange={e => setEvents(es => es.map((x,i) => i===ei ? {...x, name: e.target.value} : x))} style={{ width: "100%", padding: "6px 8px", borderRadius: 8, border: "1px solid " + t.sep, fontSize: 14, fontWeight: 700, fontFamily: Fn, background: t.inp, color: t.tx }} />
+              <div style={{ display: "flex", gap: 6, marginTop: 6 }}>
+                <input value={ev.emoji} onChange={e => setEvents(es => es.map((x,i) => i===ei ? {...x, emoji: e.target.value} : x))} placeholder="إيموجي" style={{ width: 50, padding: "4px 6px", borderRadius: 6, border: "1px solid " + t.sep, fontSize: 12, textAlign: "center", background: t.inp, color: t.tx }} />
+                <input value={ev.date} onChange={e => setEvents(es => es.map((x,i) => i===ei ? {...x, date: e.target.value} : x))} placeholder="MM-DD أو فترة" style={{ flex: 1, padding: "4px 8px", borderRadius: 6, border: "1px solid " + t.sep, fontSize: 12, background: t.inp, color: t.tx }} />
+                <input value={ev.bgColor || ""} onChange={e => setEvents(es => es.map((x,i) => i===ei ? {...x, bgColor: e.target.value} : x))} placeholder="لون الخلفية" style={{ width: 80, padding: "4px 6px", borderRadius: 6, border: "1px solid " + t.sep, fontSize: 10, background: t.inp, color: t.tx }} />
+              </div>
+            </div>
+            <div style={{ display: "flex", flexDirection: "column", gap: 4, alignItems: "center" }}>
+              <Toggle on={ev.active} onClick={() => setEvents(es => es.map((x,i) => i===ei ? {...x, active: !x.active} : x))} />
+              <span style={{ fontSize: 8, color: t.txM }}>{ev.active ? "مفعّل" : "معطّل"}</span>
+            </div>
+          </div>
+          {/* GIF + Upgrade options */}
+          <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+            <div style={{ flex: 1, minWidth: 200 }}>
+              <div style={{ fontSize: 10, fontWeight: 700, color: t.tx2, marginBottom: 4 }}>🎬 رابط GIF (اختياري)</div>
+              <input value={ev.gifUrl || ""} onChange={e => setEvents(es => es.map((x,i) => i===ei ? {...x, gifUrl: e.target.value} : x))} placeholder="https://..." style={{ width: "100%", padding: "6px 8px", borderRadius: 6, border: "1px solid " + t.sep, fontSize: 11, background: t.inp, color: t.tx }} />
+              <div style={{ display: "flex", gap: 4, marginTop: 4 }}>
+                {["خلفية كاملة", "إيموجي طافية", "فوق الشريط"].map((pos, pi) => <button key={pi} onClick={() => setEvents(es => es.map((x,i) => i===ei ? {...x, gifPosition: ["bg","float","top"][pi]} : x))} style={{ padding: "3px 8px", borderRadius: 6, fontSize: 9, fontWeight: 600, border: (ev.gifPosition || "bg") === ["bg","float","top"][pi] ? "2px solid " + B.blue : "1px solid " + t.sep, background: (ev.gifPosition || "bg") === ["bg","float","top"][pi] ? B.blueLt : t.card, color: (ev.gifPosition || "bg") === ["bg","float","top"][pi] ? B.blue : t.tx2, cursor: "pointer" }}>{pos}</button>)}
+              </div>
+            </div>
+            <div>
+              <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 4 }}>
+                <input type="checkbox" checked={ev.upgrade || false} onChange={e => setEvents(es => es.map((x,i) => i===ei ? {...x, upgrade: e.target.checked} : x))} />
+                <span style={{ fontSize: 10, fontWeight: 700, color: t.tx2 }}>💎 ترقية نخبة مؤقتة</span>
+              </div>
+              {ev.upgrade && <select value={ev.upgradeDuration || 24} onChange={e => setEvents(es => es.map((x,i) => i===ei ? {...x, upgradeDuration: +e.target.value} : x))} style={{ padding: "4px 8px", borderRadius: 6, border: "1px solid " + t.sep, fontSize: 11, background: t.inp, color: t.tx }}>
+                <option value={12}>12 ساعة</option><option value={24}>24 ساعة</option><option value={48}>48 ساعة</option><option value={72}>72 ساعة</option>
+              </select>}
+            </div>
+          </div>
+          <div style={{ display: "flex", justifyContent: "flex-end", marginTop: 8 }}>
+            <button onClick={() => setEvents(es => es.filter((x,i) => i !== ei))} style={{ padding: "4px 12px", borderRadius: 6, border: "1px solid " + t.sep, background: "transparent", color: B.red, fontSize: 10, fontWeight: 700, cursor: "pointer" }}>🗑️ حذف</button>
+          </div>
         </div>)}
-        <div style={{ background: t.card, borderRadius: 14, padding: "16px", border: "1px solid " + t.sep, marginTop: 12 }}><div style={{ fontSize: 13, fontWeight: 700, marginBottom: 10 }}>🎂 أعياد الميلاد التلقائية</div>{[{ l: "عيد ميلاد الموظف", v: "ترقية نخبة يومين + 🎂", on: true }, { l: "عيد ميلاد الأبناء", v: "ترقية يوم + 🎈", on: true }, { l: "ذكرى الالتحاق", v: "ترقية يوم + 🎉", on: true }].map((x, i) => <div key={i} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "8px 0", borderBottom: i < 2 ? "1px solid " + t.sep : "none" }}><div><div style={{ fontSize: 12, fontWeight: 600 }}>{x.l}</div><div style={{ fontSize: 10, color: t.txM }}>{x.v}</div></div><Toggle on={x.on} onClick={() => {}} /></div>)}</div>
+        {/* Auto occasions */}
+        <div style={{ background: t.card, borderRadius: 14, padding: "16px", border: "1px solid " + t.sep, marginTop: 12 }}>
+          <div style={{ fontSize: 13, fontWeight: 700, marginBottom: 10 }}>🎂 المناسبات التلقائية</div>
+          {[{ l: "عيد ميلاد الموظف", v: "ترقية نخبة يومين + 🎂 + كوبون خاص", on: true }, { l: "عيد ميلاد الأبناء", v: "ترقية يوم + 🎈", on: true }, { l: "ذكرى الالتحاق", v: "ترقية يوم + 🎉 + شارة خاصة", on: true }].map((x, i) => <div key={i} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "8px 0", borderBottom: i < 2 ? "1px solid " + t.sep : "none" }}><div><div style={{ fontSize: 12, fontWeight: 600 }}>{x.l}</div><div style={{ fontSize: 10, color: t.txM }}>{x.v}</div></div><Toggle on={x.on} onClick={() => {}} /></div>)}
+        </div>
+      </>}
+
+      {/* ═══ QUESTIONS (إدارة أسئلة الصباح) ═══ */}
+      {tab === "questions" && <>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 14 }}><span style={{ fontSize: 14, fontWeight: 700 }}>إدارة أسئلة تحدي الصباح</span><span style={{ fontSize: 11, color: t.txM }}>{"إجمالي: " + hrQuestions.length + " سؤال"}</span></div>
+        <div style={{ fontSize: 10, color: t.txM, marginBottom: 14, padding: 10, borderRadius: 8, background: B.blueLt }}>الإجابة الأولى دائماً هي الصحيحة — يتم خلط الخيارات تلقائياً عند العرض للموظف. كل يوم سؤال مختلف — لا يتكرر خلال أسبوع.</div>
+
+        {/* Add new question */}
+        <div style={{ background: t.card, borderRadius: 14, padding: "16px", border: "1px solid " + t.sep, marginBottom: 14 }}>
+          <div style={{ fontSize: 12, fontWeight: 700, marginBottom: 8 }}>➕ إضافة سؤال جديد</div>
+          <div style={{ display: "flex", gap: 6, marginBottom: 8 }}>
+            <select value={newQ.type} onChange={e => setNewQ({...newQ, type: e.target.value})} style={{ padding: "8px 10px", borderRadius: 8, border: "1px solid " + t.sep, fontSize: 12, background: t.inp, color: t.tx }}>
+              <option value="ذكر">ذكر</option><option value="هندسي">هندسي</option><option value="لغز">لغز</option><option value="سؤال">سؤال عام</option><option value="معلومة">معلومة</option>
+            </select>
+            <input value={newQ.q} onChange={e => setNewQ({...newQ, q: e.target.value})} placeholder="نص السؤال" style={{ flex: 1, padding: "8px 10px", borderRadius: 8, border: "1px solid " + t.sep, fontSize: 12, fontFamily: Fn, background: t.inp, color: t.tx }} />
+          </div>
+          <div style={{ display: "flex", gap: 6, marginBottom: 8 }}>
+            <input value={newQ.correct} onChange={e => setNewQ({...newQ, correct: e.target.value})} placeholder="✓ الإجابة الصحيحة" style={{ flex: 1, padding: "8px 10px", borderRadius: 8, border: "2px solid " + B.blue + "40", fontSize: 12, fontFamily: Fn, background: B.blueLt, color: t.tx }} />
+            <input value={newQ.wrong1} onChange={e => setNewQ({...newQ, wrong1: e.target.value})} placeholder="خيار خاطئ 1" style={{ flex: 1, padding: "8px 10px", borderRadius: 8, border: "1px solid " + t.sep, fontSize: 12, fontFamily: Fn, background: t.inp, color: t.tx }} />
+            <input value={newQ.wrong2} onChange={e => setNewQ({...newQ, wrong2: e.target.value})} placeholder="خيار خاطئ 2" style={{ flex: 1, padding: "8px 10px", borderRadius: 8, border: "1px solid " + t.sep, fontSize: 12, fontFamily: Fn, background: t.inp, color: t.tx }} />
+          </div>
+          <button onClick={() => { if (newQ.q && newQ.correct && newQ.wrong1 && newQ.wrong2) { setHrQuestions(qs => [...qs, { id: Date.now(), ...newQ }]); setNewQ({ type: "ذكر", q: "", correct: "", wrong1: "", wrong2: "" }); } }} disabled={!newQ.q || !newQ.correct} style={{ padding: "8px 20px", borderRadius: 10, background: newQ.q && newQ.correct ? B.blue : "#ddd", color: newQ.q && newQ.correct ? "#fff" : "#aaa", fontSize: 12, fontWeight: 700, border: "none", cursor: newQ.q && newQ.correct ? "pointer" : "default" }}>إضافة السؤال</button>
+        </div>
+
+        {/* Questions list by type */}
+        {["ذكر","هندسي","لغز","سؤال","معلومة"].map(type => {
+          var qs = hrQuestions.filter(q => q.type === type);
+          if (qs.length === 0) return null;
+          var typeColors = { "ذكر": "#10B981", "هندسي": B.blue, "لغز": "#F59E0B", "سؤال": "#8B5CF6", "معلومة": "#EC4899" };
+          return <div key={type} style={{ marginBottom: 12 }}>
+            <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 6 }}><div style={{ width: 8, height: 8, borderRadius: 4, background: typeColors[type] || B.blue }} /><span style={{ fontSize: 12, fontWeight: 800, color: typeColors[type] || t.tx }}>{type + " (" + qs.length + ")"}</span></div>
+            {qs.map((q, qi) => <div key={q.id} style={{ background: t.card, borderRadius: 10, padding: "10px 14px", border: "1px solid " + t.sep, marginBottom: 4, display: "flex", alignItems: "center", gap: 10 }}>
+              <div style={{ flex: 1 }}>
+                <div style={{ fontSize: 12, fontWeight: 700 }}>{q.q}</div>
+                <div style={{ fontSize: 10, color: t.txM, marginTop: 2 }}>{"✓ " + q.correct + " · ✗ " + q.wrong1 + " · ✗ " + q.wrong2}</div>
+              </div>
+              <button onClick={() => setHrQuestions(qs => qs.filter(x => x.id !== q.id))} style={{ padding: "3px 8px", borderRadius: 6, border: "1px solid " + t.sep, background: "transparent", color: B.red, fontSize: 10, cursor: "pointer" }}>🗑️</button>
+            </div>)}
+          </div>;
+        })}
+        {hrQuestions.length === 0 && <div style={{ textAlign: "center", color: t.txM, fontSize: 12, padding: 30 }}>لا توجد أسئلة مخصصة — سيستخدم النظام الأسئلة الافتراضية</div>}
       </>}
 
       {/* ═══ SETTINGS ═══ */}
       {tab === "settings" && <>
         {/* Sub-tabs for settings */}
-        <div style={{ display: "flex", gap: 6, marginBottom: 16, flexWrap: "wrap" }}>{[{ id: "general", l: "⚙️ عام" }, { id: "questions", l: "❓ الأسئلة" }, { id: "email", l: "📧 توجيه الإيميل" }, { id: "observation", l: "👁 تحت الملاحظة" }].map(st => <button key={st.id} onClick={() => setSettingsTab(st.id)} style={{ padding: "8px 18px", borderRadius: 10, border: settingsTab === st.id ? "none" : "1px solid " + t.sep, background: settingsTab === st.id ? B.blue : t.card, color: settingsTab === st.id ? "#fff" : t.tx2, fontSize: 12, fontWeight: 700, cursor: "pointer" }}>{st.l}</button>)}</div>
+        <div style={{ display: "flex", gap: 6, marginBottom: 16, flexWrap: "wrap" }}>{[{ id: "general", l: "⚙️ عام" }, { id: "email", l: "📧 توجيه الإيميل" }, { id: "observation", l: "👁 تحت الملاحظة" }].map(st => <button key={st.id} onClick={() => setSettingsTab(st.id)} style={{ padding: "8px 18px", borderRadius: 10, border: settingsTab === st.id ? "none" : "1px solid " + t.sep, background: settingsTab === st.id ? B.blue : t.card, color: settingsTab === st.id ? "#fff" : t.tx2, fontSize: 12, fontWeight: 700, cursor: "pointer" }}>{st.l}</button>)}</div>
 
         {/* GENERAL */}
         {settingsTab === "general" && <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
@@ -778,41 +858,6 @@ export default function AdminApp() {
         </div>}
 
         {/* EMAIL ROUTING */}
-        {settingsTab === "questions" && <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
-          <div style={{ background: t.card, borderRadius: 14, padding: "18px", border: "1px solid " + t.sep }}>
-            <div style={{ fontSize: 14, fontWeight: 700, marginBottom: 4 }}>❓ أسئلة التحدي اليومية</div>
-            <div style={{ fontSize: 11, color: t.txM, marginBottom: 14 }}>الأسئلة تظهر للموظف عند تسجيل الحضور — الإجابة الصحيحة = +5 نقاط</div>
-            {questions.length === 0 && <div style={{ padding: 20, textAlign: "center", color: t.txM, fontSize: 12 }}>لا توجد أسئلة — سيتم استخدام الأسئلة الافتراضية</div>}
-            {questions.map(function(q, qi) { return <div key={qi} style={{ padding: 12, borderRadius: 10, background: t.bg, marginBottom: 8, border: "1px solid " + t.sep }}>
-              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
-                <div style={{ flex: 1 }}>
-                  <div style={{ fontSize: 13, fontWeight: 700, color: t.tx }}>{qi + 1}. {q.q}</div>
-                  <div style={{ display: "flex", flexWrap: "wrap", gap: 6, marginTop: 6 }}>{q.opts.map(function(o, oi) { return <span key={oi} style={{ padding: "3px 10px", borderRadius: 6, fontSize: 11, fontWeight: 600, background: oi === q.correct ? t.okLt : "rgba(0,0,0,.04)", color: oi === q.correct ? t.ok : t.tx2 }}>{oi === q.correct ? "✓ " : ""}{o}</span>; })}</div>
-                </div>
-                <button onClick={function() { var nq = questions.filter(function(_, i) { return i !== qi; }); saveSettings({ questions: nq }); }} style={{ background: "none", border: "none", color: t.bad, fontSize: 16, cursor: "pointer", padding: 4 }}>✕</button>
-              </div>
-            </div>; })}
-          </div>
-          {/* Add new question */}
-          <div style={{ background: t.card, borderRadius: 14, padding: "18px", border: "1px solid " + t.sep }}>
-            <div style={{ fontSize: 13, fontWeight: 700, marginBottom: 12 }}>➕ إضافة سؤال جديد</div>
-            <div style={{ marginBottom: 10 }}>
-              <div style={{ fontSize: 10, color: t.txM, marginBottom: 4 }}>نص السؤال</div>
-              <input value={newQ.q} onChange={function(e) { setNewQ(function(p) { return Object.assign({}, p, { q: e.target.value }); }); }} placeholder="مثال: ما هو أعلى برج في العالم؟" style={{ width: "100%", padding: "10px 12px", borderRadius: 10, border: "1px solid " + t.sep, fontSize: 13, fontFamily: Fn, background: t.inp, color: t.tx, outline: "none" }} />
-            </div>
-            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8, marginBottom: 10 }}>
-              {[0, 1, 2, 3].map(function(i) { return <div key={i}>
-                <div style={{ fontSize: 10, color: t.txM, marginBottom: 3 }}>الخيار {i + 1} {i === newQ.correct ? "✓ صحيح" : ""}</div>
-                <div style={{ display: "flex", gap: 4 }}>
-                  <input value={newQ.opts[i]} onChange={function(e) { setNewQ(function(p) { var no = [].concat(p.opts); no[i] = e.target.value; return Object.assign({}, p, { opts: no }); }); }} placeholder={"الخيار " + (i + 1)} style={{ flex: 1, padding: "8px 10px", borderRadius: 8, border: "1px solid " + t.sep, fontSize: 12, fontFamily: Fn, background: t.inp, color: t.tx, outline: "none" }} />
-                  <button onClick={function() { setNewQ(function(p) { return Object.assign({}, p, { correct: i }); }); }} style={{ padding: "6px 10px", borderRadius: 8, border: "none", background: i === newQ.correct ? t.ok : t.bg, color: i === newQ.correct ? "#fff" : t.txM, fontSize: 10, fontWeight: 700, cursor: "pointer" }}>✓</button>
-                </div>
-              </div>; })}
-            </div>
-            <button onClick={function() { if (!newQ.q || newQ.opts.some(function(o) { return !o; })) return; var nq = questions.concat([{ q: newQ.q, opts: newQ.opts, correct: newQ.correct }]); saveSettings({ questions: nq }); setNewQ({ q: "", opts: ["", "", "", ""], correct: 0 }); }} style={{ width: "100%", padding: "11px", borderRadius: 10, background: B.blue, color: "#fff", fontSize: 14, fontWeight: 700, border: "none", cursor: "pointer" }}>💾 حفظ السؤال</button>
-          </div>
-        </div>}
-
         {settingsTab === "email" && <>
           {/* Distribution Lists */}
           <div style={{ background: t.card, borderRadius: 16, padding: "20px", border: "1px solid " + t.sep, marginBottom: 14 }}>
