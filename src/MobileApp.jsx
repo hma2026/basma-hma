@@ -6,7 +6,7 @@ import React, { useState, useEffect, useRef, useCallback } from "react";
    + Face Verify + Challenge + Toasts
    ═══════════════════════════════════════════ */
 
-const VER = "4.72";
+const VER = "4.73";
 
 /* ── Colors ── */
 const LIGHT = {
@@ -287,6 +287,8 @@ function MobileAppInner() {
   const [leaveModal, setLeaveModal] = useState(false);
   const [ticketModal, setTicketModal] = useState(false);
   const [daySummary, setDaySummary] = useState(false);
+  const [preAbsModal, setPreAbsModal] = useState(false);
+  const [manualAttModal, setManualAttModal] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
   const [myLeaves, setMyLeaves] = useState([]);
   const [myTickets, setMyTickets] = useState([]);
@@ -652,7 +654,7 @@ function MobileAppInner() {
       {!online && <div style={{ background: C.red, color: "#fff", textAlign: "center", padding: "6px 0", fontSize: 11, fontWeight: 700 }}>⚠️ لا يوجد اتصال بالإنترنت</div>}
 
       <div key={page} style={{ flex: 1, display: "flex", flexDirection: "column", animation: "pageIn .3s ease" }}>
-        {page === "home" && <HomePage user={user} branch={branch} now={now} todayAtt={todayAtt} allAtt={allAtt} gps={gps} gpsDist={gpsDist} streak={streak} loading={loading} refreshing={refreshing} dayState={getDayState()} checkpoints={getCheckpoints()} isOffDay={isOffDay()} pendingCount={myLeaves.filter(function(l){ return l.status === "pending"; }).length + myTickets.filter(function(t){ return t.status === "pending"; }).length} teamToday={teamToday} pwaPrompt={pwaPrompt} onPwaInstall={async function(){ if(pwaPrompt){pwaPrompt.prompt();await pwaPrompt.userChoice;setPwaPrompt(null);} }} onCheckin={requestCheckin} onChallenge={function(pts) { var u = { ...user, points: (user.points||0)+pts }; setUser(u); localStorage.setItem("basma_user", JSON.stringify(u)); showToast("🎉 +" + pts + " نقطة!"); }} onLeave={() => setLeaveModal(true)} onRefresh={refresh} />}
+        {page === "home" && <HomePage user={user} branch={branch} now={now} todayAtt={todayAtt} allAtt={allAtt} gps={gps} gpsDist={gpsDist} streak={streak} loading={loading} refreshing={refreshing} dayState={getDayState()} checkpoints={getCheckpoints()} isOffDay={isOffDay()} pendingCount={myLeaves.filter(function(l){ return l.status === "pending"; }).length + myTickets.filter(function(t){ return t.status === "pending"; }).length} teamToday={teamToday} pwaPrompt={pwaPrompt} onPwaInstall={async function(){ if(pwaPrompt){pwaPrompt.prompt();await pwaPrompt.userChoice;setPwaPrompt(null);} }} onCheckin={requestCheckin} onChallenge={function(pts) { var u = { ...user, points: (user.points||0)+pts }; setUser(u); localStorage.setItem("basma_user", JSON.stringify(u)); showToast("🎉 +" + pts + " نقطة!"); }} onLeave={() => setLeaveModal(true)} onRefresh={refresh} onPreAbsence={function(){ setPreAbsModal(true); }} onManualAtt={function(){ setManualAttModal(true); }} />}
         {page === "report" && <ReportPage user={user} allAtt={allAtt} todayAtt={todayAtt} branch={branch} isOffDay={isOffDay()} myLeaves={myLeaves} />}
         {page === "benefits" && <BenefitsPage user={user} />}
         {page === "profile" && <ProfilePage user={user} branch={branch} onLogout={logout} onTicket={() => setTicketModal(true)} myTickets={myTickets} darkMode={darkMode} toggleDark={toggleDark} />}
@@ -668,6 +670,8 @@ function MobileAppInner() {
       {leaveModal && <LeaveModal user={user} onClose={() => setLeaveModal(false)} onSubmit={async (data) => { try { await api("leaves", { method: "POST", body: { empId: user.id, ...data } }); setLeaveModal(false); showToast("تم إرسال طلب الإجازة ✓"); } catch { showToast("خطأ في الإرسال", "error"); } }} />}
       {ticketModal && <TicketModal user={user} onClose={() => setTicketModal(false)} onSubmit={async (data) => { try { await api("tickets", { method: "POST", body: { empId: user.id, empName: user.name, ...data } }); setTicketModal(false); showToast("تم إرسال التذكرة ✓"); } catch { showToast("خطأ في الإرسال", "error"); } }} />}
       {daySummary && <DaySummaryModal todayAtt={todayAtt} branch={branch} user={user} onClose={() => setDaySummary(false)} />}
+      {preAbsModal && <PreAbsenceModal allEmps={allEmps} user={user} onClose={function(){ setPreAbsModal(false); }} onSubmit={async function(data) { try { await api("pre_absence", { method: "POST", body: { ...data, reportedBy: user.id } }); setPreAbsModal(false); showToast("✅ تم تسجيل الإفادة المسبقة"); } catch(e) { showToast("خطأ في الإرسال", "error"); } }} />}
+      {manualAttModal && <ManualAttModal allEmps={allEmps} user={user} onClose={function(){ setManualAttModal(false); }} onSubmit={async function(data) { try { await api("manual_checkin", { method: "POST", body: { ...data, adminId: user.id } }); setManualAttModal(false); showToast("✅ تم التحضير اليدوي"); loadData(user); } catch(e) { showToast("خطأ", "error"); } }} />}
     </div>
   );
 }
@@ -718,7 +722,7 @@ function LoginScreen({ onLogin, loading }) {
 }
 
 /* ═══════════ HOME ═══════════ */
-function HomePage({ user, branch, now, todayAtt, allAtt, gps, gpsDist, streak, loading, refreshing, dayState, checkpoints, isOffDay, pendingCount, teamToday, pwaPrompt, onPwaInstall, onCheckin, onChallenge, onLeave, onRefresh }) {
+function HomePage({ user, branch, now, todayAtt, allAtt, gps, gpsDist, streak, loading, refreshing, dayState, checkpoints, isOffDay, pendingCount, teamToday, pwaPrompt, onPwaInstall, onCheckin, onChallenge, onLeave, onRefresh, onPreAbsence, onManualAtt }) {
   const { time, sec, ampm } = formatTime(now);
   const badge = memberBadge(user.points || 0);
   const inRange = branch && gpsDist !== null && gpsDist <= (branch.radius || 150);
@@ -938,14 +942,50 @@ function HomePage({ user, branch, now, todayAtt, allAtt, gps, gpsDist, streak, l
                     <div style={{ fontSize: 12, fontWeight: 700, color: member.present ? C.text : "#bbb" }}>{member.name}</div>
                     <div style={{ fontSize: 9, color: C.sub }}>{member.role}</div>
                   </div>
+                  {!member.present && user.isManager && (
+                    <button onClick={function(){ onPreAbsence(member); }} style={{ padding: "3px 8px", borderRadius: 6, background: C.orange + "15", border: "1px solid " + C.orange + "30", fontSize: 8, fontWeight: 700, color: C.orange, cursor: "pointer" }}>
+                      إفادة غد
+                    </button>
+                  )}
                   <span style={{ fontSize: 9, fontWeight: 700, color: member.present ? C.green : C.red, padding: "2px 8px", borderRadius: 6, background: member.present ? C.green + "12" : C.red + "08" }}>
                     {member.present ? "حاضر" : "غائب"}
                   </span>
                 </div>
               );
             })}
+
+            {/* Manager actions */}
+            <div style={{ display: "flex", gap: 6, marginTop: 10, paddingTop: 10, borderTop: "1px solid " + C.bg }}>
+              <button onClick={onPreAbsence} style={{ flex: 1, padding: "8px 6px", borderRadius: 10, background: C.orange + "12", border: "1px solid " + C.orange + "25", fontSize: 10, fontWeight: 700, color: C.orange, cursor: "pointer", textAlign: "center" }}>
+                📋 إفادة مسبقة (غد)
+              </button>
+              {user.isManager && (
+                <button onClick={onManualAtt} style={{ flex: 1, padding: "8px 6px", borderRadius: 10, background: C.blue + "12", border: "1px solid " + C.blue + "25", fontSize: 10, fontWeight: 700, color: C.blue, cursor: "pointer", textAlign: "center" }}>
+                  ✏️ تحضير يدوي
+                </button>
+              )}
+            </div>
           </div>
         )}
+
+        {/* ── Kadwar Notifications ── */}
+        <div style={S.card} className="basma-fadein-d3">
+          <div style={S.cardTitle}><span>إشعارات كوادر</span><span style={{ fontSize: 10, color: C.blue }}>hma.engineer</span></div>
+          <div style={{ display: "flex", gap: 8 }}>
+            <button onClick={function(){ window.open("https://hma.engineer", "_blank"); }} style={{ flex: 1, padding: "10px 8px", borderRadius: 12, background: C.card, border: "1px solid " + C.bg, display: "flex", alignItems: "center", justifyContent: "center", gap: 6, cursor: "pointer" }}>
+              <span style={{ fontSize: 14 }}>💬</span>
+              <span style={{ fontSize: 11, fontWeight: 700, color: C.text }}>تواصل</span>
+            </button>
+            <button onClick={function(){ window.open("https://hma.engineer", "_blank"); }} style={{ flex: 1, padding: "10px 8px", borderRadius: 12, background: C.card, border: "1px solid " + C.bg, display: "flex", alignItems: "center", justifyContent: "center", gap: 6, cursor: "pointer" }}>
+              <span style={{ fontSize: 14 }}>📝</span>
+              <span style={{ fontSize: 11, fontWeight: 700, color: C.text }}>اختبار</span>
+            </button>
+            <button onClick={function(){ window.open("https://hma.engineer", "_blank"); }} style={{ flex: 1, padding: "10px 8px", borderRadius: 12, background: C.card, border: "1px solid " + C.bg, display: "flex", alignItems: "center", justifyContent: "center", gap: 6, cursor: "pointer" }}>
+              <span style={{ fontSize: 14 }}>👤</span>
+              <span style={{ fontSize: 11, fontWeight: 700, color: C.text }}>حسابي</span>
+            </button>
+          </div>
+        </div>
 
         {/* ── PWA Install Banner ── */}
         {pwaPrompt && (
@@ -1706,6 +1746,114 @@ function DaySummaryModal({ todayAtt, branch, user, onClose }) {
         <button onClick={onClose} style={{ width: "100%", padding: 14, borderRadius: 16, background: "linear-gradient(135deg," + C.green + "," + C.greenDark + ")", color: "#fff", fontSize: 15, fontWeight: 800, border: "none", cursor: "pointer", fontFamily: "'Cairo',sans-serif" }}>
           إلى اللقاء 👋
         </button>
+      </div>
+    </div>
+  );
+}
+
+/* ═══════════ PRE-ABSENCE + MANUAL ATT ═══════════ */
+
+function PreAbsenceModal({ allEmps, user, onClose, onSubmit }) {
+  var [empId, setEmpId] = useState("");
+  var [reason, setReason] = useState("");
+  var [asLeave, setAsLeave] = useState(false);
+  var managed = (allEmps || []).filter(function(e) { return e.managers && e.managers.indexOf(user.id) >= 0; });
+
+  var tomorrow = new Date();
+  tomorrow.setDate(tomorrow.getDate() + 1);
+  var tomorrowStr = tomorrow.toISOString().split("T")[0];
+
+  return (
+    <div style={S.overlay} onClick={onClose}>
+      <div className="basma-slideup" style={{ ...S.modal, maxWidth: 380 }} onClick={function(e){ e.stopPropagation(); }}>
+        <div style={{ fontSize: 16, fontWeight: 800, fontFamily: "'Cairo',sans-serif", textAlign: "center", marginBottom: 4 }}>📋 إفادة مسبقة بالغياب</div>
+        <div style={{ fontSize: 10, color: C.sub, textAlign: "center", marginBottom: 14 }}>{"الموظف لن يحضر غداً: " + tomorrowStr}</div>
+
+        <div style={{ marginBottom: 10 }}>
+          <div style={{ fontSize: 10, color: C.sub, fontWeight: 600, marginBottom: 4 }}>اختر الموظف</div>
+          <select value={empId} onChange={function(e){ setEmpId(e.target.value); }} style={{ width: "100%", padding: 10, borderRadius: 10, border: "1px solid #eee", fontSize: 13, fontFamily: "'Tajawal',sans-serif", background: "#fff" }}>
+            <option value="">— اختر —</option>
+            {managed.map(function(e) { return React.createElement("option", { key: e.id, value: e.id }, e.name + " (" + e.id + ")"); })}
+          </select>
+        </div>
+
+        <div style={{ marginBottom: 10 }}>
+          <div style={{ fontSize: 10, color: C.sub, fontWeight: 600, marginBottom: 4 }}>السبب</div>
+          <textarea value={reason} onChange={function(e){ setReason(e.target.value); }} placeholder="سبب الغياب..." rows={2} style={{ width: "100%", padding: 10, borderRadius: 10, border: "1px solid #eee", fontSize: 13, fontFamily: "'Tajawal',sans-serif", resize: "none" }} />
+        </div>
+
+        <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 14, padding: "8px 0" }}>
+          <div onClick={function(){ setAsLeave(!asLeave); }} style={{ width: 20, height: 20, borderRadius: 6, border: "2px solid " + (asLeave ? C.green : "#ddd"), background: asLeave ? C.green + "15" : "#fff", display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer" }}>
+            {asLeave && <span style={{ color: C.green, fontSize: 12, fontWeight: 900 }}>✓</span>}
+          </div>
+          <span style={{ fontSize: 12, fontWeight: 600, color: C.text }}>احتساب من الإجازة السنوية</span>
+        </div>
+
+        <div style={{ fontSize: 9, color: C.orange, marginBottom: 12, padding: 8, borderRadius: 8, background: C.orange + "08" }}>
+          ⚖️ حسب لائحة العمل: طلب الإجازة يجب أن يكون قبل الغياب وليس بعده
+        </div>
+
+        <div style={{ display: "flex", gap: 8 }}>
+          <button onClick={onClose} style={{ flex: 1, padding: 12, borderRadius: 14, border: "2px solid #eee", background: "#fff", color: C.sub, fontSize: 14, fontWeight: 700, cursor: "pointer" }}>إلغاء</button>
+          <button onClick={function(){ if(empId) onSubmit({ empId: empId, date: tomorrowStr, reason: reason, asLeave: asLeave }); }} disabled={!empId} style={{ flex: 1, padding: 12, borderRadius: 14, border: "none", background: empId ? "linear-gradient(135deg,"+C.orange+","+C.orangeDark+")" : "#eee", color: empId ? "#fff" : "#aaa", fontSize: 14, fontWeight: 700, cursor: empId ? "pointer" : "default" }}>
+            تأكيد الإفادة
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function ManualAttModal({ allEmps, user, onClose, onSubmit }) {
+  var [empId, setEmpId] = useState("");
+  var [type, setType] = useState("checkin");
+  var [date, setDate] = useState(todayStr());
+  var types = [
+    { id: "checkin", label: "حضور", icon: "☀️" },
+    { id: "checkout", label: "انصراف", icon: "🌙" },
+    { id: "break_start", label: "بداية استراحة", icon: "☕" },
+    { id: "break_end", label: "عودة", icon: "🔄" },
+  ];
+
+  return (
+    <div style={S.overlay} onClick={onClose}>
+      <div className="basma-slideup" style={{ ...S.modal, maxWidth: 380 }} onClick={function(e){ e.stopPropagation(); }}>
+        <div style={{ fontSize: 16, fontWeight: 800, fontFamily: "'Cairo',sans-serif", textAlign: "center", marginBottom: 14 }}>✏️ تحضير يدوي</div>
+
+        <div style={{ marginBottom: 10 }}>
+          <div style={{ fontSize: 10, color: C.sub, fontWeight: 600, marginBottom: 4 }}>الموظف</div>
+          <select value={empId} onChange={function(e){ setEmpId(e.target.value); }} style={{ width: "100%", padding: 10, borderRadius: 10, border: "1px solid #eee", fontSize: 13, fontFamily: "'Tajawal',sans-serif", background: "#fff" }}>
+            <option value="">— اختر —</option>
+            {(allEmps || []).map(function(e) { return React.createElement("option", { key: e.id, value: e.id }, e.name + " (" + e.id + ")"); })}
+          </select>
+        </div>
+
+        <div style={{ display: "flex", gap: 4, marginBottom: 10 }}>
+          {types.map(function(t) {
+            var active = type === t.id;
+            return (
+              <button key={t.id} onClick={function(){ setType(t.id); }} style={{ flex: 1, padding: "8px 4px", borderRadius: 10, background: active ? C.blue + "15" : "#f5f5f5", border: active ? "2px solid " + C.blue : "2px solid transparent", fontSize: 9, fontWeight: 700, color: active ? C.blue : C.sub, cursor: "pointer", textAlign: "center" }}>
+                <div style={{ fontSize: 14 }}>{t.icon}</div>{t.label}
+              </button>
+            );
+          })}
+        </div>
+
+        <div style={{ marginBottom: 14 }}>
+          <div style={{ fontSize: 10, color: C.sub, fontWeight: 600, marginBottom: 4 }}>التاريخ</div>
+          <input type="date" value={date} onChange={function(e){ setDate(e.target.value); }} style={{ width: "100%", padding: 10, borderRadius: 10, border: "1px solid #eee", fontSize: 13, fontFamily: "'Tajawal',sans-serif" }} />
+        </div>
+
+        <div style={{ fontSize: 9, color: C.blue, marginBottom: 12, padding: 8, borderRadius: 8, background: C.blue + "08" }}>
+          🛡️ التحضير اليدوي متاح لمدير النظام فقط — يُسجّل في النظام "تم التحضير يدوياً"
+        </div>
+
+        <div style={{ display: "flex", gap: 8 }}>
+          <button onClick={onClose} style={{ flex: 1, padding: 12, borderRadius: 14, border: "2px solid #eee", background: "#fff", color: C.sub, fontSize: 14, fontWeight: 700, cursor: "pointer" }}>إلغاء</button>
+          <button onClick={function(){ if(empId) onSubmit({ empId: empId, type: type, date: date }); }} disabled={!empId} style={{ flex: 1, padding: 12, borderRadius: 14, border: "none", background: empId ? "linear-gradient(135deg,"+C.blue+","+C.blueBright+")" : "#eee", color: empId ? "#fff" : "#aaa", fontSize: 14, fontWeight: 700, cursor: empId ? "pointer" : "default" }}>
+            تسجيل ✓
+          </button>
+        </div>
       </div>
     </div>
   );
