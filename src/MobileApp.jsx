@@ -6,7 +6,7 @@ import React, { useState, useEffect, useRef, useCallback } from "react";
    + Face Verify + Challenge + Toasts
    ═══════════════════════════════════════════ */
 
-const VER = "4.73";
+const VER = "4.74";
 
 /* ── Colors ── */
 const LIGHT = {
@@ -294,6 +294,7 @@ function MobileAppInner() {
   const [myTickets, setMyTickets] = useState([]);
   const [teamToday, setTeamToday] = useState([]);
   const [allEmps, setAllEmps] = useState([]);
+  const [kadwarNotifs, setKadwarNotifs] = useState({ tasks: 0, exams: 0, alerts: 0 });
   const [pwaPrompt, setPwaPrompt] = useState(null);
   const [callBanner, setCallBanner] = useState(null); // { type, msg }
   const [initDone, setInitDone] = useState(false);
@@ -523,6 +524,11 @@ function MobileAppInner() {
           }));
         } catch(e) { /**/ }
       }
+      // Fetch kadwar notifications (from shared database)
+      try {
+        var notifs = await api("kadwar_notifs", { params: { empId: emp.id } });
+        if (notifs && !notifs.error) setKadwarNotifs({ tasks: notifs.tasks || 0, exams: notifs.exams || 0, alerts: notifs.alerts || 0 });
+      } catch(e) { /**/ }
     } catch { /**/ }
   }
 
@@ -654,7 +660,7 @@ function MobileAppInner() {
       {!online && <div style={{ background: C.red, color: "#fff", textAlign: "center", padding: "6px 0", fontSize: 11, fontWeight: 700 }}>⚠️ لا يوجد اتصال بالإنترنت</div>}
 
       <div key={page} style={{ flex: 1, display: "flex", flexDirection: "column", animation: "pageIn .3s ease" }}>
-        {page === "home" && <HomePage user={user} branch={branch} now={now} todayAtt={todayAtt} allAtt={allAtt} gps={gps} gpsDist={gpsDist} streak={streak} loading={loading} refreshing={refreshing} dayState={getDayState()} checkpoints={getCheckpoints()} isOffDay={isOffDay()} pendingCount={myLeaves.filter(function(l){ return l.status === "pending"; }).length + myTickets.filter(function(t){ return t.status === "pending"; }).length} teamToday={teamToday} pwaPrompt={pwaPrompt} onPwaInstall={async function(){ if(pwaPrompt){pwaPrompt.prompt();await pwaPrompt.userChoice;setPwaPrompt(null);} }} onCheckin={requestCheckin} onChallenge={function(pts) { var u = { ...user, points: (user.points||0)+pts }; setUser(u); localStorage.setItem("basma_user", JSON.stringify(u)); showToast("🎉 +" + pts + " نقطة!"); }} onLeave={() => setLeaveModal(true)} onRefresh={refresh} onPreAbsence={function(){ setPreAbsModal(true); }} onManualAtt={function(){ setManualAttModal(true); }} />}
+        {page === "home" && <HomePage user={user} branch={branch} now={now} todayAtt={todayAtt} allAtt={allAtt} gps={gps} gpsDist={gpsDist} streak={streak} loading={loading} refreshing={refreshing} dayState={getDayState()} checkpoints={getCheckpoints()} isOffDay={isOffDay()} pendingCount={myLeaves.filter(function(l){ return l.status === "pending"; }).length + myTickets.filter(function(t){ return t.status === "pending"; }).length} teamToday={teamToday} pwaPrompt={pwaPrompt} onPwaInstall={async function(){ if(pwaPrompt){pwaPrompt.prompt();await pwaPrompt.userChoice;setPwaPrompt(null);} }} onCheckin={requestCheckin} onChallenge={function(pts) { var u = { ...user, points: (user.points||0)+pts }; setUser(u); localStorage.setItem("basma_user", JSON.stringify(u)); showToast("🎉 +" + pts + " نقطة!"); }} onLeave={() => setLeaveModal(true)} onRefresh={refresh} onPreAbsence={function(){ setPreAbsModal(true); }} onManualAtt={function(){ setManualAttModal(true); }} kadwarNotifs={kadwarNotifs} />}
         {page === "report" && <ReportPage user={user} allAtt={allAtt} todayAtt={todayAtt} branch={branch} isOffDay={isOffDay()} myLeaves={myLeaves} />}
         {page === "benefits" && <BenefitsPage user={user} />}
         {page === "profile" && <ProfilePage user={user} branch={branch} onLogout={logout} onTicket={() => setTicketModal(true)} myTickets={myTickets} darkMode={darkMode} toggleDark={toggleDark} />}
@@ -722,7 +728,7 @@ function LoginScreen({ onLogin, loading }) {
 }
 
 /* ═══════════ HOME ═══════════ */
-function HomePage({ user, branch, now, todayAtt, allAtt, gps, gpsDist, streak, loading, refreshing, dayState, checkpoints, isOffDay, pendingCount, teamToday, pwaPrompt, onPwaInstall, onCheckin, onChallenge, onLeave, onRefresh, onPreAbsence, onManualAtt }) {
+function HomePage({ user, branch, now, todayAtt, allAtt, gps, gpsDist, streak, loading, refreshing, dayState, checkpoints, isOffDay, pendingCount, teamToday, pwaPrompt, onPwaInstall, onCheckin, onChallenge, onLeave, onRefresh, onPreAbsence, onManualAtt, kadwarNotifs }) {
   const { time, sec, ampm } = formatTime(now);
   const badge = memberBadge(user.points || 0);
   const inRange = branch && gpsDist !== null && gpsDist <= (branch.radius || 150);
@@ -968,22 +974,13 @@ function HomePage({ user, branch, now, todayAtt, allAtt, gps, gpsDist, streak, l
           </div>
         )}
 
-        {/* ── Kadwar Notifications ── */}
+        {/* ── إشعارات منصة كوادر ── */}
         <div style={S.card} className="basma-fadein-d3">
-          <div style={S.cardTitle}><span>إشعارات كوادر</span><span style={{ fontSize: 10, color: C.blue }}>hma.engineer</span></div>
+          <div style={S.cardTitle}><span>إشعارات منصة كوادر</span><span style={{ fontSize: 10, color: C.blue }}>hma.engineer</span></div>
           <div style={{ display: "flex", gap: 8 }}>
-            <button onClick={function(){ window.open("https://hma.engineer", "_blank"); }} style={{ flex: 1, padding: "10px 8px", borderRadius: 12, background: C.card, border: "1px solid " + C.bg, display: "flex", alignItems: "center", justifyContent: "center", gap: 6, cursor: "pointer" }}>
-              <span style={{ fontSize: 14 }}>💬</span>
-              <span style={{ fontSize: 11, fontWeight: 700, color: C.text }}>تواصل</span>
-            </button>
-            <button onClick={function(){ window.open("https://hma.engineer", "_blank"); }} style={{ flex: 1, padding: "10px 8px", borderRadius: 12, background: C.card, border: "1px solid " + C.bg, display: "flex", alignItems: "center", justifyContent: "center", gap: 6, cursor: "pointer" }}>
-              <span style={{ fontSize: 14 }}>📝</span>
-              <span style={{ fontSize: 11, fontWeight: 700, color: C.text }}>اختبار</span>
-            </button>
-            <button onClick={function(){ window.open("https://hma.engineer", "_blank"); }} style={{ flex: 1, padding: "10px 8px", borderRadius: 12, background: C.card, border: "1px solid " + C.bg, display: "flex", alignItems: "center", justifyContent: "center", gap: 6, cursor: "pointer" }}>
-              <span style={{ fontSize: 14 }}>👤</span>
-              <span style={{ fontSize: 11, fontWeight: 700, color: C.text }}>حسابي</span>
-            </button>
+            <KadwarBtn icon="💬" label="تواصل" count={kadwarNotifs.tasks} />
+            <KadwarBtn icon="📝" label="اختبار" count={kadwarNotifs.exams} />
+            <KadwarBtn icon="👤" label="حسابي" count={kadwarNotifs.alerts} />
           </div>
         </div>
 
@@ -2207,6 +2204,20 @@ function WeeklyChart({ allAtt, branch }) {
         <div style={{ position: "absolute", top: -8, left: 0, fontSize: 8, color: C.green }}>{expected + "h"}</div>
       </div>
     </div>
+  );
+}
+
+function KadwarBtn({ icon, label, count }) {
+  return (
+    <button onClick={function(){ window.open("https://hma.engineer", "_blank"); }} style={{ flex: 1, padding: "10px 8px", borderRadius: 12, background: C.card, border: "1px solid " + C.bg, display: "flex", alignItems: "center", justifyContent: "center", gap: 6, cursor: "pointer", position: "relative" }}>
+      <span style={{ fontSize: 14, position: "relative" }}>
+        {icon}
+        {count > 0 && (
+          <span style={{ position: "absolute", top: -6, right: -8, minWidth: 16, height: 16, borderRadius: 8, background: C.red, color: "#fff", fontSize: 9, fontWeight: 900, display: "flex", alignItems: "center", justifyContent: "center", padding: "0 3px" }}>{count}</span>
+        )}
+      </span>
+      <span style={{ fontSize: 11, fontWeight: 700, color: C.text }}>{label}</span>
+    </button>
   );
 }
 
