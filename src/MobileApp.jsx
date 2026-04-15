@@ -6,7 +6,7 @@ import React, { useState, useEffect, useRef, useCallback } from "react";
    + Face Verify + Challenge + Toasts
    ═══════════════════════════════════════════ */
 
-const VER = "4.74";
+const VER = "4.80";
 
 /* ── Colors ── */
 const LIGHT = {
@@ -661,7 +661,7 @@ function MobileAppInner() {
 
       <div key={page} style={{ flex: 1, display: "flex", flexDirection: "column", animation: "pageIn .3s ease" }}>
         {page === "home" && <HomePage user={user} branch={branch} now={now} todayAtt={todayAtt} allAtt={allAtt} gps={gps} gpsDist={gpsDist} streak={streak} loading={loading} refreshing={refreshing} dayState={getDayState()} checkpoints={getCheckpoints()} isOffDay={isOffDay()} pendingCount={myLeaves.filter(function(l){ return l.status === "pending"; }).length + myTickets.filter(function(t){ return t.status === "pending"; }).length} teamToday={teamToday} pwaPrompt={pwaPrompt} onPwaInstall={async function(){ if(pwaPrompt){pwaPrompt.prompt();await pwaPrompt.userChoice;setPwaPrompt(null);} }} onCheckin={requestCheckin} onChallenge={function(pts) { var u = { ...user, points: (user.points||0)+pts }; setUser(u); localStorage.setItem("basma_user", JSON.stringify(u)); showToast("🎉 +" + pts + " نقطة!"); }} onLeave={() => setLeaveModal(true)} onRefresh={refresh} onPreAbsence={function(){ setPreAbsModal(true); }} onManualAtt={function(){ setManualAttModal(true); }} kadwarNotifs={kadwarNotifs} />}
-        {page === "report" && <ReportPage user={user} allAtt={allAtt} todayAtt={todayAtt} branch={branch} isOffDay={isOffDay()} myLeaves={myLeaves} />}
+        {page === "report" && <ReportPage user={user} allAtt={allAtt} todayAtt={todayAtt} branch={branch} isOffDay={isOffDay()} myLeaves={myLeaves} allEmps={allEmps} />}
         {page === "benefits" && <BenefitsPage user={user} />}
         {page === "profile" && <ProfilePage user={user} branch={branch} onLogout={logout} onTicket={() => setTicketModal(true)} myTickets={myTickets} darkMode={darkMode} toggleDark={toggleDark} />}
       </div>
@@ -860,6 +860,10 @@ function HomePage({ user, branch, now, todayAtt, allAtt, gps, gpsDist, streak, l
       </div>
 
       <div style={S.content}>
+        <MembershipFreezeNotice user={user} />
+        <BranchHolidayBanner branch={branch} />
+        <OccasionBanner user={user} />
+
         <div style={S.statsRow} className="basma-fadein">
           <div style={{ ...S.statCard, background: "linear-gradient(135deg,"+C.green+","+C.greenDark+")" }}>
             <div style={S.statIcon}>✓</div>
@@ -918,6 +922,19 @@ function HomePage({ user, branch, now, todayAtt, allAtt, gps, gpsDist, streak, l
         {checkpoints.checkin && (
           <WorkHoursCard todayAtt={todayAtt} now={now} branch={branch} dayState={dayState} />
         )}
+
+        {/* ── Overtime ── */}
+        <OvertimeCard todayAtt={todayAtt} branch={branch} now={now} user={user} />
+
+        {/* ── Field Projects ── */}
+        <FieldProjectsCard user={user} gps={gps} />
+
+        {/* ── Points Log ── */}
+        <PointsLogCard user={user} allAtt={allAtt} />
+
+        {/* ── Violations + Delegation ── */}
+        <ViolationsCard user={user} />
+        <DelegationCard user={user} />
 
         {/* ── Quick Actions ── */}
         <div style={{ display: "flex", gap: 8, marginBottom: 12 }} className="basma-fadein-d2">
@@ -1001,7 +1018,7 @@ function HomePage({ user, branch, now, todayAtt, allAtt, gps, gpsDist, streak, l
 }
 
 /* ═══════════ REPORT ═══════════ */
-function ReportPage({ user, allAtt, todayAtt, branch, isOffDay, myLeaves }) {
+function ReportPage({ user, allAtt, todayAtt, branch, isOffDay, myLeaves, allEmps }) {
   const thisMonth = todayStr().slice(0, 7);
   const monthAtt = allAtt.filter(r => r.date && r.date.startsWith(thisMonth));
   const checkins = monthAtt.filter(r => r.type === "checkin");
@@ -1087,6 +1104,9 @@ function ReportPage({ user, allAtt, todayAtt, branch, isOffDay, myLeaves }) {
         <div style={{ width: 60 }} />
       </div>
       <div style={{ padding: "16px 16px 0" }}>
+
+        {/* ── Export Buttons (managers only) ── */}
+        <ExportButtons user={user} allAtt={allAtt} branch={branch} allEmps={allEmps} />
 
         {/* ── ملخص اليوم ── */}
         <div style={S.card} className="basma-fadein">
@@ -1196,6 +1216,7 @@ function ReportPage({ user, allAtt, todayAtt, branch, isOffDay, myLeaves }) {
 
 /* ═══════════ PROFILE ═══════════ */
 function ProfilePage({ user, branch, onLogout, onTicket, myTickets, darkMode, toggleDark }) {
+  var [tab, setTab] = useState("info");
   const typeMap = { office: "🏢 مكتبي", field: "🏗️ ميداني", mixed: "🔀 مختلط", remote: "🏠 عن بعد" };
   const badge = memberBadge(user.points || 0);
   const rows = [
@@ -1205,6 +1226,13 @@ function ProfilePage({ user, branch, onLogout, onTicket, myTickets, darkMode, to
     ["التصنيف", typeMap[user.type] || user.type || "—"],
     ["الالتحاق", user.joinDate || "—"],
     ["النقاط", badge.icon + " " + (user.points || 0) + " نقطة"],
+  ];
+  var tabs = [
+    { id: "info", icon: "👤", label: "بياناتي" },
+    { id: "deps", icon: "👨‍👩‍👧", label: "المرافقين" },
+    { id: "health", icon: "🏥", label: "الإفصاح" },
+    { id: "docs", icon: "📎", label: "المرفقات" },
+    { id: "custody", icon: "📦", label: "العهد" },
   ];
 
   return (
@@ -1221,8 +1249,23 @@ function ProfilePage({ user, branch, onLogout, onTicket, myTickets, darkMode, to
           <div style={{ fontSize: 12, color: C.sub, marginTop: 2 }}>{user.role + " — " + user.id}</div>
         </div>
 
-        <div style={S.card} className="basma-fadein-d1">
-          {rows.map(function(row, i) {
+        {/* ── Profile Tabs ── */}
+        <div style={{ display: "flex", gap: 4, marginBottom: 14, background: C.bg, borderRadius: 14, padding: 4 }}>
+          {tabs.map(function(t) {
+            var active = tab === t.id;
+            return (
+              <button key={t.id} onClick={function(){ setTab(t.id); }} style={{ flex: 1, padding: "8px 4px", borderRadius: 10, background: active ? C.card : "transparent", border: "none", fontSize: 10, fontWeight: 700, color: active ? C.blue : C.sub, cursor: "pointer", textAlign: "center", boxShadow: active ? "0 1px 4px rgba(0,0,0,.08)" : "none" }}>
+                <div style={{ fontSize: 14 }}>{t.icon}</div>{t.label}
+              </button>
+            );
+          })}
+        </div>
+
+        {/* ── Tab: بياناتي ── */}
+        {tab === "info" && (
+          <div>
+            <div style={S.card} className="basma-fadein-d1">
+              {rows.map(function(row, i) {
             return (
               <div key={row[0]} style={{ display: "flex", justifyContent: "space-between", padding: "11px 0", borderBottom: i < rows.length - 1 ? "1px solid " + C.bg : "none" }}>
                 <span style={{ fontSize: 14, fontWeight: 700, color: C.text }}>{row[1]}</span>
@@ -1287,6 +1330,22 @@ function ProfilePage({ user, branch, onLogout, onTicket, myTickets, darkMode, to
           🎫 تذكرة دعم جديدة
         </button>
 
+          </div>
+        )}
+
+        {/* ── Tab: المرافقين ── */}
+        {tab === "deps" && <div style={S.card}><DependentsTab user={user} /></div>}
+
+        {/* ── Tab: الإفصاح الصحي ── */}
+        {tab === "health" && <div style={S.card}><HealthDisclosureTab user={user} /></div>}
+
+        {/* ── Tab: المرفقات ── */}
+        {tab === "docs" && <div style={S.card}><AttachmentsTab user={user} /></div>}
+
+        {/* ── Tab: العهد ── */}
+        {tab === "custody" && <div style={S.card}><CustodyTab user={user} /></div>}
+
+        {/* ── Action Buttons (always visible) ── */}
         {(user.isManager || user.isAssistant) && (
           <button onClick={function(){ window.location.hash = "admin"; }} style={{ width: "100%", padding: 14, borderRadius: 16, background: "linear-gradient(135deg,"+C.hdr1+","+C.hdr2+")", color: "#fff", fontSize: 15, fontWeight: 800, border: "none", cursor: "pointer", fontFamily: "'Cairo',sans-serif", marginBottom: 8 }}>
             🛡️ لوحة الإدارة
@@ -2269,6 +2328,521 @@ function BottomNav({ page, setPage }) {
 }
 
 /* ═══════════ STYLES ═══════════ */
+
+/* ═══════════ CUSTODY (العهد) ═══════════ */
+function CustodyTab({ user }) {
+  var [items, setItems] = useState([]);
+  useEffect(function() {
+    api("custody", { params: { empId: user.id } }).then(function(d) { setItems(d || []); }).catch(function(){});
+  }, []);
+
+  var statusMap = { active: { label: "مستلمة", color: C.blue, icon: "📦" }, returned: { label: "مرتجعة", color: C.green, icon: "✓" }, lost: { label: "مفقودة", color: C.red, icon: "⚠️" } };
+
+  return (
+    <div>
+      <div style={{ fontSize: 13, fontWeight: 800, color: C.text, marginBottom: 12 }}>{"📦 العهد (" + items.length + ")"}</div>
+      {items.length === 0 && <div style={{ textAlign: "center", color: C.sub, fontSize: 12, padding: 20 }}>لا توجد عهد مسجلة</div>}
+      {items.map(function(item, i) {
+        var s = statusMap[item.status] || statusMap.active;
+        return (
+          <div key={item.id || i} style={{ display: "flex", alignItems: "center", gap: 10, padding: "10px 0", borderBottom: i < items.length - 1 ? "1px solid " + C.bg : "none" }}>
+            <div style={{ width: 36, height: 36, borderRadius: 10, background: s.color + "15", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 16 }}>{s.icon}</div>
+            <div style={{ flex: 1 }}>
+              <div style={{ fontSize: 12, fontWeight: 700 }}>{item.name || "عهدة"}</div>
+              <div style={{ fontSize: 9, color: C.sub }}>{(item.serial ? "SN: " + item.serial + " · " : "") + (item.createdAt ? item.createdAt.split("T")[0] : "")}</div>
+              {item.type === "cash" && <div style={{ fontSize: 9, color: C.orange }}>{"💰 عهدة نقدية: " + (item.amount || 0) + " ريال"}</div>}
+            </div>
+            <span style={{ fontSize: 9, fontWeight: 700, color: s.color, padding: "2px 8px", borderRadius: 6, background: s.color + "12" }}>{s.label}</span>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+/* ═══════════ DELEGATION (الانتداب) ═══════════ */
+function DelegationCard({ user }) {
+  var [delegations, setDelegations] = useState([]);
+  useEffect(function() {
+    api("delegations").then(function(d) { setDelegations((d || []).filter(function(dl){ return dl.empId === user.id || dl.requestedBy === user.id; })); }).catch(function(){});
+  }, []);
+
+  if (delegations.length === 0) return null;
+
+  var statusMap = { pending: { label: "بانتظار الاعتماد", color: C.orange }, approved: { label: "معتمد", color: C.green }, rejected: { label: "مرفوض", color: C.red } };
+
+  return (
+    <div style={buildS().card} className="basma-fadein-d3">
+      <div style={buildS().cardTitle}><span>🚀 الانتدابات</span><span style={{ fontSize: 10, color: C.sub }}>{delegations.length}</span></div>
+      {delegations.map(function(dl, i) {
+        var s = statusMap[dl.status] || statusMap.pending;
+        return (
+          <div key={dl.id || i} style={{ display: "flex", alignItems: "center", gap: 10, padding: "8px 0", borderBottom: i < delegations.length - 1 ? "1px solid " + C.bg : "none" }}>
+            <div style={{ flex: 1 }}>
+              <div style={{ fontSize: 12, fontWeight: 700 }}>{dl.reason || "انتداب"}</div>
+              <div style={{ fontSize: 9, color: C.sub }}>{(dl.from || "") + " → " + (dl.to || "")}</div>
+            </div>
+            <span style={{ fontSize: 9, fontWeight: 700, color: s.color, padding: "2px 8px", borderRadius: 6, background: s.color + "12" }}>{s.label}</span>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+/* ═══════════ VIOLATIONS PANEL (سجل المخالفات والإنذارات) ═══════════ */
+function ViolationsCard({ user }) {
+  var [violations, setViolations] = useState([]);
+  var [warnings, setWarnings] = useState([]);
+  var [expanded, setExpanded] = useState(false);
+
+  useEffect(function() {
+    api("violations", { params: { empId: user.id } }).then(function(v) { setViolations(v || []); }).catch(function(){});
+    api("warnings", { params: { empId: user.id } }).then(function(w) { setWarnings(w || []); }).catch(function(){});
+  }, []);
+
+  var total = violations.length + warnings.length;
+  if (total === 0) return null;
+
+  return (
+    <div style={buildS().card}>
+      <div onClick={function(){ setExpanded(!expanded); }} style={{ ...buildS().cardTitle, cursor: "pointer" }}>
+        <span>{"⚖️ المخالفات والإنذارات (" + total + ")"}</span>
+        <span style={{ fontSize: 12, color: C.red }}>{expanded ? "▲" : "▼"}</span>
+      </div>
+      {expanded && (
+        <div>
+          {warnings.map(function(w, i) {
+            var lvl = VIOLATION_ESCALATION.find(function(v){ return v.level === (w.level || 1); }) || VIOLATION_ESCALATION[0];
+            return (
+              <div key={w.id || i} style={{ display: "flex", alignItems: "center", gap: 10, padding: "8px 0", borderBottom: "1px solid " + C.bg }}>
+                <span style={{ fontSize: 16 }}>{lvl.icon}</span>
+                <div style={{ flex: 1 }}>
+                  <div style={{ fontSize: 11, fontWeight: 700 }}>{lvl.type}</div>
+                  <div style={{ fontSize: 9, color: C.sub }}>{w.details || w.type || ""}</div>
+                  <div style={{ fontSize: 8, color: C.sub }}>{w.ts ? w.ts.split("T")[0] : ""}</div>
+                </div>
+                <div style={{ fontSize: 9, color: C.orange, fontWeight: 700 }}>{"الرد: " + lvl.response}</div>
+              </div>
+            );
+          })}
+          {violations.map(function(v, i) {
+            var vt = VIOLATION_TYPES[v.type] || { label: v.type || "مخالفة", category: "—" };
+            return (
+              <div key={v.id || i} style={{ display: "flex", alignItems: "center", gap: 10, padding: "8px 0", borderBottom: i < violations.length - 1 ? "1px solid " + C.bg : "none" }}>
+                <span style={{ fontSize: 14 }}>📋</span>
+                <div style={{ flex: 1 }}>
+                  <div style={{ fontSize: 11, fontWeight: 700 }}>{vt.label}</div>
+                  <div style={{ fontSize: 9, color: C.sub }}>{v.details || ""}</div>
+                </div>
+                <span style={{ fontSize: 9, color: v.status === "open" ? C.red : C.green }}>{v.status === "open" ? "مفتوحة" : "مغلقة"}</span>
+              </div>
+            );
+          })}
+          <div style={{ fontSize: 9, color: C.sub, textAlign: "center", marginTop: 8, padding: 8, background: C.bg, borderRadius: 8 }}>
+            ⚖️ يحق لك الاعتراض على أي إنذار خلال 48 ساعة — افتح تذكرة دعم من نوع "رد على إفادة"
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+/* ═══════════ MEMBERSHIP FREEZE (تجميد العضوية) ═══════════ */
+function MembershipFreezeNotice({ user }) {
+  if (!user.membershipFrozen) return null;
+  return (
+    <div style={{ background: C.red + "12", border: "1.5px solid " + C.red + "30", borderRadius: 14, padding: 14, marginBottom: 12, textAlign: "center" }}>
+      <div style={{ fontSize: 16, marginBottom: 4 }}>❄️</div>
+      <div style={{ fontSize: 13, fontWeight: 800, color: C.red }}>العضوية مجمّدة</div>
+      <div style={{ fontSize: 10, color: C.sub, marginTop: 2 }}>{user.frozenReason || "بقرار إداري"}</div>
+      <div style={{ fontSize: 9, color: C.sub, marginTop: 4 }}>النقاط لا تُحتسب أثناء التجميد — تواصل مع الموارد البشرية</div>
+    </div>
+  );
+}
+
+/* ═══════════ BRANCH HOLIDAYS (الإجازات الرسمية لكل فرع) ═══════════ */
+function BranchHolidayBanner({ branch }) {
+  if (!branch) return null;
+  var holidays_sa = [
+    { name: "اليوم الوطني", date: "09-23" },
+    { name: "يوم التأسيس", date: "02-22" },
+    { name: "عيد الفطر", date: "03-30" },
+    { name: "عيد الأضحى", date: "06-07" },
+  ];
+  var holidays_tr = [
+    { name: "يوم الجمهورية", date: "10-29" },
+    { name: "عيد الطفولة", date: "04-23" },
+    { name: "يوم النصر", date: "08-30" },
+  ];
+  var holidays = (branch.tz && branch.tz.includes("Istanbul")) ? holidays_tr : holidays_sa;
+  var today = todayStr();
+  var todayMD = today.slice(5);
+  var holiday = holidays.find(function(h){ return h.date === todayMD; });
+
+  if (!holiday) return null;
+  return (
+    <div style={{ background: "linear-gradient(135deg, #FF6B9D, #C850C0)", borderRadius: 16, padding: 14, marginBottom: 12, textAlign: "center", color: "#fff" }} className="basma-fadein">
+      <div style={{ fontSize: 24, marginBottom: 4 }}>🎉</div>
+      <div style={{ fontSize: 14, fontWeight: 800 }}>{"إجازة رسمية — " + holiday.name}</div>
+      <div style={{ fontSize: 10, opacity: .8, marginTop: 2 }}>{branch.name + " — يوم عطلة رسمية"}</div>
+    </div>
+  );
+}
+
+/* ═══════════ EXPORT BUTTONS (تصدير مسير الرواتب + التأمين) ═══════════ */
+function ExportButtons({ user, allAtt, branch, allEmps }) {
+  if (!user.isManager) return null;
+
+  function exportPayroll() {
+    var rows = ["رقم الموظف,الاسم,الراتب الأساسي,نسبة الانضباط,المستحق,IBAN"];
+    (allEmps || []).forEach(function(emp) {
+      var monthAtt = allAtt.filter(function(r){ return r.empId === emp.id && r.type === "checkin"; });
+      var days = new Set(monthAtt.map(function(r){ return r.date; })).size;
+      var workDays = Math.max(1, new Date().getDate());
+      var pct = Math.round((days / workDays) * 100);
+      var salary = emp.salary || 0;
+      var due = Math.round(salary * pct / 100);
+      rows.push([emp.id, emp.name, salary, pct + "%", due, emp.iban || "—"].join(","));
+    });
+    var csv = "\uFEFF" + rows.join("\n");
+    var blob = new Blob([csv], { type: "text/csv;charset=utf-8" });
+    var url = URL.createObjectURL(blob);
+    var a = document.createElement("a"); a.href = url; a.download = "payroll-" + todayStr().slice(0,7) + ".csv"; a.click();
+    URL.revokeObjectURL(url);
+  }
+
+  function exportInsurance() {
+    var rows = ["رقم الموظف,الاسم,المرافق,القرابة,الميلاد,الهوية,تأمين خارجي"];
+    rows.push("— سيتم تحميل البيانات من API —");
+    var csv = "\uFEFF" + rows.join("\n");
+    var blob = new Blob([csv], { type: "text/csv;charset=utf-8" });
+    var url = URL.createObjectURL(blob);
+    var a = document.createElement("a"); a.href = url; a.download = "insurance-data-" + todayStr() + ".csv"; a.click();
+    URL.revokeObjectURL(url);
+  }
+
+  return (
+    <div style={{ display: "flex", gap: 6, marginBottom: 12 }}>
+      <button onClick={exportPayroll} style={{ flex: 1, padding: "10px 6px", borderRadius: 12, background: C.card, border: "1px solid " + C.bg, fontSize: 10, fontWeight: 700, color: C.text, cursor: "pointer", textAlign: "center" }}>
+        💰 مسير الرواتب
+      </button>
+      <button onClick={exportInsurance} style={{ flex: 1, padding: "10px 6px", borderRadius: 12, background: C.card, border: "1px solid " + C.bg, fontSize: 10, fontWeight: 700, color: C.text, cursor: "pointer", textAlign: "center" }}>
+        🏥 بيانات التأمين
+      </button>
+    </div>
+  );
+}
+
+
+/* ═══════════ DEPENDENTS (المرافقين) ═══════════ */
+function DependentsTab({ user }) {
+  var [deps, setDeps] = useState([]);
+  var [adding, setAdding] = useState(false);
+  var [form, setForm] = useState({ name: "", relation: "ابن", dob: "", idNumber: "", externalInsurance: false, insurerName: "" });
+
+  useEffect(function() {
+    api("dependents", { params: { empId: user.id } }).then(function(d) { setDeps(d || []); }).catch(function(){});
+  }, []);
+
+  function save() {
+    api("dependents", { method: "POST", body: { empId: user.id, ...form } }).then(function() {
+      setDeps(function(prev) { return prev.concat([{ id: "D" + Date.now(), ...form, status: "pending" }]); });
+      setAdding(false);
+      setForm({ name: "", relation: "ابن", dob: "", idNumber: "", externalInsurance: false, insurerName: "" });
+    });
+  }
+
+  var relations = ["زوج/زوجة", "ابن", "ابنة", "أب", "أم"];
+  return (
+    <div>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>
+        <div style={{ fontSize: 13, fontWeight: 800, color: C.text }}>{"👨‍👩‍👧 المرافقين (" + deps.length + ")"}</div>
+        <button onClick={function(){ setAdding(!adding); }} style={{ padding: "5px 12px", borderRadius: 8, background: C.blue, color: "#fff", fontSize: 10, fontWeight: 700, border: "none", cursor: "pointer" }}>{adding ? "إلغاء" : "+ إضافة"}</button>
+      </div>
+
+      {adding && (
+        <div style={{ padding: 14, borderRadius: 14, background: C.bg, marginBottom: 12 }}>
+          <input value={form.name} onChange={function(e){ setForm({...form, name: e.target.value}); }} placeholder="الاسم الكامل" style={{ width: "100%", padding: 10, borderRadius: 8, border: "1px solid #ddd", fontSize: 13, marginBottom: 6 }} />
+          <div style={{ display: "flex", gap: 6, marginBottom: 6 }}>
+            <select value={form.relation} onChange={function(e){ setForm({...form, relation: e.target.value}); }} style={{ flex: 1, padding: 10, borderRadius: 8, border: "1px solid #ddd", fontSize: 12 }}>
+              {relations.map(function(r){ return React.createElement("option", { key: r, value: r }, r); })}
+            </select>
+            <input type="date" value={form.dob} onChange={function(e){ setForm({...form, dob: e.target.value}); }} style={{ flex: 1, padding: 10, borderRadius: 8, border: "1px solid #ddd", fontSize: 12 }} />
+          </div>
+          <input value={form.idNumber} onChange={function(e){ setForm({...form, idNumber: e.target.value}); }} placeholder="رقم الهوية/الإقامة" style={{ width: "100%", padding: 10, borderRadius: 8, border: "1px solid #ddd", fontSize: 13, marginBottom: 6 }} />
+          <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 8 }}>
+            <input type="checkbox" checked={form.externalInsurance} onChange={function(e){ setForm({...form, externalInsurance: e.target.checked}); }} />
+            <span style={{ fontSize: 11, color: C.sub }}>مؤمّن عليه مع جهة أخرى</span>
+          </div>
+          {form.externalInsurance && <input value={form.insurerName} onChange={function(e){ setForm({...form, insurerName: e.target.value}); }} placeholder="اسم شركة التأمين" style={{ width: "100%", padding: 10, borderRadius: 8, border: "1px solid #ddd", fontSize: 13, marginBottom: 6 }} />}
+          <button onClick={save} disabled={!form.name} style={{ width: "100%", padding: 10, borderRadius: 10, background: form.name ? C.green : "#ddd", color: "#fff", fontSize: 13, fontWeight: 700, border: "none", cursor: "pointer" }}>حفظ المرافق</button>
+        </div>
+      )}
+
+      {deps.length === 0 && !adding && <div style={{ textAlign: "center", color: C.sub, fontSize: 12, padding: 20 }}>لا يوجد مرافقين</div>}
+      {deps.map(function(d, i) {
+        var statusColors = { pending: C.orange, approved: C.green, rejected: C.red };
+        var statusLabels = { pending: "بانتظار الاعتماد", approved: "معتمد", rejected: "مرفوض" };
+        return (
+          <div key={d.id || i} style={{ display: "flex", alignItems: "center", gap: 10, padding: "10px 0", borderBottom: i < deps.length - 1 ? "1px solid " + C.bg : "none" }}>
+            <div style={{ width: 36, height: 36, borderRadius: 10, background: C.blue + "15", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 16 }}>👤</div>
+            <div style={{ flex: 1 }}>
+              <div style={{ fontSize: 12, fontWeight: 700 }}>{d.name}</div>
+              <div style={{ fontSize: 10, color: C.sub }}>{d.relation + (d.externalInsurance ? " · 🛡️ تأمين خارجي" : "")}</div>
+            </div>
+            <span style={{ fontSize: 9, fontWeight: 700, color: statusColors[d.status] || C.orange, padding: "2px 8px", borderRadius: 6, background: (statusColors[d.status] || C.orange) + "12" }}>{statusLabels[d.status] || "بانتظار"}</span>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+/* ═══════════ HEALTH DISCLOSURE (الإفصاح الصحي) ═══════════ */
+function HealthDisclosureTab({ user }) {
+  var defaultQuestions = [
+    "هل يعاني من أمراض مزمنة؟ (سكر، ضغط، قلب، ربو)",
+    "هل يتناول أدوية حالياً؟",
+    "هل أجرى عمليات جراحية سابقة؟",
+    "هل لديه إعاقة؟",
+    "ملاحظات صحية إضافية"
+  ];
+  var [answers, setAnswers] = useState({});
+  var [saved, setSaved] = useState(false);
+
+  function updateAnswer(idx, val) {
+    setAnswers(function(prev) { var n = {...prev}; n[idx] = val; return n; });
+  }
+
+  function save() {
+    api("health_disclosure", { method: "POST", body: { empId: user.id, answers: answers, date: todayStr() } }).then(function() { setSaved(true); }).catch(function(){});
+  }
+
+  return (
+    <div>
+      <div style={{ fontSize: 13, fontWeight: 800, color: C.text, marginBottom: 4 }}>🏥 الإفصاح الصحي</div>
+      <div style={{ fontSize: 10, color: C.sub, marginBottom: 14 }}>أسئلة الإفصاح لأغراض التأمين — يُعتمد من الموارد البشرية</div>
+      {defaultQuestions.map(function(q, i) {
+        return (
+          <div key={i} style={{ marginBottom: 10 }}>
+            <div style={{ fontSize: 11, fontWeight: 700, color: C.text, marginBottom: 4 }}>{(i + 1) + ". " + q}</div>
+            <textarea value={answers[i] || ""} onChange={function(e){ updateAnswer(i, e.target.value); }} placeholder="الإجابة..." rows={2} style={{ width: "100%", padding: 8, borderRadius: 8, border: "1px solid #ddd", fontSize: 12, resize: "none" }} />
+          </div>
+        );
+      })}
+      <button onClick={save} style={{ width: "100%", padding: 10, borderRadius: 10, background: saved ? C.green : C.blue, color: "#fff", fontSize: 13, fontWeight: 700, border: "none", cursor: "pointer" }}>
+        {saved ? "✓ تم الحفظ" : "حفظ الإفصاح"}
+      </button>
+      {saved && <div style={{ fontSize: 9, color: C.sub, textAlign: "center", marginTop: 6 }}>{"تاريخ الإفصاح: " + todayStr() + " — بانتظار اعتماد HR"}</div>}
+    </div>
+  );
+}
+
+/* ═══════════ ATTACHMENTS (المرفقات) ═══════════ */
+function AttachmentsTab({ user }) {
+  var docTypes = ["بطاقة هوية", "جواز سفر", "إقامة", "رخصة قيادة", "شهادة صحية", "عقد عمل", "IBAN بنكي", "أخرى"];
+  var [docs, setDocs] = useState([]);
+
+  useEffect(function() {
+    api("attachments", { params: { empId: user.id } }).then(function(d) { setDocs(d || []); }).catch(function(){});
+  }, []);
+
+  function upload(type) {
+    var input = document.createElement("input");
+    input.type = "file";
+    input.accept = "image/*,.pdf";
+    input.onchange = function(e) {
+      var file = e.target.files[0];
+      if (!file) return;
+      var reader = new FileReader();
+      reader.onload = function(ev) {
+        var newDoc = { id: "ATT" + Date.now(), empId: user.id, type: type, fileName: file.name, size: file.size, date: todayStr(), status: "pending" };
+        setDocs(function(prev) { return prev.concat([newDoc]); });
+        api("attachments", { method: "POST", body: { ...newDoc, data: ev.target.result } }).catch(function(){});
+      };
+      reader.readAsDataURL(file);
+    };
+    input.click();
+  }
+
+  return (
+    <div>
+      <div style={{ fontSize: 13, fontWeight: 800, color: C.text, marginBottom: 4 }}>📎 المرفقات</div>
+      <div style={{ fontSize: 10, color: C.sub, marginBottom: 14 }}>ارفع مستنداتك — الشهادات تُضاف من كوادر للقراءة فقط</div>
+
+      <div style={{ display: "flex", flexWrap: "wrap", gap: 6, marginBottom: 14 }}>
+        {docTypes.map(function(dt) {
+          var exists = docs.some(function(d){ return d.type === dt; });
+          return (
+            <button key={dt} onClick={function(){ if(!exists) upload(dt); }} style={{ padding: "6px 12px", borderRadius: 8, background: exists ? C.green + "15" : C.bg, border: exists ? "1px solid " + C.green + "30" : "1px solid #ddd", fontSize: 10, fontWeight: 600, color: exists ? C.green : C.sub, cursor: exists ? "default" : "pointer" }}>
+              {exists ? "✓ " : "📤 "}{dt}
+            </button>
+          );
+        })}
+      </div>
+
+      {docs.map(function(d, i) {
+        var statusColors = { pending: C.orange, approved: C.green, rejected: C.red };
+        return (
+          <div key={d.id || i} style={{ display: "flex", alignItems: "center", gap: 10, padding: "8px 0", borderBottom: i < docs.length - 1 ? "1px solid " + C.bg : "none" }}>
+            <span style={{ fontSize: 14 }}>📄</span>
+            <div style={{ flex: 1 }}>
+              <div style={{ fontSize: 11, fontWeight: 700 }}>{d.type}</div>
+              <div style={{ fontSize: 9, color: C.sub }}>{d.date}</div>
+            </div>
+            <span style={{ fontSize: 9, fontWeight: 700, color: statusColors[d.status] || C.orange, padding: "2px 8px", borderRadius: 6, background: (statusColors[d.status] || C.orange) + "12" }}>{d.status === "approved" ? "معتمد" : d.status === "rejected" ? "مرفوض" : "بانتظار"}</span>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+/* ═══════════ OVERTIME (الأوفرتايم) ═══════════ */
+function OvertimeCard({ todayAtt, branch, now, user }) {
+  var checkoutRec = todayAtt.find(function(r){ return r.type === "checkout"; });
+  if (!branch || !checkoutRec) return null;
+
+  var endMin = timeToMin(branch.end);
+  var nowMin = now.getHours() * 60 + now.getMinutes();
+  var checkoutMin = new Date(checkoutRec.ts).getHours() * 60 + new Date(checkoutRec.ts).getMinutes();
+
+  // If checkout was after end of work, calculate overtime
+  var otMin = Math.max(0, checkoutMin - endMin);
+  if (otMin === 0 && nowMin > endMin && !checkoutRec) {
+    // Still working overtime
+    otMin = nowMin - endMin;
+  }
+  if (otMin <= 0) return null;
+
+  var otHrs = Math.floor(otMin / 60);
+  var otMins = otMin % 60;
+
+  return (
+    <div style={{...buildS().card, background: "linear-gradient(135deg," + C.blue + "08," + C.blueBright + "05)", border: "1px solid " + C.blue + "20"}} className="basma-fadein-d2">
+      <div style={buildS().cardTitle}><span>⏰ الأوفرتايم</span><span style={{ fontSize: 10, color: C.blue, fontWeight: 700 }}>{otHrs + ":" + String(otMins).padStart(2,"0") + " ساعة"}</span></div>
+      <div style={{ fontSize: 11, color: C.sub }}>{"تسجيل الانصراف بعد نهاية الدوام بـ " + otMin + " دقيقة"}</div>
+      <div style={{ fontSize: 9, color: C.sub, marginTop: 4 }}>{"نوع الدوام: " + (user.type === "field" ? "ميداني — بدون قيد موقع" : "مكتبي — يلزم التواجد في النطاق")}</div>
+    </div>
+  );
+}
+
+/* ═══════════ FIELD PROJECTS (المشاريع الميدانية) ═══════════ */
+function FieldProjectsCard({ user, gps }) {
+  var [projects, setProjects] = useState([]);
+
+  useEffect(function() {
+    if (user.type !== "field" && user.type !== "mixed") return;
+    api("projects").then(function(ps) { setProjects(ps || []); }).catch(function(){});
+  }, []);
+
+  if (user.type !== "field" && user.type !== "mixed") return null;
+  if (projects.length === 0) return null;
+
+  return (
+    <div style={buildS().card} className="basma-fadein-d3">
+      <div style={buildS().cardTitle}><span>🏗️ مشاريعي الميدانية</span><span style={{ fontSize: 10, color: C.sub }}>{projects.length + " مشروع"}</span></div>
+      {projects.map(function(p, i) {
+        var dist = gps && p.lat && p.lng ? Math.round(haversine(gps.lat, gps.lng, p.lat, p.lng)) : null;
+        var inRange = dist !== null && dist <= (p.radius || 200);
+        return (
+          <div key={p.id || i} style={{ display: "flex", alignItems: "center", gap: 10, padding: "8px 0", borderBottom: i < projects.length - 1 ? "1px solid " + C.bg : "none" }}>
+            <div style={{ width: 32, height: 32, borderRadius: 10, background: inRange ? C.green + "18" : C.bg, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 14 }}>{inRange ? "📍" : "🏗️"}</div>
+            <div style={{ flex: 1 }}>
+              <div style={{ fontSize: 12, fontWeight: 700, color: C.text }}>{p.name || "مشروع"}</div>
+              {dist !== null && <div style={{ fontSize: 9, color: inRange ? C.green : C.sub }}>{inRange ? "✓ في النطاق (" + dist + " م)" : dist + " م بعيد"}</div>}
+            </div>
+            {inRange && (
+              <button onClick={function(){ api("checkin", { method: "POST", body: { empId: user.id, type: "project_confirm", projectId: p.id, lat: gps.lat, lng: gps.lng } }); }} style={{ padding: "4px 10px", borderRadius: 8, background: C.green, color: "#fff", fontSize: 9, fontWeight: 700, border: "none", cursor: "pointer" }}>
+                تأكيد تواجد
+              </button>
+            )}
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+/* ═══════════ POINTS LOG (سجل النقاط) ═══════════ */
+function PointsLogCard({ user, allAtt }) {
+  var [expanded, setExpanded] = useState(false);
+  // Calculate points breakdown
+  var checkins = allAtt.filter(function(r){ return r.type === "checkin"; });
+  var log = [
+    { label: "بصمات الحضور", pts: checkins.length * POINTS.checkin_ontime, icon: "☀️", detail: checkins.length + " × " + POINTS.checkin_ontime },
+    { label: "تحديات الصباح", pts: 0, icon: "⚡", detail: "يُحسب من السجل" },
+    { label: "استخدام التطبيق", pts: Math.min(60, new Set(allAtt.map(function(r){ return r.date; })).size * POINTS.app_daily_use), icon: "📱", detail: "يومي" },
+  ];
+  var total = log.reduce(function(s, l){ return s + l.pts; }, 0);
+
+  return (
+    <div style={buildS().card}>
+      <div onClick={function(){ setExpanded(!expanded); }} style={{ ...buildS().cardTitle, cursor: "pointer" }}>
+        <span>{"📊 سجل النقاط — ⭐" + (user.points || 0)}</span>
+        <span style={{ fontSize: 12, color: C.blue }}>{expanded ? "▲" : "▼"}</span>
+      </div>
+      {expanded && (
+        <div>
+          {log.map(function(l, i) {
+            return (
+              <div key={i} style={{ display: "flex", alignItems: "center", gap: 8, padding: "6px 0", borderBottom: i < log.length - 1 ? "1px solid " + C.bg : "none" }}>
+                <span style={{ fontSize: 14 }}>{l.icon}</span>
+                <div style={{ flex: 1, fontSize: 11, fontWeight: 600 }}>{l.label}</div>
+                <div style={{ fontSize: 10, color: C.sub }}>{l.detail}</div>
+                <div style={{ fontSize: 12, fontWeight: 800, color: C.green }}>{"+" + l.pts}</div>
+              </div>
+            );
+          })}
+          <div style={{ display: "flex", justifyContent: "space-between", paddingTop: 8, borderTop: "2px solid " + C.bg, marginTop: 4 }}>
+            <span style={{ fontSize: 12, fontWeight: 800, color: C.text }}>المجموع المحسوب</span>
+            <span style={{ fontSize: 14, fontWeight: 900, color: C.green }}>{"⭐" + total}</span>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+/* ═══════════ OCCASIONS (المناسبات) ═══════════ */
+function OccasionBanner({ user }) {
+  var today = new Date();
+  var mm = String(today.getMonth()+1).padStart(2,"0");
+  var dd = String(today.getDate()).padStart(2,"0");
+
+  // Check birthday
+  if (user.dob) {
+    var dobParts = user.dob.split("-");
+    if (dobParts[1] === mm && dobParts[2] === dd) {
+      return (
+        <div style={{ background: "linear-gradient(135deg, #FF6B9D, #C850C0)", borderRadius: 16, padding: 14, marginBottom: 12, textAlign: "center", color: "#fff" }} className="basma-fadein">
+          <div style={{ fontSize: 28, marginBottom: 4 }}>🎂</div>
+          <div style={{ fontSize: 14, fontWeight: 800 }}>{"كل عام وأنت بخير يا " + (user.name || "").split(" ")[0] + "!"}</div>
+          <div style={{ fontSize: 10, opacity: .8, marginTop: 2 }}>عيد ميلاد سعيد من فريق HMA</div>
+        </div>
+      );
+    }
+  }
+
+  // Check join anniversary
+  if (user.joinDate) {
+    var joinParts = user.joinDate.split("-");
+    if (joinParts[1] === mm && joinParts[2] === dd && joinParts[0] !== String(today.getFullYear())) {
+      var years = today.getFullYear() - parseInt(joinParts[0]);
+      return (
+        <div style={{ background: "linear-gradient(135deg, " + C.blue + ", " + C.blueBright + ")", borderRadius: 16, padding: 14, marginBottom: 12, textAlign: "center", color: "#fff" }} className="basma-fadein">
+          <div style={{ fontSize: 28, marginBottom: 4 }}>🎉</div>
+          <div style={{ fontSize: 14, fontWeight: 800 }}>{"ذكرى التحاقك بالمكتب — " + years + " سنة!"}</div>
+          <div style={{ fontSize: 10, opacity: .8, marginTop: 2 }}>شكراً لولائك والتزامك</div>
+        </div>
+      );
+    }
+  }
+
+  return null;
+}
+
 function buildS() { return {
   phone: { width: "100%", maxWidth: 430, minHeight: "100vh", margin: "0 auto", background: C.bg, position: "relative", display: "flex", flexDirection: "column" },
 
