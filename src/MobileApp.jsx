@@ -779,7 +779,7 @@ function HomePage({ user, branch, now, todayAtt, allAtt, gps, gpsDist, streak, l
     }
   }
 
-  const SIZE = 300, STROKE = 10, R = (SIZE - STROKE) / 2, CIRC = 2 * Math.PI * R;
+  const SIZE = 280, STROKE = 10, R = (SIZE - STROKE) / 2, CIRC = 2 * Math.PI * R;
   let pct = dayState === "before" ? 5 : dayState === "after" ? 100 : 50;
   if (branch && dayState === "during") {
     const mins = now.getHours() * 60 + now.getMinutes();
@@ -916,7 +916,7 @@ function HomePage({ user, branch, now, todayAtt, allAtt, gps, gpsDist, streak, l
 
         {/* Checkin button below clock */}
         {!showChallenge && challengeAnswer === null && btnAction && (
-          <button onClick={function(){ if(!loading) onCheckin(btnAction, btnLabel); }} disabled={loading} style={{ marginTop: 20, padding: "14px 44px", borderRadius: 16, background: "linear-gradient(180deg, rgba(255,255,255,.2) 0%, rgba(255,255,255,.08) 50%, rgba(255,255,255,.15) 100%)", boxShadow: "0 3px 12px rgba(0,0,0,.2), inset 0 1px 0 rgba(255,255,255,.25)", border: "1.5px solid rgba(255,255,255,.25)", color: "#fff", fontSize: 15, fontWeight: 800, fontFamily: "'Cairo',sans-serif", cursor: "pointer", backdropFilter: "blur(10px)" }}>{loading ? "⏳" : btnText}</button>
+          <button onClick={function(){ if(!loading) onCheckin(btnAction, btnLabel); }} disabled={loading} style={{ marginTop: 28, padding: "14px 44px", borderRadius: 16, background: "linear-gradient(180deg, rgba(255,255,255,.2) 0%, rgba(255,255,255,.08) 50%, rgba(255,255,255,.15) 100%)", boxShadow: "0 3px 12px rgba(0,0,0,.2), inset 0 1px 0 rgba(255,255,255,.25)", border: "1.5px solid rgba(255,255,255,.25)", color: "#fff", fontSize: 15, fontWeight: 800, fontFamily: "'Cairo',sans-serif", cursor: "pointer", backdropFilter: "blur(10px)" }}>{loading ? "⏳" : btnText}</button>
         )}
         {!showChallenge && challengeAnswer === null && !btnAction && <div style={{ marginTop: 12, fontSize: 13, color: "rgba(255,255,255,.5)", fontWeight: 700 }}>{btnText}</div>}
         {dayState === "before" && !showChallenge && challengeAnswer === null && challengeDoneToday && <div style={{ marginTop: 8, fontSize: 11, color: "rgba(255,255,255,.6)" }}>{"✓ أجبت على تحدي اليوم"}</div>}
@@ -930,8 +930,8 @@ function HomePage({ user, branch, now, todayAtt, allAtt, gps, gpsDist, streak, l
       </div>
 
       {/* Bottom */}
-      <div style={{ padding: "0 16px 8px" }}>
-        <div style={{ display: "flex", gap: 6, marginBottom: 8 }}>
+      <div style={{ padding: "0 16px 2px" }}>
+        <div style={{ display: "flex", gap: 6, marginBottom: 4 }}>
           <button onClick={onLeave} style={{ flex: 1, padding: "12px 8px", borderRadius: 14, background: "linear-gradient(180deg, rgba(255,255,255,.18) 0%, rgba(255,255,255,.06) 50%, rgba(255,255,255,.12) 100%)", border: "1px solid rgba(255,255,255,.25)", display: "flex", alignItems: "center", justifyContent: "center", gap: 6, cursor: "pointer", boxShadow: "0 2px 8px rgba(0,0,0,.2), inset 0 1px 0 rgba(255,255,255,.2)" }}><span style={{ fontSize: 15 }}>📝</span><span style={{ fontSize: 12, fontWeight: 800, color: "#e8d5a3" }}>إجازة</span></button>
           <button onClick={onPermission} style={{ flex: 1, padding: "12px 8px", borderRadius: 14, background: "linear-gradient(180deg, rgba(255,255,255,.18) 0%, rgba(255,255,255,.06) 50%, rgba(255,255,255,.12) 100%)", border: "1px solid rgba(255,255,255,.25)", display: "flex", alignItems: "center", justifyContent: "center", gap: 6, cursor: "pointer", boxShadow: "0 2px 8px rgba(0,0,0,.2), inset 0 1px 0 rgba(255,255,255,.2)" }}><span style={{ fontSize: 15 }}>🙋</span><span style={{ fontSize: 12, fontWeight: 800, color: "#e8d5a3" }}>إذن</span></button>
         </div>
@@ -2865,7 +2865,7 @@ function OccasionBanner({ user }) {
 function buildS() { return {
   phone: { width: "100%", maxWidth: 430, minHeight: "100vh", margin: "0 auto", background: C.bg, position: "relative", display: "flex", flexDirection: "column" },
 
-  header: { background: "linear-gradient(180deg,"+C.hdr1+" 0%,"+C.hdr2+" 50%,"+C.hdr3+" 100%)", padding: "20px 20px 60px", position: "relative", overflow: "hidden" },
+  header: { background: "linear-gradient(180deg,"+C.hdr1+" 0%,"+C.hdr2+" 50%,"+C.hdr3+" 100%)", padding: "20px 20px 60px", position: "relative", overflow: "visible" },
   headerCurve: { position: "absolute", bottom: -30, left: "-10%", width: "120%", height: 80, background: C.bg, borderRadius: "50% 50% 0 0" },
   headerTop: { display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 6 },
   welcome: { color: "#fff", fontSize: 20, fontWeight: 800, fontFamily: "'Cairo',sans-serif" },
