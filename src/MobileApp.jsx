@@ -813,261 +813,113 @@ function HomePage({ user, branch, now, todayAtt, allAtt, gps, gpsDist, streak, l
   }
 
   return (
-    <div style={{ flex: 1, paddingBottom: 80, minHeight: "100vh", display: "flex", flexDirection: "column" }}>
-      <div style={S.header}>
-        <div style={S.headerCurve} />
-        <div style={S.headerTop}>
-          <div>
-            <div style={S.welcome}>{"أهلاً، " + (user.name || "").split(" ")[0] + " 👋"}</div>
-            <div style={S.date}>{formatArabicDate(now)}</div>
-          </div>
-          <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
-            <span style={{ fontSize: 12, color: "rgba(255,255,255,.7)" }}>{badge.icon + " " + badge.label}</span>
-            <span style={{ fontSize: 11, color: C.gold, fontWeight: 800 }}>{"⭐" + (user.points || 0)}</span>
-            {pendingCount > 0 && (
-              <div style={{ position: "relative", marginRight: 2 }}>
-                <span style={{ fontSize: 16 }}>🔔</span>
-                <div style={{ position: "absolute", top: -4, right: -6, width: 16, height: 16, borderRadius: 8, background: C.red, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 9, fontWeight: 800, color: "#fff" }}>{pendingCount}</div>
-              </div>
-            )}
-          </div>
+    <div style={{ flex: 1, paddingBottom: 70, minHeight: "100vh", background: "linear-gradient(180deg,"+C.hdr1+" 0%,"+C.hdr2+" 40%,"+C.hdr3+" 100%)", display: "flex", flexDirection: "column" }}>
+      {/* Header */}
+      <div style={{ padding: "16px 20px 0", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+        <div>
+          <div style={{ color: "#fff", fontSize: 18, fontWeight: 800, fontFamily: "'Cairo',sans-serif" }}>{"أهلاً، " + (user.name || "").split(" ")[0] + " 👋"}</div>
+          <div style={{ color: "rgba(255,255,255,.6)", fontSize: 11 }}>{formatArabicDate(now)}</div>
         </div>
-        <div style={S.clockWrap}>
-          {showChallenge ? (
-            /* ── Challenge overlay ── */
-            <div style={{ width: SIZE, margin: "0 auto", textAlign: "center" }}>
-              <div style={{ fontSize: 10, fontWeight: 700, color: "rgba(255,255,255,.5)", marginBottom: 6 }}>{"⚡ تحدي الصباح — " + challengeQ.type}</div>
-              <div style={{ fontSize: 16, fontWeight: 800, color: "#fff", lineHeight: 1.6, marginBottom: 12 }}>{challengeQ.q}</div>
-            </div>
-          ) : challengeAnswer !== null && dayState === "before" ? (
-            <div style={{ width: SIZE, margin: "0 auto", textAlign: "center" }}>
-              <div style={{ fontSize: 36 }}>{challengeAnswer ? "🎉" : "😅"}</div>
-              <div style={{ fontSize: 13, fontWeight: 800, color: "#fff" }}>{challengeAnswer ? MASCOT.correct : MASCOT.wrong}</div>
-              {challengeAnswer && <div style={{ fontSize: 11, color: C.gold, marginTop: 4 }}>{"+" + POINTS.challenge_correct + " نقطة"}</div>}
-            </div>
-          ) : (
-            /* ── Luxury Analog Clock ── */
-            <div style={{ position: "relative", width: SIZE, height: SIZE, margin: "0 auto" }}>
-              <svg width={SIZE} height={SIZE} viewBox={"0 0 " + SIZE + " " + SIZE}>
-                <defs>
-                  <radialGradient id="lxFace" cx="50%" cy="40%" r="50%"><stop offset="0%" stopColor="rgba(255,255,255,.08)"/><stop offset="100%" stopColor="rgba(0,0,0,.15)"/></radialGradient>
-                  <linearGradient id="lxRim" x1="0%" y1="0%" x2="100%" y2="100%"><stop offset="0%" stopColor="#e8d5a3"/><stop offset="50%" stopColor="#c9a84c"/><stop offset="100%" stopColor="#8b6914"/></linearGradient>
-                  <filter id="lxSh"><feDropShadow dx="0" dy="1" stdDeviation="2" floodColor="rgba(0,0,0,.4)"/></filter>
-                </defs>
-                {/* Outer gold rim */}
-                <circle cx={SIZE/2} cy={SIZE/2} r={R+8} fill="none" stroke="url(#lxRim)" strokeWidth={4} />
-                <circle cx={SIZE/2} cy={SIZE/2} r={R+3} fill="none" stroke="#8b6914" strokeWidth={0.5} />
-                {/* Face */}
-                <circle cx={SIZE/2} cy={SIZE/2} r={R+1} fill="url(#lxFace)" />
-                {/* Work arcs */}
-                {(function() {
-                  var AR = R - 10;
-                  var wsA = timeToAngle(8,30), bsA = timeToAngle(12,30), beA = timeToAngle(13,0), weA = timeToAngle(17,0);
-                  function mkArc(cx,cy,r,s,e) { var a=polar(cx,cy,r,e), b=polar(cx,cy,r,s); return "M "+a.x+" "+a.y+" A "+r+" "+r+" 0 "+(e-s<=180?"0":"1")+" 0 "+b.x+" "+b.y; }
-                  function polar(cx,cy,r,deg) { var rad=deg*Math.PI/180; return {x:cx+r*Math.cos(rad),y:cy+r*Math.sin(rad)}; }
-                  return React.createElement("g", null,
-                    React.createElement("path", { d: mkArc(SIZE/2,SIZE/2,AR,wsA,bsA), fill: "none", stroke: "#2b5ea7", strokeWidth: 5, strokeLinecap: "round", opacity: 0.7 }),
-                    React.createElement("path", { d: mkArc(SIZE/2,SIZE/2,AR,bsA,beA), fill: "none", stroke: "#c9a84c", strokeWidth: 5, strokeLinecap: "round", opacity: 0.6 }),
-                    React.createElement("path", { d: mkArc(SIZE/2,SIZE/2,AR,beA,weA), fill: "none", stroke: "#10b981", strokeWidth: 5, strokeLinecap: "round", opacity: 0.7 }),
-                    CPS.map(function(cp,i) {
-                      var a = timeToAngle(cp.h,cp.m)*Math.PI/180;
-                      var px = SIZE/2+AR*Math.cos(a), py = SIZE/2+AR*Math.sin(a);
-                      var passed = nowMin >= cp.h*60+cp.m;
-                      return React.createElement("g", { key: i, transform: "translate("+px+","+py+") rotate(45)" },
-                        React.createElement("rect", { x: -3.5, y: -3.5, width: 7, height: 7, rx: 1.5, fill: passed ? cp.color : "rgba(201,168,76,.3)", stroke: passed ? "#fff" : "rgba(201,168,76,.5)", strokeWidth: 1 })
-                      );
-                    })
-                  );
-                })()}
-                {/* Roman numerals */}
-                {["XII","I","II","III","IV","V","VI","VII","VIII","IX","X","XI"].map(function(num,i) {
-                  var a = (i*30-90)*Math.PI/180;
-                  var tx = SIZE/2+(R-24)*Math.cos(a), ty = SIZE/2+(R-24)*Math.sin(a);
-                  return React.createElement("text", { key: i, x: tx, y: ty, textAnchor: "middle", dominantBaseline: "central", fill: "#e8d5a3", fontSize: i%3===0?13:9, fontWeight: i%3===0?"900":"600", fontFamily: "'Times New Roman',Georgia,serif", opacity: i%3===0?1:0.5 }, num);
-                })}
-                {/* Gold ticks */}
-                {[0,1,2,3,4,5,6,7,8,9,10,11].map(function(i) {
-                  var a=(i*30-90)*Math.PI/180; var len=i%3===0?12:6; var w=i%3===0?2:1;
-                  return React.createElement("line", { key: i, x1: SIZE/2+(R-2)*Math.cos(a), y1: SIZE/2+(R-2)*Math.sin(a), x2: SIZE/2+(R-2-len)*Math.cos(a), y2: SIZE/2+(R-2-len)*Math.sin(a), stroke: "#c9a84c", strokeWidth: w, strokeLinecap: "round" });
-                })}
-                {/* Brand text */}
-                <text x={SIZE/2} y={SIZE/2-32} textAnchor="middle" fill="#c9a84c" fontSize={7} fontWeight="700" fontFamily="'Times New Roman',serif" letterSpacing="2.5" opacity={0.7}>HMA ENGINEERING</text>
-                {/* Hour hand */}
-                <line x1={SIZE/2} y1={SIZE/2} x2={SIZE/2+48*Math.cos(hA*Math.PI/180)} y2={SIZE/2+48*Math.sin(hA*Math.PI/180)} stroke="#e8d5a3" strokeWidth={4.5} strokeLinecap="round" filter="url(#lxSh)" />
-                <line x1={SIZE/2} y1={SIZE/2} x2={SIZE/2+10*Math.cos((hA+180)*Math.PI/180)} y2={SIZE/2+10*Math.sin((hA+180)*Math.PI/180)} stroke="#e8d5a3" strokeWidth={3} strokeLinecap="round" />
-                {/* Minute hand */}
-                <line x1={SIZE/2} y1={SIZE/2} x2={SIZE/2+68*Math.cos(mA*Math.PI/180)} y2={SIZE/2+68*Math.sin(mA*Math.PI/180)} stroke="#e8d5a3" strokeWidth={2.5} strokeLinecap="round" filter="url(#lxSh)" />
-                <line x1={SIZE/2} y1={SIZE/2} x2={SIZE/2+14*Math.cos((mA+180)*Math.PI/180)} y2={SIZE/2+14*Math.sin((mA+180)*Math.PI/180)} stroke="#e8d5a3" strokeWidth={2} strokeLinecap="round" />
-                {/* Second hand — red */}
-                <line x1={SIZE/2} y1={SIZE/2} x2={SIZE/2+76*Math.cos(sA*Math.PI/180)} y2={SIZE/2+76*Math.sin(sA*Math.PI/180)} stroke="#E2192C" strokeWidth={0.8} />
-                <line x1={SIZE/2} y1={SIZE/2} x2={SIZE/2+18*Math.cos((sA+180)*Math.PI/180)} y2={SIZE/2+18*Math.sin((sA+180)*Math.PI/180)} stroke="#E2192C" strokeWidth={1.2} />
-                {/* Center jewel */}
-                <circle cx={SIZE/2} cy={SIZE/2} r={5} fill="#c9a84c" stroke="#e8d5a3" strokeWidth={1.5} />
-                <circle cx={SIZE/2} cy={SIZE/2} r={2.5} fill="#e8d5a3" />
-                {/* Date window */}
-                <rect x={SIZE/2+28} y={SIZE/2-7} width={24} height={14} rx={2.5} fill="rgba(0,0,0,.3)" stroke="rgba(201,168,76,.4)" strokeWidth={0.5} />
-                <text x={SIZE/2+40} y={SIZE/2+1} textAnchor="middle" dominantBaseline="central" fill="#e8d5a3" fontSize={9} fontWeight="700" fontFamily="system-ui">{now.getDate()}</text>
-              </svg>
-              {/* Digital time + button overlay */}
-              <div style={{ position: "absolute", bottom: 30, left: "50%", transform: "translateX(-50%)", textAlign: "center" }}>
-                {outsideNoCheckin && dayState !== "after" && (
-                  <div style={{ fontSize: 9, fontWeight: 800, color: "#FF6B6B", marginBottom: 2 }}>لم تقم بتسجيل الحضور</div>
-                )}
-                {outsideNoCheckin && gpsDist && (
-                  <div style={{ fontSize: 8, color: "rgba(255,255,255,.4)", marginBottom: 2 }}>{"خارج منطقة العمل (" + gpsDist + " م)"}</div>
-                )}
-                <div style={{ fontSize: 14, fontWeight: 700, color: "#e8d5a3", fontFamily: "'Times New Roman',serif", letterSpacing: 2 }}>
-                  {time}<span style={{ fontSize: 9, opacity: .4 }}>:{sec}</span> <span style={{ fontSize: 9, opacity: .5 }}>{ampm}</span>
-                </div>
-              </div>
-            </div>
-          )}
-          {/* Checkin button — below clock */}
-          {!showChallenge && challengeAnswer === null && btnAction && (
-            <button onClick={function(){ if(!loading) onCheckin(btnAction, btnLabel); }} disabled={loading} style={{ display: "block", margin: "8px auto 0", padding: "10px 32px", borderRadius: 14, background: "rgba(255,255,255,.15)", border: "1px solid rgba(255,255,255,.2)", color: "#fff", fontSize: 14, fontWeight: 800, fontFamily: "'Cairo',sans-serif", cursor: "pointer", backdropFilter: "blur(10px)" }}>
-              {loading ? "⏳" : btnText}
-            </button>
-          )}
-          {!showChallenge && challengeAnswer === null && !btnAction && (
-            <div style={{ textAlign: "center", margin: "8px auto 0", fontSize: 12, color: "rgba(255,255,255,.5)", fontWeight: 700 }}>{btnText}</div>
-          )}
+        <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+          <span style={{ fontSize: 11, color: "rgba(255,255,255,.6)" }}>{badge.icon + " " + badge.label}</span>
+          <span style={{ fontSize: 10, color: C.gold, fontWeight: 800 }}>{"⭐" + (user.points || 0)}</span>
+          {pendingCount > 0 && <div style={{ position: "relative" }}><span style={{ fontSize: 14 }}>🔔</span><div style={{ position: "absolute", top: -4, right: -6, width: 14, height: 14, borderRadius: 7, background: C.red, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 8, fontWeight: 800, color: "#fff" }}>{pendingCount}</div></div>}
         </div>
       </div>
 
-      <div style={S.content}>
-        <MembershipFreezeNotice user={user} />
-        <BranchHolidayBanner branch={branch} />
-        <OccasionBanner user={user} />
+      <div style={{ padding: "0 16px" }}><MembershipFreezeNotice user={user} /><BranchHolidayBanner branch={branch} /><OccasionBanner user={user} /></div>
 
-        <div style={S.gpsRow}>
-          <div style={{ width: 8, height: 8, borderRadius: "50%", background: gps ? (inRange ? C.green : C.red) : C.orange, transition: "background .3s" }} />
-          <span style={{ fontSize: 11, fontWeight: 700, color: gps ? (inRange ? C.green : C.red) : C.orange }}>
-            {gps ? (inRange ? "📍 في نطاق العمل" : "📍 خارج النطاق") + (branch ? " — " + branch.name + " (" + (gpsDist || "...") + " م)" : "") : "📍 جارِ تحديد الموقع..."}
-          </span>
-          {streak > 0 && <span style={{ marginRight: "auto", fontSize: 11, fontWeight: 800, color: C.orange }}>{"🔥 " + streak + " يوم"}</span>}
-        </div>
-
-        {isOffDay && (
-          <div style={{ background: "linear-gradient(135deg,"+C.blue+"18,"+C.blueBright+"10)", borderRadius: 14, padding: "10px 14px", marginBottom: 10, display: "flex", alignItems: "center", gap: 8, border: "1px solid "+C.blue+"25" }}>
-            <span style={{ fontSize: 16 }}>🏖️</span>
-            <span style={{ fontSize: 12, fontWeight: 700, color: C.blue }}>يوم إجازة — استمتع بوقتك!</span>
-          </div>
-        )}
-
-        {/* ── Challenge Answer Options (3 خيارات) ── */}
-        {showChallenge && (
-          <div style={{ display: "flex", flexDirection: "column", gap: 6, marginBottom: 12 }} className="basma-fadein-d1">
-            {challengeQ.opts.map(function(opt, idx) {
-              return (
-                <button key={idx} onClick={function(){ answerChallenge(idx); }} style={{ padding: "12px 16px", borderRadius: 14, background: "#fff", border: "2px solid rgba(0,0,0,.06)", fontSize: 13, fontWeight: 700, color: C.text, cursor: "pointer", textAlign: "center", fontFamily: "'Tajawal',sans-serif", boxShadow: "0 2px 8px rgba(0,0,0,.04)" }}>
-                  {opt}
-                </button>
-              );
-            })}
-            <div style={{ textAlign: "center", fontSize: 9, color: C.sub }}>{"⚡ تحدي الصباح — " + POINTS.challenge_correct + " نقطة"}</div>
-          </div>
-        )}
-
-        {/* ── Mascot message ── */}
-        {dayState === "before" && !showChallenge && challengeAnswer === null && challengeDoneToday && (
-          <div style={{ textAlign: "center", padding: "8px 0 12px", fontSize: 12, color: C.green, fontWeight: 700 }}>{"✓ أجبت على تحدي اليوم — " + MASCOT.idle}</div>
-        )}
-
-        {checkpoints.checkin && (
-          <WorkHoursCard todayAtt={todayAtt} now={now} branch={branch} dayState={dayState} />
-        )}
-
-        {/* ── Overtime ── */}
-        <OvertimeCard todayAtt={todayAtt} branch={branch} now={now} user={user} />
-
-        {/* ── Field Projects ── */}
-        <FieldProjectsCard user={user} gps={gps} />
-
-        {/* ── Points Log ── */}
-        <PointsLogCard user={user} allAtt={allAtt} />
-
-        {/* ── Quick Actions ── */}
-        <div style={{ display: "flex", gap: 8, marginBottom: 12 }} className="basma-fadein-d2">
-          <button onClick={onLeave} style={{ flex: 1, padding: "12px 8px", borderRadius: 14, background: "#fff", border: "none", boxShadow: "0 2px 8px rgba(0,0,0,.05)", display: "flex", alignItems: "center", justifyContent: "center", gap: 6, cursor: "pointer" }}>
-            <span style={{ fontSize: 16 }}>📝</span>
-            <span style={{ fontSize: 12, fontWeight: 700, color: C.text }}>طلب إجازة</span>
-          </button>
-          <button onClick={onPermission} style={{ flex: 1, padding: "12px 8px", borderRadius: 14, background: "#fff", border: "none", boxShadow: "0 2px 8px rgba(0,0,0,.05)", display: "flex", alignItems: "center", justifyContent: "center", gap: 6, cursor: "pointer" }}>
-            <span style={{ fontSize: 16 }}>🙋</span>
-            <span style={{ fontSize: 12, fontWeight: 700, color: C.text }}>طلب إذن</span>
-          </button>
-        </div>
-
-        {/* ── Team Today (managers only) ── */}
-        {teamToday && teamToday.length > 0 && (user.isManager || user.isAssistant) && (
-          <div style={S.card} className="basma-fadein-d3">
-            <div style={S.cardTitle}>
-              <span>فريق العمل</span>
-              <span style={{ fontSize: 11, color: C.green, fontWeight: 700 }}>{teamToday.filter(function(t){ return t.present; }).length + "/" + teamToday.length + " حاضر"}</span>
+      {/* Clock centered */}
+      <div style={{ flex: 1, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", padding: "0 16px" }}>
+        {showChallenge ? (
+          <div style={{ textAlign: "center", marginBottom: 12 }}>
+            <div style={{ fontSize: 10, fontWeight: 700, color: "rgba(255,255,255,.5)", marginBottom: 6 }}>{"⚡ " + challengeQ.type}</div>
+            <div style={{ fontSize: 16, fontWeight: 800, color: "#fff", lineHeight: 1.6, marginBottom: 12 }}>{challengeQ.q}</div>
+            <div style={{ display: "flex", flexDirection: "column", gap: 6, maxWidth: 280, margin: "0 auto" }}>
+              {challengeQ.opts.map(function(opt, idx) { return <button key={idx} onClick={function(){ answerChallenge(idx); }} style={{ padding: "10px 16px", borderRadius: 12, background: "rgba(255,255,255,.12)", border: "1px solid rgba(255,255,255,.2)", fontSize: 13, fontWeight: 700, color: "#fff", cursor: "pointer", textAlign: "center" }}>{opt}</button>; })}
             </div>
-            {teamToday.map(function(member, i) {
-              return (
-                <div key={member.id} style={{ display: "flex", alignItems: "center", gap: 10, padding: "8px 0", borderBottom: i < teamToday.length - 1 ? "1px solid " + C.bg : "none" }}>
-                  <div style={{ width: 32, height: 32, borderRadius: 10, background: member.present ? C.green + "18" : C.red + "10", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 14 }}>
-                    {member.present ? "✓" : "—"}
-                  </div>
-                  <div style={{ flex: 1 }}>
-                    <div style={{ fontSize: 12, fontWeight: 700, color: member.present ? C.text : "#bbb" }}>{member.name}</div>
-                    <div style={{ fontSize: 9, color: C.sub }}>{member.role}</div>
-                  </div>
-                  {!member.present && user.isManager && (
-                    <button onClick={function(){ onPreAbsence(member); }} style={{ padding: "3px 8px", borderRadius: 6, background: C.orange + "15", border: "1px solid " + C.orange + "30", fontSize: 8, fontWeight: 700, color: C.orange, cursor: "pointer" }}>
-                      إفادة غد
-                    </button>
-                  )}
-                  <span style={{ fontSize: 9, fontWeight: 700, color: member.present ? C.green : C.red, padding: "2px 8px", borderRadius: 6, background: member.present ? C.green + "12" : C.red + "08" }}>
-                    {member.present ? "حاضر" : "غائب"}
-                  </span>
-                </div>
-              );
-            })}
-
-            {/* Manager actions */}
-            <div style={{ display: "flex", gap: 6, marginTop: 10, paddingTop: 10, borderTop: "1px solid " + C.bg }}>
-              <button onClick={onPreAbsence} style={{ flex: 1, padding: "8px 6px", borderRadius: 10, background: C.orange + "12", border: "1px solid " + C.orange + "25", fontSize: 10, fontWeight: 700, color: C.orange, cursor: "pointer", textAlign: "center" }}>
-                📋 إفادة مسبقة (غد)
-              </button>
-              {user.isManager && (
-                <button onClick={onManualAtt} style={{ flex: 1, padding: "8px 6px", borderRadius: 10, background: C.blue + "12", border: "1px solid " + C.blue + "25", fontSize: 10, fontWeight: 700, color: C.blue, cursor: "pointer", textAlign: "center" }}>
-                  ✏️ تحضير يدوي
-                </button>
-              )}
+          </div>
+        ) : challengeAnswer !== null && dayState === "before" ? (
+          <div style={{ textAlign: "center" }}>
+            <div style={{ fontSize: 42 }}>{challengeAnswer ? "🎉" : "😅"}</div>
+            <div style={{ fontSize: 14, fontWeight: 800, color: "#fff", marginTop: 6 }}>{challengeAnswer ? MASCOT.correct : MASCOT.wrong}</div>
+            {challengeAnswer && <div style={{ fontSize: 12, color: C.gold, marginTop: 4 }}>{"+" + POINTS.challenge_correct + " نقطة"}</div>}
+          </div>
+        ) : (
+          <div style={{ position: "relative", width: SIZE, height: SIZE }}>
+            <svg width={SIZE} height={SIZE} viewBox={"0 0 " + SIZE + " " + SIZE}>
+              <defs>
+                <radialGradient id="lxFace" cx="50%" cy="40%" r="50%"><stop offset="0%" stopColor="rgba(255,255,255,.08)"/><stop offset="100%" stopColor="rgba(0,0,0,.15)"/></radialGradient>
+                <linearGradient id="lxRim" x1="0%" y1="0%" x2="100%" y2="100%"><stop offset="0%" stopColor="#e8d5a3"/><stop offset="50%" stopColor="#c9a84c"/><stop offset="100%" stopColor="#8b6914"/></linearGradient>
+                <filter id="lxSh"><feDropShadow dx="0" dy="1" stdDeviation="2" floodColor="rgba(0,0,0,.4)"/></filter>
+              </defs>
+              <circle cx={SIZE/2} cy={SIZE/2} r={R+8} fill="none" stroke="url(#lxRim)" strokeWidth={4} />
+              <circle cx={SIZE/2} cy={SIZE/2} r={R+3} fill="none" stroke="#8b6914" strokeWidth={0.5} />
+              <circle cx={SIZE/2} cy={SIZE/2} r={R+1} fill="url(#lxFace)" />
+              {(function() {
+                var AR = R - 10;
+                function mkArc(cx,cy,r,s,e) { var a={x:cx+r*Math.cos(e*Math.PI/180),y:cy+r*Math.sin(e*Math.PI/180)}, b={x:cx+r*Math.cos(s*Math.PI/180),y:cy+r*Math.sin(s*Math.PI/180)}; return "M "+a.x+" "+a.y+" A "+r+" "+r+" 0 "+(e-s<=180?"0":"1")+" 0 "+b.x+" "+b.y; }
+                return React.createElement("g", null,
+                  React.createElement("path", { d: mkArc(SIZE/2,SIZE/2,AR,timeToAngle(8,30),timeToAngle(12,30)), fill: "none", stroke: "#2b5ea7", strokeWidth: 5, strokeLinecap: "round", opacity: 0.7 }),
+                  React.createElement("path", { d: mkArc(SIZE/2,SIZE/2,AR,timeToAngle(12,30),timeToAngle(13,0)), fill: "none", stroke: "#c9a84c", strokeWidth: 5, strokeLinecap: "round", opacity: 0.6 }),
+                  React.createElement("path", { d: mkArc(SIZE/2,SIZE/2,AR,timeToAngle(13,0),timeToAngle(17,0)), fill: "none", stroke: "#10b981", strokeWidth: 5, strokeLinecap: "round", opacity: 0.7 }),
+                  CPS.map(function(cp,i) { var a=timeToAngle(cp.h,cp.m)*Math.PI/180; var px=SIZE/2+AR*Math.cos(a),py=SIZE/2+AR*Math.sin(a); var passed=nowMin>=cp.h*60+cp.m; return React.createElement("g",{key:i,transform:"translate("+px+","+py+") rotate(45)"},React.createElement("rect",{x:-3.5,y:-3.5,width:7,height:7,rx:1.5,fill:passed?cp.color:"rgba(201,168,76,.3)",stroke:passed?"#fff":"rgba(201,168,76,.5)",strokeWidth:1})); })
+                );
+              })()}
+              {["XII","I","II","III","IV","V","VI","VII","VIII","IX","X","XI"].map(function(num,i) { var a=(i*30-90)*Math.PI/180; return React.createElement("text",{key:i,x:SIZE/2+(R-24)*Math.cos(a),y:SIZE/2+(R-24)*Math.sin(a),textAnchor:"middle",dominantBaseline:"central",fill:"#e8d5a3",fontSize:i%3===0?13:9,fontWeight:i%3===0?"900":"600",fontFamily:"'Times New Roman',Georgia,serif",opacity:i%3===0?1:0.5},num); })}
+              {[0,1,2,3,4,5,6,7,8,9,10,11].map(function(i) { var a=(i*30-90)*Math.PI/180; return React.createElement("line",{key:i,x1:SIZE/2+(R-2)*Math.cos(a),y1:SIZE/2+(R-2)*Math.sin(a),x2:SIZE/2+(R-2-(i%3===0?12:6))*Math.cos(a),y2:SIZE/2+(R-2-(i%3===0?12:6))*Math.sin(a),stroke:"#c9a84c",strokeWidth:i%3===0?2:1,strokeLinecap:"round"}); })}
+              <text x={SIZE/2} y={SIZE/2-32} textAnchor="middle" fill="#c9a84c" fontSize={7} fontWeight="700" fontFamily="'Times New Roman',serif" letterSpacing="2.5" opacity={0.7}>HMA ENGINEERING</text>
+              <line x1={SIZE/2} y1={SIZE/2} x2={SIZE/2+48*Math.cos(hA*Math.PI/180)} y2={SIZE/2+48*Math.sin(hA*Math.PI/180)} stroke="#e8d5a3" strokeWidth={4.5} strokeLinecap="round" filter="url(#lxSh)" />
+              <line x1={SIZE/2} y1={SIZE/2} x2={SIZE/2+10*Math.cos((hA+180)*Math.PI/180)} y2={SIZE/2+10*Math.sin((hA+180)*Math.PI/180)} stroke="#e8d5a3" strokeWidth={3} strokeLinecap="round" />
+              <line x1={SIZE/2} y1={SIZE/2} x2={SIZE/2+68*Math.cos(mA*Math.PI/180)} y2={SIZE/2+68*Math.sin(mA*Math.PI/180)} stroke="#e8d5a3" strokeWidth={2.5} strokeLinecap="round" filter="url(#lxSh)" />
+              <line x1={SIZE/2} y1={SIZE/2} x2={SIZE/2+14*Math.cos((mA+180)*Math.PI/180)} y2={SIZE/2+14*Math.sin((mA+180)*Math.PI/180)} stroke="#e8d5a3" strokeWidth={2} strokeLinecap="round" />
+              <line x1={SIZE/2} y1={SIZE/2} x2={SIZE/2+76*Math.cos(sA*Math.PI/180)} y2={SIZE/2+76*Math.sin(sA*Math.PI/180)} stroke="#E2192C" strokeWidth={0.8} />
+              <line x1={SIZE/2} y1={SIZE/2} x2={SIZE/2+18*Math.cos((sA+180)*Math.PI/180)} y2={SIZE/2+18*Math.sin((sA+180)*Math.PI/180)} stroke="#E2192C" strokeWidth={1.2} />
+              <circle cx={SIZE/2} cy={SIZE/2} r={5} fill="#c9a84c" stroke="#e8d5a3" strokeWidth={1.5} />
+              <circle cx={SIZE/2} cy={SIZE/2} r={2.5} fill="#e8d5a3" />
+              <rect x={SIZE/2+28} y={SIZE/2-7} width={24} height={14} rx={2.5} fill="rgba(0,0,0,.3)" stroke="rgba(201,168,76,.4)" strokeWidth={0.5} />
+              <text x={SIZE/2+40} y={SIZE/2+1} textAnchor="middle" dominantBaseline="central" fill="#e8d5a3" fontSize={9} fontWeight="700" fontFamily="system-ui">{now.getDate()}</text>
+            </svg>
+            <div style={{ position: "absolute", bottom: 30, left: "50%", transform: "translateX(-50%)", textAlign: "center" }}>
+              {outsideNoCheckin && <div style={{ fontSize: 9, fontWeight: 800, color: "#FF6B6B", marginBottom: 2 }}>لم تقم بتسجيل الحضور</div>}
+              {outsideNoCheckin && gpsDist && <div style={{ fontSize: 8, color: "rgba(255,255,255,.4)", marginBottom: 2 }}>{"خارج منطقة العمل (" + gpsDist + " م)"}</div>}
+              <div style={{ fontSize: 14, fontWeight: 700, color: "#e8d5a3", fontFamily: "'Times New Roman',serif", letterSpacing: 2 }}>{time}<span style={{ fontSize: 9, opacity: .4 }}>:{sec}</span> <span style={{ fontSize: 9, opacity: .5 }}>{ampm}</span></div>
             </div>
           </div>
         )}
 
-        {/* ── إشعارات منصة كوادر ── */}
-        <div style={S.card} className="basma-fadein-d3">
-          <div style={S.cardTitle}><span>إشعارات منصة كوادر</span><span style={{ fontSize: 10, color: C.blue }}>hma.engineer</span></div>
-          <div style={{ display: "flex", gap: 8 }}>
-            <KadwarBtn icon="💬" label="تواصل" count={kadwarNotifs.tasks} />
-            <KadwarBtn icon="📝" label="اختبار" count={kadwarNotifs.exams} />
-            <KadwarBtn icon="👤" label="حسابي" count={kadwarNotifs.alerts} />
-          </div>
-        </div>
-
-        {/* ── PWA Install Banner ── */}
-        {pwaPrompt && (
-          <div style={{ background: "linear-gradient(135deg,"+C.hdr2+","+C.hdr3+")", borderRadius: 16, padding: 14, marginBottom: 12, display: "flex", alignItems: "center", gap: 10, color: "#fff" }} className="basma-fadein-d3">
-            <span style={{ fontSize: 24 }}>📲</span>
-            <div style={{ flex: 1 }}>
-              <div style={{ fontSize: 13, fontWeight: 800 }}>ثبّت التطبيق</div>
-              <div style={{ fontSize: 10, opacity: .7 }}>أضف بصمة HMA لشاشتك الرئيسية</div>
-            </div>
-            <button onClick={onPwaInstall} style={{ padding: "8px 16px", borderRadius: 10, background: C.gold, color: C.hdr1, fontSize: 11, fontWeight: 800, border: "none", cursor: "pointer" }}>تثبيت</button>
-          </div>
+        {/* Checkin button below clock */}
+        {!showChallenge && challengeAnswer === null && btnAction && (
+          <button onClick={function(){ if(!loading) onCheckin(btnAction, btnLabel); }} disabled={loading} style={{ marginTop: 12, padding: "12px 40px", borderRadius: 16, background: "rgba(255,255,255,.15)", border: "1.5px solid rgba(255,255,255,.25)", color: "#fff", fontSize: 15, fontWeight: 800, fontFamily: "'Cairo',sans-serif", cursor: "pointer", backdropFilter: "blur(10px)" }}>{loading ? "⏳" : btnText}</button>
         )}
+        {!showChallenge && challengeAnswer === null && !btnAction && <div style={{ marginTop: 12, fontSize: 13, color: "rgba(255,255,255,.5)", fontWeight: 700 }}>{btnText}</div>}
+        {dayState === "before" && !showChallenge && challengeAnswer === null && challengeDoneToday && <div style={{ marginTop: 8, fontSize: 11, color: "rgba(255,255,255,.6)" }}>{"✓ أجبت على تحدي اليوم"}</div>}
+
+        {/* GPS */}
+        <div style={{ display: "flex", alignItems: "center", gap: 6, marginTop: 10 }}>
+          <div style={{ width: 7, height: 7, borderRadius: "50%", background: gps ? (inRange ? "#5ec47a" : "#FF6B6B") : "#f59e0b" }} />
+          <span style={{ fontSize: 10, fontWeight: 600, color: "rgba(255,255,255,.6)" }}>{gps ? (inRange ? "📍 في النطاق" : "📍 خارج النطاق") + (branch ? " — " + branch.name : "") : "📍 تحديد الموقع..."}</span>
+          {streak > 0 && <span style={{ fontSize: 10, fontWeight: 800, color: "#f59e0b" }}>{"🔥" + streak}</span>}
+        </div>
+      </div>
+
+      {/* Bottom */}
+      <div style={{ padding: "0 16px 8px" }}>
+        <div style={{ display: "flex", gap: 6, marginBottom: 8 }}>
+          <button onClick={onLeave} style={{ flex: 1, padding: "10px 6px", borderRadius: 12, background: "rgba(255,255,255,.1)", border: "1px solid rgba(255,255,255,.15)", display: "flex", alignItems: "center", justifyContent: "center", gap: 5, cursor: "pointer" }}><span style={{ fontSize: 14 }}>📝</span><span style={{ fontSize: 11, fontWeight: 700, color: "rgba(255,255,255,.8)" }}>إجازة</span></button>
+          <button onClick={onPermission} style={{ flex: 1, padding: "10px 6px", borderRadius: 12, background: "rgba(255,255,255,.1)", border: "1px solid rgba(255,255,255,.15)", display: "flex", alignItems: "center", justifyContent: "center", gap: 5, cursor: "pointer" }}><span style={{ fontSize: 14 }}>🙋</span><span style={{ fontSize: 11, fontWeight: 700, color: "rgba(255,255,255,.8)" }}>إذن</span></button>
+        </div>
+        <div style={{ display: "flex", gap: 6 }}>
+          <KadwarBtn icon="💬" label="تواصل" count={kadwarNotifs.tasks} />
+          <KadwarBtn icon="📝" label="اختبار" count={kadwarNotifs.exams} />
+          <KadwarBtn icon="👤" label="حسابي" count={kadwarNotifs.alerts} />
+        </div>
       </div>
     </div>
   );
 }
 
-/* ═══════════ REPORT ═══════════ */
+
 function ReportPage({ user, allAtt, todayAtt, branch, isOffDay, myLeaves, allEmps }) {
   const thisMonth = todayStr().slice(0, 7);
   const monthAtt = allAtt.filter(r => r.date && r.date.startsWith(thisMonth));
@@ -1331,6 +1183,7 @@ function ProfilePage({ user, branch, onLogout, onTicket, myTickets, darkMode, to
 
         {/* ── Membership Card ── */}
         <MembershipCard points={user.points || 0} />
+        <PointsLogCard user={user} allAtt={[]} />
 
         <div style={S.card} className="basma-fadein-d2">
           <div style={S.cardTitle}>الإعدادات</div>
@@ -2386,14 +2239,14 @@ function WeeklyChart({ allAtt, branch }) {
 
 function KadwarBtn({ icon, label, count }) {
   return (
-    <button onClick={function(){ window.open("https://hma.engineer", "_blank"); }} style={{ flex: 1, padding: "10px 8px", borderRadius: 12, background: C.card, border: "1px solid " + C.bg, display: "flex", alignItems: "center", justifyContent: "center", gap: 6, cursor: "pointer", position: "relative" }}>
+    <button onClick={function(){ window.open("https://hma.engineer", "_blank"); }} style={{ flex: 1, padding: "10px 8px", borderRadius: 12, background: "rgba(255,255,255,.1)", border: "1px solid rgba(255,255,255,.15)", display: "flex", alignItems: "center", justifyContent: "center", gap: 6, cursor: "pointer", position: "relative" }}>
       <span style={{ fontSize: 14, position: "relative" }}>
         {icon}
         {count > 0 && (
           <span style={{ position: "absolute", top: -6, right: -8, minWidth: 16, height: 16, borderRadius: 8, background: C.red, color: "#fff", fontSize: 9, fontWeight: 900, display: "flex", alignItems: "center", justifyContent: "center", padding: "0 3px" }}>{count}</span>
         )}
       </span>
-      <span style={{ fontSize: 11, fontWeight: 700, color: C.text }}>{label}</span>
+      <span style={{ fontSize: 11, fontWeight: 700, color: "rgba(255,255,255,.8)" }}>{label}</span>
     </button>
   );
 }

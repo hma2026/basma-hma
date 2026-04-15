@@ -681,9 +681,179 @@ export default async function handler(req, res) {
       }
 
       case 'cleanup': {
-        // Delete all duplicate blobs — run once to fix the 1000 blob issue
         var result = await dbCleanup();
         return res.json(result);
+      }
+
+      /* ═══ KADWAR NOTIFICATIONS (إشعارات كوادر) ═══ */
+      case 'kadwar_notifs': {
+        // Returns notification counts for kadwar badges in basma
+        // In future: read from shared Redis with kadwar
+        var empId = req.query.empId;
+        var notifs = await dbGet('kadwar_notifs') || {};
+        var empNotifs = notifs[empId] || { tasks: 0, exams: 0, alerts: 0 };
+        return res.json(empNotifs);
+      }
+
+      /* ═══ PERMISSIONS (طلب إذن) ═══ */
+      case 'permissions': {
+        if (req.method === 'GET') {
+          var perms = await dbGet('permissions') || [];
+          if (req.query.empId) perms = perms.filter(p => p.empId === req.query.empId);
+          return res.json(perms);
+        }
+        if (req.method === 'POST') {
+          var perms = await dbGet('permissions') || [];
+          var newPerm = { id: 'PERM' + Date.now(), status: 'pending', ts: new Date().toISOString(), ...req.body };
+          perms.push(newPerm);
+          await dbSet('permissions', perms);
+          return res.json({ ok: true, permission: newPerm });
+        }
+        if (req.method === 'PUT') {
+          var perms = await dbGet('permissions') || [];
+          var idx = perms.findIndex(p => p.id === req.body.id);
+          if (idx >= 0) { perms[idx] = { ...perms[idx], ...req.body }; await dbSet('permissions', perms); }
+          return res.json({ ok: true });
+        }
+        break;
+      }
+
+      /* ═══ HEALTH DISCLOSURE (الإفصاح الصحي) ═══ */
+      case 'health_disclosure': {
+        if (req.method === 'GET') {
+          var hd = await dbGet('health_disclosures') || [];
+          if (req.query.empId) hd = hd.filter(h => h.empId === req.query.empId);
+          return res.json(hd);
+        }
+        if (req.method === 'POST') {
+          var hd = await dbGet('health_disclosures') || [];
+          var existing = hd.findIndex(h => h.empId === req.body.empId);
+          var record = { ...req.body, status: 'pending', updatedAt: new Date().toISOString() };
+          if (existing >= 0) { hd[existing] = { ...hd[existing], ...record }; } else { hd.push(record); }
+          await dbSet('health_disclosures', hd);
+          return res.json({ ok: true });
+        }
+        break;
+      }
+
+      /* ═══ ATTACHMENTS (المرفقات) ═══ */
+      case 'attachments': {
+        if (req.method === 'GET') {
+          var docs = await dbGet('attachments') || [];
+          if (req.query.empId) docs = docs.filter(d => d.empId === req.query.empId);
+          return res.json(docs);
+        }
+        if (req.method === 'POST') {
+          var docs = await dbGet('attachments') || [];
+          var fileData = req.body.data; // base64
+          delete req.body.data; // don't store base64 in main DB
+          var newDoc = { id: 'ATT' + Date.now(), status: 'pending', ts: new Date().toISOString(), ...req.body };
+          // Store file separately in blob
+          if (fileData) {
+            try { await put(PFX + 'files/' + newDoc.id, fileData, { access: 'public', contentType: 'text/plain', addRandomSuffix: false }); newDoc.hasFile = true; } catch(e) { /**/ }
+          }
+          docs.push(newDoc);
+          await dbSet('attachments', docs);
+          return res.json({ ok: true, doc: newDoc });
+        }
+        if (req.method === 'PUT') {
+          var docs = await dbGet('attachments') || [];
+          var idx = docs.findIndex(d => d.id === req.body.id);
+          if (idx >= 0) { docs[idx] = { ...docs[idx], ...req.body }; await dbSet('attachments', docs); }
+          return res.json({ ok: true });
+        }
+        break;
+      }
+
+      /* ═══ AUTO VIOLATIONS (الإنذارات التلقائية) ═══ */
+      case 'auto_violations': {
+        // Called by cron or manually — checks today's attendance and generates violations
+        var emps = await dbGet('employees') || [];
+        var att = await dbGet('attendance') || [];
+        var violations = await dbGet('violations') || [];
+        var warnings = await dbGet('warnings') || [];
+        var preAbs = await dbGet('pre_absences') || [];
+        var settings = await dbGet('settings') || {};
+        var branches = await dbGet('branches') || [];
+        var today = new Date().toISOString().split('T')[0];
+        var todayAtt = att.filter(a => a.date === today);
+        var todayPreAbs = preAbs.filter(p => p.date === today);
+        var generated = [];
+
+        var escalation = [
+          { level: 1, type: 'تنبيه إلكتروني' },
+          { level: 2, type: 'إنذار إلكتروني' },
+          { level: 3, type: 'إنذار كتابي' },
+          { level: 4, type: 'إنذار نهائي' },
+          { level: 5, type: 'إنهاء خدمات' },
+        ];
+
+        emps.forEach(function(emp) {
+          if (emp.terminated || emp.onLeave) return;
+          // Check if pre-absence filed
+          if (todayPreAbs.some(p => p.empId === emp.id)) return;
+
+          var branch = branches.find(b => b.id === emp.branch || b.name === emp.branch);
+          if (!branch) return;
+
+          var empAtt = todayAtt.filter(a => a.empId === emp.id);
+          var hasCheckin = empAtt.some(a => a.type === 'checkin');
+
+          // Check for absence (no checkin by end of day grace period)
+          var nowH = new Date().getHours();
+          if (!hasCheckin && nowH >= 12) {
+            // Count previous violations of same type in last 90 days
+            var d90 = new Date(); d90.setDate(d90.getDate() - 90);
+            var prevCount = violations.filter(v => v.empId === emp.id && v.type === 'absent' && v.date >= d90.toISOString().split('T')[0]).length;
+            var level = Math.min(prevCount + 1, 5);
+            var esc = escalation[level - 1];
+
+            violations.push({ id: 'V' + Date.now() + emp.id, empId: emp.id, type: 'absent', details: 'غياب بدون إذن — ' + today, date: today, status: 'open', ts: new Date().toISOString() });
+            warnings.push({ id: 'W' + Date.now() + emp.id, empId: emp.id, level: level, type: esc.type, details: 'غياب بدون إفادة مسبقة', date: today, status: 'pending', responseType: level >= 3 ? 'written' : 'electronic', deadline: new Date(Date.now() + 48 * 3600 * 1000).toISOString(), ts: new Date().toISOString() });
+            generated.push({ empId: emp.id, name: emp.name, violation: 'absent', level: level, warning: esc.type });
+          }
+
+          // Check for late arrival
+          if (hasCheckin && branch.start) {
+            var checkinRec = empAtt.find(a => a.type === 'checkin');
+            var checkinTime = new Date(checkinRec.ts);
+            var startParts = branch.start.split(':');
+            var startMin = parseInt(startParts[0]) * 60 + parseInt(startParts[1]);
+            var checkinMin = checkinTime.getHours() * 60 + checkinTime.getMinutes();
+            var lateMinutes = checkinMin - startMin;
+            if (lateMinutes > 15) { // More than 15 min late
+              violations.push({ id: 'V' + Date.now() + 'L' + emp.id, empId: emp.id, type: 'late', details: 'تأخر ' + lateMinutes + ' دقيقة', date: today, status: 'open', ts: new Date().toISOString() });
+              generated.push({ empId: emp.id, name: emp.name, violation: 'late', minutes: lateMinutes });
+            }
+          }
+        });
+
+        if (generated.length > 0) {
+          await dbSet('violations', violations);
+          await dbSet('warnings', warnings);
+        }
+
+        return res.json({ ok: true, date: today, generated: generated, totalViolations: violations.length, totalWarnings: warnings.length });
+      }
+
+      /* ═══ EXPORT INSURANCE (تصدير بيانات التأمين) ═══ */
+      case 'export_insurance': {
+        var emps = await dbGet('employees') || [];
+        var deps = await dbGet('dependents') || [];
+        var hd = await dbGet('health_disclosures') || [];
+        var rows = ['رقم الموظف,الاسم,المرافق,القرابة,الميلاد,الهوية,تأمين خارجي,شركة التأمين,إفصاح صحي'];
+        emps.forEach(function(emp) {
+          // Employee row
+          var empHd = hd.find(h => h.empId === emp.id);
+          rows.push([emp.id, emp.name, '—', 'موظف', emp.dob || '', emp.idNumber || '', emp.externalInsurance ? 'نعم' : 'لا', emp.insurerName || '', empHd ? 'مقدّم' : 'لم يُقدّم'].join(','));
+          // Dependents rows
+          var empDeps = deps.filter(d => d.empId === emp.id && d.status === 'approved');
+          empDeps.forEach(function(dep) {
+            rows.push([emp.id, emp.name, dep.name, dep.relation, dep.dob || '', dep.idNumber || '', dep.externalInsurance ? 'نعم' : 'لا', dep.insurerName || '', '—'].join(','));
+          });
+        });
+        res.setHeader('Content-Type', 'text/csv; charset=utf-8');
+        return res.send('\uFEFF' + rows.join('\n'));
       }
 
       case 'diagnostic': {

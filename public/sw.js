@@ -1,4 +1,4 @@
-const CACHE_NAME = 'basma-hma-v490';
+const CACHE_NAME = 'basma-hma-v500';
 const STATIC_ASSETS = [
   '/',
   '/icon.svg',
