@@ -57,9 +57,9 @@ if (typeof document !== "undefined" && !document.getElementById("basma-css")) {
     ".basma-pulse{animation:pulse 1.5s ease infinite}",
     ".basma-flip-container{perspective:600px;width:100%}",
     ".basma-flip-inner{position:relative;width:100%;transition:transform .6s;transform-style:preserve-3d}",
-    ".basma-flip-inner.flipped{transform:rotateY(180deg)}",
+    ".basma-flip-inner.flipped{transform:rotateX(180deg)}",
     ".basma-flip-front,.basma-flip-back{backface-visibility:hidden;width:100%}",
-    ".basma-flip-back{transform:rotateY(180deg);position:absolute;top:0;left:0;right:0}",
+    ".basma-flip-back{transform:rotateX(180deg);position:absolute;top:0;left:0;right:0}",
     "input::placeholder{color:rgba(255,255,255,.4)!important}",
     "button:active{transform:scale(.96)!important}",
   ].join("\n");
@@ -776,7 +776,7 @@ function HomePage({ user, branch, now, todayAtt, allAtt, gps, gpsDist, streak, l
     }
   }
 
-  const SIZE = 270, STROKE = 10, R = (SIZE - STROKE) / 2, CIRC = 2 * Math.PI * R;
+  const SIZE = 280, STROKE = 10, R = (SIZE - STROKE) / 2, CIRC = 2 * Math.PI * R;
   let pct = dayState === "before" ? 5 : dayState === "after" ? 100 : 50;
   if (branch && dayState === "during") {
     const mins = now.getHours() * 60 + now.getMinutes();
@@ -836,7 +836,7 @@ function HomePage({ user, branch, now, todayAtt, allAtt, gps, gpsDist, streak, l
       <div style={{ padding: "0 16px" }}><MembershipFreezeNotice user={user} /><BranchHolidayBanner branch={branch} /><OccasionBanner user={user} /></div>
 
       {/* Clock centered */}
-      <div style={{ flex: 1, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", padding: "0 16px" }}>
+      <div style={{ flex: 1, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", padding: "0 8px", overflow: "visible" }}>
         {showChallenge ? (
           <div style={{ textAlign: "center", marginBottom: 12 }}>
             <div style={{ fontSize: 10, fontWeight: 700, color: "rgba(255,255,255,.5)", marginBottom: 6 }}>{"⚡ " + challengeQ.type}</div>
@@ -896,7 +896,7 @@ function HomePage({ user, branch, now, todayAtt, allAtt, gps, gpsDist, streak, l
 
         {/* Checkin button below clock */}
         {!showChallenge && challengeAnswer === null && btnAction && (
-          <button onClick={function(){ if(!loading) onCheckin(btnAction, btnLabel); }} disabled={loading} style={{ marginTop: 12, padding: "12px 40px", borderRadius: 16, background: "rgba(255,255,255,.15)", border: "1.5px solid rgba(255,255,255,.25)", color: "#fff", fontSize: 15, fontWeight: 800, fontFamily: "'Cairo',sans-serif", cursor: "pointer", backdropFilter: "blur(10px)" }}>{loading ? "⏳" : btnText}</button>
+          <button onClick={function(){ if(!loading) onCheckin(btnAction, btnLabel); }} disabled={loading} style={{ marginTop: 20, padding: "14px 44px", borderRadius: 16, background: "linear-gradient(180deg, rgba(255,255,255,.2) 0%, rgba(255,255,255,.08) 50%, rgba(255,255,255,.15) 100%)", boxShadow: "0 3px 12px rgba(0,0,0,.2), inset 0 1px 0 rgba(255,255,255,.25)", border: "1.5px solid rgba(255,255,255,.25)", color: "#fff", fontSize: 15, fontWeight: 800, fontFamily: "'Cairo',sans-serif", cursor: "pointer", backdropFilter: "blur(10px)" }}>{loading ? "⏳" : btnText}</button>
         )}
         {!showChallenge && challengeAnswer === null && !btnAction && <div style={{ marginTop: 12, fontSize: 13, color: "rgba(255,255,255,.5)", fontWeight: 700 }}>{btnText}</div>}
         {dayState === "before" && !showChallenge && challengeAnswer === null && challengeDoneToday && <div style={{ marginTop: 8, fontSize: 11, color: "rgba(255,255,255,.6)" }}>{"✓ أجبت على تحدي اليوم"}</div>}
@@ -912,14 +912,14 @@ function HomePage({ user, branch, now, todayAtt, allAtt, gps, gpsDist, streak, l
       {/* Bottom */}
       <div style={{ padding: "0 16px 8px" }}>
         <div style={{ display: "flex", gap: 6, marginBottom: 8 }}>
-          <button onClick={onLeave} style={{ flex: 1, padding: "10px 6px", borderRadius: 12, background: "rgba(255,255,255,.1)", border: "1px solid rgba(255,255,255,.15)", display: "flex", alignItems: "center", justifyContent: "center", gap: 5, cursor: "pointer" }}><span style={{ fontSize: 14 }}>📝</span><span style={{ fontSize: 11, fontWeight: 700, color: "rgba(255,255,255,.8)" }}>إجازة</span></button>
-          <button onClick={onPermission} style={{ flex: 1, padding: "10px 6px", borderRadius: 12, background: "rgba(255,255,255,.1)", border: "1px solid rgba(255,255,255,.15)", display: "flex", alignItems: "center", justifyContent: "center", gap: 5, cursor: "pointer" }}><span style={{ fontSize: 14 }}>🙋</span><span style={{ fontSize: 11, fontWeight: 700, color: "rgba(255,255,255,.8)" }}>إذن</span></button>
+          <button onClick={onLeave} style={{ flex: 1, padding: "12px 8px", borderRadius: 14, background: "linear-gradient(180deg, rgba(255,255,255,.18) 0%, rgba(255,255,255,.06) 50%, rgba(255,255,255,.12) 100%)", border: "1px solid rgba(255,255,255,.25)", display: "flex", alignItems: "center", justifyContent: "center", gap: 6, cursor: "pointer", boxShadow: "0 2px 8px rgba(0,0,0,.2), inset 0 1px 0 rgba(255,255,255,.2)" }}><span style={{ fontSize: 15 }}>📝</span><span style={{ fontSize: 12, fontWeight: 800, color: "#e8d5a3" }}>إجازة</span></button>
+          <button onClick={onPermission} style={{ flex: 1, padding: "12px 8px", borderRadius: 14, background: "linear-gradient(180deg, rgba(255,255,255,.18) 0%, rgba(255,255,255,.06) 50%, rgba(255,255,255,.12) 100%)", border: "1px solid rgba(255,255,255,.25)", display: "flex", alignItems: "center", justifyContent: "center", gap: 6, cursor: "pointer", boxShadow: "0 2px 8px rgba(0,0,0,.2), inset 0 1px 0 rgba(255,255,255,.2)" }}><span style={{ fontSize: 15 }}>🙋</span><span style={{ fontSize: 12, fontWeight: 800, color: "#e8d5a3" }}>إذن</span></button>
         </div>
         <div className="basma-flip-container">
           <div className={"basma-flip-inner" + (kadwarFlip ? " flipped" : "")} style={{ minHeight: 44 }}>
             {/* Front — Gold button */}
             <div className="basma-flip-front">
-              <button onClick={function(){ setKadwarFlip(true); }} style={{ width: "100%", padding: "12px 16px", borderRadius: 14, background: "linear-gradient(135deg, #c9a84c, #e8d5a3, #c9a84c)", border: "none", color: "#1a1a1a", fontSize: 13, fontWeight: 800, fontFamily: "'Cairo',sans-serif", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", gap: 8, boxShadow: "0 4px 15px rgba(201,168,76,.3)" }}>
+              <button onClick={function(){ setKadwarFlip(true); }} style={{ width: "100%", padding: "12px 16px", borderRadius: 14, background: "linear-gradient(180deg, #e8d5a3 0%, #c9a84c 40%, #8b6914 100%)", border: "1px solid #e8d5a3", color: "#1a1a1a", boxShadow: "0 4px 15px rgba(201,168,76,.4), inset 0 1px 0 rgba(255,255,255,.4)", fontSize: 13, fontWeight: 800, fontFamily: "'Cairo',sans-serif", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", gap: 8, boxShadow: "0 4px 15px rgba(201,168,76,.3)" }}>
                 <span style={{ fontSize: 16 }}>🏛️</span>
                 الدخول إلى منصة كوادر
               </button>
@@ -941,6 +941,7 @@ function HomePage({ user, branch, now, todayAtt, allAtt, gps, gpsDist, streak, l
 
 
 function ReportPage({ user, allAtt, todayAtt, branch, isOffDay, myLeaves, allEmps }) {
+  var [showRecords, setShowRecords] = useState(false);
   const thisMonth = todayStr().slice(0, 7);
   const monthAtt = allAtt.filter(r => r.date && r.date.startsWith(thisMonth));
   const checkins = monthAtt.filter(r => r.type === "checkin");
@@ -1090,21 +1091,28 @@ function ReportPage({ user, allAtt, todayAtt, branch, isOffDay, myLeaves, allEmp
         <WeeklyChart allAtt={monthAtt} branch={branch} />
 
         <div style={S.card} className="basma-fadein-d3">
-          <div style={S.cardTitle}>آخر البصمات</div>
-          {recent.length === 0 && <div style={{ textAlign: "center", color: C.sub, fontSize: 13, padding: 20 }}>لا توجد بصمات بعد</div>}
-          {recent.map((r, i) => {
+          <div onClick={function(){ setShowRecords(!showRecords); }} style={{ ...S.cardTitle, cursor: "pointer" }}>
+            <span>{"📋 آخر البصمات (" + recent.length + ")"}</span>
+            <span style={{ fontSize: 14, color: C.blue, transition: "transform .3s", transform: showRecords ? "rotate(180deg)" : "rotate(0)" }}>▼</span>
+          </div>
+          {showRecords && (
+            <div>
+              {recent.length === 0 && <div style={{ textAlign: "center", color: C.sub, fontSize: 13, padding: 20 }}>لا توجد بصمات بعد</div>}
+              {recent.map((r, i) => {
             const info = typeMap[r.type] || { label: r.type, color: C.sub, icon: "📌" };
             return (
               <div key={r.id || i} style={{ display: "flex", alignItems: "center", gap: 12, padding: "12px 0", borderBottom: i < recent.length - 1 ? "1px solid " + C.bg : "none" }}>
                 <div style={{ width: 40, height: 40, borderRadius: "50%", background: info.color + "18", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 20 }}>{info.icon}</div>
                 <div>
-                  <div style={{ fontSize: 13, fontWeight: 700 }}>{user.name}</div>
+                  <div style={{ fontSize: 13, fontWeight: 700, color: C.text }}>{user.name}</div>
                   <div style={{ fontSize: 10, color: info.color, marginTop: 1 }}>{info.label + " · " + r.date}</div>
                 </div>
-                <div style={{ marginRight: "auto", fontSize: 12, fontWeight: 700, color: "#555" }}>{formatTimeStr(r.ts)}</div>
+                <div style={{ marginRight: "auto", fontSize: 12, fontWeight: 700, color: C.sub }}>{formatTimeStr(r.ts)}</div>
               </div>
             );
           })}
+            </div>
+          )}
         </div>
 
         {myLeaves && myLeaves.length > 0 && (
@@ -1118,7 +1126,7 @@ function ReportPage({ user, allAtt, todayAtt, branch, isOffDay, myLeaves, allEmp
                 <div key={l.id || i} style={{ display: "flex", alignItems: "center", gap: 10, padding: "10px 0", borderBottom: i < myLeaves.length - 1 ? "1px solid " + C.bg : "none" }}>
                   <div style={{ width: 36, height: 36, borderRadius: 10, background: s.color + "15", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 16 }}>{s.icon}</div>
                   <div style={{ flex: 1 }}>
-                    <div style={{ fontSize: 12, fontWeight: 700 }}>{typeLabels[l.type] || l.type}</div>
+                    <div style={{ fontSize: 12, fontWeight: 700, color: C.text }}>{typeLabels[l.type] || l.type}</div>
                     <div style={{ fontSize: 10, color: C.sub }}>{l.from + " → " + l.to}</div>
                   </div>
                   <span style={{ fontSize: 10, fontWeight: 700, color: s.color, padding: "3px 8px", borderRadius: 8, background: s.color + "12" }}>{s.label}</span>
@@ -1230,7 +1238,7 @@ function ProfilePage({ user, branch, onLogout, onTicket, myTickets, darkMode, to
           <div style={S.card} className="basma-fadein-d3">
             <div style={S.cardTitle}>الهيئة السعودية للمهندسين</div>
             <div style={{ display: "flex", justifyContent: "space-between", padding: "8px 0" }}>
-              <span style={{ fontSize: 13, fontWeight: 700 }}>{user.sceNumber}</span>
+              <span style={{ fontSize: 13, fontWeight: 700, color: C.text }}>{user.sceNumber}</span>
               <span style={{ fontSize: 11, color: C.sub }}>رقم العضوية</span>
             </div>
             <div style={{ display: "flex", justifyContent: "space-between", padding: "8px 0", borderTop: "1px solid " + C.bg }}>
@@ -1251,7 +1259,7 @@ function ProfilePage({ user, branch, onLogout, onTicket, myTickets, darkMode, to
                 <div key={t.id || i} style={{ display: "flex", alignItems: "center", gap: 10, padding: "10px 0", borderBottom: i < Math.min(myTickets.length, 5) - 1 ? "1px solid " + C.bg : "none" }}>
                   <span style={{ fontSize: 14 }}>{prioMap[t.priority] || "🔵"}</span>
                   <div style={{ flex: 1 }}>
-                    <div style={{ fontSize: 12, fontWeight: 700 }}>{t.subject}</div>
+                    <div style={{ fontSize: 12, fontWeight: 700, color: C.text }}>{t.subject}</div>
                     <div style={{ fontSize: 10, color: C.sub }}>{t.ts ? t.ts.split("T")[0] : ""}</div>
                   </div>
                   <span style={{ fontSize: 10, fontWeight: 700, color: st.color, padding: "3px 8px", borderRadius: 8, background: st.color + "12" }}>{st.label}</span>
@@ -1292,10 +1300,10 @@ function ProfilePage({ user, branch, onLogout, onTicket, myTickets, darkMode, to
         </button>
         <div style={{ textAlign: "center", marginTop: 16, marginBottom: 12, padding: 12, background: C.card, borderRadius: 16 }}>
           <div style={{ fontSize: 20, marginBottom: 4 }}>🕐</div>
-          <div style={{ fontSize: 13, fontWeight: 800, fontFamily: "'Cairo',sans-serif" }}>بصمة HMA</div>
+          <div style={{ fontSize: 13, fontWeight: 800, fontFamily: "'Cairo',sans-serif", color: C.text }}>بصمة HMA</div>
           <div style={{ fontSize: 10, color: C.sub, marginTop: 2 }}>نظام الحضور والانصراف الذكي</div>
           <div style={{ fontSize: 10, color: C.sub, marginTop: 2 }}>هاني محمد عسيري للاستشارات الهندسية</div>
-          <div style={{ fontSize: 9, color: "#ccc", marginTop: 6 }}>{"v" + VER + " · basma-hma.vercel.app"}</div>
+          <div style={{ fontSize: 9, color: C.sub, marginTop: 6 }}>{"v" + VER + " · basma-hma.vercel.app"}</div>
         </div>
       </div>
     </div>
@@ -1352,7 +1360,7 @@ function BenefitsPage({ user }) {
             var canAfford = (user.points || 0) >= coupon.pts;
             var tierName = MEMBERSHIP[coupon.minTier] ? MEMBERSHIP[coupon.minTier].name.replace("عضوية ","") : "فعّال";
             return (
-              <div key={coupon.id} style={{ display: "flex", alignItems: "center", gap: 12, padding: 16, borderRadius: 16, background: C.card, border: available ? "1.5px solid " + C.green + "30" : "1px solid " + C.bg, minHeight: 70, opacity: available ? 1 : 0.5, boxShadow: "0 2px 8px rgba(0,0,0,.04)" }}>
+              <div key={coupon.id} style={{ display: "flex", alignItems: "center", gap: 12, padding: 16, borderRadius: 16, background: C.card, border: available ? "1.5px solid " + C.green + "30" : "1px solid " + C.bg, minHeight: 70, opacity: available ? 1 : 0.5, boxShadow: "0 2px 8px rgba(0,0,0,.1)" }}>
                 <div style={{ width: 44, height: 44, borderRadius: 14, background: available ? C.green + "12" : "rgba(0,0,0,.04)", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 22 }}>{coupon.icon}</div>
                 <div style={{ flex: 1 }}>
                   <div style={{ fontSize: 13, fontWeight: 700, color: C.text }}>{coupon.brand}</div>
@@ -1372,7 +1380,7 @@ function BenefitsPage({ user }) {
         </div>
 
         {isRamadan && (
-          <div style={{ textAlign: "center", marginTop: 12, padding: 10, borderRadius: 12, background: "#FFF3C4", fontSize: 11, fontWeight: 700, color: "#D4A017" }}>
+          <div style={{ textAlign: "center", marginTop: 12, padding: 10, borderRadius: 12, background: C.card, fontSize: 11, fontWeight: 700, color: "#D4A017" }}>
             🌙 عروض رمضان الخاصة متاحة!
           </div>
         )}
@@ -1422,7 +1430,7 @@ function ConfirmModal({ label, onConfirm, onCancel }) {
     <div style={S.overlay} onClick={onCancel}>
       <div className="basma-slideup" style={S.modal} onClick={function(e){ e.stopPropagation(); }}>
         <div style={{ fontSize: 40, textAlign: "center", marginBottom: 12 }}>📍</div>
-        <div style={{ fontSize: 16, fontWeight: 800, fontFamily: "'Cairo',sans-serif", textAlign: "center", marginBottom: 6 }}>{"تأكيد " + label}</div>
+        <div style={{ fontSize: 16, fontWeight: 800, fontFamily: "'Cairo',sans-serif", textAlign: "center", marginBottom: 6, color: C.text }}>{"تأكيد " + label}</div>
         <div style={{ fontSize: 12, color: C.sub, textAlign: "center", marginBottom: 20 }}>{"هل تريد " + label + " الآن؟"}</div>
         <div style={{ display: "flex", gap: 8 }}>
           <button onClick={onCancel} style={{ flex: 1, padding: 12, borderRadius: 14, border: "2px solid " + C.bg, background: C.card, color: C.sub, fontSize: 14, fontWeight: 700, cursor: "pointer", fontFamily: "'Cairo',sans-serif" }}>إلغاء</button>
@@ -1565,7 +1573,7 @@ function FaceModal({ empId, onVerified, onSkip, onCancel }) {
   return (
     <div style={S.overlay} onClick={handleClose}>
       <div className="basma-slideup" style={{ ...S.modal, maxWidth: 340 }} onClick={function(e){ e.stopPropagation(); }}>
-        <div style={{ fontSize: 16, fontWeight: 800, fontFamily: "'Cairo',sans-serif", textAlign: "center", marginBottom: 4 }}>
+        <div style={{ fontSize: 16, fontWeight: 800, fontFamily: "'Cairo',sans-serif", textAlign: "center", marginBottom: 4, color: C.text }}>
           {isFirst ? "📸 تسجيل الوجه" : "📸 التحقق بالوجه"}
         </div>
         {isFirst && <div style={{ fontSize: 10, color: C.orange, textAlign: "center", marginBottom: 8, fontWeight: 600 }}>أول مرة — سيتم حفظ وجهك للتحقق لاحقاً</div>}
@@ -1642,7 +1650,7 @@ function ChallengeModal({ user, onClose, onPoints }) {
       <div className="basma-slideup" style={{ ...S.modal, maxWidth: 360 }} onClick={function(e){ e.stopPropagation(); }}>
         <div style={{ fontSize: 14, fontWeight: 800, fontFamily: "'Cairo',sans-serif", textAlign: "center", color: C.green, marginBottom: 4 }}>⚡ سؤال التحدي</div>
         <div style={{ fontSize: 11, color: C.sub, textAlign: "center", marginBottom: 16 }}>اجب صحيحاً واكسب 25 نقطة</div>
-        <div style={{ fontSize: 15, fontWeight: 700, textAlign: "center", marginBottom: 16, lineHeight: 1.6 }}>{q.q}</div>
+        <div style={{ fontSize: 15, fontWeight: 700, textAlign: "center", marginBottom: 16, lineHeight: 1.6, color: C.text }}>{q.q}</div>
         <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
           {q.opts.map(function(opt, i) {
             var bg = "#fff", border = "2px solid #eee", color = C.text;
@@ -1757,7 +1765,7 @@ function PreAbsenceModal({ allEmps, user, onClose, onSubmit }) {
   return (
     <div style={S.overlay} onClick={onClose}>
       <div className="basma-slideup" style={{ ...S.modal, maxWidth: 380, background: C.card }} onClick={function(e){ e.stopPropagation(); }}>
-        <div style={{ fontSize: 16, fontWeight: 800, fontFamily: "'Cairo',sans-serif", textAlign: "center", marginBottom: 4 }}>📋 إفادة مسبقة بالغياب</div>
+        <div style={{ fontSize: 16, fontWeight: 800, fontFamily: "'Cairo',sans-serif", textAlign: "center", marginBottom: 4, color: C.text }}>📋 إفادة مسبقة بالغياب</div>
         <div style={{ fontSize: 10, color: C.sub, textAlign: "center", marginBottom: 14 }}>{"الموظف لن يحضر غداً: " + tomorrowStr}</div>
 
         <div style={{ marginBottom: 10 }}>
@@ -1809,7 +1817,7 @@ function ManualAttModal({ allEmps, user, onClose, onSubmit }) {
   return (
     <div style={S.overlay} onClick={onClose}>
       <div className="basma-slideup" style={{ ...S.modal, maxWidth: 380, background: C.card }} onClick={function(e){ e.stopPropagation(); }}>
-        <div style={{ fontSize: 16, fontWeight: 800, fontFamily: "'Cairo',sans-serif", textAlign: "center", marginBottom: 14 }}>✏️ تحضير يدوي</div>
+        <div style={{ fontSize: 16, fontWeight: 800, fontFamily: "'Cairo',sans-serif", textAlign: "center", marginBottom: 14, color: C.text }}>✏️ تحضير يدوي</div>
 
         <div style={{ marginBottom: 10 }}>
           <div style={{ fontSize: 10, color: C.sub, fontWeight: 600, marginBottom: 4 }}>الموظف</div>
@@ -1866,7 +1874,7 @@ function PermissionModal({ user, branch, onClose, onSubmit }) {
   return (
     <div style={S.overlay} onClick={onClose}>
       <div className="basma-slideup" style={{ ...S.modal, maxWidth: 380, background: C.card }} onClick={function(e){ e.stopPropagation(); }}>
-        <div style={{ fontSize: 16, fontWeight: 800, fontFamily: "'Cairo',sans-serif", textAlign: "center", marginBottom: 14 }}>🙋 طلب إذن</div>
+        <div style={{ fontSize: 16, fontWeight: 800, fontFamily: "'Cairo',sans-serif", textAlign: "center", marginBottom: 14, color: C.text }}>🙋 طلب إذن</div>
 
         <div style={{ display: "flex", gap: 4, marginBottom: 12 }}>
           {types.map(function(t) {
@@ -1932,7 +1940,7 @@ function LeaveModal({ user, onClose, onSubmit }) {
   return (
     <div style={S.overlay} onClick={onClose}>
       <div className="basma-slideup" style={{ ...S.modal, maxWidth: 380, background: C.card }} onClick={function(e){ e.stopPropagation(); }}>
-        <div style={{ fontSize: 16, fontWeight: 800, fontFamily: "'Cairo',sans-serif", textAlign: "center", marginBottom: 16 }}>📝 طلب إجازة</div>
+        <div style={{ fontSize: 16, fontWeight: 800, fontFamily: "'Cairo',sans-serif", textAlign: "center", marginBottom: 16, color: C.text }}>📝 طلب إجازة</div>
 
         <div style={{ display: "flex", gap: 6, marginBottom: 14 }}>
           {leaveTypes.map(function(lt) {
@@ -1989,7 +1997,7 @@ function TicketModal({ user, onClose, onSubmit }) {
   return (
     <div style={S.overlay} onClick={onClose}>
       <div className="basma-slideup" style={{ ...S.modal, maxWidth: 380, background: C.card }} onClick={function(e){ e.stopPropagation(); }}>
-        <div style={{ fontSize: 16, fontWeight: 800, fontFamily: "'Cairo',sans-serif", textAlign: "center", marginBottom: 16 }}>🎫 تذكرة دعم</div>
+        <div style={{ fontSize: 16, fontWeight: 800, fontFamily: "'Cairo',sans-serif", textAlign: "center", marginBottom: 16, color: C.text }}>🎫 تذكرة دعم</div>
 
         <div style={{ display: "flex", gap: 6, marginBottom: 14 }}>
           {[{id:"low",label:"منخفض",c:C.green},{id:"normal",label:"عادي",c:C.blue},{id:"high",label:"عاجل",c:C.red}].map(function(p) {
@@ -2062,7 +2070,7 @@ function WorkHoursCard({ todayAtt, now, branch, dayState }) {
             <span style={{ fontSize: 11, color: C.sub }}>{"حضور: " + formatTimeStr(checkinRec.ts)}</span>
             <span style={{ fontSize: 11, color: C.sub }}>{checkoutRec ? "انصراف: " + formatTimeStr(checkoutRec.ts) : "—"}</span>
           </div>
-          <div style={{ height: 6, borderRadius: 3, background: "#eee", overflow: "hidden" }}>
+          <div style={{ height: 6, borderRadius: 3, background: C.bg, overflow: "hidden" }}>
             <div style={{ height: "100%", borderRadius: 3, background: "linear-gradient(90deg,"+C.blue+","+C.blueBright+")", width: progressPct + "%", transition: "width 1s ease" }} />
           </div>
           <div style={{ fontSize: 9, color: C.sub, marginTop: 4, textAlign: "left", direction: "ltr" }}>{progressPct + "% من الدوام"}</div>
@@ -2089,7 +2097,7 @@ function Checkpoint({ icon, label, time, done }) {
         {done ? <span style={{ color: C.green, fontWeight: 900, fontSize: 15 }}>✓</span> : icon}
       </div>
       <div style={{ fontSize: 9, fontWeight: 700, color: done ? C.green : C.sub }}>{label}</div>
-      <div style={{ fontSize: 8, color: "#aaa" }}>{time}</div>
+      <div style={{ fontSize: 8, color: C.sub }}>{time}</div>
     </div>
   );
 }
@@ -2157,7 +2165,7 @@ function MembershipCard({ points }) {
               <span style={{ fontSize: 9, color: C.sub }}>{"التقدم نحو " + badge.nextLabel}</span>
               <span style={{ fontSize: 9, fontWeight: 700, color: tc }}>{badge.progress + "%"}</span>
             </div>
-            <div style={{ height: 6, borderRadius: 3, background: "rgba(0,0,0,.06)", overflow: "hidden" }}>
+            <div style={{ height: 6, borderRadius: 3, background: C.bg, overflow: "hidden" }}>
               <div style={{ height: "100%", borderRadius: 3, background: tc, width: badge.progress + "%", transition: "width .5s" }} />
             </div>
             <div style={{ fontSize: 9, color: C.sub, marginTop: 3 }}>{"باقي " + badge.remaining + " نقطة للترقية"}</div>
@@ -2198,7 +2206,7 @@ function MembershipCard({ points }) {
       </div>
 
       {/* Membership note */}
-      <div style={{ padding: "8px 12px", borderRadius: 10, background: "rgba(0,0,0,.03)", border: "1px solid rgba(0,0,0,.05)" }}>
+      <div style={{ padding: "8px 12px", borderRadius: 10, background: C.bg, border: "1px solid " + C.bg }}>
         <div style={{ fontSize: 9, color: C.sub, lineHeight: 1.6, textAlign: "center" }}>{"⚖️ " + MEMBERSHIP_NOTE}</div>
       </div>
     </div>
@@ -2250,7 +2258,7 @@ function WeeklyChart({ allAtt, branch }) {
           );
         })}
       </div>
-      <div style={{ height: 1, background: "#eee", marginTop: 4, position: "relative" }}>
+      <div style={{ height: 1, background: C.bg, marginTop: 4, position: "relative" }}>
         <div style={{ position: "absolute", top: -8, left: 0, fontSize: 8, color: C.green }}>{expected + "h"}</div>
       </div>
     </div>
@@ -2259,14 +2267,14 @@ function WeeklyChart({ allAtt, branch }) {
 
 function KadwarBtn({ icon, label, count }) {
   return (
-    <button onClick={function(){ window.open("https://hma.engineer", "_blank"); }} style={{ flex: 1, padding: "10px 8px", borderRadius: 12, background: "rgba(255,255,255,.1)", border: "1px solid rgba(255,255,255,.15)", display: "flex", alignItems: "center", justifyContent: "center", gap: 6, cursor: "pointer", position: "relative" }}>
+    <button onClick={function(){ window.open("https://hma.engineer", "_blank"); }} style={{ flex: 1, padding: "10px 8px", borderRadius: 12, background: "linear-gradient(180deg, rgba(255,255,255,.15) 0%, rgba(255,255,255,.05) 50%, rgba(255,255,255,.1) 100%)", border: "1px solid rgba(232,213,163,.3)", display: "flex", alignItems: "center", justifyContent: "center", gap: 6, cursor: "pointer", position: "relative", boxShadow: "0 2px 6px rgba(0,0,0,.2), inset 0 1px 0 rgba(255,255,255,.15)", borderRadius: 12 }}>
       <span style={{ fontSize: 14, position: "relative" }}>
         {icon}
         {count > 0 && (
           <span style={{ position: "absolute", top: -6, right: -8, minWidth: 16, height: 16, borderRadius: 8, background: C.red, color: "#fff", fontSize: 9, fontWeight: 900, display: "flex", alignItems: "center", justifyContent: "center", padding: "0 3px" }}>{count}</span>
         )}
       </span>
-      <span style={{ fontSize: 11, fontWeight: 700, color: "rgba(255,255,255,.8)" }}>{label}</span>
+      <span style={{ fontSize: 11, fontWeight: 700, color: "#e8d5a3" }}>{label}</span>
     </button>
   );
 }
@@ -2339,7 +2347,7 @@ function CustodyTab({ user }) {
           <div key={item.id || i} style={{ display: "flex", alignItems: "center", gap: 10, padding: "10px 0", borderBottom: i < items.length - 1 ? "1px solid " + C.bg : "none" }}>
             <div style={{ width: 36, height: 36, borderRadius: 10, background: s.color + "15", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 16 }}>{s.icon}</div>
             <div style={{ flex: 1 }}>
-              <div style={{ fontSize: 12, fontWeight: 700 }}>{item.name || "عهدة"}</div>
+              <div style={{ fontSize: 12, fontWeight: 700, color: C.text }}>{item.name || "عهدة"}</div>
               <div style={{ fontSize: 9, color: C.sub }}>{(item.serial ? "SN: " + item.serial + " · " : "") + (item.createdAt ? item.createdAt.split("T")[0] : "")}</div>
               {item.type === "cash" && <div style={{ fontSize: 9, color: C.orange }}>{"💰 عهدة نقدية: " + (item.amount || 0) + " ريال"}</div>}
             </div>
@@ -2370,7 +2378,7 @@ function DelegationCard({ user }) {
         return (
           <div key={dl.id || i} style={{ display: "flex", alignItems: "center", gap: 10, padding: "8px 0", borderBottom: i < delegations.length - 1 ? "1px solid " + C.bg : "none" }}>
             <div style={{ flex: 1 }}>
-              <div style={{ fontSize: 12, fontWeight: 700 }}>{dl.reason || "انتداب"}</div>
+              <div style={{ fontSize: 12, fontWeight: 700, color: C.text }}>{dl.reason || "انتداب"}</div>
               <div style={{ fontSize: 9, color: C.sub }}>{(dl.from || "") + " → " + (dl.to || "")}</div>
             </div>
             <span style={{ fontSize: 9, fontWeight: 700, color: s.color, padding: "2px 8px", borderRadius: 6, background: s.color + "12" }}>{s.label}</span>
@@ -2409,7 +2417,7 @@ function ViolationsCard({ user }) {
               <div key={w.id || i} style={{ display: "flex", alignItems: "center", gap: 10, padding: "8px 0", borderBottom: "1px solid " + C.bg }}>
                 <span style={{ fontSize: 16 }}>{lvl.icon}</span>
                 <div style={{ flex: 1 }}>
-                  <div style={{ fontSize: 11, fontWeight: 700 }}>{lvl.type}</div>
+                  <div style={{ fontSize: 11, fontWeight: 700, color: C.text }}>{lvl.type}</div>
                   <div style={{ fontSize: 9, color: C.sub }}>{w.details || w.type || ""}</div>
                   <div style={{ fontSize: 8, color: C.sub }}>{w.ts ? w.ts.split("T")[0] : ""}</div>
                 </div>
@@ -2423,7 +2431,7 @@ function ViolationsCard({ user }) {
               <div key={v.id || i} style={{ display: "flex", alignItems: "center", gap: 10, padding: "8px 0", borderBottom: i < violations.length - 1 ? "1px solid " + C.bg : "none" }}>
                 <span style={{ fontSize: 14 }}>📋</span>
                 <div style={{ flex: 1 }}>
-                  <div style={{ fontSize: 11, fontWeight: 700 }}>{vt.label}</div>
+                  <div style={{ fontSize: 11, fontWeight: 700, color: C.text }}>{vt.label}</div>
                   <div style={{ fontSize: 9, color: C.sub }}>{v.details || ""}</div>
                 </div>
                 <span style={{ fontSize: 9, color: v.status === "open" ? C.red : C.green }}>{v.status === "open" ? "مفتوحة" : "مغلقة"}</span>
@@ -2579,7 +2587,7 @@ function DependentsTab({ user }) {
           <div key={d.id || i} style={{ display: "flex", alignItems: "center", gap: 10, padding: "10px 0", borderBottom: i < deps.length - 1 ? "1px solid " + C.bg : "none" }}>
             <div style={{ width: 36, height: 36, borderRadius: 10, background: C.blue + "15", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 16 }}>👤</div>
             <div style={{ flex: 1 }}>
-              <div style={{ fontSize: 12, fontWeight: 700 }}>{d.name}</div>
+              <div style={{ fontSize: 12, fontWeight: 700, color: C.text }}>{d.name}</div>
               <div style={{ fontSize: 10, color: C.sub }}>{d.relation + (d.externalInsurance ? " · 🛡️ تأمين خارجي" : "")}</div>
             </div>
             <span style={{ fontSize: 9, fontWeight: 700, color: statusColors[d.status] || C.orange, padding: "2px 8px", borderRadius: 6, background: (statusColors[d.status] || C.orange) + "12" }}>{statusLabels[d.status] || "بانتظار"}</span>
@@ -2679,7 +2687,7 @@ function AttachmentsTab({ user }) {
           <div key={d.id || i} style={{ display: "flex", alignItems: "center", gap: 10, padding: "8px 0", borderBottom: i < docs.length - 1 ? "1px solid " + C.bg : "none" }}>
             <span style={{ fontSize: 14 }}>📄</span>
             <div style={{ flex: 1 }}>
-              <div style={{ fontSize: 11, fontWeight: 700 }}>{d.type}</div>
+              <div style={{ fontSize: 11, fontWeight: 700, color: C.text }}>{d.type}</div>
               <div style={{ fontSize: 9, color: C.sub }}>{d.date}</div>
             </div>
             <span style={{ fontSize: 9, fontWeight: 700, color: statusColors[d.status] || C.orange, padding: "2px 8px", borderRadius: 6, background: (statusColors[d.status] || C.orange) + "12" }}>{d.status === "approved" ? "معتمد" : d.status === "rejected" ? "مرفوض" : "بانتظار"}</span>
@@ -2860,7 +2868,7 @@ function buildS() { return {
   gpsRow: { display: "flex", alignItems: "center", gap: 6, padding: "4px 4px 10px" },
   challengeCard: { background: "linear-gradient(135deg,"+C.green+","+C.greenDark+")", borderRadius: 16, padding: 14, marginBottom: 12, textAlign: "center", color: "#fff", cursor: "pointer" },
 
-  card: { background: C.card, borderRadius: 20, padding: 18, marginBottom: 12, boxShadow: "0 2px 12px rgba(0,0,0,.06)" },
+  card: { background: C.card, borderRadius: 20, padding: 18, marginBottom: 12, boxShadow: "0 2px 12px rgba(0,0,0,.15)" },
   cardTitle: { fontSize: 15, fontWeight: 800, fontFamily: "'Cairo',sans-serif", marginBottom: 12, display: "flex", justifyContent: "space-between", alignItems: "center", color: C.text },
 
   summaryGrid: { display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 8, textAlign: "center" },
