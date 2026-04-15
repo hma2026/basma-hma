@@ -153,6 +153,16 @@ function haversine(lat1, lon1, lat2, lon2) {
   return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
 }
 
+function timeToAngle(h, m) { return ((h % 12) + (m || 0) / 60) * 30 - 90; }
+
+/* ── Clock Checkpoint Positions ── */
+var CPS = [
+  { label: "حضور", h: 8, m: 30, icon: "☀️", color: "#2b5ea7" },
+  { label: "استراحة", h: 12, m: 30, icon: "☕", color: "#f59e0b" },
+  { label: "عودة", h: 13, m: 0, icon: "🔄", color: "#10b981" },
+  { label: "انصراف", h: 17, m: 0, icon: "🌙", color: "#6366f1" },
+];
+
 /* ── Challenge Questions (5 أنواع متفق عليها) ── */
 const CHALLENGES = [
   { q: "أكمل: سبحان الله وبحمده ...", opts: ["سبحان الله العظيم","الحمد لله رب العالمين","لا إله إلا الله"], correct: 0, type: "ذكر" },
@@ -770,6 +780,12 @@ function HomePage({ user, branch, now, todayAtt, allAtt, gps, gpsDist, streak, l
   var outsideNoCheckin = !checkpoints.checkin && gpsDist !== null && branch && gpsDist > (branch.radius || 150);
   const ringCol = outsideNoCheckin ? C.red : dayState === "during" ? "#5ec47a" : dayState === "after" ? C.gold : "#80b4f0";
 
+  // Analog clock angles
+  var hA = timeToAngle(now.getHours(), now.getMinutes());
+  var mA = (now.getMinutes() / 60) * 360 - 90;
+  var sA = (now.getSeconds() / 60) * 360 - 90;
+  var nowMin = now.getHours() * 60 + now.getMinutes();
+
   let btnText, btnAction, btnLabel;
   if (dayState === "before") { btnText = "☀️ سجّل حضورك"; btnAction = "checkin"; btnLabel = "تسجيل الحضور"; }
   else if (dayState === "during") {
@@ -817,56 +833,104 @@ function HomePage({ user, branch, now, todayAtt, allAtt, gps, gpsDist, streak, l
           </div>
         </div>
         <div style={S.clockWrap}>
-          <div style={{ position: "relative", width: SIZE, height: SIZE }}>
-            <svg width={SIZE} height={SIZE} style={{ transform: "rotate(-90deg)" }}>
-              <circle cx={SIZE/2} cy={SIZE/2} r={R} fill="none" stroke="rgba(255,255,255,.15)" strokeWidth={STROKE} />
-              <circle cx={SIZE/2} cy={SIZE/2} r={R} fill="none" stroke={ringCol} strokeWidth={STROKE} strokeLinecap="round" strokeDasharray={CIRC} strokeDashoffset={ringOff} style={{ transition: "stroke-dashoffset 1s ease" }} />
-            </svg>
-            <div style={S.clockInner}>
-              {showChallenge ? (
-                /* ── Challenge inside circle ── */
-                <div style={{ textAlign: "center", padding: "0 12px" }}>
-                  <div style={{ fontSize: 8, fontWeight: 700, color: "rgba(255,255,255,.5)", marginBottom: 2 }}>{"⚡ " + challengeQ.type}</div>
-                  <div style={{ fontSize: 12, fontWeight: 800, color: "#fff", lineHeight: 1.5 }}>{challengeQ.q}</div>
-                </div>
-              ) : challengeAnswer !== null && dayState === "before" ? (
-                /* ── Challenge result ── */
-                <div style={{ textAlign: "center" }}>
-                  <div style={{ fontSize: 28 }}>{challengeAnswer ? "🎉" : "😅"}</div>
-                  <div style={{ fontSize: 11, fontWeight: 800, color: "#fff" }}>{challengeAnswer ? MASCOT.correct : MASCOT.wrong}</div>
-                  {challengeAnswer && <div style={{ fontSize: 10, color: C.gold, marginTop: 2 }}>{"+" + POINTS.challenge_correct + " نقطة"}</div>}
-                </div>
-              ) : (
-                /* ── Normal clock ── */
-                <div style={{ textAlign: "center" }}>
-                  <div style={S.clockTime}>{time}<span style={{ fontSize: 18, opacity: .6 }}>{":" + sec}</span></div>
-                  <div style={S.clockAmpm}>{ampm}</div>
-                  {outsideNoCheckin && dayState !== "after" && (
-                    <div style={{ fontSize: 9, fontWeight: 800, color: "#FF6B6B", marginTop: -2, marginBottom: 2 }}>لم تقم بتسجيل الحضور</div>
-                  )}
-                  {outsideNoCheckin && gpsDist && (
-                    <div style={{ fontSize: 8, color: "rgba(255,255,255,.4)" }}>{"خارج منطقة العمل (" + gpsDist + " م)"}</div>
-                  )}
-                  {dayState === "during" && branch && !outsideNoCheckin && (function() {
-                    var remaining = timeToMin(branch.end) - (now.getHours() * 60 + now.getMinutes());
-                    if (remaining > 0) {
-                      var rh = Math.floor(remaining / 60);
-                      var rm = remaining % 60;
-                      return React.createElement("div", { style: { fontSize: 9, color: "rgba(255,255,255,.5)", marginTop: -2, marginBottom: 2 } }, "متبقي " + rh + ":" + String(rm).padStart(2,"0"));
-                    }
-                    return null;
-                  })()}
-                  {btnAction ? (
-                    <button onClick={function(){ if(!loading) onCheckin(btnAction, btnLabel); }} disabled={loading} style={S.clockBtn}>
-                      {loading ? React.createElement("span", { className: "basma-pulse" }, "⏳") : btnText}
-                    </button>
-                  ) : (
-                    <div style={{ ...S.clockBtn, opacity: .6, cursor: "default" }}>{btnText}</div>
-                  )}
-                </div>
-              )}
+          {showChallenge ? (
+            /* ── Challenge overlay ── */
+            <div style={{ width: SIZE, margin: "0 auto", textAlign: "center" }}>
+              <div style={{ fontSize: 10, fontWeight: 700, color: "rgba(255,255,255,.5)", marginBottom: 6 }}>{"⚡ تحدي الصباح — " + challengeQ.type}</div>
+              <div style={{ fontSize: 16, fontWeight: 800, color: "#fff", lineHeight: 1.6, marginBottom: 12 }}>{challengeQ.q}</div>
             </div>
-          </div>
+          ) : challengeAnswer !== null && dayState === "before" ? (
+            <div style={{ width: SIZE, margin: "0 auto", textAlign: "center" }}>
+              <div style={{ fontSize: 36 }}>{challengeAnswer ? "🎉" : "😅"}</div>
+              <div style={{ fontSize: 13, fontWeight: 800, color: "#fff" }}>{challengeAnswer ? MASCOT.correct : MASCOT.wrong}</div>
+              {challengeAnswer && <div style={{ fontSize: 11, color: C.gold, marginTop: 4 }}>{"+" + POINTS.challenge_correct + " نقطة"}</div>}
+            </div>
+          ) : (
+            /* ── Luxury Analog Clock ── */
+            <div style={{ position: "relative", width: SIZE, height: SIZE, margin: "0 auto" }}>
+              <svg width={SIZE} height={SIZE} viewBox={"0 0 " + SIZE + " " + SIZE}>
+                <defs>
+                  <radialGradient id="lxFace" cx="50%" cy="40%" r="50%"><stop offset="0%" stopColor="rgba(255,255,255,.08)"/><stop offset="100%" stopColor="rgba(0,0,0,.15)"/></radialGradient>
+                  <linearGradient id="lxRim" x1="0%" y1="0%" x2="100%" y2="100%"><stop offset="0%" stopColor="#e8d5a3"/><stop offset="50%" stopColor="#c9a84c"/><stop offset="100%" stopColor="#8b6914"/></linearGradient>
+                  <filter id="lxSh"><feDropShadow dx="0" dy="1" stdDeviation="2" floodColor="rgba(0,0,0,.4)"/></filter>
+                </defs>
+                {/* Outer gold rim */}
+                <circle cx={SIZE/2} cy={SIZE/2} r={R+8} fill="none" stroke="url(#lxRim)" strokeWidth={4} />
+                <circle cx={SIZE/2} cy={SIZE/2} r={R+3} fill="none" stroke="#8b6914" strokeWidth={0.5} />
+                {/* Face */}
+                <circle cx={SIZE/2} cy={SIZE/2} r={R+1} fill="url(#lxFace)" />
+                {/* Work arcs */}
+                {(function() {
+                  var AR = R - 10;
+                  var wsA = timeToAngle(8,30), bsA = timeToAngle(12,30), beA = timeToAngle(13,0), weA = timeToAngle(17,0);
+                  function mkArc(cx,cy,r,s,e) { var a=polar(cx,cy,r,e), b=polar(cx,cy,r,s); return "M "+a.x+" "+a.y+" A "+r+" "+r+" 0 "+(e-s<=180?"0":"1")+" 0 "+b.x+" "+b.y; }
+                  function polar(cx,cy,r,deg) { var rad=deg*Math.PI/180; return {x:cx+r*Math.cos(rad),y:cy+r*Math.sin(rad)}; }
+                  return React.createElement("g", null,
+                    React.createElement("path", { d: mkArc(SIZE/2,SIZE/2,AR,wsA,bsA), fill: "none", stroke: "#2b5ea7", strokeWidth: 5, strokeLinecap: "round", opacity: 0.7 }),
+                    React.createElement("path", { d: mkArc(SIZE/2,SIZE/2,AR,bsA,beA), fill: "none", stroke: "#c9a84c", strokeWidth: 5, strokeLinecap: "round", opacity: 0.6 }),
+                    React.createElement("path", { d: mkArc(SIZE/2,SIZE/2,AR,beA,weA), fill: "none", stroke: "#10b981", strokeWidth: 5, strokeLinecap: "round", opacity: 0.7 }),
+                    CPS.map(function(cp,i) {
+                      var a = timeToAngle(cp.h,cp.m)*Math.PI/180;
+                      var px = SIZE/2+AR*Math.cos(a), py = SIZE/2+AR*Math.sin(a);
+                      var passed = nowMin >= cp.h*60+cp.m;
+                      return React.createElement("g", { key: i, transform: "translate("+px+","+py+") rotate(45)" },
+                        React.createElement("rect", { x: -3.5, y: -3.5, width: 7, height: 7, rx: 1.5, fill: passed ? cp.color : "rgba(201,168,76,.3)", stroke: passed ? "#fff" : "rgba(201,168,76,.5)", strokeWidth: 1 })
+                      );
+                    })
+                  );
+                })()}
+                {/* Roman numerals */}
+                {["XII","I","II","III","IV","V","VI","VII","VIII","IX","X","XI"].map(function(num,i) {
+                  var a = (i*30-90)*Math.PI/180;
+                  var tx = SIZE/2+(R-24)*Math.cos(a), ty = SIZE/2+(R-24)*Math.sin(a);
+                  return React.createElement("text", { key: i, x: tx, y: ty, textAnchor: "middle", dominantBaseline: "central", fill: "#e8d5a3", fontSize: i%3===0?13:9, fontWeight: i%3===0?"900":"600", fontFamily: "'Times New Roman',Georgia,serif", opacity: i%3===0?1:0.5 }, num);
+                })}
+                {/* Gold ticks */}
+                {[0,1,2,3,4,5,6,7,8,9,10,11].map(function(i) {
+                  var a=(i*30-90)*Math.PI/180; var len=i%3===0?12:6; var w=i%3===0?2:1;
+                  return React.createElement("line", { key: i, x1: SIZE/2+(R-2)*Math.cos(a), y1: SIZE/2+(R-2)*Math.sin(a), x2: SIZE/2+(R-2-len)*Math.cos(a), y2: SIZE/2+(R-2-len)*Math.sin(a), stroke: "#c9a84c", strokeWidth: w, strokeLinecap: "round" });
+                })}
+                {/* Brand text */}
+                <text x={SIZE/2} y={SIZE/2-32} textAnchor="middle" fill="#c9a84c" fontSize={7} fontWeight="700" fontFamily="'Times New Roman',serif" letterSpacing="2.5" opacity={0.7}>HMA ENGINEERING</text>
+                {/* Hour hand */}
+                <line x1={SIZE/2} y1={SIZE/2} x2={SIZE/2+48*Math.cos(hA*Math.PI/180)} y2={SIZE/2+48*Math.sin(hA*Math.PI/180)} stroke="#e8d5a3" strokeWidth={4.5} strokeLinecap="round" filter="url(#lxSh)" />
+                <line x1={SIZE/2} y1={SIZE/2} x2={SIZE/2+10*Math.cos((hA+180)*Math.PI/180)} y2={SIZE/2+10*Math.sin((hA+180)*Math.PI/180)} stroke="#e8d5a3" strokeWidth={3} strokeLinecap="round" />
+                {/* Minute hand */}
+                <line x1={SIZE/2} y1={SIZE/2} x2={SIZE/2+68*Math.cos(mA*Math.PI/180)} y2={SIZE/2+68*Math.sin(mA*Math.PI/180)} stroke="#e8d5a3" strokeWidth={2.5} strokeLinecap="round" filter="url(#lxSh)" />
+                <line x1={SIZE/2} y1={SIZE/2} x2={SIZE/2+14*Math.cos((mA+180)*Math.PI/180)} y2={SIZE/2+14*Math.sin((mA+180)*Math.PI/180)} stroke="#e8d5a3" strokeWidth={2} strokeLinecap="round" />
+                {/* Second hand — red */}
+                <line x1={SIZE/2} y1={SIZE/2} x2={SIZE/2+76*Math.cos(sA*Math.PI/180)} y2={SIZE/2+76*Math.sin(sA*Math.PI/180)} stroke="#E2192C" strokeWidth={0.8} />
+                <line x1={SIZE/2} y1={SIZE/2} x2={SIZE/2+18*Math.cos((sA+180)*Math.PI/180)} y2={SIZE/2+18*Math.sin((sA+180)*Math.PI/180)} stroke="#E2192C" strokeWidth={1.2} />
+                {/* Center jewel */}
+                <circle cx={SIZE/2} cy={SIZE/2} r={5} fill="#c9a84c" stroke="#e8d5a3" strokeWidth={1.5} />
+                <circle cx={SIZE/2} cy={SIZE/2} r={2.5} fill="#e8d5a3" />
+                {/* Date window */}
+                <rect x={SIZE/2+28} y={SIZE/2-7} width={24} height={14} rx={2.5} fill="rgba(0,0,0,.3)" stroke="rgba(201,168,76,.4)" strokeWidth={0.5} />
+                <text x={SIZE/2+40} y={SIZE/2+1} textAnchor="middle" dominantBaseline="central" fill="#e8d5a3" fontSize={9} fontWeight="700" fontFamily="system-ui">{now.getDate()}</text>
+              </svg>
+              {/* Digital time + button overlay */}
+              <div style={{ position: "absolute", bottom: 30, left: "50%", transform: "translateX(-50%)", textAlign: "center" }}>
+                {outsideNoCheckin && dayState !== "after" && (
+                  <div style={{ fontSize: 9, fontWeight: 800, color: "#FF6B6B", marginBottom: 2 }}>لم تقم بتسجيل الحضور</div>
+                )}
+                {outsideNoCheckin && gpsDist && (
+                  <div style={{ fontSize: 8, color: "rgba(255,255,255,.4)", marginBottom: 2 }}>{"خارج منطقة العمل (" + gpsDist + " م)"}</div>
+                )}
+                <div style={{ fontSize: 14, fontWeight: 700, color: "#e8d5a3", fontFamily: "'Times New Roman',serif", letterSpacing: 2 }}>
+                  {time}<span style={{ fontSize: 9, opacity: .4 }}>:{sec}</span> <span style={{ fontSize: 9, opacity: .5 }}>{ampm}</span>
+                </div>
+              </div>
+            </div>
+          )}
+          {/* Checkin button — below clock */}
+          {!showChallenge && challengeAnswer === null && btnAction && (
+            <button onClick={function(){ if(!loading) onCheckin(btnAction, btnLabel); }} disabled={loading} style={{ display: "block", margin: "8px auto 0", padding: "10px 32px", borderRadius: 14, background: "rgba(255,255,255,.15)", border: "1px solid rgba(255,255,255,.2)", color: "#fff", fontSize: 14, fontWeight: 800, fontFamily: "'Cairo',sans-serif", cursor: "pointer", backdropFilter: "blur(10px)" }}>
+              {loading ? "⏳" : btnText}
+            </button>
+          )}
+          {!showChallenge && challengeAnswer === null && !btnAction && (
+            <div style={{ textAlign: "center", margin: "8px auto 0", fontSize: 12, color: "rgba(255,255,255,.5)", fontWeight: 700 }}>{btnText}</div>
+          )}
         </div>
       </div>
 
@@ -908,16 +972,6 @@ function HomePage({ user, branch, now, todayAtt, allAtt, gps, gpsDist, streak, l
         {dayState === "before" && !showChallenge && challengeAnswer === null && challengeDoneToday && (
           <div style={{ textAlign: "center", padding: "8px 0 12px", fontSize: 12, color: C.green, fontWeight: 700 }}>{"✓ أجبت على تحدي اليوم — " + MASCOT.idle}</div>
         )}
-
-        <div style={S.card} className="basma-fadein-d1">
-          <div style={S.cardTitle}>نقاط البصمة</div>
-          <div style={S.cpRow}>
-            <Checkpoint icon="☀️" label="حضور" time={cpTime("checkin")} done={checkpoints.checkin} />
-            <Checkpoint icon="☕" label="استراحة" time={cpTime("break_start")} done={checkpoints.breakStart} />
-            <Checkpoint icon="🔄" label="عودة" time={cpTime("break_end")} done={checkpoints.breakEnd} />
-            <Checkpoint icon="🌙" label="انصراف" time={cpTime("checkout")} done={checkpoints.checkout} />
-          </div>
-        </div>
 
         {checkpoints.checkin && (
           <WorkHoursCard todayAtt={todayAtt} now={now} branch={branch} dayState={dayState} />
