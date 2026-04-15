@@ -19,7 +19,7 @@ const VER = APP_CONFIG.VER;
 
 /* ── Colors ── */
 const LIGHT = {
-  hdr1: "#1a3a6e", hdr2: "#2b5ea7", hdr3: "#3a7bd5",
+  hdr1: "#0f2847", hdr2: "#1a3a6e", hdr3: "#2b5ea7",
   green: "#2d9f6f", greenDark: "#27ae60",
   orange: "#e67e22", orangeDark: "#d35400",
   red: "#e74c3c", redDark: "#c0392b",
@@ -55,6 +55,11 @@ if (typeof document !== "undefined" && !document.getElementById("basma-css")) {
     ".basma-slideup{animation:slideUp .35s ease both}",
     ".basma-slidedown{animation:slideDown .3s ease both}",
     ".basma-pulse{animation:pulse 1.5s ease infinite}",
+    ".basma-flip-container{perspective:600px;width:100%}",
+    ".basma-flip-inner{position:relative;width:100%;transition:transform .6s;transform-style:preserve-3d}",
+    ".basma-flip-inner.flipped{transform:rotateY(180deg)}",
+    ".basma-flip-front,.basma-flip-back{backface-visibility:hidden;width:100%}",
+    ".basma-flip-back{transform:rotateY(180deg);position:absolute;top:0;left:0;right:0}",
     "input::placeholder{color:rgba(255,255,255,.4)!important}",
     "button:active{transform:scale(.96)!important}",
   ].join("\n");
@@ -757,6 +762,7 @@ function HomePage({ user, branch, now, todayAtt, allAtt, gps, gpsDist, streak, l
   // Challenge state — inside the circle
   var [challengeQ] = useState(function() { return CHALLENGES[Math.floor(Math.random() * CHALLENGES.length)]; });
   var [challengeAnswer, setChallengeAnswer] = useState(null); // null = not answered, true = correct, false = wrong
+  var [kadwarFlip, setKadwarFlip] = useState(false);
   var challengeDoneToday = localStorage.getItem("basma_challenge_" + todayStr()) === "1";
   var showChallenge = dayState === "before" && !challengeDoneToday && challengeAnswer === null;
 
@@ -770,7 +776,7 @@ function HomePage({ user, branch, now, todayAtt, allAtt, gps, gpsDist, streak, l
     }
   }
 
-  const SIZE = 240, STROKE = 10, R = (SIZE - STROKE) / 2, CIRC = 2 * Math.PI * R;
+  const SIZE = 270, STROKE = 10, R = (SIZE - STROKE) / 2, CIRC = 2 * Math.PI * R;
   let pct = dayState === "before" ? 5 : dayState === "after" ? 100 : 50;
   if (branch && dayState === "during") {
     const mins = now.getHours() * 60 + now.getMinutes();
@@ -909,10 +915,24 @@ function HomePage({ user, branch, now, todayAtt, allAtt, gps, gpsDist, streak, l
           <button onClick={onLeave} style={{ flex: 1, padding: "10px 6px", borderRadius: 12, background: "rgba(255,255,255,.1)", border: "1px solid rgba(255,255,255,.15)", display: "flex", alignItems: "center", justifyContent: "center", gap: 5, cursor: "pointer" }}><span style={{ fontSize: 14 }}>📝</span><span style={{ fontSize: 11, fontWeight: 700, color: "rgba(255,255,255,.8)" }}>إجازة</span></button>
           <button onClick={onPermission} style={{ flex: 1, padding: "10px 6px", borderRadius: 12, background: "rgba(255,255,255,.1)", border: "1px solid rgba(255,255,255,.15)", display: "flex", alignItems: "center", justifyContent: "center", gap: 5, cursor: "pointer" }}><span style={{ fontSize: 14 }}>🙋</span><span style={{ fontSize: 11, fontWeight: 700, color: "rgba(255,255,255,.8)" }}>إذن</span></button>
         </div>
-        <div style={{ display: "flex", gap: 6 }}>
-          <KadwarBtn icon="💬" label="تواصل" count={kadwarNotifs.tasks} />
-          <KadwarBtn icon="📝" label="اختبار" count={kadwarNotifs.exams} />
-          <KadwarBtn icon="👤" label="حسابي" count={kadwarNotifs.alerts} />
+        <div className="basma-flip-container">
+          <div className={"basma-flip-inner" + (kadwarFlip ? " flipped" : "")} style={{ minHeight: 44 }}>
+            {/* Front — Gold button */}
+            <div className="basma-flip-front">
+              <button onClick={function(){ setKadwarFlip(true); }} style={{ width: "100%", padding: "12px 16px", borderRadius: 14, background: "linear-gradient(135deg, #c9a84c, #e8d5a3, #c9a84c)", border: "none", color: "#1a1a1a", fontSize: 13, fontWeight: 800, fontFamily: "'Cairo',sans-serif", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", gap: 8, boxShadow: "0 4px 15px rgba(201,168,76,.3)" }}>
+                <span style={{ fontSize: 16 }}>🏛️</span>
+                الدخول إلى منصة كوادر
+              </button>
+            </div>
+            {/* Back — 3 buttons */}
+            <div className="basma-flip-back">
+              <div style={{ display: "flex", gap: 6 }}>
+                <KadwarBtn icon="💬" label="تواصل" count={kadwarNotifs.tasks} />
+                <KadwarBtn icon="📝" label="اختبار" count={kadwarNotifs.exams} />
+                <KadwarBtn icon="👤" label="حسابي" count={kadwarNotifs.alerts} />
+              </div>
+            </div>
+          </div>
         </div>
       </div>
     </div>
@@ -1022,7 +1042,7 @@ function ReportPage({ user, allAtt, todayAtt, branch, isOffDay, myLeaves, allEmp
         </div>
 
         <div style={{ display: "flex", justifyContent: "center", marginBottom: 14 }} className="basma-fadein-d1">
-          <div style={{ background: "#fff", padding: "8px 18px", borderRadius: 12, fontSize: 12, fontWeight: 700, color: C.blue, boxShadow: "0 2px 8px rgba(0,0,0,.06)" }}>
+          <div style={{ background: C.card, padding: "8px 18px", borderRadius: 12, fontSize: 12, fontWeight: 700, color: C.blue, boxShadow: "0 2px 8px rgba(0,0,0,.06)" }}>
             {"1 " + monthName + " — " + lastDay + " " + monthName + " ▾"}
           </div>
         </div>
@@ -1190,7 +1210,7 @@ function ProfilePage({ user, branch, onLogout, onTicket, myTickets, darkMode, to
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "10px 0", borderBottom: "1px solid " + C.bg }}>
             <span style={{ fontSize: 13, fontWeight: 600 }}>🌙 الوضع الليلي</span>
             <div onClick={toggleDark} style={{ width: 44, height: 24, borderRadius: 12, background: darkMode ? C.blue : "#ddd", position: "relative", cursor: "pointer", transition: "background .3s" }}>
-              <div style={{ width: 18, height: 18, borderRadius: 9, background: "#fff", position: "absolute", top: 3, transition: "all .3s", left: darkMode ? 3 : undefined, right: darkMode ? undefined : 3, boxShadow: "0 1px 3px rgba(0,0,0,.2)" }} />
+              <div style={{ width: 18, height: 18, borderRadius: 9, background: C.card, position: "absolute", top: 3, transition: "all .3s", left: darkMode ? 3 : undefined, right: darkMode ? undefined : 3, boxShadow: "0 1px 3px rgba(0,0,0,.2)" }} />
             </div>
           </div>
           <ToggleRow label="📞 تذكير بالحضور" storeKey="remind_in" border={true} />
@@ -1270,7 +1290,7 @@ function ProfilePage({ user, branch, onLogout, onTicket, myTickets, darkMode, to
         <button onClick={onLogout} style={{ width: "100%", padding: 14, borderRadius: 16, border: "2px solid " + C.red, background: "transparent", color: C.red, fontSize: 15, fontWeight: 800, cursor: "pointer", fontFamily: "'Cairo',sans-serif" }}>
           🚪 تسجيل خروج
         </button>
-        <div style={{ textAlign: "center", marginTop: 16, marginBottom: 12, padding: 12, background: "#fff", borderRadius: 16 }}>
+        <div style={{ textAlign: "center", marginTop: 16, marginBottom: 12, padding: 12, background: C.card, borderRadius: 16 }}>
           <div style={{ fontSize: 20, marginBottom: 4 }}>🕐</div>
           <div style={{ fontSize: 13, fontWeight: 800, fontFamily: "'Cairo',sans-serif" }}>بصمة HMA</div>
           <div style={{ fontSize: 10, color: C.sub, marginTop: 2 }}>نظام الحضور والانصراف الذكي</div>
@@ -1318,7 +1338,7 @@ function BenefitsPage({ user }) {
             var active = filter === cat;
             var catLabels = { all: "الكل", "مطاعم": "🍔 مطاعم", "خدمات": "🔧 خدمات", "رياضة": "💪 رياضة", "تسوق": "🛍 تسوق", "سفر": "✈️ سفر", "رمضان": "🌙 رمضان" };
             return (
-              <button key={cat} onClick={function(){ setFilter(cat); }} style={{ padding: "6px 14px", borderRadius: 10, background: active ? C.blue : C.card, color: active ? "#fff" : C.sub, fontSize: 10, fontWeight: 700, border: active ? "none" : "1px solid rgba(0,0,0,.06)", cursor: "pointer", whiteSpace: "nowrap" }}>
+              <button key={cat} onClick={function(){ setFilter(cat); }} style={{ padding: "6px 14px", borderRadius: 10, background: active ? C.blue : C.card, color: active ? "#fff" : C.sub, fontSize: 10, fontWeight: 700, border: active ? "none" : "1px solid " + C.bg, cursor: "pointer", whiteSpace: "nowrap" }}>
                 {catLabels[cat] || cat}
               </button>
             );
@@ -1332,7 +1352,7 @@ function BenefitsPage({ user }) {
             var canAfford = (user.points || 0) >= coupon.pts;
             var tierName = MEMBERSHIP[coupon.minTier] ? MEMBERSHIP[coupon.minTier].name.replace("عضوية ","") : "فعّال";
             return (
-              <div key={coupon.id} style={{ display: "flex", alignItems: "center", gap: 12, padding: 14, borderRadius: 16, background: C.card, border: available ? "1.5px solid " + C.green + "30" : "1px solid rgba(0,0,0,.06)", opacity: available ? 1 : 0.5, boxShadow: "0 2px 8px rgba(0,0,0,.04)" }}>
+              <div key={coupon.id} style={{ display: "flex", alignItems: "center", gap: 12, padding: 16, borderRadius: 16, background: C.card, border: available ? "1.5px solid " + C.green + "30" : "1px solid " + C.bg, minHeight: 70, opacity: available ? 1 : 0.5, boxShadow: "0 2px 8px rgba(0,0,0,.04)" }}>
                 <div style={{ width: 44, height: 44, borderRadius: 14, background: available ? C.green + "12" : "rgba(0,0,0,.04)", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 22 }}>{coupon.icon}</div>
                 <div style={{ flex: 1 }}>
                   <div style={{ fontSize: 13, fontWeight: 700, color: C.text }}>{coupon.brand}</div>
@@ -1405,7 +1425,7 @@ function ConfirmModal({ label, onConfirm, onCancel }) {
         <div style={{ fontSize: 16, fontWeight: 800, fontFamily: "'Cairo',sans-serif", textAlign: "center", marginBottom: 6 }}>{"تأكيد " + label}</div>
         <div style={{ fontSize: 12, color: C.sub, textAlign: "center", marginBottom: 20 }}>{"هل تريد " + label + " الآن؟"}</div>
         <div style={{ display: "flex", gap: 8 }}>
-          <button onClick={onCancel} style={{ flex: 1, padding: 12, borderRadius: 14, border: "2px solid #eee", background: "#fff", color: C.sub, fontSize: 14, fontWeight: 700, cursor: "pointer", fontFamily: "'Cairo',sans-serif" }}>إلغاء</button>
+          <button onClick={onCancel} style={{ flex: 1, padding: 12, borderRadius: 14, border: "2px solid " + C.bg, background: C.card, color: C.sub, fontSize: 14, fontWeight: 700, cursor: "pointer", fontFamily: "'Cairo',sans-serif" }}>إلغاء</button>
           <button onClick={onConfirm} style={{ flex: 1, padding: 12, borderRadius: 14, border: "none", background: "linear-gradient(135deg,"+C.blue+","+C.blueBright+")", color: "#fff", fontSize: 14, fontWeight: 700, cursor: "pointer", fontFamily: "'Cairo',sans-serif" }}>تأكيد ✓</button>
         </div>
       </div>
@@ -1571,7 +1591,7 @@ function FaceModal({ empId, onVerified, onSkip, onCancel }) {
 
         {status === "error" && !msg.includes("كاميرا") && (
           <div style={{ display: "flex", gap: 8 }}>
-            <button onClick={handleClose} style={{ flex: 1, padding: 12, borderRadius: 14, border: "2px solid #eee", background: "#fff", color: C.sub, fontSize: 13, fontWeight: 700, cursor: "pointer" }}>إلغاء</button>
+            <button onClick={handleClose} style={{ flex: 1, padding: 12, borderRadius: 14, border: "2px solid " + C.bg, background: C.card, color: C.sub, fontSize: 13, fontWeight: 700, cursor: "pointer" }}>إلغاء</button>
             <button onClick={function(){ setStatus("ready"); setMsg("وجّه وجهك ثم اضغط التقاط"); }} style={{ flex: 1, padding: 12, borderRadius: 14, border: "none", background: "linear-gradient(135deg,"+C.blue+","+C.blueBright+")", color: "#fff", fontSize: 13, fontWeight: 700, cursor: "pointer" }}>إعادة المحاولة</button>
           </div>
         )}
@@ -1584,13 +1604,13 @@ function FaceModal({ empId, onVerified, onSkip, onCancel }) {
         )}
         {status === "ready" && (
           <div style={{ display: "flex", gap: 8 }}>
-            <button onClick={handleClose} style={{ flex: 1, padding: 12, borderRadius: 14, border: "2px solid #eee", background: "#fff", color: C.sub, fontSize: 13, fontWeight: 700, cursor: "pointer" }}>إلغاء</button>
+            <button onClick={handleClose} style={{ flex: 1, padding: 12, borderRadius: 14, border: "2px solid " + C.bg, background: C.card, color: C.sub, fontSize: 13, fontWeight: 700, cursor: "pointer" }}>إلغاء</button>
             <button onClick={capture} style={{ flex: 1, padding: 12, borderRadius: 14, border: "none", background: "linear-gradient(135deg,"+C.green+","+C.greenDark+")", color: "#fff", fontSize: 13, fontWeight: 700, cursor: "pointer" }}>📸 التقاط</button>
           </div>
         )}
         {status === "mismatch" && (
           <div style={{ display: "flex", gap: 8 }}>
-            <button onClick={handleClose} style={{ flex: 1, padding: 12, borderRadius: 14, border: "2px solid #eee", background: "#fff", color: C.sub, fontSize: 13, fontWeight: 700, cursor: "pointer" }}>إلغاء</button>
+            <button onClick={handleClose} style={{ flex: 1, padding: 12, borderRadius: 14, border: "2px solid " + C.bg, background: C.card, color: C.sub, fontSize: 13, fontWeight: 700, cursor: "pointer" }}>إلغاء</button>
             <button onClick={function(){ if (stream) stream.getTracks().forEach(function(t){ t.stop(); }); onSkip(); }} style={{ flex: 1, padding: 12, borderRadius: 14, border: "none", background: C.orange, color: "#fff", fontSize: 13, fontWeight: 700, cursor: "pointer" }}>متابعة بدون تحقق</button>
           </div>
         )}
@@ -1736,13 +1756,13 @@ function PreAbsenceModal({ allEmps, user, onClose, onSubmit }) {
 
   return (
     <div style={S.overlay} onClick={onClose}>
-      <div className="basma-slideup" style={{ ...S.modal, maxWidth: 380 }} onClick={function(e){ e.stopPropagation(); }}>
+      <div className="basma-slideup" style={{ ...S.modal, maxWidth: 380, background: C.card }} onClick={function(e){ e.stopPropagation(); }}>
         <div style={{ fontSize: 16, fontWeight: 800, fontFamily: "'Cairo',sans-serif", textAlign: "center", marginBottom: 4 }}>📋 إفادة مسبقة بالغياب</div>
         <div style={{ fontSize: 10, color: C.sub, textAlign: "center", marginBottom: 14 }}>{"الموظف لن يحضر غداً: " + tomorrowStr}</div>
 
         <div style={{ marginBottom: 10 }}>
           <div style={{ fontSize: 10, color: C.sub, fontWeight: 600, marginBottom: 4 }}>اختر الموظف</div>
-          <select value={empId} onChange={function(e){ setEmpId(e.target.value); }} style={{ width: "100%", padding: 10, borderRadius: 10, border: "1px solid #eee", fontSize: 13, fontFamily: "'Tajawal',sans-serif", background: "#fff" }}>
+          <select value={empId} onChange={function(e){ setEmpId(e.target.value); }} style={{ width: "100%", padding: 10, borderRadius: 10, border: "1px solid " + C.bg, fontSize: 13, fontFamily: "'Tajawal',sans-serif", background: C.card, color: C.text }}>
             <option value="">— اختر —</option>
             {managed.map(function(e) { return React.createElement("option", { key: e.id, value: e.id }, e.name + " (" + e.id + ")"); })}
           </select>
@@ -1750,7 +1770,7 @@ function PreAbsenceModal({ allEmps, user, onClose, onSubmit }) {
 
         <div style={{ marginBottom: 10 }}>
           <div style={{ fontSize: 10, color: C.sub, fontWeight: 600, marginBottom: 4 }}>السبب</div>
-          <textarea value={reason} onChange={function(e){ setReason(e.target.value); }} placeholder="سبب الغياب..." rows={2} style={{ width: "100%", padding: 10, borderRadius: 10, border: "1px solid #eee", fontSize: 13, fontFamily: "'Tajawal',sans-serif", resize: "none" }} />
+          <textarea value={reason} onChange={function(e){ setReason(e.target.value); }} placeholder="سبب الغياب..." rows={2} style={{ width: "100%", padding: 10, borderRadius: 10, border: "1px solid " + C.bg, fontSize: 13, fontFamily: "'Tajawal',sans-serif", resize: "none", background: C.card, color: C.text }} />
         </div>
 
         <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 14, padding: "8px 0" }}>
@@ -1765,7 +1785,7 @@ function PreAbsenceModal({ allEmps, user, onClose, onSubmit }) {
         </div>
 
         <div style={{ display: "flex", gap: 8 }}>
-          <button onClick={onClose} style={{ flex: 1, padding: 12, borderRadius: 14, border: "2px solid #eee", background: "#fff", color: C.sub, fontSize: 14, fontWeight: 700, cursor: "pointer" }}>إلغاء</button>
+          <button onClick={onClose} style={{ flex: 1, padding: 12, borderRadius: 14, border: "2px solid " + C.bg, background: C.card, color: C.sub, fontSize: 14, fontWeight: 700, cursor: "pointer" }}>إلغاء</button>
           <button onClick={function(){ if(empId) onSubmit({ empId: empId, date: tomorrowStr, reason: reason, asLeave: asLeave }); }} disabled={!empId} style={{ flex: 1, padding: 12, borderRadius: 14, border: "none", background: empId ? "linear-gradient(135deg,"+C.orange+","+C.orangeDark+")" : "#eee", color: empId ? "#fff" : "#aaa", fontSize: 14, fontWeight: 700, cursor: empId ? "pointer" : "default" }}>
             تأكيد الإفادة
           </button>
@@ -1788,12 +1808,12 @@ function ManualAttModal({ allEmps, user, onClose, onSubmit }) {
 
   return (
     <div style={S.overlay} onClick={onClose}>
-      <div className="basma-slideup" style={{ ...S.modal, maxWidth: 380 }} onClick={function(e){ e.stopPropagation(); }}>
+      <div className="basma-slideup" style={{ ...S.modal, maxWidth: 380, background: C.card }} onClick={function(e){ e.stopPropagation(); }}>
         <div style={{ fontSize: 16, fontWeight: 800, fontFamily: "'Cairo',sans-serif", textAlign: "center", marginBottom: 14 }}>✏️ تحضير يدوي</div>
 
         <div style={{ marginBottom: 10 }}>
           <div style={{ fontSize: 10, color: C.sub, fontWeight: 600, marginBottom: 4 }}>الموظف</div>
-          <select value={empId} onChange={function(e){ setEmpId(e.target.value); }} style={{ width: "100%", padding: 10, borderRadius: 10, border: "1px solid #eee", fontSize: 13, fontFamily: "'Tajawal',sans-serif", background: "#fff" }}>
+          <select value={empId} onChange={function(e){ setEmpId(e.target.value); }} style={{ width: "100%", padding: 10, borderRadius: 10, border: "1px solid " + C.bg, fontSize: 13, fontFamily: "'Tajawal',sans-serif", background: C.card, color: C.text }}>
             <option value="">— اختر —</option>
             {(allEmps || []).map(function(e) { return React.createElement("option", { key: e.id, value: e.id }, e.name + " (" + e.id + ")"); })}
           </select>
@@ -1812,7 +1832,7 @@ function ManualAttModal({ allEmps, user, onClose, onSubmit }) {
 
         <div style={{ marginBottom: 14 }}>
           <div style={{ fontSize: 10, color: C.sub, fontWeight: 600, marginBottom: 4 }}>التاريخ</div>
-          <input type="date" value={date} onChange={function(e){ setDate(e.target.value); }} style={{ width: "100%", padding: 10, borderRadius: 10, border: "1px solid #eee", fontSize: 13, fontFamily: "'Tajawal',sans-serif" }} />
+          <input type="date" value={date} onChange={function(e){ setDate(e.target.value); }} style={{ width: "100%", padding: 10, borderRadius: 10, border: "1px solid " + C.bg, fontSize: 13, fontFamily: "'Tajawal',sans-serif" }} />
         </div>
 
         <div style={{ fontSize: 9, color: C.blue, marginBottom: 12, padding: 8, borderRadius: 8, background: C.blue + "08" }}>
@@ -1820,7 +1840,7 @@ function ManualAttModal({ allEmps, user, onClose, onSubmit }) {
         </div>
 
         <div style={{ display: "flex", gap: 8 }}>
-          <button onClick={onClose} style={{ flex: 1, padding: 12, borderRadius: 14, border: "2px solid #eee", background: "#fff", color: C.sub, fontSize: 14, fontWeight: 700, cursor: "pointer" }}>إلغاء</button>
+          <button onClick={onClose} style={{ flex: 1, padding: 12, borderRadius: 14, border: "2px solid " + C.bg, background: C.card, color: C.sub, fontSize: 14, fontWeight: 700, cursor: "pointer" }}>إلغاء</button>
           <button onClick={function(){ if(empId) onSubmit({ empId: empId, type: type, date: date }); }} disabled={!empId} style={{ flex: 1, padding: 12, borderRadius: 14, border: "none", background: empId ? "linear-gradient(135deg,"+C.blue+","+C.blueBright+")" : "#eee", color: empId ? "#fff" : "#aaa", fontSize: 14, fontWeight: 700, cursor: empId ? "pointer" : "default" }}>
             تسجيل ✓
           </button>
@@ -1845,7 +1865,7 @@ function PermissionModal({ user, branch, onClose, onSubmit }) {
 
   return (
     <div style={S.overlay} onClick={onClose}>
-      <div className="basma-slideup" style={{ ...S.modal, maxWidth: 380 }} onClick={function(e){ e.stopPropagation(); }}>
+      <div className="basma-slideup" style={{ ...S.modal, maxWidth: 380, background: C.card }} onClick={function(e){ e.stopPropagation(); }}>
         <div style={{ fontSize: 16, fontWeight: 800, fontFamily: "'Cairo',sans-serif", textAlign: "center", marginBottom: 14 }}>🙋 طلب إذن</div>
 
         <div style={{ display: "flex", gap: 4, marginBottom: 12 }}>
@@ -1863,12 +1883,12 @@ function PermissionModal({ user, branch, onClose, onSubmit }) {
           <div style={{ fontSize: 10, color: C.sub, fontWeight: 600, marginBottom: 4 }}>
             {type === "early_leave" ? "وقت الانصراف المطلوب" : type === "late_arrival" ? "وقت الحضور المتوقع" : "مدة الإذن (بالدقائق)"}
           </div>
-          <input type="time" value={time} onChange={function(e){ setTime(e.target.value); }} style={{ width: "100%", padding: 10, borderRadius: 10, border: "1px solid #eee", fontSize: 13, fontFamily: "'Tajawal',sans-serif" }} />
+          <input type="time" value={time} onChange={function(e){ setTime(e.target.value); }} style={{ width: "100%", padding: 10, borderRadius: 10, border: "1px solid " + C.bg, fontSize: 13, fontFamily: "'Tajawal',sans-serif" }} />
         </div>
 
         <div style={{ marginBottom: 14 }}>
           <div style={{ fontSize: 10, color: C.sub, fontWeight: 600, marginBottom: 4 }}>السبب</div>
-          <textarea value={reason} onChange={function(e){ setReason(e.target.value); }} placeholder="سبب الإذن..." rows={2} style={{ width: "100%", padding: 10, borderRadius: 10, border: "1px solid #eee", fontSize: 13, fontFamily: "'Tajawal',sans-serif", resize: "none" }} />
+          <textarea value={reason} onChange={function(e){ setReason(e.target.value); }} placeholder="سبب الإذن..." rows={2} style={{ width: "100%", padding: 10, borderRadius: 10, border: "1px solid " + C.bg, fontSize: 13, fontFamily: "'Tajawal',sans-serif", resize: "none", background: C.card, color: C.text }} />
         </div>
 
         <div style={{ fontSize: 9, color: C.sub, marginBottom: 12, padding: 8, borderRadius: 8, background: C.blue + "08" }}>
@@ -1876,7 +1896,7 @@ function PermissionModal({ user, branch, onClose, onSubmit }) {
         </div>
 
         <div style={{ display: "flex", gap: 8 }}>
-          <button onClick={onClose} style={{ flex: 1, padding: 12, borderRadius: 14, border: "2px solid #eee", background: "#fff", color: C.sub, fontSize: 14, fontWeight: 700, cursor: "pointer" }}>إلغاء</button>
+          <button onClick={onClose} style={{ flex: 1, padding: 12, borderRadius: 14, border: "2px solid " + C.bg, background: C.card, color: C.sub, fontSize: 14, fontWeight: 700, cursor: "pointer" }}>إلغاء</button>
           <button onClick={function(){ if(time && reason) onSubmit({ type: type, time: time, reason: reason }); }} disabled={!time || !reason} style={{ flex: 1, padding: 12, borderRadius: 14, border: "none", background: time && reason ? "linear-gradient(135deg,"+C.blue+","+C.blueBright+")" : "#eee", color: time && reason ? "#fff" : "#aaa", fontSize: 14, fontWeight: 700, cursor: time && reason ? "pointer" : "default" }}>
             إرسال الطلب
           </button>
@@ -1911,7 +1931,7 @@ function LeaveModal({ user, onClose, onSubmit }) {
 
   return (
     <div style={S.overlay} onClick={onClose}>
-      <div className="basma-slideup" style={{ ...S.modal, maxWidth: 380 }} onClick={function(e){ e.stopPropagation(); }}>
+      <div className="basma-slideup" style={{ ...S.modal, maxWidth: 380, background: C.card }} onClick={function(e){ e.stopPropagation(); }}>
         <div style={{ fontSize: 16, fontWeight: 800, fontFamily: "'Cairo',sans-serif", textAlign: "center", marginBottom: 16 }}>📝 طلب إجازة</div>
 
         <div style={{ display: "flex", gap: 6, marginBottom: 14 }}>
@@ -1929,21 +1949,21 @@ function LeaveModal({ user, onClose, onSubmit }) {
         <div style={{ display: "flex", gap: 8, marginBottom: 10 }}>
           <div style={{ flex: 1 }}>
             <div style={{ fontSize: 10, color: C.sub, fontWeight: 600, marginBottom: 4 }}>من</div>
-            <input type="date" value={from} onChange={function(e){ setFrom(e.target.value); }} style={{ width: "100%", padding: 10, borderRadius: 10, border: "1px solid #eee", fontSize: 13, fontFamily: "'Tajawal',sans-serif" }} />
+            <input type="date" value={from} onChange={function(e){ setFrom(e.target.value); }} style={{ width: "100%", padding: 10, borderRadius: 10, border: "1px solid " + C.bg, fontSize: 13, fontFamily: "'Tajawal',sans-serif" }} />
           </div>
           <div style={{ flex: 1 }}>
             <div style={{ fontSize: 10, color: C.sub, fontWeight: 600, marginBottom: 4 }}>إلى</div>
-            <input type="date" value={to} onChange={function(e){ setTo(e.target.value); }} style={{ width: "100%", padding: 10, borderRadius: 10, border: "1px solid #eee", fontSize: 13, fontFamily: "'Tajawal',sans-serif" }} />
+            <input type="date" value={to} onChange={function(e){ setTo(e.target.value); }} style={{ width: "100%", padding: 10, borderRadius: 10, border: "1px solid " + C.bg, fontSize: 13, fontFamily: "'Tajawal',sans-serif" }} />
           </div>
         </div>
 
         <div style={{ marginBottom: 14 }}>
           <div style={{ fontSize: 10, color: C.sub, fontWeight: 600, marginBottom: 4 }}>السبب (اختياري)</div>
-          <textarea value={reason} onChange={function(e){ setReason(e.target.value); }} placeholder="اكتب سبب الإجازة..." rows={2} style={{ width: "100%", padding: 10, borderRadius: 10, border: "1px solid #eee", fontSize: 13, fontFamily: "'Tajawal',sans-serif", resize: "none" }} />
+          <textarea value={reason} onChange={function(e){ setReason(e.target.value); }} placeholder="اكتب سبب الإجازة..." rows={2} style={{ width: "100%", padding: 10, borderRadius: 10, border: "1px solid " + C.bg, fontSize: 13, fontFamily: "'Tajawal',sans-serif", resize: "none", background: C.card, color: C.text }} />
         </div>
 
         <div style={{ display: "flex", gap: 8 }}>
-          <button onClick={onClose} style={{ flex: 1, padding: 12, borderRadius: 14, border: "2px solid #eee", background: "#fff", color: C.sub, fontSize: 14, fontWeight: 700, cursor: "pointer" }}>إلغاء</button>
+          <button onClick={onClose} style={{ flex: 1, padding: 12, borderRadius: 14, border: "2px solid " + C.bg, background: C.card, color: C.sub, fontSize: 14, fontWeight: 700, cursor: "pointer" }}>إلغاء</button>
           <button onClick={submit} disabled={submitting} style={{ flex: 1, padding: 12, borderRadius: 14, border: "none", background: "linear-gradient(135deg,"+C.blue+","+C.blueBright+")", color: "#fff", fontSize: 14, fontWeight: 700, cursor: "pointer", opacity: submitting ? .6 : 1 }}>
             {submitting ? "جارِ الإرسال..." : "إرسال الطلب"}
           </button>
@@ -1968,7 +1988,7 @@ function TicketModal({ user, onClose, onSubmit }) {
 
   return (
     <div style={S.overlay} onClick={onClose}>
-      <div className="basma-slideup" style={{ ...S.modal, maxWidth: 380 }} onClick={function(e){ e.stopPropagation(); }}>
+      <div className="basma-slideup" style={{ ...S.modal, maxWidth: 380, background: C.card }} onClick={function(e){ e.stopPropagation(); }}>
         <div style={{ fontSize: 16, fontWeight: 800, fontFamily: "'Cairo',sans-serif", textAlign: "center", marginBottom: 16 }}>🎫 تذكرة دعم</div>
 
         <div style={{ display: "flex", gap: 6, marginBottom: 14 }}>
@@ -1983,15 +2003,15 @@ function TicketModal({ user, onClose, onSubmit }) {
         </div>
 
         <div style={{ marginBottom: 10 }}>
-          <input value={subject} onChange={function(e){ setSubject(e.target.value); }} placeholder="الموضوع" style={{ width: "100%", padding: 12, borderRadius: 10, border: "1px solid #eee", fontSize: 14, fontFamily: "'Tajawal',sans-serif" }} />
+          <input value={subject} onChange={function(e){ setSubject(e.target.value); }} placeholder="الموضوع" style={{ width: "100%", padding: 12, borderRadius: 10, border: "1px solid " + C.bg, fontSize: 14, fontFamily: "'Tajawal',sans-serif" }} />
         </div>
 
         <div style={{ marginBottom: 14 }}>
-          <textarea value={message} onChange={function(e){ setMessage(e.target.value); }} placeholder="اكتب رسالتك هنا..." rows={3} style={{ width: "100%", padding: 12, borderRadius: 10, border: "1px solid #eee", fontSize: 13, fontFamily: "'Tajawal',sans-serif", resize: "none" }} />
+          <textarea value={message} onChange={function(e){ setMessage(e.target.value); }} placeholder="اكتب رسالتك هنا..." rows={3} style={{ width: "100%", padding: 12, borderRadius: 10, border: "1px solid " + C.bg, fontSize: 13, fontFamily: "'Tajawal',sans-serif", resize: "none", background: C.card, color: C.text }} />
         </div>
 
         <div style={{ display: "flex", gap: 8 }}>
-          <button onClick={onClose} style={{ flex: 1, padding: 12, borderRadius: 14, border: "2px solid #eee", background: "#fff", color: C.sub, fontSize: 14, fontWeight: 700, cursor: "pointer" }}>إلغاء</button>
+          <button onClick={onClose} style={{ flex: 1, padding: 12, borderRadius: 14, border: "2px solid " + C.bg, background: C.card, color: C.sub, fontSize: 14, fontWeight: 700, cursor: "pointer" }}>إلغاء</button>
           <button onClick={submit} disabled={submitting || !subject || !message} style={{ flex: 1, padding: 12, borderRadius: 14, border: "none", background: "linear-gradient(135deg,"+C.orange+",#FF8021)", color: "#fff", fontSize: 14, fontWeight: 700, cursor: "pointer", opacity: (submitting || !subject || !message) ? .6 : 1 }}>
             {submitting ? "جارِ الإرسال..." : "إرسال"}
           </button>
@@ -2086,7 +2106,7 @@ function ReportStat({ num, unit, label, bg }) {
 
 function MonthStat({ num, label, color }) {
   return (
-    <div style={{ flex: 1, background: "#fff", padding: "14px 8px", textAlign: "center" }}>
+    <div style={{ flex: 1, background: C.card, padding: "14px 8px", textAlign: "center" }}>
       <div style={{ fontSize: 22, fontWeight: 900, fontFamily: "'Cairo',sans-serif", color: color }}>{num}</div>
       <div style={{ fontSize: 9, color: C.sub, marginTop: 2 }}>{label}</div>
     </div>
@@ -2104,7 +2124,7 @@ function ToggleRow({ label, storeKey, border }) {
     <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "10px 0", borderBottom: border ? "1px solid " + C.bg : "none" }}>
       <span style={{ fontSize: 13, fontWeight: 600 }}>{label}</span>
       <div onClick={toggle} style={{ width: 44, height: 24, borderRadius: 12, background: on ? C.green : "#ddd", position: "relative", cursor: "pointer", transition: "background .3s" }}>
-        <div style={{ width: 18, height: 18, borderRadius: 9, background: "#fff", position: "absolute", top: 3, transition: "all .3s", left: on ? 3 : undefined, right: on ? undefined : 3, boxShadow: "0 1px 3px rgba(0,0,0,.2)" }} />
+        <div style={{ width: 18, height: 18, borderRadius: 9, background: C.card, position: "absolute", top: 3, transition: "all .3s", left: on ? 3 : undefined, right: on ? undefined : 3, boxShadow: "0 1px 3px rgba(0,0,0,.2)" }} />
       </div>
     </div>
   );
@@ -2534,19 +2554,19 @@ function DependentsTab({ user }) {
 
       {adding && (
         <div style={{ padding: 14, borderRadius: 14, background: C.bg, marginBottom: 12 }}>
-          <input value={form.name} onChange={function(e){ setForm({...form, name: e.target.value}); }} placeholder="الاسم الكامل" style={{ width: "100%", padding: 10, borderRadius: 8, border: "1px solid #ddd", fontSize: 13, marginBottom: 6 }} />
+          <input value={form.name} onChange={function(e){ setForm({...form, name: e.target.value}); }} placeholder="الاسم الكامل" style={{ width: "100%", padding: 10, borderRadius: 8, border: "1px solid " + C.bg, fontSize: 13, marginBottom: 6 }} />
           <div style={{ display: "flex", gap: 6, marginBottom: 6 }}>
-            <select value={form.relation} onChange={function(e){ setForm({...form, relation: e.target.value}); }} style={{ flex: 1, padding: 10, borderRadius: 8, border: "1px solid #ddd", fontSize: 12 }}>
+            <select value={form.relation} onChange={function(e){ setForm({...form, relation: e.target.value}); }} style={{ flex: 1, padding: 10, borderRadius: 8, border: "1px solid " + C.bg, fontSize: 12 }}>
               {relations.map(function(r){ return React.createElement("option", { key: r, value: r }, r); })}
             </select>
-            <input type="date" value={form.dob} onChange={function(e){ setForm({...form, dob: e.target.value}); }} style={{ flex: 1, padding: 10, borderRadius: 8, border: "1px solid #ddd", fontSize: 12 }} />
+            <input type="date" value={form.dob} onChange={function(e){ setForm({...form, dob: e.target.value}); }} style={{ flex: 1, padding: 10, borderRadius: 8, border: "1px solid " + C.bg, fontSize: 12 }} />
           </div>
-          <input value={form.idNumber} onChange={function(e){ setForm({...form, idNumber: e.target.value}); }} placeholder="رقم الهوية/الإقامة" style={{ width: "100%", padding: 10, borderRadius: 8, border: "1px solid #ddd", fontSize: 13, marginBottom: 6 }} />
+          <input value={form.idNumber} onChange={function(e){ setForm({...form, idNumber: e.target.value}); }} placeholder="رقم الهوية/الإقامة" style={{ width: "100%", padding: 10, borderRadius: 8, border: "1px solid " + C.bg, fontSize: 13, marginBottom: 6 }} />
           <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 8 }}>
             <input type="checkbox" checked={form.externalInsurance} onChange={function(e){ setForm({...form, externalInsurance: e.target.checked}); }} />
             <span style={{ fontSize: 11, color: C.sub }}>مؤمّن عليه مع جهة أخرى</span>
           </div>
-          {form.externalInsurance && <input value={form.insurerName} onChange={function(e){ setForm({...form, insurerName: e.target.value}); }} placeholder="اسم شركة التأمين" style={{ width: "100%", padding: 10, borderRadius: 8, border: "1px solid #ddd", fontSize: 13, marginBottom: 6 }} />}
+          {form.externalInsurance && <input value={form.insurerName} onChange={function(e){ setForm({...form, insurerName: e.target.value}); }} placeholder="اسم شركة التأمين" style={{ width: "100%", padding: 10, borderRadius: 8, border: "1px solid " + C.bg, fontSize: 13, marginBottom: 6 }} />}
           <button onClick={save} disabled={!form.name} style={{ width: "100%", padding: 10, borderRadius: 10, background: form.name ? C.green : "#ddd", color: "#fff", fontSize: 13, fontWeight: 700, border: "none", cursor: "pointer" }}>حفظ المرافق</button>
         </div>
       )}
@@ -2598,7 +2618,7 @@ function HealthDisclosureTab({ user }) {
         return (
           <div key={i} style={{ marginBottom: 10 }}>
             <div style={{ fontSize: 11, fontWeight: 700, color: C.text, marginBottom: 4 }}>{(i + 1) + ". " + q}</div>
-            <textarea value={answers[i] || ""} onChange={function(e){ updateAnswer(i, e.target.value); }} placeholder="الإجابة..." rows={2} style={{ width: "100%", padding: 8, borderRadius: 8, border: "1px solid #ddd", fontSize: 12, resize: "none" }} />
+            <textarea value={answers[i] || ""} onChange={function(e){ updateAnswer(i, e.target.value); }} placeholder="الإجابة..." rows={2} style={{ width: "100%", padding: 8, borderRadius: 8, border: "1px solid " + C.bg, fontSize: 12, resize: "none" }} />
           </div>
         );
       })}
