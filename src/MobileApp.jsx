@@ -20,23 +20,26 @@ const VER = APP_CONFIG.VER;
 /* ── Colors ── */
 const LIGHT = {
   hdr1: "#0f2847", hdr2: "#1a3a6e", hdr3: "#2b5ea7",
-  green: "#2d9f6f", greenDark: "#27ae60",
-  orange: "#e67e22", orangeDark: "#d35400",
-  red: "#e74c3c", redDark: "#c0392b",
+  green: "#10b981", greenDark: "#059669",
+  orange: "#d4a017", orangeDark: "#b8860b",
+  red: "#E2192C", redDark: "#c0392b",
   blue: "#2b5ea7", blueBright: "#3a7bd5",
   bg: "#f0f2f7", card: "#fff", text: "#1a1a1a", sub: "#888",
-  gold: "#ffd700",
+  gold: "#c9a84c", goldLight: "#e8d5a3", goldDark: "#8b6914",
+  cardBorder: "rgba(0,0,0,.08)",
 };
 const DARK = {
-  hdr1: "#0d1b33", hdr2: "#162d52", hdr3: "#1e3f6e",
-  green: "#2d9f6f", greenDark: "#27ae60",
-  orange: "#e67e22", orangeDark: "#d35400",
-  red: "#e74c3c", redDark: "#c0392b",
-  blue: "#3a7bd5", blueBright: "#5a9ae6",
-  bg: "#111827", card: "#1e293b", text: "#e2e8f0", sub: "#94a3b8",
-  gold: "#ffd700",
+  hdr1: "#0d2445", hdr2: "#091a38", hdr3: "#071428",
+  green: "#10b981", greenDark: "#059669",
+  orange: "#d4a017", orangeDark: "#b8860b",
+  red: "#E2192C", redDark: "#c0392b",
+  blue: "#2b5ea7", blueBright: "#3a7bd5",
+  bg: "#0e1d35", card: "#142537", text: "#e8edf4", sub: "#7a8fa8",
+  gold: "#c9a84c", goldLight: "#e8d5a3", goldDark: "#8b6914",
+  cardBorder: "#1f3a55",
 };
 var C = LIGHT;
+function CB() { return C.cardBorder || C.bg; }
 
 /* ── Inject Global CSS ── */
 if (typeof document !== "undefined" && !document.getElementById("basma-css")) {
@@ -776,7 +779,7 @@ function HomePage({ user, branch, now, todayAtt, allAtt, gps, gpsDist, streak, l
     }
   }
 
-  const SIZE = 280, STROKE = 10, R = (SIZE - STROKE) / 2, CIRC = 2 * Math.PI * R;
+  const SIZE = 300, STROKE = 10, R = (SIZE - STROKE) / 2, CIRC = 2 * Math.PI * R;
   let pct = dayState === "before" ? 5 : dayState === "after" ? 100 : 50;
   if (branch && dayState === "during") {
     const mins = now.getHours() * 60 + now.getMinutes();
@@ -855,41 +858,58 @@ function HomePage({ user, branch, now, todayAtt, allAtt, gps, gpsDist, streak, l
           <div style={{ position: "relative", width: SIZE, height: SIZE }}>
             <svg width={SIZE} height={SIZE} viewBox={"0 0 " + SIZE + " " + SIZE}>
               <defs>
-                <radialGradient id="lxFace" cx="50%" cy="40%" r="50%"><stop offset="0%" stopColor="rgba(255,255,255,.08)"/><stop offset="100%" stopColor="rgba(0,0,0,.15)"/></radialGradient>
-                <linearGradient id="lxRim" x1="0%" y1="0%" x2="100%" y2="100%"><stop offset="0%" stopColor="#e8d5a3"/><stop offset="50%" stopColor="#c9a84c"/><stop offset="100%" stopColor="#8b6914"/></linearGradient>
-                <filter id="lxSh"><feDropShadow dx="0" dy="1" stdDeviation="2" floodColor="rgba(0,0,0,.4)"/></filter>
+                <radialGradient id="lxFace" cx="50%" cy="45%" r="48%"><stop offset="0%" stopColor="#151c2c"/><stop offset="70%" stopColor="#0a0f1e"/><stop offset="100%" stopColor="#060a12"/></radialGradient>
+                <linearGradient id="lxRim" x1="0%" y1="0%" x2="100%" y2="100%"><stop offset="0%" stopColor="#f5e6b8"/><stop offset="20%" stopColor="#e8d5a3"/><stop offset="50%" stopColor="#c9a84c"/><stop offset="80%" stopColor="#8b6914"/><stop offset="100%" stopColor="#a08430"/></linearGradient>
+                <linearGradient id="lxRim2" x1="0%" y1="100%" x2="100%" y2="0%"><stop offset="0%" stopColor="#8b6914"/><stop offset="50%" stopColor="#c9a84c"/><stop offset="100%" stopColor="#e8d5a3"/></linearGradient>
+                <filter id="lxSh"><feDropShadow dx="0" dy="1" stdDeviation="2" floodColor="rgba(0,0,0,.5)"/></filter>
               </defs>
-              <circle cx={SIZE/2} cy={SIZE/2} r={R+8} fill="none" stroke="url(#lxRim)" strokeWidth={4} />
-              <circle cx={SIZE/2} cy={SIZE/2} r={R+3} fill="none" stroke="#8b6914" strokeWidth={0.5} />
-              <circle cx={SIZE/2} cy={SIZE/2} r={R+1} fill="url(#lxFace)" />
+              {/* Outer bezel — thick gold */}
+              <circle cx={SIZE/2} cy={SIZE/2} r={R+8} fill="none" stroke="url(#lxRim)" strokeWidth={7} />
+              <circle cx={SIZE/2} cy={SIZE/2} r={R+4} fill="none" stroke="#8b6914" strokeWidth={1} opacity={0.6} />
+              <circle cx={SIZE/2} cy={SIZE/2} r={R+1.5} fill="none" stroke="url(#lxRim2)" strokeWidth={0.8} />
+              {/* Face */}
+              <circle cx={SIZE/2} cy={SIZE/2} r={R} fill="url(#lxFace)" />
+              <circle cx={SIZE/2} cy={SIZE/2} r={R-14} fill="none" stroke="rgba(201,168,76,.08)" strokeWidth={0.5} />
+              {/* Work arcs */}
               {(function() {
-                var AR = R - 10;
+                var AR = R - 16;
                 function mkArc(cx,cy,r,s,e) { var a={x:cx+r*Math.cos(e*Math.PI/180),y:cy+r*Math.sin(e*Math.PI/180)}, b={x:cx+r*Math.cos(s*Math.PI/180),y:cy+r*Math.sin(s*Math.PI/180)}; return "M "+a.x+" "+a.y+" A "+r+" "+r+" 0 "+(e-s<=180?"0":"1")+" 0 "+b.x+" "+b.y; }
                 return React.createElement("g", null,
-                  React.createElement("path", { d: mkArc(SIZE/2,SIZE/2,AR,timeToAngle(8,30),timeToAngle(12,30)), fill: "none", stroke: "#2b5ea7", strokeWidth: 5, strokeLinecap: "round", opacity: 0.7 }),
-                  React.createElement("path", { d: mkArc(SIZE/2,SIZE/2,AR,timeToAngle(12,30),timeToAngle(13,0)), fill: "none", stroke: "#c9a84c", strokeWidth: 5, strokeLinecap: "round", opacity: 0.6 }),
-                  React.createElement("path", { d: mkArc(SIZE/2,SIZE/2,AR,timeToAngle(13,0),timeToAngle(17,0)), fill: "none", stroke: "#10b981", strokeWidth: 5, strokeLinecap: "round", opacity: 0.7 }),
-                  CPS.map(function(cp,i) { var a=timeToAngle(cp.h,cp.m)*Math.PI/180; var px=SIZE/2+AR*Math.cos(a),py=SIZE/2+AR*Math.sin(a); var passed=nowMin>=cp.h*60+cp.m; return React.createElement("g",{key:i,transform:"translate("+px+","+py+") rotate(45)"},React.createElement("rect",{x:-3.5,y:-3.5,width:7,height:7,rx:1.5,fill:passed?cp.color:"rgba(201,168,76,.3)",stroke:passed?"#fff":"rgba(201,168,76,.5)",strokeWidth:1})); })
+                  React.createElement("path", { d: mkArc(SIZE/2,SIZE/2,AR,timeToAngle(8,30),timeToAngle(12,30)), fill: "none", stroke: "#2b5ea7", strokeWidth: 6, strokeLinecap: "round", opacity: 0.8 }),
+                  React.createElement("path", { d: mkArc(SIZE/2,SIZE/2,AR,timeToAngle(12,30),timeToAngle(13,0)), fill: "none", stroke: "#d4a017", strokeWidth: 6, strokeLinecap: "round", opacity: 0.7 }),
+                  React.createElement("path", { d: mkArc(SIZE/2,SIZE/2,AR,timeToAngle(13,0),timeToAngle(17,0)), fill: "none", stroke: "#10b981", strokeWidth: 6, strokeLinecap: "round", opacity: 0.8 }),
+                  CPS.map(function(cp,i) { var a=timeToAngle(cp.h,cp.m)*Math.PI/180; var px=SIZE/2+AR*Math.cos(a),py=SIZE/2+AR*Math.sin(a); var passed=nowMin>=cp.h*60+cp.m; return React.createElement("g",{key:i,transform:"translate("+px+","+py+") rotate(45)"},React.createElement("rect",{x:-5,y:-5,width:10,height:10,rx:2,fill:passed?cp.color:"rgba(201,168,76,.3)",stroke:passed?"#fff":"rgba(201,168,76,.6)",strokeWidth:1.5})); })
                 );
               })()}
-              {["XII","I","II","III","IV","V","VI","VII","VIII","IX","X","XI"].map(function(num,i) { var a=(i*30-90)*Math.PI/180; return React.createElement("text",{key:i,x:SIZE/2+(R-24)*Math.cos(a),y:SIZE/2+(R-24)*Math.sin(a),textAnchor:"middle",dominantBaseline:"central",fill:"#e8d5a3",fontSize:i%3===0?13:9,fontWeight:i%3===0?"900":"600",fontFamily:"'Times New Roman',Georgia,serif",opacity:i%3===0?1:0.5},num); })}
-              {[0,1,2,3,4,5,6,7,8,9,10,11].map(function(i) { var a=(i*30-90)*Math.PI/180; return React.createElement("line",{key:i,x1:SIZE/2+(R-2)*Math.cos(a),y1:SIZE/2+(R-2)*Math.sin(a),x2:SIZE/2+(R-2-(i%3===0?12:6))*Math.cos(a),y2:SIZE/2+(R-2-(i%3===0?12:6))*Math.sin(a),stroke:"#c9a84c",strokeWidth:i%3===0?2:1,strokeLinecap:"round"}); })}
-              <text x={SIZE/2} y={SIZE/2-32} textAnchor="middle" fill="#c9a84c" fontSize={7} fontWeight="700" fontFamily="'Times New Roman',serif" letterSpacing="2.5" opacity={0.7}>HMA ENGINEERING</text>
-              <line x1={SIZE/2} y1={SIZE/2} x2={SIZE/2+48*Math.cos(hA*Math.PI/180)} y2={SIZE/2+48*Math.sin(hA*Math.PI/180)} stroke="#e8d5a3" strokeWidth={4.5} strokeLinecap="round" filter="url(#lxSh)" />
-              <line x1={SIZE/2} y1={SIZE/2} x2={SIZE/2+10*Math.cos((hA+180)*Math.PI/180)} y2={SIZE/2+10*Math.sin((hA+180)*Math.PI/180)} stroke="#e8d5a3" strokeWidth={3} strokeLinecap="round" />
-              <line x1={SIZE/2} y1={SIZE/2} x2={SIZE/2+68*Math.cos(mA*Math.PI/180)} y2={SIZE/2+68*Math.sin(mA*Math.PI/180)} stroke="#e8d5a3" strokeWidth={2.5} strokeLinecap="round" filter="url(#lxSh)" />
-              <line x1={SIZE/2} y1={SIZE/2} x2={SIZE/2+14*Math.cos((mA+180)*Math.PI/180)} y2={SIZE/2+14*Math.sin((mA+180)*Math.PI/180)} stroke="#e8d5a3" strokeWidth={2} strokeLinecap="round" />
-              <line x1={SIZE/2} y1={SIZE/2} x2={SIZE/2+76*Math.cos(sA*Math.PI/180)} y2={SIZE/2+76*Math.sin(sA*Math.PI/180)} stroke="#E2192C" strokeWidth={0.8} />
-              <line x1={SIZE/2} y1={SIZE/2} x2={SIZE/2+18*Math.cos((sA+180)*Math.PI/180)} y2={SIZE/2+18*Math.sin((sA+180)*Math.PI/180)} stroke="#E2192C" strokeWidth={1.2} />
-              <circle cx={SIZE/2} cy={SIZE/2} r={5} fill="#c9a84c" stroke="#e8d5a3" strokeWidth={1.5} />
-              <circle cx={SIZE/2} cy={SIZE/2} r={2.5} fill="#e8d5a3" />
-              <rect x={SIZE/2+28} y={SIZE/2-7} width={24} height={14} rx={2.5} fill="rgba(0,0,0,.3)" stroke="rgba(201,168,76,.4)" strokeWidth={0.5} />
-              <text x={SIZE/2+40} y={SIZE/2+1} textAnchor="middle" dominantBaseline="central" fill="#e8d5a3" fontSize={9} fontWeight="700" fontFamily="system-ui">{now.getDate()}</text>
+              {/* Hour ticks */}
+              {[0,1,2,3,4,5,6,7,8,9,10,11].map(function(i) { var a=(i*30-90)*Math.PI/180; var major=i%3===0; return React.createElement("line",{key:i,x1:SIZE/2+(R-4)*Math.cos(a),y1:SIZE/2+(R-4)*Math.sin(a),x2:SIZE/2+(R-4-(major?16:8))*Math.cos(a),y2:SIZE/2+(R-4-(major?16:8))*Math.sin(a),stroke:"#c9a84c",strokeWidth:major?2.5:1.2,strokeLinecap:"round"}); })}
+              {/* Minute ticks */}
+              {Array.from({length:60},function(_,i){if(i%5===0)return null;var a=(i*6-90)*Math.PI/180;return React.createElement("line",{key:i,x1:SIZE/2+(R-4)*Math.cos(a),y1:SIZE/2+(R-4)*Math.sin(a),x2:SIZE/2+(R-8)*Math.cos(a),y2:SIZE/2+(R-8)*Math.sin(a),stroke:"rgba(201,168,76,.25)",strokeWidth:0.5});})}
+              {/* Roman numerals */}
+              {["XII","I","II","III","IV","V","VI","VII","VIII","IX","X","XI"].map(function(num,i) { var a=(i*30-90)*Math.PI/180; var major=i%3===0; return React.createElement("text",{key:i,x:SIZE/2+(R-(major?30:26))*Math.cos(a),y:SIZE/2+(R-(major?30:26))*Math.sin(a),textAnchor:"middle",dominantBaseline:"central",fill:"#e8d5a3",fontSize:major?16:10,fontWeight:major?"900":"600",fontFamily:"'Times New Roman',Georgia,serif",opacity:major?1:0.5},num); })}
+              {/* Brand */}
+              <text x={SIZE/2} y={SIZE/2-44} textAnchor="middle" fill="#c9a84c" fontSize={8} fontWeight="700" fontFamily="'Times New Roman',serif" letterSpacing="3" opacity={0.6}>HMA ENGINEERING</text>
+              <text x={SIZE/2} y={SIZE/2-33} textAnchor="middle" fill="rgba(201,168,76,.4)" fontSize={6} fontFamily="'Times New Roman',serif" letterSpacing="2">ATTENDANCE SYSTEM</text>
+              {/* Hour hand */}
+              <line x1={SIZE/2} y1={SIZE/2} x2={SIZE/2+60*Math.cos(hA*Math.PI/180)} y2={SIZE/2+60*Math.sin(hA*Math.PI/180)} stroke="#e8d5a3" strokeWidth={5.5} strokeLinecap="round" filter="url(#lxSh)" />
+              <line x1={SIZE/2} y1={SIZE/2} x2={SIZE/2+14*Math.cos((hA+180)*Math.PI/180)} y2={SIZE/2+14*Math.sin((hA+180)*Math.PI/180)} stroke="#e8d5a3" strokeWidth={3.5} strokeLinecap="round" />
+              {/* Minute hand */}
+              <line x1={SIZE/2} y1={SIZE/2} x2={SIZE/2+85*Math.cos(mA*Math.PI/180)} y2={SIZE/2+85*Math.sin(mA*Math.PI/180)} stroke="#e8d5a3" strokeWidth={3} strokeLinecap="round" filter="url(#lxSh)" />
+              <line x1={SIZE/2} y1={SIZE/2} x2={SIZE/2+18*Math.cos((mA+180)*Math.PI/180)} y2={SIZE/2+18*Math.sin((mA+180)*Math.PI/180)} stroke="#e8d5a3" strokeWidth={2.5} strokeLinecap="round" />
+              {/* Second hand — red */}
+              <line x1={SIZE/2} y1={SIZE/2} x2={SIZE/2+92*Math.cos(sA*Math.PI/180)} y2={SIZE/2+92*Math.sin(sA*Math.PI/180)} stroke="#E2192C" strokeWidth={1} />
+              <line x1={SIZE/2} y1={SIZE/2} x2={SIZE/2+22*Math.cos((sA+180)*Math.PI/180)} y2={SIZE/2+22*Math.sin((sA+180)*Math.PI/180)} stroke="#E2192C" strokeWidth={1.5} />
+              {/* Center jewel */}
+              <circle cx={SIZE/2} cy={SIZE/2} r={7} fill="#c9a84c" stroke="#e8d5a3" strokeWidth={2} />
+              <circle cx={SIZE/2} cy={SIZE/2} r={3.5} fill="#e8d5a3" />
+              {/* Date window */}
+              <rect x={SIZE/2+34} y={SIZE/2-9} width={30} height={18} rx={3} fill="#080c14" stroke="rgba(201,168,76,.4)" strokeWidth={0.8} />
+              <text x={SIZE/2+49} y={SIZE/2+1} textAnchor="middle" dominantBaseline="central" fill="#e8d5a3" fontSize={11} fontWeight="800" fontFamily="system-ui">{now.getDate()}</text>
             </svg>
             <div style={{ position: "absolute", bottom: 30, left: "50%", transform: "translateX(-50%)", textAlign: "center" }}>
               {outsideNoCheckin && <div style={{ fontSize: 9, fontWeight: 800, color: "#FF6B6B", marginBottom: 2 }}>لم تقم بتسجيل الحضور</div>}
               {outsideNoCheckin && gpsDist && <div style={{ fontSize: 8, color: "rgba(255,255,255,.4)", marginBottom: 2 }}>{"خارج منطقة العمل (" + gpsDist + " م)"}</div>}
-              <div style={{ fontSize: 14, fontWeight: 700, color: "#e8d5a3", fontFamily: "'Times New Roman',serif", letterSpacing: 2 }}>{time}<span style={{ fontSize: 9, opacity: .4 }}>:{sec}</span> <span style={{ fontSize: 9, opacity: .5 }}>{ampm}</span></div>
+              <div style={{ fontSize: 18, fontWeight: 800, color: "#e8d5a3", fontFamily: "'Times New Roman',serif", letterSpacing: 3, textShadow: "0 0 10px rgba(201,168,76,.3)" }}>{time}<span style={{ fontSize: 9, opacity: .4 }}>:{sec}</span> <span style={{ fontSize: 9, opacity: .5 }}>{ampm}</span></div>
             </div>
           </div>
         )}
@@ -2868,7 +2888,7 @@ function buildS() { return {
   gpsRow: { display: "flex", alignItems: "center", gap: 6, padding: "4px 4px 10px" },
   challengeCard: { background: "linear-gradient(135deg,"+C.green+","+C.greenDark+")", borderRadius: 16, padding: 14, marginBottom: 12, textAlign: "center", color: "#fff", cursor: "pointer" },
 
-  card: { background: C.card, borderRadius: 20, padding: 18, marginBottom: 12, boxShadow: "0 2px 12px rgba(0,0,0,.15)" },
+  card: { background: C.card, borderRadius: 20, padding: 18, marginBottom: 12, boxShadow: "0 2px 12px rgba(0,0,0,.15)", border: "1px solid " + (C.cardBorder || C.bg) },
   cardTitle: { fontSize: 15, fontWeight: 800, fontFamily: "'Cairo',sans-serif", marginBottom: 12, display: "flex", justifyContent: "space-between", alignItems: "center", color: C.text },
 
   summaryGrid: { display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 8, textAlign: "center" },
