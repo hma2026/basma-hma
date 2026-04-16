@@ -297,7 +297,10 @@ export default function MobileApp() {
 
 function MobileAppInner() {
   const [user, setUser] = useState(null);
-  const [page, setPage] = useState("home");
+  const [page, setPage] = useState(function(){ return localStorage.getItem("basma_page") || "home"; });
+
+  // Persist page across refresh
+  useEffect(function(){ localStorage.setItem("basma_page", page); }, [page]);
   const [branch, setBranch] = useState(null);
   const [darkMode, setDarkMode] = useState(function(){ return localStorage.getItem("basma_dark") === "1"; });
   const [todayAtt, setTodayAtt] = useState([]);
@@ -1048,129 +1051,159 @@ function ReportPage({ user, allAtt, todayAtt, branch, isOffDay, myLeaves, allEmp
   }
 
   return (
-    <div style={{ flex: 1, paddingBottom: 80 }}>
-      <div style={S.detailHeader}>
-        <div style={{ width: 60 }} />
-        <div style={S.detailTitle}>تقريري</div>
-        <div style={{ width: 60 }} />
+    <div style={{ flex: 1, paddingBottom: 80, background: "linear-gradient(180deg, "+COLORS.bg1+" 0%, "+COLORS.bg2+" 50%, "+COLORS.bg3+" 100%)", minHeight: "100vh" }}>
+      {/* Header */}
+      <div style={{ padding: SPACING.lg, textAlign: "center" }}>
+        <div style={{ ...TYPOGRAPHY.h1, color: COLORS.white, fontFamily: TYPOGRAPHY.fontCairo }}>تقريري</div>
       </div>
-      <div style={{ padding: "16px 16px 0" }}>
 
-        {/* ── Export Buttons (managers only) ── */}
+      <div style={{ padding: "0 " + SPACING.lg + "px", display: "flex", flexDirection: "column", gap: SPACING.md }}>
+
         <ExportButtons user={user} allAtt={allAtt} branch={branch} allEmps={allEmps} />
 
-        {/* ── ملخص اليوم ── */}
-        <div style={S.card} className="basma-fadein">
-          <div style={S.cardTitle}><span>ملخص اليوم</span><span style={{ fontSize: 11, color: C.sub }}>{todayStr()}</span></div>
-          <div style={S.summaryGrid}>
-            <SummaryItem num={todayCheckin ? 1 : 0} label="حاضر" cls="ok" />
-            <SummaryItem num={todayLate ? 1 : 0} label="متأخر" cls="warn" />
-            <SummaryItem num={todayAbsent ? 1 : 0} label="غائب" cls="bad" />
-            <SummaryItem num={0} label="إجازة" cls="info" />
+        {/* ملخص اليوم */}
+        <Card>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: SPACING.md }}>
+            <span style={{ ...TYPOGRAPHY.h3, color: COLORS.textPrimary }}>ملخص اليوم</span>
+            <span style={{ ...TYPOGRAPHY.caption, color: COLORS.textMuted }}>{todayStr()}</span>
+          </div>
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(4,1fr)", gap: SPACING.sm }}>
+            {[
+              { num: todayCheckin ? 1 : 0, label: "حاضر", color: COLORS.success },
+              { num: todayLate ? 1 : 0, label: "متأخر", color: COLORS.warning },
+              { num: todayAbsent ? 1 : 0, label: "غائب", color: COLORS.danger },
+              { num: 0, label: "إجازة", color: COLORS.info },
+            ].map(function(s, i){
+              return <div key={i} style={{ textAlign: "center" }}>
+                <div style={{ fontSize: 24, fontWeight: 900, color: s.color, fontFamily: TYPOGRAPHY.fontCairo }}>{s.num}</div>
+                <div style={{ ...TYPOGRAPHY.tiny, color: COLORS.textMuted, marginTop: 2 }}>{s.label}</div>
+              </div>;
+            })}
+          </div>
+        </Card>
+
+        {/* Period indicator */}
+        <div style={{ textAlign: "center" }}>
+          <div style={{ display: "inline-block", background: COLORS.card, border: "1px solid " + COLORS.cardBorder, padding: SPACING.sm + "px " + SPACING.lg + "px", borderRadius: RADIUS.md, ...TYPOGRAPHY.caption, fontWeight: 700, color: COLORS.goldLight }}>
+            {"1 " + monthName + " — " + lastDay + " " + monthName}
           </div>
         </div>
 
-        <div style={{ display: "flex", justifyContent: "center", marginBottom: 14 }} className="basma-fadein-d1">
-          <div style={{ background: C.card, padding: "8px 18px", borderRadius: 12, fontSize: 12, fontWeight: 700, color: C.blue, boxShadow: "0 2px 8px rgba(0,0,0,.06)" }}>
-            {"1 " + monthName + " — " + lastDay + " " + monthName + " ▾"}
+        {/* Month stats — 3 cards */}
+        <div style={{ display: "flex", gap: SPACING.sm }}>
+          {[
+            { num: presentDays, label: "حاضر", color: COLORS.success },
+            { num: lateDays, label: "متأخر", color: COLORS.warning },
+            { num: absentDays, label: "غائب", color: COLORS.danger },
+          ].map(function(s, i){
+            return <div key={i} style={{ flex: 1, background: COLORS.card, border: "1px solid " + COLORS.cardBorder, borderRadius: RADIUS.lg, padding: SPACING.md, textAlign: "center" }}>
+              <div style={{ fontSize: 22, fontWeight: 900, color: s.color, fontFamily: TYPOGRAPHY.fontCairo }}>{s.num}</div>
+              <div style={{ ...TYPOGRAPHY.tiny, color: COLORS.textMuted }}>يوم · {s.label}</div>
+            </div>;
+          })}
+        </div>
+
+        {/* Monthly stats */}
+        <Card>
+          <div style={{ ...TYPOGRAPHY.h3, color: COLORS.textPrimary, marginBottom: SPACING.md }}>إحصائيات الشهر</div>
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(3,1fr)", gap: SPACING.sm }}>
+            {[
+              { num: attendPct + "%", label: "نسبة الحضور", color: COLORS.success },
+              { num: overtimeHrs, label: "ساعات إضافية", color: COLORS.info },
+              { num: leaveDays, label: "أيام إجازة", color: COLORS.warning },
+            ].map(function(s, i){
+              return <div key={i} style={{ textAlign: "center", padding: SPACING.sm, background: COLORS.bg2, borderRadius: RADIUS.md }}>
+                <div style={{ fontSize: 22, fontWeight: 900, color: s.color, fontFamily: TYPOGRAPHY.fontCairo }}>{s.num}</div>
+                <div style={{ ...TYPOGRAPHY.tiny, color: COLORS.textMuted, marginTop: 2 }}>{s.label}</div>
+              </div>;
+            })}
           </div>
-        </div>
+        </Card>
 
-        <div style={{ display: "flex", gap: 8, marginBottom: 12 }} className="basma-fadein-d1">
-          <ReportStat num={presentDays} unit="يوم" label="حاضر" bg={"linear-gradient(135deg,"+C.green+","+C.greenDark+")"} />
-          <ReportStat num={lateDays} unit="يوم" label="متأخر" bg={"linear-gradient(135deg,"+C.orange+","+C.orangeDark+")"} />
-          <ReportStat num={absentDays} unit="يوم" label="غائب" bg={"linear-gradient(135deg,"+C.red+","+C.redDark+")"} />
-        </div>
-
-        <div style={S.card} className="basma-fadein-d2">
-          <div style={S.cardTitle}>إحصائيات الشهر</div>
-          <div style={{ display: "flex", gap: 1, background: C.bg, borderRadius: 16, overflow: "hidden" }}>
-            <MonthStat num={attendPct + "%"} label="نسبة الحضور" color={C.green} />
-            <MonthStat num={overtimeHrs} label="ساعات إضافية" color={C.blue} />
-            <MonthStat num={leaveDays} label="أيام إجازة" color={C.orange} />
+        {/* Calendar */}
+        <Card>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: SPACING.md }}>
+            <span style={{ ...TYPOGRAPHY.h3, color: COLORS.textPrimary }}>التقويم</span>
+            <span style={{ ...TYPOGRAPHY.caption, color: COLORS.textMuted }}>{monthName + " " + yr}</span>
           </div>
-        </div>
-
-        {/* ── التقويم الشهري ── */}
-        <div style={S.card} className="basma-fadein-d2">
-          <div style={S.cardTitle}><span>التقويم</span><span style={{ fontSize: 11, color: C.sub }}>{monthName + " " + yr}</span></div>
           <div style={{ display: "grid", gridTemplateColumns: "repeat(7, 1fr)", gap: 2, textAlign: "center" }}>
-            {["أحد","اثن","ثلا","أرب","خمي","جمع","سبت"].map(function(d){ return <div key={d} style={{ fontSize: 8, color: C.sub, fontWeight: 700, padding: 4 }}>{d}</div>; })}
+            {["أحد","اثن","ثلا","أرب","خمي","جمع","سبت"].map(function(d){ return <div key={d} style={{ ...TYPOGRAPHY.tiny, color: COLORS.textMuted, padding: 4 }}>{d}</div>; })}
             {calDays.map(function(cd, idx) {
               if (!cd) return <div key={"e"+idx} />;
-              var bg = cd.isToday ? C.blue : cd.hasAtt ? (cd.isLate ? C.orange+"20" : C.green+"20") : "transparent";
-              var color = cd.isToday ? "#fff" : cd.hasAtt ? (cd.isLate ? C.orange : C.green) : "#ccc";
-              var border = cd.isToday ? "none" : cd.hasAtt ? "1px solid " + (cd.isLate ? C.orange+"40" : C.green+"40") : "1px solid #eee";
+              var bg = cd.isToday ? COLORS.gold : cd.hasAtt ? (cd.isLate ? COLORS.warning+"20" : COLORS.success+"20") : "transparent";
+              var color = cd.isToday ? COLORS.textOnGold : cd.hasAtt ? (cd.isLate ? COLORS.warning : COLORS.success) : COLORS.textMuted;
+              var border = cd.isToday ? "none" : cd.hasAtt ? "1px solid " + (cd.isLate ? COLORS.warning+"40" : COLORS.success+"40") : "1px solid " + COLORS.cardBorder;
               return (
-                <div key={cd.day} style={{ width: "100%", aspectRatio: "1", borderRadius: 8, background: bg, border: border, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 11, fontWeight: 700, color: color }}>
+                <div key={cd.day} style={{ width: "100%", aspectRatio: "1", borderRadius: RADIUS.sm, background: bg, border: border, display: "flex", alignItems: "center", justifyContent: "center", ...TYPOGRAPHY.caption, fontWeight: 700, color: color }}>
                   {cd.day}
                 </div>
               );
             })}
           </div>
-          <div style={{ display: "flex", gap: 12, justifyContent: "center", marginTop: 10 }}>
-            <span style={{ fontSize: 9, color: C.green }}>● حاضر</span>
-            <span style={{ fontSize: 9, color: C.orange }}>● متأخر</span>
-            <span style={{ fontSize: 9, color: C.blue }}>● اليوم</span>
+          <div style={{ display: "flex", gap: SPACING.md, justifyContent: "center", marginTop: SPACING.md }}>
+            <span style={{ ...TYPOGRAPHY.tiny, color: COLORS.success }}>● حاضر</span>
+            <span style={{ ...TYPOGRAPHY.tiny, color: COLORS.warning }}>● متأخر</span>
+            <span style={{ ...TYPOGRAPHY.tiny, color: COLORS.gold }}>● اليوم</span>
           </div>
-        </div>
+        </Card>
 
-        {/* ── مخطط الأسبوع ── */}
         <WeeklyChart allAtt={monthAtt} branch={branch} />
 
-        <div style={S.card} className="basma-fadein-d3">
-          <div onClick={function(){ setShowRecords(!showRecords); }} style={{ ...S.cardTitle, cursor: "pointer" }}>
-            <span>{"📋 آخر البصمات (" + recent.length + ")"}</span>
-            <span style={{ fontSize: 14, color: C.blue, transition: "transform .3s", transform: showRecords ? "rotate(180deg)" : "rotate(0)" }}>▼</span>
+        {/* آخر البصمات (collapsible) */}
+        <Card>
+          <div onClick={function(){ setShowRecords(!showRecords); }} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", cursor: "pointer" }}>
+            <span style={{ ...TYPOGRAPHY.h3, color: COLORS.textPrimary }}>{"آخر البصمات (" + recent.length + ")"}</span>
+            <span style={{ color: COLORS.goldLight, transition: "transform .3s", transform: showRecords ? "rotate(180deg)" : "rotate(0)", display: "inline-flex" }}>▼</span>
           </div>
           {showRecords && (
-            <div>
-              {recent.length === 0 && <div style={{ textAlign: "center", color: C.sub, fontSize: 13, padding: 20 }}>لا توجد بصمات بعد</div>}
-              {recent.map((r, i) => {
-            const info = typeMap[r.type] || { label: r.type, color: C.sub, icon: "📌" };
-            return (
-              <div key={r.id || i} style={{ display: "flex", alignItems: "center", gap: 12, padding: "12px 0", borderBottom: i < recent.length - 1 ? "1px solid " + C.bg : "none" }}>
-                <div style={{ width: 40, height: 40, borderRadius: "50%", background: info.color + "18", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 20 }}>{info.icon}</div>
-                <div>
-                  <div style={{ fontSize: 13, fontWeight: 700, color: C.text }}>{user.name}</div>
-                  <div style={{ fontSize: 10, color: info.color, marginTop: 1 }}>{info.label + " · " + r.date}</div>
-                </div>
-                <div style={{ marginRight: "auto", fontSize: 12, fontWeight: 700, color: C.sub }}>{formatTimeStr(r.ts)}</div>
-              </div>
-            );
-          })}
+            <div style={{ marginTop: SPACING.md }}>
+              {recent.length === 0 && <div style={{ textAlign: "center", color: COLORS.textMuted, ...TYPOGRAPHY.bodySm, padding: SPACING.lg }}>لا توجد بصمات بعد</div>}
+              {recent.map(function(r, i) {
+                var info = typeMap[r.type] || { label: r.type, color: COLORS.textMuted, icon: "📌" };
+                return (
+                  <div key={r.id || i} style={{ display: "flex", alignItems: "center", gap: SPACING.md, padding: SPACING.md + "px 0", borderBottom: i < recent.length - 1 ? "1px solid " + COLORS.cardBorder : "none" }}>
+                    <div style={{ width: 36, height: 36, borderRadius: RADIUS.pill, background: info.color + "20", display: "flex", alignItems: "center", justifyContent: "center", color: info.color }}>
+                      <Icons.check size={18} />
+                    </div>
+                    <div style={{ flex: 1 }}>
+                      <div style={{ ...TYPOGRAPHY.bodySm, fontWeight: 700, color: COLORS.textPrimary }}>{user.name}</div>
+                      <div style={{ ...TYPOGRAPHY.caption, color: info.color, marginTop: 1 }}>{info.label + " · " + r.date}</div>
+                    </div>
+                    <div style={{ ...TYPOGRAPHY.caption, fontWeight: 700, color: COLORS.textMuted }}>{formatTimeStr(r.ts)}</div>
+                  </div>
+                );
+              })}
             </div>
           )}
-        </div>
+        </Card>
 
+        {/* إجازاتي */}
         {myLeaves && myLeaves.length > 0 && (
-          <div style={S.card}>
-            <div style={S.cardTitle}>إجازاتي</div>
+          <Card>
+            <div style={{ ...TYPOGRAPHY.h3, color: COLORS.textPrimary, marginBottom: SPACING.md }}>إجازاتي</div>
             {myLeaves.slice(0, 5).map(function(l, i) {
-              var statusMap = { pending: { label: "قيد المراجعة", color: C.orange, icon: "⏳" }, approved: { label: "مقبولة", color: C.green, icon: "✓" }, rejected: { label: "مرفوضة", color: C.red, icon: "✗" } };
+              var statusMap = { pending: { label: "قيد المراجعة", color: COLORS.warning }, approved: { label: "مقبولة", color: COLORS.success }, rejected: { label: "مرفوضة", color: COLORS.danger } };
               var s = statusMap[l.status] || statusMap.pending;
               var typeLabels = { annual: "سنوية", sick: "مرضية", emergency: "طارئة", personal: "شخصية" };
               return (
-                <div key={l.id || i} style={{ display: "flex", alignItems: "center", gap: 10, padding: "10px 0", borderBottom: i < myLeaves.length - 1 ? "1px solid " + C.bg : "none" }}>
-                  <div style={{ width: 36, height: 36, borderRadius: 10, background: s.color + "15", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 16 }}>{s.icon}</div>
+                <div key={l.id || i} style={{ display: "flex", alignItems: "center", gap: SPACING.md, padding: SPACING.sm + "px 0", borderBottom: i < myLeaves.length - 1 ? "1px solid " + COLORS.cardBorder : "none" }}>
                   <div style={{ flex: 1 }}>
-                    <div style={{ fontSize: 12, fontWeight: 700, color: C.text }}>{typeLabels[l.type] || l.type}</div>
-                    <div style={{ fontSize: 10, color: C.sub }}>{l.from + " → " + l.to}</div>
+                    <div style={{ ...TYPOGRAPHY.bodySm, fontWeight: 700, color: COLORS.textPrimary }}>{typeLabels[l.type] || l.type}</div>
+                    <div style={{ ...TYPOGRAPHY.caption, color: COLORS.textMuted }}>{l.from + " → " + l.to}</div>
                   </div>
-                  <span style={{ fontSize: 10, fontWeight: 700, color: s.color, padding: "3px 8px", borderRadius: 8, background: s.color + "12" }}>{s.label}</span>
+                  <span style={{ ...TYPOGRAPHY.caption, fontWeight: 700, color: s.color, padding: "3px 10px", borderRadius: RADIUS.sm, background: s.color + "20" }}>{s.label}</span>
                 </div>
               );
             })}
-          </div>
+          </Card>
         )}
 
-        {/* ── المخالفات والانتدابات ── */}
         <ViolationsCard user={user} />
         <DelegationCard user={user} />
 
-        <button onClick={exportCSV} style={{ width: "100%", padding: 14, borderRadius: 16, background: "linear-gradient(135deg,"+C.blue+","+C.blueBright+")", color: "#fff", fontSize: 15, fontWeight: 800, border: "none", cursor: "pointer", fontFamily: "'Cairo',sans-serif", marginBottom: 12 }}>
-          📊 تصدير التقرير
-        </button>
+        <Button variant="primary" size="md" icon={<Icons.chart size={20} />} onClick={exportCSV}>
+          تصدير التقرير
+        </Button>
       </div>
     </div>
   );
@@ -1336,64 +1369,67 @@ function ProfilePage({ user, branch, onLogout, onTicket, myTickets, darkMode, to
 function BenefitsPage({ user }) {
   var badge = memberBadge(user.points || 0);
   var [filter, setFilter] = useState("all");
-  var isRamadan = false; // TODO: detect Ramadan from Hijri date
+  var isRamadan = false;
   var allCoupons = isRamadan ? COUPONS.concat(RAMADAN_COUPONS) : COUPONS;
   var cats = ["all"].concat(Array.from(new Set(allCoupons.map(function(c){ return c.cat; }))));
   var filtered = filter === "all" ? allCoupons : allCoupons.filter(function(c){ return c.cat === filter; });
+  var catLabels = { all: "الكل", "مطاعم": "مطاعم", "خدمات": "خدمات", "رياضة": "رياضة", "تسوق": "تسوق", "سفر": "سفر", "رمضان": "رمضان" };
 
   return (
-    <div style={{ flex: 1, paddingBottom: 80 }}>
-      <div style={S.detailHeader}>
-        <div style={{ width: 60 }} />
-        <div style={S.detailTitle}>🎖 امتيازات العضوية</div>
-        <div style={{ width: 60 }} />
+    <div style={{ flex: 1, paddingBottom: 80, background: "linear-gradient(180deg, "+COLORS.bg1+" 0%, "+COLORS.bg2+" 50%, "+COLORS.bg3+" 100%)", minHeight: "100vh" }}>
+      {/* Header */}
+      <div style={{ padding: SPACING.lg, textAlign: "center" }}>
+        <div style={{ ...TYPOGRAPHY.h1, color: COLORS.white, fontFamily: TYPOGRAPHY.fontCairo }}>امتيازات العضوية</div>
       </div>
-      <div style={{ padding: "16px 16px 0" }}>
 
-        {/* Current level summary */}
-        <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 14, padding: "12px 14px", background: badge.bg, borderRadius: 16, border: "1.5px solid " + badge.color + "30" }} className="basma-fadein">
-          <span style={{ fontSize: 28 }}>{badge.icon}</span>
-          <div style={{ flex: 1 }}>
-            <div style={{ fontSize: 14, fontWeight: 800, color: badge.color }}>{badge.label}</div>
-            <div style={{ fontSize: 10, color: C.sub }}>{"⭐ " + (user.points || 0) + " نقطة"}</div>
+      <div style={{ padding: "0 " + SPACING.lg + "px", display: "flex", flexDirection: "column", gap: SPACING.md }}>
+
+        {/* Current level */}
+        <Card>
+          <div style={{ display: "flex", alignItems: "center", gap: SPACING.md }}>
+            <div style={{ width: 56, height: 56, borderRadius: RADIUS.pill, background: COLORS.goldGradient, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 28 }}>{badge.icon}</div>
+            <div style={{ flex: 1 }}>
+              <div style={{ ...TYPOGRAPHY.h2, color: COLORS.goldLight }}>{badge.label}</div>
+              <div style={{ ...TYPOGRAPHY.caption, color: COLORS.textMuted }}>{(user.points || 0) + " نقطة"}</div>
+            </div>
+            <div style={{ textAlign: "center" }}>
+              <div style={{ ...TYPOGRAPHY.h3, color: COLORS.success }}>{filtered.filter(function(c){ return c.minTier <= badge.tier; }).length}</div>
+              <div style={{ ...TYPOGRAPHY.tiny, color: COLORS.textMuted }}>{"متاح من " + filtered.length}</div>
+            </div>
           </div>
-          <div style={{ fontSize: 10, fontWeight: 700, color: C.sub }}>
-            {filtered.filter(function(c){ return c.minTier <= badge.tier; }).length + " متاح من " + filtered.length}
-          </div>
-        </div>
+        </Card>
 
         {/* Category filter */}
-        <div style={{ display: "flex", gap: 4, marginBottom: 14, overflowX: "auto", paddingBottom: 4 }} className="basma-fadein-d1">
+        <div style={{ display: "flex", gap: SPACING.xs, overflowX: "auto", paddingBottom: 4 }}>
           {cats.map(function(cat) {
             var active = filter === cat;
-            var catLabels = { all: "الكل", "مطاعم": "🍔 مطاعم", "خدمات": "🔧 خدمات", "رياضة": "💪 رياضة", "تسوق": "🛍 تسوق", "سفر": "✈️ سفر", "رمضان": "🌙 رمضان" };
             return (
-              <button key={cat} onClick={function(){ setFilter(cat); }} style={{ padding: "6px 14px", borderRadius: 10, background: active ? C.blue : C.card, color: active ? "#fff" : C.sub, fontSize: 10, fontWeight: 700, border: active ? "none" : "1px solid " + C.bg, cursor: "pointer", whiteSpace: "nowrap" }}>
+              <button key={cat} onClick={function(){ setFilter(cat); }} style={{ padding: SPACING.sm + "px " + SPACING.lg + "px", borderRadius: RADIUS.md, background: active ? COLORS.goldGradient : COLORS.card, color: active ? COLORS.textOnGold : COLORS.textMuted, ...TYPOGRAPHY.caption, fontWeight: 700, border: active ? "none" : "1px solid " + COLORS.cardBorder, cursor: "pointer", whiteSpace: "nowrap", flexShrink: 0, fontFamily: TYPOGRAPHY.fontTajawal }}>
                 {catLabels[cat] || cat}
               </button>
             );
           })}
         </div>
 
-        {/* Coupons grid */}
-        <div style={{ display: "flex", flexDirection: "column", gap: 8 }} className="basma-fadein-d2">
+        {/* Coupons */}
+        <div style={{ display: "flex", flexDirection: "column", gap: SPACING.sm }}>
           {filtered.map(function(coupon) {
             var available = coupon.minTier <= badge.tier;
             var canAfford = (user.points || 0) >= coupon.pts;
             var tierName = MEMBERSHIP[coupon.minTier] ? MEMBERSHIP[coupon.minTier].name.replace("عضوية ","") : "فعّال";
             return (
-              <div key={coupon.id} style={{ display: "flex", alignItems: "center", gap: 12, padding: 16, borderRadius: 16, background: C.card, border: available ? "1.5px solid " + C.green + "30" : "1px solid " + C.bg, minHeight: 70, opacity: available ? 1 : 0.5, boxShadow: "0 2px 8px rgba(0,0,0,.1)" }}>
-                <div style={{ width: 44, height: 44, borderRadius: 14, background: available ? C.green + "12" : "rgba(0,0,0,.04)", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 22 }}>{coupon.icon}</div>
+              <div key={coupon.id} style={{ display: "flex", alignItems: "center", gap: SPACING.md, padding: SPACING.md, borderRadius: RADIUS.xl, background: COLORS.card, border: available ? "1px solid " + COLORS.goldLight + "30" : "1px solid " + COLORS.cardBorder, minHeight: 72, opacity: available ? 1 : 0.5, boxShadow: SHADOWS.card }}>
+                <div style={{ width: 44, height: 44, borderRadius: RADIUS.md, background: available ? COLORS.goldLight + "20" : COLORS.bg2, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 22 }}>{coupon.icon}</div>
                 <div style={{ flex: 1 }}>
-                  <div style={{ fontSize: 13, fontWeight: 700, color: C.text }}>{coupon.brand}</div>
-                  <div style={{ fontSize: 11, color: available ? C.green : C.sub, fontWeight: 600 }}>{coupon.discount}</div>
-                  {!available && <div style={{ fontSize: 8, color: C.orange }}>{"يتطلب " + tierName}</div>}
+                  <div style={{ ...TYPOGRAPHY.bodySm, fontWeight: 700, color: COLORS.textPrimary }}>{coupon.brand}</div>
+                  <div style={{ ...TYPOGRAPHY.caption, color: available ? COLORS.success : COLORS.textMuted, fontWeight: 600 }}>{coupon.discount}</div>
+                  {!available && <div style={{ ...TYPOGRAPHY.tiny, color: COLORS.warning }}>{"يتطلب " + tierName}</div>}
                 </div>
                 <div style={{ textAlign: "center" }}>
-                  <div style={{ fontSize: 14, fontWeight: 900, color: canAfford && available ? C.green : C.sub }}>{coupon.pts}</div>
-                  <div style={{ fontSize: 8, color: C.sub }}>نقطة</div>
+                  <div style={{ fontSize: 16, fontWeight: 900, color: canAfford && available ? COLORS.goldLight : COLORS.textMuted, fontFamily: TYPOGRAPHY.fontCairo }}>{coupon.pts}</div>
+                  <div style={{ ...TYPOGRAPHY.tiny, color: COLORS.textMuted }}>نقطة</div>
                   {available && canAfford && (
-                    <button style={{ marginTop: 4, padding: "3px 10px", borderRadius: 8, background: C.green, color: "#fff", fontSize: 9, fontWeight: 700, border: "none", cursor: "pointer" }}>استبدال</button>
+                    <button style={{ marginTop: 4, padding: "4px 12px", borderRadius: RADIUS.sm, background: COLORS.goldGradient, color: COLORS.textOnGold, ...TYPOGRAPHY.tiny, fontWeight: 800, border: "none", cursor: "pointer" }}>استبدال</button>
                   )}
                 </div>
               </div>
@@ -1402,9 +1438,11 @@ function BenefitsPage({ user }) {
         </div>
 
         {isRamadan && (
-          <div style={{ textAlign: "center", marginTop: 12, padding: 10, borderRadius: 12, background: C.card, fontSize: 11, fontWeight: 700, color: "#D4A017" }}>
-            🌙 عروض رمضان الخاصة متاحة!
-          </div>
+          <Card>
+            <div style={{ textAlign: "center", ...TYPOGRAPHY.bodySm, fontWeight: 700, color: COLORS.warning }}>
+              عروض رمضان الخاصة متاحة
+            </div>
+          </Card>
         )}
       </div>
     </div>
@@ -2327,20 +2365,21 @@ function FaceResetRow({ empId }) {
 
 function BottomNav({ page, setPage }) {
   var items = [
-    { id: "home", icon: "🏠", label: "الرئيسية" },
-    { id: "benefits", icon: "🎖", label: "الامتيازات" },
-    { id: "report", icon: "📊", label: "تقريري" },
-    { id: "profile", icon: "👤", label: "حسابي" },
+    { id: "home", icon: Icons.home, label: "الرئيسية" },
+    { id: "benefits", icon: Icons.medal, label: "الامتيازات" },
+    { id: "report", icon: Icons.chart, label: "تقريري" },
+    { id: "profile", icon: Icons.user, label: "حسابي" },
   ];
   return (
-    <div style={S.nav}>
+    <div style={{ position: "fixed", bottom: 0, left: 0, right: 0, maxWidth: 430, margin: "0 auto", background: COLORS.bg3, borderTop: "1px solid " + COLORS.cardBorder, display: "flex", justifyContent: "space-around", padding: "10px 0 16px", zIndex: 50 }}>
       {items.map(function(n) {
         var active = page === n.id;
+        var IconComp = n.icon;
         return (
-          <button key={n.id} onClick={function(){ setPage(n.id); }} style={{ ...S.navItem, position: "relative" }}>
-            {active && <div style={S.navBar} />}
-            <span style={{ fontSize: 20, opacity: active ? 1 : .35, transition: "opacity .2s" }}>{n.icon}</span>
-            <span style={{ fontSize: 9, fontWeight: 700, color: active ? C.blue : "#aaa", transition: "color .2s" }}>{n.label}</span>
+          <button key={n.id} onClick={function(){ setPage(n.id); }} style={{ background: "none", border: "none", display: "flex", flexDirection: "column", alignItems: "center", gap: 2, cursor: "pointer", position: "relative", padding: "4px 12px" }}>
+            {active && <div style={{ position: "absolute", top: -10, left: "50%", transform: "translateX(-50%)", width: 24, height: 3, borderRadius: 2, background: COLORS.gold }} />}
+            <IconComp size={22} color={active ? COLORS.gold : COLORS.textMuted} />
+            <span style={{ ...TYPOGRAPHY.tiny, fontWeight: 700, color: active ? COLORS.gold : COLORS.textMuted }}>{n.label}</span>
           </button>
         );
       })}
