@@ -1084,7 +1084,7 @@ function ReportPage({ user, allAtt, todayAtt, branch, isOffDay, myLeaves, allEmp
 
         {/* Period indicator */}
         <div style={{ textAlign: "center" }}>
-          <div style={{ display: "inline-block", background: COLORS.card, border: "1px solid " + COLORS.cardBorder, padding: SPACING.sm + "px " + SPACING.lg + "px", borderRadius: RADIUS.md, ...TYPOGRAPHY.caption, fontWeight: 700, color: COLORS.goldLight }}>
+          <div style={{ display: "inline-block", background: COLORS.metallic, border: "1px solid " + COLORS.metallicBorder, padding: SPACING.sm + "px " + SPACING.lg + "px", borderRadius: RADIUS.md, ...TYPOGRAPHY.caption, fontWeight: 700, color: COLORS.goldLight }}>
             {"1 " + monthName + " — " + lastDay + " " + monthName}
           </div>
         </div>
@@ -1096,7 +1096,7 @@ function ReportPage({ user, allAtt, todayAtt, branch, isOffDay, myLeaves, allEmp
             { num: lateDays, label: "متأخر", color: COLORS.warning },
             { num: absentDays, label: "غائب", color: COLORS.danger },
           ].map(function(s, i){
-            return <div key={i} style={{ flex: 1, background: COLORS.card, border: "1px solid " + COLORS.cardBorder, borderRadius: RADIUS.lg, padding: SPACING.md, textAlign: "center" }}>
+            return <div key={i} style={{ flex: 1, background: COLORS.metallic, border: "1px solid " + COLORS.metallicBorder, borderRadius: RADIUS.lg, padding: SPACING.md, textAlign: "center", boxShadow: "0 2px 8px rgba(0,0,0,.2), inset 0 1px 0 rgba(255,255,255,.1)" }}>
               <div style={{ fontSize: 22, fontWeight: 900, color: s.color, fontFamily: TYPOGRAPHY.fontCairo }}>{s.num}</div>
               <div style={{ ...TYPOGRAPHY.tiny, color: COLORS.textMuted }}>يوم · {s.label}</div>
             </div>;
@@ -1112,7 +1112,7 @@ function ReportPage({ user, allAtt, todayAtt, branch, isOffDay, myLeaves, allEmp
               { num: overtimeHrs, label: "ساعات إضافية", color: COLORS.info },
               { num: leaveDays, label: "أيام إجازة", color: COLORS.warning },
             ].map(function(s, i){
-              return <div key={i} style={{ textAlign: "center", padding: SPACING.sm, background: COLORS.bg2, borderRadius: RADIUS.md }}>
+              return <div key={i} style={{ textAlign: "center", padding: SPACING.sm, background: "rgba(255,255,255,.03)", borderRadius: RADIUS.md }}>
                 <div style={{ fontSize: 22, fontWeight: 900, color: s.color, fontFamily: TYPOGRAPHY.fontCairo }}>{s.num}</div>
                 <div style={{ ...TYPOGRAPHY.tiny, color: COLORS.textMuted, marginTop: 2 }}>{s.label}</div>
               </div>;
@@ -1238,21 +1238,21 @@ function ProfilePage({ user, branch, onLogout, onTicket, myTickets, darkMode, to
       </div>
 
       <div style={{ padding: "0 " + SPACING.lg + "px", display: "flex", flexDirection: "column", gap: SPACING.md }}>
-        {/* Avatar card */}
+        {/* Avatar */}
         <div style={{ textAlign: "center", padding: SPACING.lg + "px 0" }} className="basma-fadein">
-          <div style={{ width: 80, height: 80, borderRadius: RADIUS.pill, background: COLORS.goldGradient, margin: "0 auto " + SPACING.md + "px", display: "flex", alignItems: "center", justifyContent: "center", border: "3px solid " + COLORS.goldLight, boxShadow: "0 4px 15px rgba(201,168,76,.3)" }}>
-            <Icons.user size={36} color={COLORS.textOnGold} />
+          <div style={{ width: 80, height: 80, borderRadius: RADIUS.pill, background: COLORS.metallic, margin: "0 auto " + SPACING.md + "px", display: "flex", alignItems: "center", justifyContent: "center", border: "2px solid " + COLORS.goldLight, boxShadow: "0 4px 15px rgba(0,0,0,.3), inset 0 1px 0 rgba(255,255,255,.15)" }}>
+            <Icons.user size={36} color={COLORS.goldLight} />
           </div>
           <div style={{ ...TYPOGRAPHY.h1, color: COLORS.textPrimary, fontFamily: TYPOGRAPHY.fontCairo }}>{user.name}</div>
           <div style={{ ...TYPOGRAPHY.caption, color: COLORS.textMuted, marginTop: 2 }}>{user.role + " — " + user.id}</div>
         </div>
 
         {/* Profile Tabs */}
-        <div style={{ display: "flex", gap: SPACING.xs, background: COLORS.card, border: "1px solid " + COLORS.cardBorder, borderRadius: RADIUS.lg, padding: SPACING.xs }}>
+        <div style={{ display: "flex", gap: SPACING.xs, background: COLORS.metallic, border: "1px solid " + COLORS.metallicBorder, borderRadius: RADIUS.lg, padding: SPACING.xs, boxShadow: "0 2px 8px rgba(0,0,0,.2), inset 0 1px 0 rgba(255,255,255,.1)" }}>
           {tabs.map(function(t) {
             var active = tab === t.id;
             return (
-              <button key={t.id} onClick={function(){ setTab(t.id); }} style={{ flex: 1, padding: SPACING.sm + "px " + SPACING.xs + "px", borderRadius: RADIUS.md, background: active ? COLORS.goldGradient : "transparent", border: "none", cursor: "pointer", textAlign: "center", display: "flex", flexDirection: "column", alignItems: "center", gap: 2, color: active ? COLORS.textOnGold : COLORS.textMuted }}>
+              <button key={t.id} onClick={function(){ setTab(t.id); }} style={{ flex: 1, padding: SPACING.sm + "px " + SPACING.xs + "px", borderRadius: RADIUS.md, background: active ? "rgba(201,168,76,.15)" : "transparent", border: active ? "1px solid " + COLORS.goldLight + "40" : "1px solid transparent", cursor: "pointer", textAlign: "center", display: "flex", flexDirection: "column", alignItems: "center", gap: 2, color: active ? COLORS.goldLight : COLORS.textMuted }}>
                 {t.icon}
                 <span style={{ ...TYPOGRAPHY.tiny, fontWeight: 700 }}>{t.label}</span>
               </button>
@@ -1387,13 +1387,13 @@ function BenefitsPage({ user }) {
         {/* Current level */}
         <Card>
           <div style={{ display: "flex", alignItems: "center", gap: SPACING.md }}>
-            <div style={{ width: 56, height: 56, borderRadius: RADIUS.pill, background: COLORS.goldGradient, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 28 }}>{badge.icon}</div>
+            <div style={{ width: 56, height: 56, borderRadius: RADIUS.pill, background: COLORS.metallic, border: "2px solid " + COLORS.goldLight, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 28 }}>{badge.icon}</div>
             <div style={{ flex: 1 }}>
               <div style={{ ...TYPOGRAPHY.h2, color: COLORS.goldLight }}>{badge.label}</div>
               <div style={{ ...TYPOGRAPHY.caption, color: COLORS.textMuted }}>{(user.points || 0) + " نقطة"}</div>
             </div>
             <div style={{ textAlign: "center" }}>
-              <div style={{ ...TYPOGRAPHY.h3, color: COLORS.success }}>{filtered.filter(function(c){ return c.minTier <= badge.tier; }).length}</div>
+              <div style={{ ...TYPOGRAPHY.h3, color: COLORS.goldLight }}>{filtered.filter(function(c){ return c.minTier <= badge.tier; }).length}</div>
               <div style={{ ...TYPOGRAPHY.tiny, color: COLORS.textMuted }}>{"متاح من " + filtered.length}</div>
             </div>
           </div>
@@ -1404,7 +1404,7 @@ function BenefitsPage({ user }) {
           {cats.map(function(cat) {
             var active = filter === cat;
             return (
-              <button key={cat} onClick={function(){ setFilter(cat); }} style={{ padding: SPACING.sm + "px " + SPACING.lg + "px", borderRadius: RADIUS.md, background: active ? COLORS.goldGradient : COLORS.card, color: active ? COLORS.textOnGold : COLORS.textMuted, ...TYPOGRAPHY.caption, fontWeight: 700, border: active ? "none" : "1px solid " + COLORS.cardBorder, cursor: "pointer", whiteSpace: "nowrap", flexShrink: 0, fontFamily: TYPOGRAPHY.fontTajawal }}>
+              <button key={cat} onClick={function(){ setFilter(cat); }} style={{ padding: SPACING.sm + "px " + SPACING.lg + "px", borderRadius: RADIUS.md, background: active ? "rgba(201,168,76,.15)" : COLORS.metallic, color: active ? COLORS.goldLight : COLORS.textMuted, ...TYPOGRAPHY.caption, fontWeight: 700, border: "1px solid " + (active ? COLORS.goldLight + "40" : COLORS.metallicBorder), cursor: "pointer", whiteSpace: "nowrap", flexShrink: 0, fontFamily: TYPOGRAPHY.fontTajawal }}>
                 {catLabels[cat] || cat}
               </button>
             );
@@ -1418,8 +1418,8 @@ function BenefitsPage({ user }) {
             var canAfford = (user.points || 0) >= coupon.pts;
             var tierName = MEMBERSHIP[coupon.minTier] ? MEMBERSHIP[coupon.minTier].name.replace("عضوية ","") : "فعّال";
             return (
-              <div key={coupon.id} style={{ display: "flex", alignItems: "center", gap: SPACING.md, padding: SPACING.md, borderRadius: RADIUS.xl, background: COLORS.card, border: available ? "1px solid " + COLORS.goldLight + "30" : "1px solid " + COLORS.cardBorder, minHeight: 72, opacity: available ? 1 : 0.5, boxShadow: SHADOWS.card }}>
-                <div style={{ width: 44, height: 44, borderRadius: RADIUS.md, background: available ? COLORS.goldLight + "20" : COLORS.bg2, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 22 }}>{coupon.icon}</div>
+              <div key={coupon.id} style={{ display: "flex", alignItems: "center", gap: SPACING.md, padding: SPACING.md, borderRadius: RADIUS.xl, background: COLORS.metallic, border: available ? "1px solid " + COLORS.goldLight + "30" : "1px solid " + COLORS.metallicBorder, minHeight: 72, opacity: available ? 1 : 0.5, boxShadow: SHADOWS.card }}>
+                <div style={{ width: 44, height: 44, borderRadius: RADIUS.md, background: available ? COLORS.goldLight + "20" : "rgba(255,255,255,.05)", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 22 }}>{coupon.icon}</div>
                 <div style={{ flex: 1 }}>
                   <div style={{ ...TYPOGRAPHY.bodySm, fontWeight: 700, color: COLORS.textPrimary }}>{coupon.brand}</div>
                   <div style={{ ...TYPOGRAPHY.caption, color: available ? COLORS.success : COLORS.textMuted, fontWeight: 600 }}>{coupon.discount}</div>
@@ -2371,7 +2371,7 @@ function BottomNav({ page, setPage }) {
     { id: "profile", icon: Icons.user, label: "حسابي" },
   ];
   return (
-    <div style={{ position: "fixed", bottom: 0, left: 0, right: 0, maxWidth: 430, margin: "0 auto", background: COLORS.bg3, borderTop: "1px solid " + COLORS.cardBorder, display: "flex", justifyContent: "space-around", padding: "10px 0 16px", zIndex: 50 }}>
+    <div style={{ position: "fixed", bottom: 0, left: 0, right: 0, maxWidth: 430, margin: "0 auto", background: "rgba(7,20,40,.85)", backdropFilter: "blur(10px)", borderTop: "1px solid rgba(255,255,255,.1)", display: "flex", justifyContent: "space-around", padding: "10px 0 16px", zIndex: 50 }}>
       {items.map(function(n) {
         var active = page === n.id;
         var IconComp = n.icon;
