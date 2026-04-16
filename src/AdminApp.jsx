@@ -200,6 +200,30 @@ export default function AdminApp() {
   const [emps, setEmps] = useState(EMPS);
   const [mapTarget, setMapTarget] = useState(null);
   const [settingsTab, setSettingsTab] = useState("general");
+  const [badgeCounts, setBadgeCounts] = useState({ complaints: 0, investigations: 0, appeals: 0, violations: 0 });
+
+  // Load badge counts
+  useEffect(function() {
+    async function loadBadges() {
+      try {
+        var [c, inv, app, vio] = await Promise.all([
+          fetch("/api/data?action=complaints").then(r => r.json()),
+          fetch("/api/data?action=investigations").then(r => r.json()),
+          fetch("/api/data?action=appeals").then(r => r.json()),
+          fetch("/api/data?action=violations_v2").then(r => r.json()),
+        ]);
+        setBadgeCounts({
+          complaints: (c || []).filter(x => x.status === "PENDING_HR").length,
+          investigations: (inv || []).filter(x => x.status === "RESPONSE_RECEIVED").length,
+          appeals: (app || []).filter(x => x.status === "PENDING").length,
+          violations: (vio || []).filter(x => x.status === "ACTIVE").length,
+        });
+      } catch(e) {}
+    }
+    loadBadges();
+    var interval = setInterval(loadBadges, 30000);
+    return function() { clearInterval(interval); };
+  }, []);
   const [emailLists, setEmailLists] = useState([
     { id: 1, name: "الموارد البشرية", email: "hr@hma.engineer", color: B.blue },
     { id: 2, name: "الشؤون القانونية", email: "legal@hma.engineer", color: t.bad },
@@ -310,11 +334,11 @@ export default function AdminApp() {
     { id: "employees", icon: "👥", label: "الموظفين" },
     { id: "leaves", icon: "📋", label: "الإجازات", badge: pending },
     { id: "admin_requests", icon: "📝", label: "الطلبات" },
-    { id: "complaints", icon: "📣", label: "الشكاوى (HR)" },
-    { id: "investigations", icon: "🔍", label: "التحقيقات (HR)" },
-    { id: "violations_v2", icon: "⚖️", label: "المخالفات الرسمية" },
+    { id: "complaints", icon: "📣", label: "الشكاوى (HR)", badge: badgeCounts.complaints },
+    { id: "investigations", icon: "🔍", label: "التحقيقات (HR)", badge: badgeCounts.investigations },
+    { id: "violations_v2", icon: "⚖️", label: "المخالفات الرسمية", badge: badgeCounts.violations },
+    { id: "appeals", icon: "📢", label: "التظلمات", badge: badgeCounts.appeals },
     { id: "laiha", icon: "📜", label: "لائحة العمل" },
-    { id: "violations", icon: "⚠️", label: "مخالفات (قديم)" },
     { id: "custody_admin", icon: "📦", label: "العهد" },
     { id: "tracking", icon: "🛰️", label: "تتبّع الحركة" },
     { id: "termination", icon: "🚪", label: "إنهاء خدمات" },
@@ -370,6 +394,15 @@ export default function AdminApp() {
         <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12, marginTop: 12 }}>
           <div style={{ background: t.card, borderRadius: 14, padding: "16px", border: "1px solid " + t.sep }}><div style={{ fontSize: 13, fontWeight: 700, color: t.ok, marginBottom: 10 }}>🏆 الأكثر انضباطاً</div>{[...safeEmps].sort((a, b) => b.pct - a.pct).slice(0, 3).map((e, i) => <div key={i} style={{ display: "flex", alignItems: "center", gap: 8, padding: "6px 0", borderBottom: i < 2 ? "1px solid " + t.sep : "none" }}><span style={{ fontSize: 16 }}>{["🥇", "🥈", "🥉"][i]}</span><div style={{ flex: 1 }}><div style={{ fontSize: 12, fontWeight: 700 }}>{e.name}</div></div><span style={{ fontSize: 13, fontWeight: 800, color: t.ok }}>{e.pct}%</span></div>)}</div>
           <div style={{ background: t.card, borderRadius: 14, padding: "16px", border: "1px solid " + t.sep }}><div style={{ fontSize: 13, fontWeight: 700, color: t.bad, marginBottom: 10 }}>⚠️ يحتاج متابعة</div>{[...safeEmps].sort((a, b) => a.pct - b.pct).slice(0, 3).map((e, i) => <div key={i} style={{ display: "flex", alignItems: "center", gap: 8, padding: "6px 0", borderBottom: i < 2 ? "1px solid " + t.sep : "none" }}><div style={{ width: 24, height: 24, borderRadius: "50%", background: t.badLt, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 10, fontWeight: 800, color: t.bad }}>{i + 1}</div><div style={{ flex: 1 }}><div style={{ fontSize: 12, fontWeight: 700 }}>{e.name}</div></div><span style={{ fontSize: 13, fontWeight: 800, color: t.bad }}>{e.pct}%</span></div>)}</div>
+        </div>
+        {/* HR Legal Stats */}
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(4,1fr)", gap: 12, marginTop: 12 }}>
+          {[
+            { l: "شكاوى معلقة", v: badgeCounts.complaints, i: "📣", c: B.gold },
+            { l: "تحقيقات (بالرد)", v: badgeCounts.investigations, i: "🔍", c: B.blue },
+            { l: "مخالفات سارية", v: badgeCounts.violations, i: "⚖️", c: t.bad },
+            { l: "تظلمات معلقة", v: badgeCounts.appeals, i: "📢", c: "#F97316" },
+          ].map(function(s, i) { return <div key={i} onClick={function(){ setTab(["complaints","investigations","violations_v2","appeals"][i]); }} style={{ background: t.card, borderRadius: 14, padding: 16, border: "1px solid " + t.sep, cursor: "pointer" }}><div style={{ display: "flex", justifyContent: "space-between" }}><div><div style={{ fontSize: 11, color: t.txM }}>{s.l}</div><div style={{ fontSize: 28, fontWeight: 800, color: s.c, marginTop: 4 }}>{s.v}</div></div><div style={{ width: 40, height: 40, borderRadius: 10, background: s.c + "12", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 20 }}>{s.i}</div></div></div>; })}
         </div>
       </>}
 
@@ -467,14 +500,6 @@ export default function AdminApp() {
       </>}
 
       {/* ═══ VIOLATIONS ═══ */}
-      {tab === "violations" && <>
-        <div style={{ display: "grid", gridTemplateColumns: "repeat(4,1fr)", gap: 10, marginBottom: 16 }}>{[{ l: "مخالفات", v: 12, c: t.warn }, { l: "إنذارات", v: 7, c: "#F97316" }, { l: "خصومات الشهر", v: "2,420", c: t.bad }, { l: "بدون مخالفات", v: 4, c: t.ok }].map((s, i) => <div key={i} style={{ background: t.card, borderRadius: 14, padding: "16px", border: "1px solid " + t.sep }}><div style={{ fontSize: 10, color: t.txM }}>{s.l}</div><div style={{ fontSize: 24, fontWeight: 800, color: s.c, marginTop: 4 }}>{s.v}</div></div>)}</div>
-        <div style={{ background: t.card, borderRadius: 14, border: "1px solid " + t.sep, overflow: "hidden" }}>
-          <table style={{ width: "100%", borderCollapse: "collapse" }}><thead><tr style={{ background: "#F8FAFC" }}>{["الموظف", "المخالفات", "الإنذارات", "الخصومات", "الالتزام"].map((h, i) => <th key={i} style={{ padding: "10px 12px", fontSize: 10, fontWeight: 700, color: t.txM, textAlign: "right", borderBottom: "1px solid " + t.sep }}>{h}</th>)}</tr></thead>
-          <tbody>{safeEmps.filter(e => e.violations > 0).map(e => <tr key={e.id}><td style={td}><div style={{ fontSize: 12, fontWeight: 700 }}>{e.name}</div><div style={{ fontSize: 9, color: t.txM }}>{e.id}</div></td><td style={td}><span style={{ fontSize: 12, fontWeight: 700, color: t.bad }}>{e.violations}</span></td><td style={td}><span style={{ fontSize: 12, fontWeight: 700, color: t.warn }}>{e.warnings}</span></td><td style={td}><span style={{ fontSize: 12, fontWeight: 700, color: t.bad }}>-{e.deductions.toLocaleString()}</span></td><td style={td}><span style={{ fontSize: 13, fontWeight: 800, color: e.pct >= 70 ? t.warn : t.bad }}>{e.pct}%</span></td></tr>)}</tbody></table>
-        </div>
-      </>}
-
       {/* ═══ TERMINATION ═══ */}
       {tab === "termination" && <>
         <div style={{ background: t.card, borderRadius: 14, padding: "18px", border: "1px solid " + t.sep, marginBottom: 14 }}>
@@ -805,6 +830,9 @@ export default function AdminApp() {
 
       {/* ═══ VIOLATIONS V2 — المخالفات الرسمية ═══ */}
       {tab === "violations_v2" && <ViolationsV2Panel t={t} B={B} emps={emps} />}
+
+      {/* ═══ APPEALS — التظلمات ═══ */}
+      {tab === "appeals" && <AppealsPanel t={t} B={B} emps={emps} />}
 
       {/* ═══ SETTINGS ═══ */}
       {tab === "settings" && <>
@@ -1619,6 +1647,7 @@ function ViolationsV2Panel({ t, B, emps }) {
   var [vios, setVios] = useState([]);
   var [loading, setLoading] = useState(true);
   var [filter, setFilter] = useState("ACTIVE");
+  var [showDirect, setShowDirect] = useState(false);
 
   useEffect(function() { load(); }, []);
   async function load() {
@@ -1636,8 +1665,11 @@ function ViolationsV2Panel({ t, B, emps }) {
           <div style={{ fontSize: 18, fontWeight: 900, color: t.tx }}>⚖️ سجل المخالفات الرسمية</div>
           <div style={{ fontSize: 11, color: t.tx2, marginTop: 4 }}>وفق اللائحة المعتمدة رقم {LAIHA_INFO.approvalNumber}</div>
         </div>
-        <div style={{ background: B.red + "20", border: "1px solid " + B.red, borderRadius: 8, padding: "6px 14px", fontSize: 12, fontWeight: 800, color: B.red }}>
-          {active} مخالفة سارية
+        <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+          <button onClick={function(){ setShowDirect(true); }} style={{ padding: "8px 16px", borderRadius: 8, border: "none", background: B.red, color: "#fff", fontSize: 11, fontWeight: 700, cursor: "pointer" }}>+ تسجيل مخالفة</button>
+          <div style={{ background: B.red + "20", border: "1px solid " + B.red, borderRadius: 8, padding: "6px 14px", fontSize: 12, fontWeight: 800, color: B.red }}>
+            {active} سارية
+          </div>
         </div>
       </div>
 
@@ -1682,6 +1714,194 @@ function ViolationsV2Panel({ t, B, emps }) {
           );
         })}
       </div>
+      {showDirect && <DirectViolationModal t={t} B={B} emps={emps} onClose={function(){ setShowDirect(false); }} onCreated={function(){ setShowDirect(false); load(); }} />}
+    </div>
+  );
+}
+
+/* ═══ DIRECT VIOLATION MODAL — تسجيل مخالفة مباشرة بدون شكوى ═══ */
+function DirectViolationModal({ t, B, emps, onClose, onCreated }) {
+  var [empId, setEmpId] = useState("");
+  var [violationId, setViolationId] = useState("");
+  var [notes, setNotes] = useState("");
+  var [saving, setSaving] = useState(false);
+
+  var viol = ALL_VIOLATIONS_DEFAULT.find(function(v){ return v.id === violationId; });
+
+  async function submit() {
+    if (!empId || !violationId) { alert("اختر الموظف والمخالفة"); return; }
+    setSaving(true);
+    var emp = emps.find(function(e){ return e.id === empId; });
+    var penaltyCode = viol ? viol.penalties.first : null;
+    var penaltyLabel = penaltyCode && PENALTY_TYPES[penaltyCode] ? PENALTY_TYPES[penaltyCode].label : "—";
+    try {
+      await fetch("/api/data?action=violations_v2", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          empId: empId,
+          empName: emp ? emp.name : empId,
+          violationId: violationId,
+          chapter: viol ? viol.chapter : "",
+          description: viol ? viol.description : "",
+          penaltyCode: penaltyCode,
+          penaltyLabel: penaltyLabel,
+          penalties: viol ? viol.penalties : {},
+          source: "manual",
+          notes: notes,
+          createdBy: "HR",
+          approvedBy: "HR",
+        }),
+      });
+      alert("✓ تم تسجيل المخالفة");
+      onCreated();
+    } catch(e) { alert("فشل: " + e.message); }
+    setSaving(false);
+  }
+
+  return (
+    <div onClick={onClose} style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,.6)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 1000, padding: 16 }}>
+      <div onClick={function(e){ e.stopPropagation(); }} style={{ background: t.card, borderRadius: 12, padding: 20, maxWidth: 600, width: "100%", maxHeight: "90vh", overflow: "auto" }}>
+        <div style={{ fontSize: 16, fontWeight: 900, color: B.red, marginBottom: 14 }}>⚖️ تسجيل مخالفة مباشرة</div>
+
+        <div style={{ marginBottom: 12 }}>
+          <label style={{ fontSize: 11, fontWeight: 700, color: t.tx }}>الموظف</label>
+          <select value={empId} onChange={function(e){ setEmpId(e.target.value); }} style={{ width: "100%", padding: 10, borderRadius: 8, border: "1px solid " + t.sep, fontSize: 12, marginTop: 6, background: t.inp, color: t.tx }}>
+            <option value="">-- اختر الموظف --</option>
+            {emps.map(function(e){ return <option key={e.id} value={e.id}>{e.name} ({e.id})</option>; })}
+          </select>
+        </div>
+
+        <div style={{ marginBottom: 12 }}>
+          <label style={{ fontSize: 11, fontWeight: 700, color: t.tx }}>البند من اللائحة</label>
+          <select value={violationId} onChange={function(e){ setViolationId(e.target.value); }} style={{ width: "100%", padding: 10, borderRadius: 8, border: "1px solid " + t.sep, fontSize: 12, marginTop: 6, background: t.inp, color: t.tx }}>
+            <option value="">-- اختر البند --</option>
+            {["مواعيد العمل", "تنظيم العمل", "سلوك العامل"].map(function(ch) {
+              return <optgroup key={ch} label={ch}>{ALL_VIOLATIONS_DEFAULT.filter(function(v){ return v.chapter === ch; }).map(function(v){ return <option key={v.id} value={v.id}>{v.id}: {v.description.slice(0, 70)}...</option>; })}</optgroup>;
+            })}
+          </select>
+        </div>
+
+        {viol && (
+          <div style={{ background: t.bg, padding: 12, borderRadius: 8, marginBottom: 12, border: "1px solid " + t.sep }}>
+            <div style={{ fontSize: 11, fontWeight: 700, color: B.blue, marginBottom: 6 }}>📜 {viol.id} — {viol.chapter}</div>
+            <div style={{ fontSize: 11, color: t.tx, lineHeight: 1.6, marginBottom: 8 }}>{viol.description}</div>
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(4,1fr)", gap: 4 }}>
+              {["first","second","third","fourth"].map(function(occ, idx) {
+                var code = viol.penalties[occ];
+                var label = code ? (PENALTY_TYPES[code] || {}).label : "—";
+                return <div key={occ} style={{ background: t.card, border: "1px solid " + t.sep, borderRadius: 4, padding: 4, textAlign: "center" }}><div style={{ fontSize: 8, color: t.tx2 }}>{["أول","ثاني","ثالث","رابع"][idx]}</div><div style={{ fontSize: 9, fontWeight: 700, color: code ? t.tx : t.txM }}>{label}</div></div>;
+              })}
+            </div>
+          </div>
+        )}
+
+        <div style={{ marginBottom: 14 }}>
+          <label style={{ fontSize: 11, fontWeight: 700, color: t.tx }}>ملاحظات (اختياري)</label>
+          <textarea value={notes} onChange={function(e){ setNotes(e.target.value); }} rows={3} placeholder="تفاصيل إضافية..." style={{ width: "100%", padding: 10, borderRadius: 8, border: "1px solid " + t.sep, fontSize: 11, marginTop: 6, fontFamily: "inherit", background: t.inp, color: t.tx }} />
+        </div>
+
+        <div style={{ display: "flex", gap: 10, justifyContent: "flex-end" }}>
+          <button onClick={onClose} style={{ padding: "10px 20px", borderRadius: 8, border: "1px solid " + t.sep, background: t.card, color: t.tx2, fontSize: 12, fontWeight: 700, cursor: "pointer" }}>إلغاء</button>
+          <button onClick={submit} disabled={saving || !empId || !violationId} style={{ padding: "10px 20px", borderRadius: 8, border: "none", background: (!empId || !violationId) ? "#ccc" : B.red, color: "#fff", fontSize: 12, fontWeight: 700, cursor: "pointer" }}>{saving ? "جارِ..." : "تسجيل المخالفة"}</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/* ═══ APPEALS PANEL — لوحة التظلمات ═══ */
+function AppealsPanel({ t, B, emps }) {
+  var [appeals, setAppeals] = useState([]);
+  var [loading, setLoading] = useState(true);
+  var [filter, setFilter] = useState("PENDING");
+
+  useEffect(function() { load(); }, []);
+  async function load() {
+    try { var r = await fetch("/api/data?action=appeals"); setAppeals(await r.json()); } catch(e) {}
+    setLoading(false);
+  }
+
+  var filtered = appeals.filter(function(a){ return filter === "all" || a.status === filter; });
+  var pending = appeals.filter(function(a){ return a.status === "PENDING"; }).length;
+
+  async function decide(appeal, decision) {
+    var notes = prompt(decision === "accepted" ? "ملاحظات القبول (سيتم إلغاء المخالفة):" : "سبب الرفض:");
+    if (notes === null) return;
+    try {
+      await fetch("/api/data?action=appeals", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ id: appeal.id, status: decision === "accepted" ? "ACCEPTED" : "REJECTED", decision: decision, decisionNotes: notes, decidedAt: new Date().toISOString(), decidedBy: "HR" }),
+      });
+      if (decision === "accepted") {
+        await fetch("/api/data?action=violations_v2", {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ id: appeal.violationId, status: "CANCELLED" }),
+        });
+      } else {
+        await fetch("/api/data?action=violations_v2", {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ id: appeal.violationId, status: "ACTIVE" }),
+        });
+      }
+      load();
+    } catch(e) { alert("فشل: " + e.message); }
+  }
+
+  return (
+    <div>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16 }}>
+        <div>
+          <div style={{ fontSize: 18, fontWeight: 900, color: t.tx }}>📢 التظلمات</div>
+          <div style={{ fontSize: 11, color: t.tx2, marginTop: 4 }}>المادة (54) — يحق للعامل التظلم خلال 3 أيام عمل — يُرد عليه خلال 5 أيام</div>
+        </div>
+        <div style={{ background: B.gold + "20", border: "1px solid " + B.gold, borderRadius: 8, padding: "6px 14px", fontSize: 12, fontWeight: 800, color: B.gold }}>
+          {pending} بانتظار القرار
+        </div>
+      </div>
+
+      <div style={{ display: "flex", gap: 6, marginBottom: 16 }}>
+        {[{ id: "PENDING", l: "بانتظار القرار" }, { id: "ACCEPTED", l: "مقبول (أُلغيت المخالفة)" }, { id: "REJECTED", l: "مرفوض" }, { id: "all", l: "الكل" }].map(function(f) {
+          var a = filter === f.id;
+          return <button key={f.id} onClick={function(){ setFilter(f.id); }} style={{ padding: "8px 14px", borderRadius: 10, border: a ? "none" : "1px solid " + t.sep, background: a ? B.blue : t.card, color: a ? "#fff" : t.tx2, fontSize: 11, fontWeight: 700, cursor: "pointer" }}>{f.l}</button>;
+        })}
+      </div>
+
+      {loading && <div style={{ textAlign: "center", padding: 30, color: t.tx2 }}>جارِ التحميل...</div>}
+      {!loading && filtered.length === 0 && <div style={{ textAlign: "center", padding: 40, color: t.tx2, background: t.card, borderRadius: 12 }}>لا توجد تظلمات</div>}
+
+      {filtered.map(function(a) {
+        var isOverdue = a.status === "PENDING" && new Date() > new Date(a.deadline);
+        return (
+          <div key={a.id} style={{ background: t.card, border: "1px solid " + (isOverdue ? B.red : t.sep), borderRadius: 10, padding: 14, marginBottom: 10 }}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 8 }}>
+              <div style={{ flex: 1 }}>
+                <div style={{ fontSize: 13, fontWeight: 800, color: t.tx }}>{a.empName}</div>
+                <div style={{ fontSize: 10, color: t.tx2, marginTop: 3 }}>المخالفة: {a.violationId} — تاريخ التظلم: {new Date(a.createdAt).toLocaleDateString("ar-SA")}</div>
+              </div>
+              <span style={{ fontSize: 10, fontWeight: 700, color: a.status === "PENDING" ? B.gold : a.status === "ACCEPTED" ? "#10b981" : "#64748b", background: (a.status === "PENDING" ? B.gold : a.status === "ACCEPTED" ? "#10b981" : "#64748b") + "20", padding: "3px 10px", borderRadius: 6 }}>
+                {a.status === "PENDING" ? "بانتظار القرار" : a.status === "ACCEPTED" ? "مقبول" : "مرفوض"}
+              </span>
+            </div>
+            <div style={{ fontSize: 11, color: t.tx, background: t.bg, padding: 10, borderRadius: 6, lineHeight: 1.7, marginBottom: 8, whiteSpace: "pre-wrap" }}>{a.reason}</div>
+            {isOverdue && <div style={{ fontSize: 10, color: B.red, fontWeight: 700, marginBottom: 8 }}>⚠️ تجاوز مهلة الرد (5 أيام عمل) — يجب الرد فوراً</div>}
+            {a.status === "PENDING" && (
+              <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}>
+                <button onClick={function(){ decide(a, "rejected"); }} style={{ padding: "8px 16px", borderRadius: 8, border: "1px solid #64748b", background: "transparent", color: "#64748b", fontSize: 11, fontWeight: 700, cursor: "pointer" }}>رفض التظلم</button>
+                <button onClick={function(){ decide(a, "accepted"); }} style={{ padding: "8px 16px", borderRadius: 8, border: "none", background: "#10b981", color: "#fff", fontSize: 11, fontWeight: 700, cursor: "pointer" }}>قبول (إلغاء المخالفة)</button>
+              </div>
+            )}
+            {a.decisionNotes && (
+              <div style={{ marginTop: 8, padding: 8, background: t.bg, borderRadius: 6, fontSize: 10, color: t.tx2 }}>
+                <strong>ملاحظات القرار:</strong> {a.decisionNotes}
+              </div>
+            )}
+          </div>
+        );
+      })}
     </div>
   );
 }
