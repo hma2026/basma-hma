@@ -264,12 +264,43 @@ export default function AdminApp() {
   useEffect(() => {
     (async () => {
       try {
-        var [brData, empData, evData, lvData, stData] = await Promise.all([
-          api('branches'), api('employees'), api('events'), api('leaves'), api('settings')
+        var today = new Date().toISOString().split('T')[0];
+        var [brData, empData, evData, lvData, stData, todayAtt, allAtt] = await Promise.all([
+          api('branches'), api('employees'), api('events'), api('leaves'), api('settings'),
+          api('attendance', 'GET', null, '&date=' + today),
+          api('attendance'),
         ]);
         if (Array.isArray(brData) && brData.length > 0) setBranches(brData);
-        if (Array.isArray(empData) && empData.length > 0) setEmps(empData);
-        if (Array.isArray(evData)) setEvents(evData);
+        // Enrich employees with live status from today's attendance
+        if (Array.isArray(empData) && empData.length > 0) {
+          var attArr = Array.isArray(todayAtt) ? todayAtt : [];
+          var allAttArr = Array.isArray(allAtt) ? allAtt : [];
+          var enriched = empData.map(function(emp) {
+            var checkin = attArr.find(function(a){ return a.empId === emp.id && a.type === 'checkin'; });
+            var status = 'غائب';
+            if (checkin) {
+              status = 'حاضر';
+              var br = (Array.isArray(brData) ? brData : BRANCHES).find(function(b){ return b.id === emp.branch || b.name === emp.branch; });
+              if (br && br.start) {
+                var parts = br.start.split(':');
+                var startMin = parseInt(parts[0]) * 60 + parseInt(parts[1]);
+                var cTime = new Date(checkin.ts);
+                var cMin = cTime.getHours() * 60 + cTime.getMinutes();
+                if (cMin > startMin + 5) status = 'متأخر';
+              }
+            }
+            if (emp.onLeave || emp.terminated) status = emp.terminated ? 'منتهي' : 'إجازة';
+            // Calculate 30-day compliance
+            var d30 = new Date(); d30.setDate(d30.getDate() - 30);
+            var d30Str = d30.toISOString().split('T')[0];
+            var last30 = allAttArr.filter(function(a){ return a.empId === emp.id && a.type === 'checkin' && a.date >= d30Str; });
+            var workDays = 26; // ~30 days minus Fridays
+            var pct = Math.min(100, Math.round((last30.length / workDays) * 100));
+            return Object.assign({}, emp, { status: status, pct: pct, points: emp.points || 0 });
+          });
+          setEmps(enriched);
+        }
+        if (Array.isArray(evData) && evData.length > 0) setEvents(evData);
         if (Array.isArray(lvData)) setLeaves(lvData);
         if (stData && typeof stData === 'object' && !stData.error) {
           if (stData.emailLists) setEmailLists(stData.emailLists);
@@ -333,7 +364,7 @@ export default function AdminApp() {
   var safeEmps = emps.map(normalizeEmp);
 
   const reject = id => role === "manager" && setLeaves(l => l.map(x => x.id === id ? { ...x, status: "مرفوض" } : x));
-  const pending = leaves.filter(l => l.status === "معلّق").length;
+  const pending = leaves.filter(l => l.status === "معلّق" || l.status === "pending").length;
   const present = safeEmps.filter(e => e.status === "حاضر").length;
   const absent = safeEmps.filter(e => e.status === "غائب").length;
   const late = safeEmps.filter(e => e.status === "متأخر").length;
