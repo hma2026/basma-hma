@@ -2399,23 +2399,22 @@ function CustodyTab({ user }) {
     api("custody", { params: { empId: user.id } }).then(function(d) { setItems(d || []); }).catch(function(){});
   }, []);
 
-  var statusMap = { active: { label: "مستلمة", color: C.blue, icon: "📦" }, returned: { label: "مرتجعة", color: C.green, icon: "✓" }, lost: { label: "مفقودة", color: C.red, icon: "⚠️" } };
+  var statusMap = { active: { label: "مستلمة", color: COLORS.goldLight }, returned: { label: "مرتجعة", color: COLORS.textMuted }, lost: { label: "مفقودة", color: COLORS.textDanger } };
 
   return (
     <div>
-      <div style={{ fontSize: 13, fontWeight: 800, color: C.text, marginBottom: 12 }}>{"📦 العهد (" + items.length + ")"}</div>
-      {items.length === 0 && <div style={{ textAlign: "center", color: C.sub, fontSize: 12, padding: 20 }}>لا توجد عهد مسجلة</div>}
+      <div style={{ ...TYPOGRAPHY.h3, color: COLORS.textPrimary, marginBottom: SPACING.md }}>{"العهد (" + items.length + ")"}</div>
+      {items.length === 0 && <div style={{ textAlign: "center", color: COLORS.textMuted, ...TYPOGRAPHY.bodySm, padding: SPACING.xl }}>لا توجد عهد مسجلة</div>}
       {items.map(function(item, i) {
         var s = statusMap[item.status] || statusMap.active;
         return (
-          <div key={item.id || i} style={{ display: "flex", alignItems: "center", gap: 10, padding: "10px 0", borderBottom: i < items.length - 1 ? "1px solid " + C.bg : "none" }}>
-            <div style={{ width: 36, height: 36, borderRadius: 10, background: s.color + "15", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 16 }}>{s.icon}</div>
+          <div key={item.id || i} style={{ display: "flex", alignItems: "center", gap: SPACING.sm, padding: SPACING.sm + "px 0", borderBottom: i < items.length - 1 ? "1px solid rgba(255,255,255,.08)" : "none" }}>
             <div style={{ flex: 1 }}>
-              <div style={{ fontSize: 12, fontWeight: 700, color: C.text }}>{item.name || "عهدة"}</div>
-              <div style={{ fontSize: 9, color: C.sub }}>{(item.serial ? "SN: " + item.serial + " · " : "") + (item.createdAt ? item.createdAt.split("T")[0] : "")}</div>
-              {item.type === "cash" && <div style={{ fontSize: 9, color: C.orange }}>{"💰 عهدة نقدية: " + (item.amount || 0) + " ريال"}</div>}
+              <div style={{ ...TYPOGRAPHY.bodySm, fontWeight: 700, color: COLORS.textPrimary }}>{item.name || "عهدة"}</div>
+              <div style={{ ...TYPOGRAPHY.tiny, color: COLORS.textMuted }}>{(item.serial ? "SN: " + item.serial + " · " : "") + (item.createdAt ? item.createdAt.split("T")[0] : "")}</div>
+              {item.type === "cash" && <div style={{ ...TYPOGRAPHY.tiny, color: COLORS.goldLight }}>{"عهدة نقدية: " + (item.amount || 0) + " ريال"}</div>}
             </div>
-            <span style={{ fontSize: 9, fontWeight: 700, color: s.color, padding: "2px 8px", borderRadius: 6, background: s.color + "12" }}>{s.label}</span>
+            <span style={{ ...TYPOGRAPHY.tiny, fontWeight: 700, color: s.color, padding: "3px 10px", borderRadius: RADIUS.sm, background: s.color + "20" }}>{s.label}</span>
           </div>
         );
       })}
@@ -2618,44 +2617,45 @@ function DependentsTab({ user }) {
   }
 
   var relations = ["زوج/زوجة", "ابن", "ابنة", "أب", "أم"];
+  var inputStyle = { width: "100%", padding: SPACING.sm + "px " + SPACING.md + "px", borderRadius: RADIUS.md, border: "1px solid " + COLORS.metallicBorder, background: "rgba(0,0,0,.25)", color: COLORS.textPrimary, fontSize: 13, marginBottom: SPACING.sm, fontFamily: TYPOGRAPHY.fontTajawal, outline: "none" };
+
   return (
     <div>
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>
-        <div style={{ fontSize: 13, fontWeight: 800, color: C.text }}>{"👨‍👩‍👧 المرافقين (" + deps.length + ")"}</div>
-        <button onClick={function(){ setAdding(!adding); }} style={{ padding: "5px 12px", borderRadius: 8, background: C.blue, color: "#fff", fontSize: 10, fontWeight: 700, border: "none", cursor: "pointer" }}>{adding ? "إلغاء" : "+ إضافة"}</button>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: SPACING.md }}>
+        <div style={{ ...TYPOGRAPHY.h3, color: COLORS.textPrimary }}>{"المرافقين (" + deps.length + ")"}</div>
+        <button onClick={function(){ setAdding(!adding); }} style={{ padding: "6px 14px", borderRadius: RADIUS.sm, background: COLORS.metallic, border: "1px solid " + COLORS.goldLight, color: COLORS.goldLight, ...TYPOGRAPHY.caption, fontWeight: 700, cursor: "pointer" }}>{adding ? "إلغاء" : "+ إضافة"}</button>
       </div>
 
       {adding && (
-        <div style={{ padding: 14, borderRadius: 14, background: C.bg, marginBottom: 12 }}>
-          <input value={form.name} onChange={function(e){ setForm({...form, name: e.target.value}); }} placeholder="الاسم الكامل" style={{ width: "100%", padding: 10, borderRadius: 8, border: "1px solid " + C.bg, fontSize: 13, marginBottom: 6 }} />
-          <div style={{ display: "flex", gap: 6, marginBottom: 6 }}>
-            <select value={form.relation} onChange={function(e){ setForm({...form, relation: e.target.value}); }} style={{ flex: 1, padding: 10, borderRadius: 8, border: "1px solid " + C.bg, fontSize: 12 }}>
-              {relations.map(function(r){ return React.createElement("option", { key: r, value: r }, r); })}
+        <div style={{ padding: SPACING.md, borderRadius: RADIUS.lg, background: "rgba(0,0,0,.15)", border: "1px solid " + COLORS.metallicBorder, marginBottom: SPACING.md }}>
+          <input value={form.name} onChange={function(e){ setForm({...form, name: e.target.value}); }} placeholder="الاسم الكامل" style={inputStyle} />
+          <div style={{ display: "flex", gap: SPACING.xs, marginBottom: SPACING.sm }}>
+            <select value={form.relation} onChange={function(e){ setForm({...form, relation: e.target.value}); }} style={{ ...inputStyle, flex: 1, marginBottom: 0 }}>
+              {relations.map(function(r){ return React.createElement("option", { key: r, value: r, style: { background: "#0d2445", color: COLORS.textPrimary } }, r); })}
             </select>
-            <input type="date" value={form.dob} onChange={function(e){ setForm({...form, dob: e.target.value}); }} style={{ flex: 1, padding: 10, borderRadius: 8, border: "1px solid " + C.bg, fontSize: 12 }} />
+            <input type="date" value={form.dob} onChange={function(e){ setForm({...form, dob: e.target.value}); }} style={{ ...inputStyle, flex: 1, marginBottom: 0, colorScheme: "dark" }} />
           </div>
-          <input value={form.idNumber} onChange={function(e){ setForm({...form, idNumber: e.target.value}); }} placeholder="رقم الهوية/الإقامة" style={{ width: "100%", padding: 10, borderRadius: 8, border: "1px solid " + C.bg, fontSize: 13, marginBottom: 6 }} />
-          <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 8 }}>
-            <input type="checkbox" checked={form.externalInsurance} onChange={function(e){ setForm({...form, externalInsurance: e.target.checked}); }} />
-            <span style={{ fontSize: 11, color: C.sub }}>مؤمّن عليه مع جهة أخرى</span>
+          <input value={form.idNumber} onChange={function(e){ setForm({...form, idNumber: e.target.value}); }} placeholder="رقم الهوية/الإقامة" style={inputStyle} />
+          <div style={{ display: "flex", alignItems: "center", gap: SPACING.sm, marginBottom: SPACING.sm }}>
+            <input type="checkbox" checked={form.externalInsurance} onChange={function(e){ setForm({...form, externalInsurance: e.target.checked}); }} style={{ accentColor: COLORS.goldLight }} />
+            <span style={{ ...TYPOGRAPHY.caption, color: COLORS.textMuted }}>مؤمّن عليه مع جهة أخرى</span>
           </div>
-          {form.externalInsurance && <input value={form.insurerName} onChange={function(e){ setForm({...form, insurerName: e.target.value}); }} placeholder="اسم شركة التأمين" style={{ width: "100%", padding: 10, borderRadius: 8, border: "1px solid " + C.bg, fontSize: 13, marginBottom: 6 }} />}
-          <button onClick={save} disabled={!form.name} style={{ width: "100%", padding: 10, borderRadius: 10, background: form.name ? C.green : "#ddd", color: "#fff", fontSize: 13, fontWeight: 700, border: "none", cursor: "pointer" }}>حفظ المرافق</button>
+          {form.externalInsurance && <input value={form.insurerName} onChange={function(e){ setForm({...form, insurerName: e.target.value}); }} placeholder="اسم شركة التأمين" style={inputStyle} />}
+          <button onClick={save} disabled={!form.name} style={{ width: "100%", height: 44, borderRadius: RADIUS.lg, background: form.name ? COLORS.goldGradient : COLORS.metallic, border: "1px solid " + (form.name ? COLORS.goldLight : COLORS.metallicBorder), color: form.name ? COLORS.textOnGold : COLORS.textMuted, fontSize: 13, fontWeight: 800, cursor: form.name ? "pointer" : "not-allowed", fontFamily: TYPOGRAPHY.fontCairo, boxShadow: form.name ? SHADOWS.gold : "none" }}>حفظ المرافق</button>
         </div>
       )}
 
-      {deps.length === 0 && !adding && <div style={{ textAlign: "center", color: C.sub, fontSize: 12, padding: 20 }}>لا يوجد مرافقين</div>}
+      {deps.length === 0 && !adding && <div style={{ textAlign: "center", color: COLORS.textMuted, ...TYPOGRAPHY.bodySm, padding: SPACING.xl }}>لا يوجد مرافقين</div>}
       {deps.map(function(d, i) {
-        var statusColors = { pending: C.orange, approved: C.green, rejected: C.red };
+        var statusColors = { pending: COLORS.textMuted, approved: COLORS.goldLight, rejected: COLORS.textDanger };
         var statusLabels = { pending: "بانتظار الاعتماد", approved: "معتمد", rejected: "مرفوض" };
         return (
-          <div key={d.id || i} style={{ display: "flex", alignItems: "center", gap: 10, padding: "10px 0", borderBottom: i < deps.length - 1 ? "1px solid " + C.bg : "none" }}>
-            <div style={{ width: 36, height: 36, borderRadius: 10, background: C.blue + "15", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 16 }}>👤</div>
+          <div key={d.id || i} style={{ display: "flex", alignItems: "center", gap: SPACING.sm, padding: SPACING.sm + "px 0", borderBottom: i < deps.length - 1 ? "1px solid rgba(255,255,255,.08)" : "none" }}>
             <div style={{ flex: 1 }}>
-              <div style={{ fontSize: 12, fontWeight: 700, color: C.text }}>{d.name}</div>
-              <div style={{ fontSize: 10, color: C.sub }}>{d.relation + (d.externalInsurance ? " · 🛡️ تأمين خارجي" : "")}</div>
+              <div style={{ ...TYPOGRAPHY.bodySm, fontWeight: 700, color: COLORS.textPrimary }}>{d.name}</div>
+              <div style={{ ...TYPOGRAPHY.tiny, color: COLORS.textMuted }}>{d.relation + (d.externalInsurance ? " · تأمين خارجي" : "")}</div>
             </div>
-            <span style={{ fontSize: 9, fontWeight: 700, color: statusColors[d.status] || C.orange, padding: "2px 8px", borderRadius: 6, background: (statusColors[d.status] || C.orange) + "12" }}>{statusLabels[d.status] || "بانتظار"}</span>
+            <span style={{ ...TYPOGRAPHY.tiny, fontWeight: 700, color: statusColors[d.status] || COLORS.textMuted, padding: "3px 8px", borderRadius: RADIUS.sm, background: (statusColors[d.status] || COLORS.textMuted) + "20" }}>{statusLabels[d.status] || "بانتظار"}</span>
           </div>
         );
       })}
@@ -2685,20 +2685,20 @@ function HealthDisclosureTab({ user }) {
 
   return (
     <div>
-      <div style={{ fontSize: 13, fontWeight: 800, color: C.text, marginBottom: 4 }}>🏥 الإفصاح الصحي</div>
-      <div style={{ fontSize: 10, color: C.sub, marginBottom: 14 }}>أسئلة الإفصاح لأغراض التأمين — يُعتمد من الموارد البشرية</div>
+      <div style={{ ...TYPOGRAPHY.h3, color: COLORS.textPrimary, marginBottom: SPACING.xs }}>الإفصاح الصحي</div>
+      <div style={{ ...TYPOGRAPHY.tiny, color: COLORS.textMuted, marginBottom: SPACING.md }}>أسئلة الإفصاح لأغراض التأمين — يُعتمد من الموارد البشرية</div>
       {defaultQuestions.map(function(q, i) {
         return (
-          <div key={i} style={{ marginBottom: 10 }}>
-            <div style={{ fontSize: 11, fontWeight: 700, color: C.text, marginBottom: 4 }}>{(i + 1) + ". " + q}</div>
-            <textarea value={answers[i] || ""} onChange={function(e){ updateAnswer(i, e.target.value); }} placeholder="الإجابة..." rows={2} style={{ width: "100%", padding: 8, borderRadius: 8, border: "1px solid " + C.bg, fontSize: 12, resize: "none" }} />
+          <div key={i} style={{ marginBottom: SPACING.md }}>
+            <div style={{ ...TYPOGRAPHY.caption, fontWeight: 700, color: COLORS.textPrimary, marginBottom: SPACING.xs }}>{(i + 1) + ". " + q}</div>
+            <textarea value={answers[i] || ""} onChange={function(e){ updateAnswer(i, e.target.value); }} placeholder="الإجابة..." rows={2} style={{ width: "100%", padding: SPACING.sm + "px " + SPACING.md + "px", borderRadius: RADIUS.md, border: "1px solid " + COLORS.metallicBorder, background: "rgba(0,0,0,.25)", color: COLORS.textPrimary, fontSize: 12, resize: "none", fontFamily: TYPOGRAPHY.fontTajawal, outline: "none" }} />
           </div>
         );
       })}
-      <button onClick={save} style={{ width: "100%", padding: 10, borderRadius: 10, background: saved ? C.green : C.blue, color: "#fff", fontSize: 13, fontWeight: 700, border: "none", cursor: "pointer" }}>
+      <button onClick={save} style={{ width: "100%", height: 44, borderRadius: RADIUS.lg, background: saved ? COLORS.metallic : COLORS.goldGradient, border: "1px solid " + (saved ? COLORS.goldLight : COLORS.goldLight), color: saved ? COLORS.goldLight : COLORS.textOnGold, fontSize: 13, fontWeight: 800, cursor: "pointer", fontFamily: TYPOGRAPHY.fontCairo, boxShadow: saved ? SHADOWS.button : SHADOWS.gold }}>
         {saved ? "✓ تم الحفظ" : "حفظ الإفصاح"}
       </button>
-      {saved && <div style={{ fontSize: 9, color: C.sub, textAlign: "center", marginTop: 6 }}>{"تاريخ الإفصاح: " + todayStr() + " — بانتظار اعتماد HR"}</div>}
+      {saved && <div style={{ ...TYPOGRAPHY.tiny, color: COLORS.textMuted, textAlign: "center", marginTop: SPACING.xs }}>{"تاريخ الإفصاح: " + todayStr() + " — بانتظار اعتماد HR"}</div>}
     </div>
   );
 }
@@ -2732,30 +2732,29 @@ function AttachmentsTab({ user }) {
 
   return (
     <div>
-      <div style={{ fontSize: 13, fontWeight: 800, color: C.text, marginBottom: 4 }}>📎 المرفقات</div>
-      <div style={{ fontSize: 10, color: C.sub, marginBottom: 14 }}>ارفع مستنداتك — الشهادات تُضاف من كوادر للقراءة فقط</div>
+      <div style={{ ...TYPOGRAPHY.h3, color: COLORS.textPrimary, marginBottom: SPACING.xs }}>المرفقات</div>
+      <div style={{ ...TYPOGRAPHY.tiny, color: COLORS.textMuted, marginBottom: SPACING.md }}>ارفع مستنداتك — الشهادات تُضاف من كوادر للقراءة فقط</div>
 
-      <div style={{ display: "flex", flexWrap: "wrap", gap: 6, marginBottom: 14 }}>
+      <div style={{ display: "flex", flexWrap: "wrap", gap: SPACING.xs, marginBottom: SPACING.md }}>
         {docTypes.map(function(dt) {
           var exists = docs.some(function(d){ return d.type === dt; });
           return (
-            <button key={dt} onClick={function(){ if(!exists) upload(dt); }} style={{ padding: "6px 12px", borderRadius: 8, background: exists ? C.green + "15" : C.bg, border: exists ? "1px solid " + C.green + "30" : "1px solid #ddd", fontSize: 10, fontWeight: 600, color: exists ? C.green : C.sub, cursor: exists ? "default" : "pointer" }}>
-              {exists ? "✓ " : "📤 "}{dt}
+            <button key={dt} onClick={function(){ if(!exists) upload(dt); }} style={{ padding: "7px 14px", borderRadius: RADIUS.sm, background: COLORS.metallic, border: "1px solid " + (exists ? COLORS.goldLight : COLORS.metallicBorder), ...TYPOGRAPHY.caption, fontWeight: 600, color: exists ? COLORS.goldLight : COLORS.textMuted, cursor: exists ? "default" : "pointer", fontFamily: TYPOGRAPHY.fontTajawal }}>
+              {exists ? "✓ " : "+ "}{dt}
             </button>
           );
         })}
       </div>
 
       {docs.map(function(d, i) {
-        var statusColors = { pending: C.orange, approved: C.green, rejected: C.red };
+        var statusColors = { pending: COLORS.textMuted, approved: COLORS.goldLight, rejected: COLORS.textDanger };
         return (
-          <div key={d.id || i} style={{ display: "flex", alignItems: "center", gap: 10, padding: "8px 0", borderBottom: i < docs.length - 1 ? "1px solid " + C.bg : "none" }}>
-            <span style={{ fontSize: 14 }}>📄</span>
+          <div key={d.id || i} style={{ display: "flex", alignItems: "center", gap: SPACING.sm, padding: SPACING.sm + "px 0", borderBottom: i < docs.length - 1 ? "1px solid rgba(255,255,255,.08)" : "none" }}>
             <div style={{ flex: 1 }}>
-              <div style={{ fontSize: 11, fontWeight: 700, color: C.text }}>{d.type}</div>
-              <div style={{ fontSize: 9, color: C.sub }}>{d.date}</div>
+              <div style={{ ...TYPOGRAPHY.caption, fontWeight: 700, color: COLORS.textPrimary }}>{d.type}</div>
+              <div style={{ ...TYPOGRAPHY.tiny, color: COLORS.textMuted }}>{d.date}</div>
             </div>
-            <span style={{ fontSize: 9, fontWeight: 700, color: statusColors[d.status] || C.orange, padding: "2px 8px", borderRadius: 6, background: (statusColors[d.status] || C.orange) + "12" }}>{d.status === "approved" ? "معتمد" : d.status === "rejected" ? "مرفوض" : "بانتظار"}</span>
+            <span style={{ ...TYPOGRAPHY.tiny, fontWeight: 700, color: statusColors[d.status] || COLORS.textMuted, padding: "3px 8px", borderRadius: RADIUS.sm, background: (statusColors[d.status] || COLORS.textMuted) + "20" }}>{d.status === "approved" ? "معتمد" : d.status === "rejected" ? "مرفوض" : "بانتظار"}</span>
           </div>
         );
       })}
