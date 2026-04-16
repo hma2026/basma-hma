@@ -1084,7 +1084,7 @@ function ReportPage({ user, allAtt, todayAtt, branch, isOffDay, myLeaves, allEmp
 
         {/* Period indicator */}
         <div style={{ textAlign: "center" }}>
-          <div style={{ display: "inline-block", background: COLORS.metallic, border: "1px solid " + COLORS.metallicBorder, padding: SPACING.sm + "px " + SPACING.lg + "px", borderRadius: RADIUS.md, ...TYPOGRAPHY.caption, fontWeight: 700, color: COLORS.goldLight, boxShadow: "0 2px 8px rgba(0,0,0,.2), inset 0 1px 0 rgba(255,255,255,.1)" }}>
+          <div style={{ display: "inline-block", background: COLORS.metallic, border: "1px solid " + COLORS.metallicBorder, padding: SPACING.sm + "px " + SPACING.lg + "px", borderRadius: RADIUS.md, ...TYPOGRAPHY.caption, fontWeight: 700, color: COLORS.goldLight, boxShadow: SHADOWS.button }}>
             {"1 " + monthName + " — " + lastDay + " " + monthName}
           </div>
         </div>
@@ -1096,7 +1096,7 @@ function ReportPage({ user, allAtt, todayAtt, branch, isOffDay, myLeaves, allEmp
             { num: lateDays, label: "متأخر", color: COLORS.goldLight },
             { num: absentDays, label: "غائب", color: COLORS.goldLight },
           ].map(function(s, i){
-            return <div key={i} style={{ flex: 1, background: COLORS.metallic, border: "1px solid " + COLORS.metallicBorder, borderRadius: RADIUS.lg, padding: SPACING.md, textAlign: "center", boxShadow: "0 2px 8px rgba(0,0,0,.2), inset 0 1px 0 rgba(255,255,255,.1)" }}>
+            return <div key={i} style={{ flex: 1, background: COLORS.metallic, border: "1px solid " + COLORS.metallicBorder, borderRadius: RADIUS.lg, padding: SPACING.md, textAlign: "center", boxShadow: SHADOWS.button }}>
               <div style={{ fontSize: 22, fontWeight: 900, color: s.color, fontFamily: TYPOGRAPHY.fontCairo }}>{s.num}</div>
               <div style={{ ...TYPOGRAPHY.tiny, color: COLORS.textMuted }}>يوم · {s.label}</div>
             </div>;
@@ -1240,7 +1240,7 @@ function ProfilePage({ user, branch, onLogout, onTicket, myTickets, darkMode, to
       <div style={{ padding: "0 " + SPACING.lg + "px", display: "flex", flexDirection: "column", gap: SPACING.md }}>
         {/* Avatar */}
         <div style={{ textAlign: "center", padding: SPACING.lg + "px 0" }} className="basma-fadein">
-          <div style={{ width: 80, height: 80, borderRadius: RADIUS.pill, background: COLORS.metallic, border: "1px solid " + COLORS.metallicBorder, margin: "0 auto " + SPACING.md + "px", display: "flex", alignItems: "center", justifyContent: "center", boxShadow: "0 2px 8px rgba(0,0,0,.2), inset 0 1px 0 rgba(255,255,255,.1)" }}>
+          <div style={{ width: 80, height: 80, borderRadius: RADIUS.pill, background: COLORS.metallic, border: "1px solid " + COLORS.metallicBorder, margin: "0 auto " + SPACING.md + "px", display: "flex", alignItems: "center", justifyContent: "center", boxShadow: SHADOWS.button }}>
             <Icons.user size={36} color={COLORS.goldLight} />
           </div>
           <div style={{ ...TYPOGRAPHY.h1, color: COLORS.textPrimary, fontFamily: TYPOGRAPHY.fontCairo }}>{user.name}</div>
@@ -1248,7 +1248,7 @@ function ProfilePage({ user, branch, onLogout, onTicket, myTickets, darkMode, to
         </div>
 
         {/* Profile Tabs */}
-        <div style={{ display: "flex", gap: SPACING.xs, background: COLORS.metallic, border: "1px solid " + COLORS.metallicBorder, borderRadius: RADIUS.lg, padding: SPACING.xs, boxShadow: "0 2px 8px rgba(0,0,0,.2), inset 0 1px 0 rgba(255,255,255,.1)" }}>
+        <div style={{ display: "flex", gap: SPACING.xs, background: COLORS.metallic, border: "1px solid " + COLORS.metallicBorder, borderRadius: RADIUS.lg, padding: SPACING.xs, boxShadow: SHADOWS.button }}>
           {tabs.map(function(t) {
             var active = tab === t.id;
             return (
@@ -1387,7 +1387,7 @@ function BenefitsPage({ user }) {
         {/* Current level */}
         <Card>
           <div style={{ display: "flex", alignItems: "center", gap: SPACING.md }}>
-            <div style={{ width: 56, height: 56, borderRadius: RADIUS.pill, background: COLORS.metallic, border: "1px solid " + COLORS.metallicBorder, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 28, boxShadow: "0 2px 8px rgba(0,0,0,.2), inset 0 1px 0 rgba(255,255,255,.1)" }}>{badge.icon}</div>
+            <div style={{ width: 56, height: 56, borderRadius: RADIUS.pill, background: COLORS.metallic, border: "1px solid " + COLORS.metallicBorder, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 28, boxShadow: SHADOWS.button }}>{badge.icon}</div>
             <div style={{ flex: 1 }}>
               <div style={{ ...TYPOGRAPHY.h2, color: COLORS.goldLight }}>{badge.label}</div>
               <div style={{ ...TYPOGRAPHY.caption, color: COLORS.textMuted }}>{(user.points || 0) + " نقطة"}</div>
@@ -1404,7 +1404,7 @@ function BenefitsPage({ user }) {
           {cats.map(function(cat) {
             var active = filter === cat;
             return (
-              <button key={cat} onClick={function(){ setFilter(cat); }} style={{ padding: SPACING.sm + "px " + SPACING.lg + "px", borderRadius: RADIUS.md, background: COLORS.metallic, color: active ? COLORS.goldLight : COLORS.textMuted, ...TYPOGRAPHY.caption, fontWeight: 700, border: "1px solid " + (active ? COLORS.goldLight : COLORS.metallicBorder), boxShadow: "0 2px 8px rgba(0,0,0,.2), inset 0 1px 0 rgba(255,255,255,.1)", cursor: "pointer", whiteSpace: "nowrap", flexShrink: 0, fontFamily: TYPOGRAPHY.fontTajawal }}>
+              <button key={cat} onClick={function(){ setFilter(cat); }} style={{ padding: SPACING.sm + "px " + SPACING.lg + "px", borderRadius: RADIUS.md, background: COLORS.metallic, color: active ? COLORS.goldLight : COLORS.textMuted, ...TYPOGRAPHY.caption, fontWeight: 700, border: "1px solid " + (active ? COLORS.goldLight : COLORS.metallicBorder), boxShadow: SHADOWS.button, cursor: "pointer", whiteSpace: "nowrap", flexShrink: 0, fontFamily: TYPOGRAPHY.fontTajawal }}>
                 {catLabels[cat] || cat}
               </button>
             );
@@ -2189,10 +2189,10 @@ function ToggleRow({ label, storeKey, border }) {
     localStorage.setItem("basma_" + storeKey, next ? "1" : "0");
   }
   return (
-    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "10px 0", borderBottom: border ? "1px solid " + C.bg : "none" }}>
-      <span style={{ fontSize: 13, fontWeight: 600 }}>{label}</span>
-      <div onClick={toggle} style={{ width: 44, height: 24, borderRadius: 12, background: on ? C.green : "#ddd", position: "relative", cursor: "pointer", transition: "background .3s" }}>
-        <div style={{ width: 18, height: 18, borderRadius: 9, background: C.card, position: "absolute", top: 3, transition: "all .3s", left: on ? 3 : undefined, right: on ? undefined : 3, boxShadow: "0 1px 3px rgba(0,0,0,.2)" }} />
+    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: SPACING.sm + "px 0", borderBottom: border ? "1px solid rgba(255,255,255,.08)" : "none" }}>
+      <span style={{ ...TYPOGRAPHY.bodySm, fontWeight: 600, color: COLORS.textPrimary }}>{label}</span>
+      <div onClick={toggle} style={{ width: 44, height: 24, borderRadius: 12, background: on ? COLORS.goldLight : COLORS.metallic, border: "1px solid " + (on ? COLORS.goldLight : COLORS.metallicBorder), position: "relative", cursor: "pointer", transition: "background .3s" }}>
+        <div style={{ width: 18, height: 18, borderRadius: 9, background: "#fff", position: "absolute", top: 2, transition: "all .3s", left: on ? 2 : undefined, right: on ? undefined : 2, boxShadow: "0 1px 3px rgba(0,0,0,.3)" }} />
       </div>
     </div>
   );
@@ -2204,61 +2204,61 @@ function MembershipCard({ points }) {
   var availableCoupons = COUPONS.filter(function(c){ return c.minTier <= badge.tier; }).length;
 
   return (
-    <div style={{ marginBottom: 12 }}>
-      {/* Main badge card */}
-      <div style={{ ...S.card, background: badge.bg, border: "1.5px solid " + tc + "30", marginBottom: 8 }} className="basma-fadein-d1">
-        <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 12 }}>
-          <div style={{ width: 52, height: 52, borderRadius: 18, background: tc + "20", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 30 }}>{badge.icon}</div>
+    <div style={{ marginBottom: SPACING.md }}>
+      {/* Main badge card — UNIFIED metallic */}
+      <div style={{ background: COLORS.metallic, border: "1px solid " + COLORS.metallicBorder, borderRadius: RADIUS.xl, padding: SPACING.lg, boxShadow: SHADOWS.button, marginBottom: SPACING.sm }}>
+        <div style={{ display: "flex", alignItems: "center", gap: SPACING.md, marginBottom: SPACING.md }}>
+          <div style={{ width: 52, height: 52, borderRadius: RADIUS.lg, background: COLORS.metallic, border: "1px solid " + COLORS.metallicBorder, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 28, boxShadow: SHADOWS.button }}>{badge.icon}</div>
           <div style={{ flex: 1 }}>
-            <div style={{ fontSize: 16, fontWeight: 900, fontFamily: "'Cairo',sans-serif", color: tc }}>{badge.label}</div>
-            <div style={{ fontSize: 11, color: C.sub }}>{"⭐ " + points + " نقطة"}</div>
+            <div style={{ ...TYPOGRAPHY.h2, color: COLORS.goldLight }}>{badge.label}</div>
+            <div style={{ ...TYPOGRAPHY.caption, color: COLORS.textMuted }}>{points + " نقطة"}</div>
           </div>
           <div style={{ textAlign: "center" }}>
-            <div style={{ fontSize: 18, fontWeight: 900, color: tc }}>{availableCoupons}</div>
-            <div style={{ fontSize: 8, color: C.sub }}>كوبون متاح</div>
+            <div style={{ ...TYPOGRAPHY.h2, color: COLORS.goldLight }}>{availableCoupons}</div>
+            <div style={{ ...TYPOGRAPHY.tiny, color: COLORS.textMuted }}>كوبون متاح</div>
           </div>
         </div>
 
         {badge.next && (
-          <div style={{ marginBottom: 12 }}>
-            <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 4 }}>
-              <span style={{ fontSize: 9, color: C.sub }}>{"التقدم نحو " + badge.nextLabel}</span>
-              <span style={{ fontSize: 9, fontWeight: 700, color: tc }}>{badge.progress + "%"}</span>
+          <div style={{ marginBottom: SPACING.md }}>
+            <div style={{ display: "flex", justifyContent: "space-between", marginBottom: SPACING.xs }}>
+              <span style={{ ...TYPOGRAPHY.tiny, color: COLORS.textMuted }}>{"التقدم نحو " + badge.nextLabel}</span>
+              <span style={{ ...TYPOGRAPHY.tiny, fontWeight: 700, color: COLORS.goldLight }}>{badge.progress + "%"}</span>
             </div>
-            <div style={{ height: 6, borderRadius: 3, background: C.bg, overflow: "hidden" }}>
-              <div style={{ height: "100%", borderRadius: 3, background: tc, width: badge.progress + "%", transition: "width .5s" }} />
+            <div style={{ height: 6, borderRadius: 3, background: "rgba(0,0,0,.3)", overflow: "hidden", border: "1px solid " + COLORS.metallicBorder }}>
+              <div style={{ height: "100%", borderRadius: 3, background: COLORS.goldGradient, width: badge.progress + "%", transition: "width .5s" }} />
             </div>
-            <div style={{ fontSize: 9, color: C.sub, marginTop: 3 }}>{"باقي " + badge.remaining + " نقطة للترقية"}</div>
+            <div style={{ ...TYPOGRAPHY.tiny, color: COLORS.textMuted, marginTop: 3 }}>{"باقي " + badge.remaining + " نقطة للترقية"}</div>
           </div>
         )}
 
         {/* Criteria weights */}
-        <div style={{ fontSize: 10, fontWeight: 700, color: tc, marginBottom: 6 }}>مصادر النقاط</div>
-        <div style={{ display: "flex", gap: 4, marginBottom: 8 }}>
+        <div style={{ ...TYPOGRAPHY.tiny, fontWeight: 700, color: COLORS.goldLight, marginBottom: SPACING.xs }}>مصادر النقاط</div>
+        <div style={{ display: "flex", gap: 3, marginBottom: SPACING.sm }}>
           {[
-            { label: "حضور", pct: CRITERIA_WEIGHTS.attendance, color: C.green },
-            { label: "تحدي", pct: CRITERIA_WEIGHTS.challenge, color: C.orange },
-            { label: "ملف", pct: CRITERIA_WEIGHTS.profile, color: C.blue },
-            { label: "تطبيقات", pct: CRITERIA_WEIGHTS.apps, color: "#8B5CF6" },
-            { label: "AI", pct: CRITERIA_WEIGHTS.ai, color: C.sub },
+            { label: "حضور", pct: CRITERIA_WEIGHTS.attendance },
+            { label: "تحدي", pct: CRITERIA_WEIGHTS.challenge },
+            { label: "ملف", pct: CRITERIA_WEIGHTS.profile },
+            { label: "تطبيقات", pct: CRITERIA_WEIGHTS.apps },
+            { label: "AI", pct: CRITERIA_WEIGHTS.ai },
           ].map(function(cr, idx) {
             return (
-              <div key={idx} style={{ flex: cr.pct, height: 20, borderRadius: 4, background: cr.color + "25", display: "flex", alignItems: "center", justifyContent: "center" }}>
-                <span style={{ fontSize: 7, fontWeight: 700, color: cr.color }}>{cr.label + " " + cr.pct + "%"}</span>
+              <div key={idx} style={{ flex: cr.pct, height: 22, borderRadius: 4, background: COLORS.metallic, border: "1px solid " + COLORS.metallicBorder, display: "flex", alignItems: "center", justifyContent: "center" }}>
+                <span style={{ fontSize: 8, fontWeight: 700, color: COLORS.goldLight, whiteSpace: "nowrap" }}>{cr.label + " " + cr.pct + "%"}</span>
               </div>
             );
           })}
         </div>
 
         {/* All levels */}
-        <div style={{ display: "flex", gap: 6 }}>
+        <div style={{ display: "flex", gap: SPACING.xs }}>
           {MEMBERSHIP.map(function(lvl) {
             var isActive = badge.tier === lvl.id;
             return (
-              <div key={lvl.id} style={{ flex: 1, padding: "6px 4px", borderRadius: 10, background: isActive ? lvl.color + "18" : "rgba(0,0,0,.03)", border: isActive ? "2px solid " + lvl.color : "1px solid rgba(0,0,0,.05)", textAlign: "center" }}>
+              <div key={lvl.id} style={{ flex: 1, padding: "6px 4px", borderRadius: RADIUS.md, background: COLORS.metallic, border: "1px solid " + (isActive ? COLORS.goldLight : COLORS.metallicBorder), textAlign: "center", boxShadow: isActive ? SHADOWS.button : "none", opacity: isActive ? 1 : 0.6 }}>
                 <div style={{ fontSize: 16 }}>{lvl.icon}</div>
-                <div style={{ fontSize: 8, fontWeight: 700, color: isActive ? lvl.color : C.sub }}>{lvl.name.replace("عضوية ","")}</div>
-                <div style={{ fontSize: 7, color: C.sub }}>{lvl.min + " نقطة"}</div>
+                <div style={{ ...TYPOGRAPHY.tiny, fontWeight: 700, color: isActive ? COLORS.goldLight : COLORS.textMuted }}>{lvl.name.replace("عضوية ","")}</div>
+                <div style={{ fontSize: 7, color: COLORS.textMuted }}>{lvl.min + " نقطة"}</div>
               </div>
             );
           })}
@@ -2266,8 +2266,8 @@ function MembershipCard({ points }) {
       </div>
 
       {/* Membership note */}
-      <div style={{ padding: "8px 12px", borderRadius: 10, background: C.bg, border: "1px solid " + C.bg }}>
-        <div style={{ fontSize: 9, color: C.sub, lineHeight: 1.6, textAlign: "center" }}>{"⚖️ " + MEMBERSHIP_NOTE}</div>
+      <div style={{ padding: "8px 12px", borderRadius: RADIUS.md, background: COLORS.metallic, border: "1px solid " + COLORS.metallicBorder, boxShadow: SHADOWS.button }}>
+        <div style={{ ...TYPOGRAPHY.tiny, color: COLORS.textMuted, lineHeight: 1.6, textAlign: "center" }}>{MEMBERSHIP_NOTE}</div>
       </div>
     </div>
   );
@@ -2429,20 +2429,23 @@ function DelegationCard({ user }) {
 
   if (delegations.length === 0) return null;
 
-  var statusMap = { pending: { label: "بانتظار الاعتماد", color: C.orange }, approved: { label: "معتمد", color: C.green }, rejected: { label: "مرفوض", color: C.red } };
+  var statusMap = { pending: { label: "بانتظار الاعتماد", color: COLORS.textMuted }, approved: { label: "معتمد", color: COLORS.goldLight }, rejected: { label: "مرفوض", color: COLORS.textDanger } };
 
   return (
-    <div style={buildS().card} className="basma-fadein-d3">
-      <div style={buildS().cardTitle}><span>🚀 الانتدابات</span><span style={{ fontSize: 10, color: C.sub }}>{delegations.length}</span></div>
+    <div style={{ background: COLORS.metallic, border: "1px solid " + COLORS.metallicBorder, borderRadius: RADIUS.xl, padding: SPACING.lg, boxShadow: SHADOWS.button, marginBottom: SPACING.md }}>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: SPACING.md }}>
+        <span style={{ ...TYPOGRAPHY.h3, color: COLORS.textPrimary }}>الانتدابات</span>
+        <span style={{ ...TYPOGRAPHY.tiny, color: COLORS.textMuted }}>{delegations.length}</span>
+      </div>
       {delegations.map(function(dl, i) {
         var s = statusMap[dl.status] || statusMap.pending;
         return (
-          <div key={dl.id || i} style={{ display: "flex", alignItems: "center", gap: 10, padding: "8px 0", borderBottom: i < delegations.length - 1 ? "1px solid " + C.bg : "none" }}>
+          <div key={dl.id || i} style={{ display: "flex", alignItems: "center", gap: SPACING.sm, padding: SPACING.sm + "px 0", borderBottom: i < delegations.length - 1 ? "1px solid rgba(255,255,255,.08)" : "none" }}>
             <div style={{ flex: 1 }}>
-              <div style={{ fontSize: 12, fontWeight: 700, color: C.text }}>{dl.reason || "انتداب"}</div>
-              <div style={{ fontSize: 9, color: C.sub }}>{(dl.from || "") + " → " + (dl.to || "")}</div>
+              <div style={{ ...TYPOGRAPHY.bodySm, fontWeight: 700, color: COLORS.textPrimary }}>{dl.reason || "انتداب"}</div>
+              <div style={{ ...TYPOGRAPHY.tiny, color: COLORS.textMuted }}>{(dl.from || "") + " → " + (dl.to || "")}</div>
             </div>
-            <span style={{ fontSize: 9, fontWeight: 700, color: s.color, padding: "2px 8px", borderRadius: 6, background: s.color + "12" }}>{s.label}</span>
+            <span style={{ ...TYPOGRAPHY.tiny, fontWeight: 700, color: s.color, padding: "3px 8px", borderRadius: RADIUS.sm, background: s.color + "20" }}>{s.label}</span>
           </div>
         );
       })}
@@ -2465,42 +2468,40 @@ function ViolationsCard({ user }) {
   if (total === 0) return null;
 
   return (
-    <div style={buildS().card}>
-      <div onClick={function(){ setExpanded(!expanded); }} style={{ ...buildS().cardTitle, cursor: "pointer" }}>
-        <span>{"⚖️ المخالفات والإنذارات (" + total + ")"}</span>
-        <span style={{ fontSize: 12, color: C.red }}>{expanded ? "▲" : "▼"}</span>
+    <div style={{ background: COLORS.metallic, border: "1px solid " + COLORS.metallicBorder, borderRadius: RADIUS.xl, padding: SPACING.lg, boxShadow: SHADOWS.button, marginBottom: SPACING.md }}>
+      <div onClick={function(){ setExpanded(!expanded); }} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", cursor: "pointer" }}>
+        <span style={{ ...TYPOGRAPHY.h3, color: COLORS.textPrimary }}>{"المخالفات والإنذارات (" + total + ")"}</span>
+        <span style={{ color: COLORS.textDanger }}>{expanded ? "▲" : "▼"}</span>
       </div>
       {expanded && (
-        <div>
+        <div style={{ marginTop: SPACING.md }}>
           {warnings.map(function(w, i) {
             var lvl = VIOLATION_ESCALATION.find(function(v){ return v.level === (w.level || 1); }) || VIOLATION_ESCALATION[0];
             return (
-              <div key={w.id || i} style={{ display: "flex", alignItems: "center", gap: 10, padding: "8px 0", borderBottom: "1px solid " + C.bg }}>
-                <span style={{ fontSize: 16 }}>{lvl.icon}</span>
+              <div key={w.id || i} style={{ display: "flex", alignItems: "center", gap: SPACING.sm, padding: SPACING.sm + "px 0", borderBottom: "1px solid rgba(255,255,255,.08)" }}>
                 <div style={{ flex: 1 }}>
-                  <div style={{ fontSize: 11, fontWeight: 700, color: C.text }}>{lvl.type}</div>
-                  <div style={{ fontSize: 9, color: C.sub }}>{w.details || w.type || ""}</div>
-                  <div style={{ fontSize: 8, color: C.sub }}>{w.ts ? w.ts.split("T")[0] : ""}</div>
+                  <div style={{ ...TYPOGRAPHY.caption, fontWeight: 700, color: COLORS.textPrimary }}>{lvl.type}</div>
+                  <div style={{ ...TYPOGRAPHY.tiny, color: COLORS.textMuted }}>{w.details || w.type || ""}</div>
+                  <div style={{ fontSize: 8, color: COLORS.textMuted }}>{w.ts ? w.ts.split("T")[0] : ""}</div>
                 </div>
-                <div style={{ fontSize: 9, color: C.orange, fontWeight: 700 }}>{"الرد: " + lvl.response}</div>
+                <div style={{ ...TYPOGRAPHY.tiny, color: COLORS.goldLight, fontWeight: 700 }}>{"الرد: " + lvl.response}</div>
               </div>
             );
           })}
           {violations.map(function(v, i) {
             var vt = VIOLATION_TYPES[v.type] || { label: v.type || "مخالفة", category: "—" };
             return (
-              <div key={v.id || i} style={{ display: "flex", alignItems: "center", gap: 10, padding: "8px 0", borderBottom: i < violations.length - 1 ? "1px solid " + C.bg : "none" }}>
-                <span style={{ fontSize: 14 }}>📋</span>
+              <div key={v.id || i} style={{ display: "flex", alignItems: "center", gap: SPACING.sm, padding: SPACING.sm + "px 0", borderBottom: i < violations.length - 1 ? "1px solid rgba(255,255,255,.08)" : "none" }}>
                 <div style={{ flex: 1 }}>
-                  <div style={{ fontSize: 11, fontWeight: 700, color: C.text }}>{vt.label}</div>
-                  <div style={{ fontSize: 9, color: C.sub }}>{v.details || ""}</div>
+                  <div style={{ ...TYPOGRAPHY.caption, fontWeight: 700, color: COLORS.textPrimary }}>{vt.label}</div>
+                  <div style={{ ...TYPOGRAPHY.tiny, color: COLORS.textMuted }}>{v.details || ""}</div>
                 </div>
-                <span style={{ fontSize: 9, color: v.status === "open" ? C.red : C.green }}>{v.status === "open" ? "مفتوحة" : "مغلقة"}</span>
+                <span style={{ ...TYPOGRAPHY.tiny, color: v.status === "open" ? COLORS.textDanger : COLORS.goldLight, fontWeight: 700 }}>{v.status === "open" ? "مفتوحة" : "مغلقة"}</span>
               </div>
             );
           })}
-          <div style={{ fontSize: 9, color: C.sub, textAlign: "center", marginTop: 8, padding: 8, background: C.bg, borderRadius: 8 }}>
-            ⚖️ يحق لك الاعتراض على أي إنذار خلال 48 ساعة — افتح تذكرة دعم من نوع "رد على إفادة"
+          <div style={{ ...TYPOGRAPHY.tiny, color: COLORS.textMuted, textAlign: "center", marginTop: SPACING.sm, padding: SPACING.sm, background: COLORS.metallic, border: "1px solid " + COLORS.metallicBorder, borderRadius: RADIUS.sm }}>
+            يحق لك الاعتراض على أي إنذار خلال 48 ساعة — افتح تذكرة دعم
           </div>
         </div>
       )}
@@ -2838,26 +2839,25 @@ function PointsLogCard({ user, allAtt }) {
   var total = log.reduce(function(s, l){ return s + l.pts; }, 0);
 
   return (
-    <div style={buildS().card}>
-      <div onClick={function(){ setExpanded(!expanded); }} style={{ ...buildS().cardTitle, cursor: "pointer" }}>
-        <span>{"📊 سجل النقاط — ⭐" + (user.points || 0)}</span>
-        <span style={{ fontSize: 12, color: C.blue }}>{expanded ? "▲" : "▼"}</span>
+    <div style={{ background: COLORS.metallic, border: "1px solid " + COLORS.metallicBorder, borderRadius: RADIUS.xl, padding: SPACING.lg, boxShadow: SHADOWS.button, marginBottom: SPACING.md }}>
+      <div onClick={function(){ setExpanded(!expanded); }} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", cursor: "pointer" }}>
+        <span style={{ ...TYPOGRAPHY.h3, color: COLORS.textPrimary }}>{"سجل النقاط — " + (user.points || 0)}</span>
+        <span style={{ color: COLORS.goldLight }}>{expanded ? "▲" : "▼"}</span>
       </div>
       {expanded && (
-        <div>
+        <div style={{ marginTop: SPACING.md }}>
           {log.map(function(l, i) {
             return (
-              <div key={i} style={{ display: "flex", alignItems: "center", gap: 8, padding: "6px 0", borderBottom: i < log.length - 1 ? "1px solid " + C.bg : "none" }}>
-                <span style={{ fontSize: 14 }}>{l.icon}</span>
-                <div style={{ flex: 1, fontSize: 11, fontWeight: 600 }}>{l.label}</div>
-                <div style={{ fontSize: 10, color: C.sub }}>{l.detail}</div>
-                <div style={{ fontSize: 12, fontWeight: 800, color: C.green }}>{"+" + l.pts}</div>
+              <div key={i} style={{ display: "flex", alignItems: "center", gap: SPACING.sm, padding: SPACING.sm + "px 0", borderBottom: i < log.length - 1 ? "1px solid rgba(255,255,255,.08)" : "none" }}>
+                <div style={{ flex: 1, ...TYPOGRAPHY.caption, fontWeight: 600, color: COLORS.textPrimary }}>{l.label}</div>
+                <div style={{ ...TYPOGRAPHY.tiny, color: COLORS.textMuted }}>{l.detail}</div>
+                <div style={{ ...TYPOGRAPHY.bodySm, fontWeight: 800, color: COLORS.goldLight }}>{"+" + l.pts}</div>
               </div>
             );
           })}
-          <div style={{ display: "flex", justifyContent: "space-between", paddingTop: 8, borderTop: "2px solid " + C.bg, marginTop: 4 }}>
-            <span style={{ fontSize: 12, fontWeight: 800, color: C.text }}>المجموع المحسوب</span>
-            <span style={{ fontSize: 14, fontWeight: 900, color: C.green }}>{"⭐" + total}</span>
+          <div style={{ display: "flex", justifyContent: "space-between", paddingTop: SPACING.sm, borderTop: "1px solid " + COLORS.metallicBorder, marginTop: SPACING.xs }}>
+            <span style={{ ...TYPOGRAPHY.bodySm, fontWeight: 800, color: COLORS.textPrimary }}>المجموع المحسوب</span>
+            <span style={{ ...TYPOGRAPHY.h3, fontWeight: 900, color: COLORS.goldLight }}>{total}</span>
           </div>
         </div>
       )}

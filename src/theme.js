@@ -153,7 +153,7 @@ export function Card({ children, style = {}, onClick, padding = SPACING.lg }) {
       border: "1px solid " + COLORS.metallicBorder,
       borderRadius: RADIUS.xl,
       padding: padding,
-      boxShadow: "0 2px 8px rgba(0,0,0,.2), inset 0 1px 0 rgba(255,255,255,.1)",
+      boxShadow: SHADOWS.button,
       cursor: onClick ? "pointer" : "default",
       ...style,
     },
