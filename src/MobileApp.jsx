@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef, useCallback } from "react";
-import { COLORS, SPACING, TYPOGRAPHY, RADIUS, SHADOWS, Button, Card, Section } from "./theme";
+import { COLORS, SPACING, TYPOGRAPHY, RADIUS, SHADOWS, Button, Card, Section, Icons } from "./theme";
 
 /* ═══════════════════════════════════════════
    بصمة HMA v4.51 — Mobile App
@@ -856,8 +856,9 @@ function HomePage({ user, branch, now, todayAtt, allAtt, gps, gpsDist, streak, l
             {challengeAnswer && <div style={{ fontSize: 12, color: C.gold, marginTop: 4 }}>{"+" + POINTS.challenge_correct + " نقطة"}</div>}
           </div>
         ) : (
-          <div style={{ position: "relative", width: SIZE, height: SIZE }}>
-            <svg width={SIZE} height={SIZE} viewBox={"0 0 " + SIZE + " " + SIZE}>
+          <>
+          <div style={{ width: "100%", maxWidth: SIZE, aspectRatio: "1 / 1", position: "relative", padding: "10px" }}>
+            <svg viewBox={"0 0 " + SIZE + " " + SIZE} width="100%" height="100%" style={{ display: "block", overflow: "visible" }}>
               <defs>
                 <radialGradient id="lxFace" cx="50%" cy="45%" r="48%"><stop offset="0%" stopColor="#151c2c"/><stop offset="70%" stopColor="#0a0f1e"/><stop offset="100%" stopColor="#060a12"/></radialGradient>
                 <linearGradient id="lxRim" x1="0%" y1="0%" x2="100%" y2="100%"><stop offset="0%" stopColor="#f5e6b8"/><stop offset="20%" stopColor="#e8d5a3"/><stop offset="50%" stopColor="#c9a84c"/><stop offset="80%" stopColor="#8b6914"/><stop offset="100%" stopColor="#a08430"/></linearGradient>
@@ -907,51 +908,56 @@ function HomePage({ user, branch, now, todayAtt, allAtt, gps, gpsDist, streak, l
               <rect x={SIZE/2+34} y={SIZE/2-9} width={30} height={18} rx={3} fill="#080c14" stroke="rgba(201,168,76,.4)" strokeWidth={0.8} />
               <text x={SIZE/2+49} y={SIZE/2+1} textAnchor="middle" dominantBaseline="central" fill="#e8d5a3" fontSize={11} fontWeight="800" fontFamily="system-ui">{now.getDate()}</text>
             </svg>
-            <div style={{ position: "absolute", bottom: 30, left: "50%", transform: "translateX(-50%)", textAlign: "center" }}>
-              {outsideNoCheckin && <div style={{ fontSize: 9, fontWeight: 800, color: "#FF6B6B", marginBottom: 2 }}>لم تقم بتسجيل الحضور</div>}
-              {outsideNoCheckin && gpsDist && <div style={{ fontSize: 8, color: "rgba(255,255,255,.4)", marginBottom: 2 }}>{"خارج منطقة العمل (" + gpsDist + " م)"}</div>}
-              <div style={{ fontSize: 18, fontWeight: 800, color: "#e8d5a3", fontFamily: "'Times New Roman',serif", letterSpacing: 3, textShadow: "0 0 10px rgba(201,168,76,.3)" }}>{time}<span style={{ fontSize: 9, opacity: .4 }}>:{sec}</span> <span style={{ fontSize: 9, opacity: .5 }}>{ampm}</span></div>
-            </div>
           </div>
+          {/* Digital time — below clock, not absolute */}
+          <div style={{ textAlign: "center", marginTop: SPACING.md }}>
+            {outsideNoCheckin && <div style={{ ...TYPOGRAPHY.caption, fontWeight: 800, color: COLORS.textDanger }}>لم تقم بتسجيل الحضور</div>}
+            {outsideNoCheckin && gpsDist && <div style={{ ...TYPOGRAPHY.tiny, color: COLORS.textMuted, marginTop: 2 }}>{"خارج منطقة العمل (" + gpsDist + " م)"}</div>}
+            <div style={{ fontSize: 20, fontWeight: 800, color: COLORS.goldLight, fontFamily: TYPOGRAPHY.fontSerif, letterSpacing: 3, marginTop: 4, textShadow: "0 0 10px rgba(201,168,76,.3)" }}>{time}<span style={{ fontSize: 12, opacity: .4 }}>:{sec}</span> <span style={{ fontSize: 11, opacity: .4 }}>{ampm}</span></div>
+          </div>
+          </>
         )}
 
-        {/* Checkin button below clock */}
+        {/* Challenge text below clock */}
+        {dayState === "before" && !showChallenge && challengeAnswer === null && challengeDoneToday && <div style={{ marginTop: SPACING.sm, ...TYPOGRAPHY.caption, color: COLORS.textSecondary }}>{"✓ أجبت على تحدي اليوم"}</div>}
+      </div>
+
+      {/* ═══ BOTTOM (unified buttons, uniform height) ═══ */}
+      <div style={{ padding: SPACING.lg, display: "flex", flexDirection: "column", gap: SPACING.sm }}>
+
+        {/* PRIMARY — سجّل حضورك (gold) */}
         {!showChallenge && challengeAnswer === null && btnAction && (
-          <div style={{ width: "80%", maxWidth: 280, marginTop: SPACING.xl }}>
-            <Button variant="secondary" size="lg" onClick={function(){ if(!loading) onCheckin(btnAction, btnLabel); }} disabled={loading}>
-              {loading ? "⏳ جارٍ التسجيل..." : btnText}
-            </Button>
-          </div>
+          <Button variant="primary" size="lg" icon={<Icons.sun size={20} />} onClick={function(){ if(!loading) onCheckin(btnAction, btnLabel); }} disabled={loading}>
+            {loading ? "جارٍ التسجيل..." : btnText}
+          </Button>
         )}
-        {!showChallenge && challengeAnswer === null && !btnAction && <div style={{ marginTop: 12, fontSize: 13, color: "rgba(255,255,255,.5)", fontWeight: 700 }}>{btnText}</div>}
-        {dayState === "before" && !showChallenge && challengeAnswer === null && challengeDoneToday && <div style={{ marginTop: 8, fontSize: 11, color: "rgba(255,255,255,.6)" }}>{"✓ أجبت على تحدي اليوم"}</div>}
 
-        {/* GPS */}
-        <div style={{ display: "flex", alignItems: "center", gap: SPACING.sm, marginTop: SPACING.md }}>
+        {/* GPS indicator */}
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: SPACING.sm }}>
           <div style={{ width: 7, height: 7, borderRadius: RADIUS.pill, background: gps ? (inRange ? COLORS.success : COLORS.textDanger) : COLORS.warning }} />
           <span style={{ ...TYPOGRAPHY.caption, color: COLORS.textMuted }}>{gps ? (inRange ? "في النطاق" : "خارج النطاق") + (branch ? " — " + branch.name : "") : "تحديد الموقع..."}</span>
           {streak > 0 && <span style={{ ...TYPOGRAPHY.caption, fontWeight: 800, color: COLORS.warning }}>{"🔥 " + streak}</span>}
         </div>
-      </div>
 
-      {/* ═══ BOTTOM ACTIONS (unified) ═══ */}
-      <div style={{ padding: SPACING.lg + "px", display: "flex", flexDirection: "column", gap: SPACING.sm }}>
+        {/* إجازة + إذن (secondary) */}
         <div style={{ display: "flex", gap: SPACING.sm }}>
-          <Button variant="secondary" size="md" icon="📝" onClick={onLeave}>إجازة</Button>
-          <Button variant="secondary" size="md" icon="🙋" onClick={onPermission}>إذن</Button>
+          <Button variant="secondary" size="md" icon={<Icons.clipboard size={20} />} onClick={onLeave}>إجازة</Button>
+          <Button variant="secondary" size="md" icon={<Icons.hand size={20} />} onClick={onPermission}>إذن</Button>
         </div>
+
+        {/* كوادر — secondary flippable */}
         <div className="basma-flip-container">
           <div className={"basma-flip-inner" + (kadwarFlip ? " flipped" : "")} style={{ minHeight: 44 }}>
             <div className="basma-flip-front">
-              <Button variant="primary" size="md" icon="🏛️" onClick={function(){ setKadwarFlip(true); }}>
+              <Button variant="secondary" size="md" icon={<Icons.building size={20} />} onClick={function(){ setKadwarFlip(true); }}>
                 الدخول إلى منصة كوادر
               </Button>
             </div>
             <div className="basma-flip-back">
               <div style={{ display: "flex", gap: SPACING.xs }}>
-                <KadwarBtn icon="💬" label="تواصل" count={kadwarNotifs.tasks} />
-                <KadwarBtn icon="📝" label="اختبار" count={kadwarNotifs.exams} />
-                <KadwarBtn icon="👤" label="حسابي" count={kadwarNotifs.alerts} />
+                <KadwarBtn icon={<Icons.message size={18} />} label="تواصل" count={kadwarNotifs.tasks} />
+                <KadwarBtn icon={<Icons.edit size={18} />} label="اختبار" count={kadwarNotifs.exams} />
+                <KadwarBtn icon={<Icons.user size={18} />} label="حسابي" count={kadwarNotifs.alerts} />
               </div>
             </div>
           </div>
@@ -2289,14 +2295,14 @@ function WeeklyChart({ allAtt, branch }) {
 
 function KadwarBtn({ icon, label, count }) {
   return (
-    <button onClick={function(){ window.open("https://hma.engineer", "_blank"); }} style={{ flex: 1, padding: "10px 8px", borderRadius: 12, background: "linear-gradient(180deg, rgba(255,255,255,.15) 0%, rgba(255,255,255,.05) 50%, rgba(255,255,255,.1) 100%)", border: "1px solid rgba(232,213,163,.3)", display: "flex", alignItems: "center", justifyContent: "center", gap: 6, cursor: "pointer", position: "relative", boxShadow: "0 2px 6px rgba(0,0,0,.2), inset 0 1px 0 rgba(255,255,255,.15)", borderRadius: 12 }}>
-      <span style={{ fontSize: 14, position: "relative" }}>
+    <button onClick={function(){ window.open("https://hma.engineer", "_blank"); }} style={{ flex: 1, height: 44, borderRadius: RADIUS.lg, background: COLORS.metallic, border: "1px solid rgba(232,213,163,.25)", display: "flex", alignItems: "center", justifyContent: "center", gap: SPACING.xs, cursor: "pointer", position: "relative", boxShadow: SHADOWS.button }}>
+      <span style={{ color: COLORS.goldLight, display: "flex", position: "relative" }}>
         {icon}
         {count > 0 && (
-          <span style={{ position: "absolute", top: -6, right: -8, minWidth: 16, height: 16, borderRadius: 8, background: C.red, color: "#fff", fontSize: 9, fontWeight: 900, display: "flex", alignItems: "center", justifyContent: "center", padding: "0 3px" }}>{count}</span>
+          <span style={{ position: "absolute", top: -6, right: -8, minWidth: 16, height: 16, borderRadius: 8, background: COLORS.danger, color: "#fff", fontSize: 9, fontWeight: 900, display: "flex", alignItems: "center", justifyContent: "center", padding: "0 3px" }}>{count}</span>
         )}
       </span>
-      <span style={{ fontSize: 11, fontWeight: 700, color: "#e8d5a3" }}>{label}</span>
+      <span style={{ ...TYPOGRAPHY.caption, fontWeight: 700, color: COLORS.goldLight }}>{label}</span>
     </button>
   );
 }
