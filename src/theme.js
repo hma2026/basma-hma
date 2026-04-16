@@ -18,20 +18,20 @@ const DARK_COLORS = {
   cardRowBorder: "rgba(255,255,255,.08)",
 };
 
-/* ── LIGHT PALETTE (same gold identity, light background) ── */
+/* ── LIGHT PALETTE — polished dark titanium on cool silver bg ── */
 const LIGHT_COLORS = {
-  bg1: "#f5efe1", bg2: "#ebe3d0", bg3: "#dfd4b8",
-  card: "#faf6ea", cardBorder: "rgba(139,105,20,.25)", cardHover: "#f0e9d4",
-  gold: "#8b6914", goldLight: "#a17e2f", goldDark: "#5c4410",
-  goldGradient: "linear-gradient(180deg, #c9a84c 0%, #a17e2f 40%, #8b6914 80%, #5c4410 100%)",
-  metallic: "linear-gradient(180deg, rgba(139,105,20,.12) 0%, rgba(139,105,20,.04) 50%, rgba(139,105,20,.08) 100%)",
-  metallicBorder: "rgba(139,105,20,.25)",
+  bg1: "#e8ebf0", bg2: "#d5dae2", bg3: "#c2c9d4",
+  card: "#ffffff", cardBorder: "rgba(71,85,105,.35)", cardHover: "#f1f5f9",
+  gold: "#475569", goldLight: "#64748b", goldDark: "#1e293b",
+  goldGradient: "linear-gradient(180deg, #cbd5e1 0%, #94a3b8 20%, #475569 50%, #1e293b 80%, #334155 100%)",
+  metallic: "linear-gradient(180deg, rgba(255,255,255,.65) 0%, rgba(255,255,255,.35) 50%, rgba(255,255,255,.55) 100%)",
+  metallicBorder: "rgba(71,85,105,.35)",
   success: "#059669", warning: "#b8860b", danger: "#c0392b", info: "#2b5ea7",
-  textPrimary: "#3d2e0c", textSecondary: "#6b5419", textMuted: "#8a7548",
+  textPrimary: "#0f172a", textSecondary: "#334155", textMuted: "#64748b",
   textOnGold: "#ffffff", textDanger: "#c0392b",
   white: "#ffffff", black: "#000000", transparent: "transparent",
-  innerShadow: "rgba(255,255,255,.5)",
-  cardRowBorder: "rgba(139,105,20,.15)",
+  innerShadow: "rgba(255,255,255,.6)",
+  cardRowBorder: "rgba(71,85,105,.15)",
 };
 
 /* ── Active COLORS — mutable, updated by setTheme() ── */

@@ -20,14 +20,14 @@ const VER = APP_CONFIG.VER;
 
 /* ── Colors ── */
 const LIGHT = {
-  hdr1: "#f5efe1", hdr2: "#ebe3d0", hdr3: "#dfd4b8",
+  hdr1: "#e8ebf0", hdr2: "#d5dae2", hdr3: "#c2c9d4",
   green: "#10b981", greenDark: "#059669",
   orange: "#d4a017", orangeDark: "#b8860b",
   red: "#E2192C", redDark: "#c0392b",
   blue: "#2b5ea7", blueBright: "#3a7bd5",
-  bg: "#ebe3d0", card: "#faf6ea", text: "#3d2e0c", sub: "#8a7548",
-  gold: "#8b6914", goldLight: "#a17e2f", goldDark: "#5c4410",
-  cardBorder: "rgba(139,105,20,.25)",
+  bg: "#d5dae2", card: "#ffffff", text: "#0f172a", sub: "#64748b",
+  gold: "#475569", goldLight: "#64748b", goldDark: "#1e293b",
+  cardBorder: "rgba(71,85,105,.35)",
 };
 const DARK = {
   hdr1: "#0d2445", hdr2: "#091a38", hdr3: "#071428",
@@ -710,7 +710,7 @@ function MobileAppInner() {
       {!online && <div style={{ background: C.red, color: "#fff", textAlign: "center", padding: "6px 0", fontSize: 11, fontWeight: 700 }}>⚠️ لا يوجد اتصال بالإنترنت</div>}
 
       <div key={page} style={{ flex: 1, display: "flex", flexDirection: "column", animation: "pageIn .3s ease" }}>
-        {page === "home" && <HomePage user={user} branch={branch} now={now} todayAtt={todayAtt} allAtt={allAtt} gps={gps} gpsDist={gpsDist} streak={streak} loading={loading} refreshing={refreshing} dayState={getDayState()} checkpoints={getCheckpoints()} isOffDay={isOffDay()} pendingCount={myLeaves.filter(function(l){ return l.status === "pending"; }).length + myTickets.filter(function(t){ return t.status === "pending"; }).length} teamToday={teamToday} pwaPrompt={pwaPrompt} onPwaInstall={async function(){ if(pwaPrompt){pwaPrompt.prompt();await pwaPrompt.userChoice;setPwaPrompt(null);} }} onCheckin={requestCheckin} onChallenge={function(pts) { var u = { ...user, points: (user.points||0)+pts }; setUser(u); localStorage.setItem("basma_user", JSON.stringify(u)); showToast("🎉 +" + pts + " نقطة!"); }} onLeave={() => setLeaveModal(true)} onRefresh={refresh} onPreAbsence={function(){ setPreAbsModal(true); }} onManualAtt={function(){ setManualAttModal(true); }} onPermission={function(){ setPermModal(true); }} kadwarNotifs={kadwarNotifs} />}
+        {page === "home" && <HomePage user={user} branch={branch} now={now} todayAtt={todayAtt} allAtt={allAtt} gps={gps} gpsDist={gpsDist} streak={streak} loading={loading} refreshing={refreshing} dayState={getDayState()} checkpoints={getCheckpoints()} isOffDay={isOffDay()} pendingCount={myLeaves.filter(function(l){ return l.status === "pending"; }).length + myTickets.filter(function(t){ return t.status === "pending"; }).length} teamToday={teamToday} pwaPrompt={pwaPrompt} onPwaInstall={async function(){ if(pwaPrompt){pwaPrompt.prompt();await pwaPrompt.userChoice;setPwaPrompt(null);} }} onCheckin={requestCheckin} onChallenge={function(pts) { var u = { ...user, points: (user.points||0)+pts }; setUser(u); localStorage.setItem("basma_user", JSON.stringify(u)); showToast("🎉 +" + pts + " نقطة!"); }} onLeave={() => setLeaveModal(true)} onRefresh={refresh} onPreAbsence={function(){ setPreAbsModal(true); }} onManualAtt={function(){ setManualAttModal(true); }} onPermission={function(){ setPermModal(true); }} kadwarNotifs={kadwarNotifs} darkMode={darkMode} />}
         {page === "report" && <ReportPage user={user} allAtt={allAtt} todayAtt={todayAtt} branch={branch} isOffDay={isOffDay()} myLeaves={myLeaves} allEmps={allEmps} />}
         {page === "benefits" && <BenefitsPage user={user} />}
         {page === "profile" && <ProfilePage user={user} branch={branch} onLogout={logout} onTicket={() => setTicketModal(true)} myTickets={myTickets} darkMode={darkMode} toggleDark={toggleDark} />}
@@ -779,7 +779,7 @@ function LoginScreen({ onLogin, loading }) {
 }
 
 /* ═══════════ HOME ═══════════ */
-function HomePage({ user, branch, now, todayAtt, allAtt, gps, gpsDist, streak, loading, refreshing, dayState, checkpoints, isOffDay, pendingCount, teamToday, pwaPrompt, onPwaInstall, onCheckin, onChallenge, onLeave, onRefresh, onPreAbsence, onManualAtt, onPermission, kadwarNotifs }) {
+function HomePage({ user, branch, now, todayAtt, allAtt, gps, gpsDist, streak, loading, refreshing, dayState, checkpoints, isOffDay, pendingCount, teamToday, pwaPrompt, onPwaInstall, onCheckin, onChallenge, onLeave, onRefresh, onPreAbsence, onManualAtt, onPermission, kadwarNotifs, darkMode }) {
   const { time, sec, ampm } = formatTime(now);
   const badge = memberBadge(user.points || 0);
   const inRange = branch && gpsDist !== null && gpsDist <= (branch.radius || 150);
@@ -882,29 +882,39 @@ function HomePage({ user, branch, now, todayAtt, allAtt, gps, gpsDist, streak, l
             <svg viewBox={"0 0 " + SIZE + " " + SIZE} width="100%" height="100%" style={{ display: "block", overflow: "visible" }}>
               <defs>
                 <radialGradient id="lxFace" cx="50%" cy="45%" r="48%"><stop offset="0%" stopColor="#151c2c"/><stop offset="70%" stopColor="#0a0f1e"/><stop offset="100%" stopColor="#060a12"/></radialGradient>
-                <linearGradient id="lxRim" x1="0%" y1="0%" x2="100%" y2="100%"><stop offset="0%" stopColor="#f5e6b8"/><stop offset="20%" stopColor="#e8d5a3"/><stop offset="50%" stopColor="#c9a84c"/><stop offset="80%" stopColor="#8b6914"/><stop offset="100%" stopColor="#a08430"/></linearGradient>
-                <linearGradient id="lxRim2" x1="0%" y1="100%" x2="100%" y2="0%"><stop offset="0%" stopColor="#8b6914"/><stop offset="50%" stopColor="#c9a84c"/><stop offset="100%" stopColor="#e8d5a3"/></linearGradient>
-                {/* ANIMATED SHINE — moving highlight around gold rim */}
+                {darkMode ? (
+                  <>
+                    <linearGradient id="lxRim" x1="0%" y1="0%" x2="100%" y2="100%"><stop offset="0%" stopColor="#f5e6b8"/><stop offset="20%" stopColor="#e8d5a3"/><stop offset="50%" stopColor="#c9a84c"/><stop offset="80%" stopColor="#8b6914"/><stop offset="100%" stopColor="#a08430"/></linearGradient>
+                    <linearGradient id="lxRim2" x1="0%" y1="100%" x2="100%" y2="0%"><stop offset="0%" stopColor="#8b6914"/><stop offset="50%" stopColor="#c9a84c"/><stop offset="100%" stopColor="#e8d5a3"/></linearGradient>
+                  </>
+                ) : (
+                  <>
+                    {/* TITANIUM rim for light mode */}
+                    <linearGradient id="lxRim" x1="0%" y1="0%" x2="100%" y2="100%"><stop offset="0%" stopColor="#f1f5f9"/><stop offset="15%" stopColor="#cbd5e1"/><stop offset="35%" stopColor="#94a3b8"/><stop offset="55%" stopColor="#475569"/><stop offset="75%" stopColor="#1e293b"/><stop offset="100%" stopColor="#334155"/></linearGradient>
+                    <linearGradient id="lxRim2" x1="0%" y1="100%" x2="100%" y2="0%"><stop offset="0%" stopColor="#334155"/><stop offset="50%" stopColor="#94a3b8"/><stop offset="100%" stopColor="#f1f5f9"/></linearGradient>
+                  </>
+                )}
+                {/* ANIMATED SHINE — every 60 seconds */}
                 <linearGradient id="lxShine" x1="0%" y1="0%" x2="100%" y2="0%">
-                  <stop offset="0%" stopColor="rgba(255,248,220,0)"/>
-                  <stop offset="45%" stopColor="rgba(255,248,220,0)"/>
-                  <stop offset="50%" stopColor="rgba(255,248,220,.85)"/>
-                  <stop offset="55%" stopColor="rgba(255,248,220,0)"/>
-                  <stop offset="100%" stopColor="rgba(255,248,220,0)"/>
-                  <animate attributeName="x1" values="-100%;200%" dur="4s" repeatCount="indefinite"/>
-                  <animate attributeName="x2" values="0%;300%" dur="4s" repeatCount="indefinite"/>
+                  <stop offset="0%" stopColor="rgba(255,255,255,0)"/>
+                  <stop offset="45%" stopColor="rgba(255,255,255,0)"/>
+                  <stop offset="50%" stopColor={darkMode ? "rgba(255,248,220,.85)" : "rgba(255,255,255,.8)"}/>
+                  <stop offset="55%" stopColor="rgba(255,255,255,0)"/>
+                  <stop offset="100%" stopColor="rgba(255,255,255,0)"/>
+                  <animate attributeName="x1" values="-100%;200%" dur="60s" repeatCount="indefinite"/>
+                  <animate attributeName="x2" values="0%;300%" dur="60s" repeatCount="indefinite"/>
                 </linearGradient>
                 <filter id="lxSh"><feDropShadow dx="0" dy="1" stdDeviation="2" floodColor="rgba(0,0,0,.5)"/></filter>
               </defs>
-              {/* Outer bezel — thick gold */}
+              {/* Outer bezel — thick metallic rim */}
               <circle cx={SIZE/2} cy={SIZE/2} r={R+8} fill="none" stroke="url(#lxRim)" strokeWidth={7} />
-              <circle cx={SIZE/2} cy={SIZE/2} r={R+4} fill="none" stroke="#8b6914" strokeWidth={1} opacity={0.6} />
+              <circle cx={SIZE/2} cy={SIZE/2} r={R+4} fill="none" stroke={darkMode ? "#8b6914" : "#1e293b"} strokeWidth={1} opacity={0.6} />
               <circle cx={SIZE/2} cy={SIZE/2} r={R+1.5} fill="none" stroke="url(#lxRim2)" strokeWidth={0.8} />
               {/* Animated shine sweep over rim */}
               <circle cx={SIZE/2} cy={SIZE/2} r={R+8} fill="none" stroke="url(#lxShine)" strokeWidth={8} opacity={0.9} />
               {/* Face */}
               <circle cx={SIZE/2} cy={SIZE/2} r={R} fill="url(#lxFace)" />
-              <circle cx={SIZE/2} cy={SIZE/2} r={R-14} fill="none" stroke="rgba(201,168,76,.08)" strokeWidth={0.5} />
+              <circle cx={SIZE/2} cy={SIZE/2} r={R-14} fill="none" stroke={darkMode ? "rgba(201,168,76,.08)" : "rgba(148,163,184,.08)"} strokeWidth={0.5} />
               {/* Work arcs */}
               {(function() {
                 var AR = R - 16;
@@ -917,29 +927,29 @@ function HomePage({ user, branch, now, todayAtt, allAtt, gps, gpsDist, streak, l
                 );
               })()}
               {/* Hour ticks */}
-              {[0,1,2,3,4,5,6,7,8,9,10,11].map(function(i) { var a=(i*30-90)*Math.PI/180; var major=i%3===0; return React.createElement("line",{key:i,x1:SIZE/2+(R-4)*Math.cos(a),y1:SIZE/2+(R-4)*Math.sin(a),x2:SIZE/2+(R-4-(major?16:8))*Math.cos(a),y2:SIZE/2+(R-4-(major?16:8))*Math.sin(a),stroke:"#c9a84c",strokeWidth:major?2.5:1.2,strokeLinecap:"round"}); })}
+              {[0,1,2,3,4,5,6,7,8,9,10,11].map(function(i) { var a=(i*30-90)*Math.PI/180; var major=i%3===0; return React.createElement("line",{key:i,x1:SIZE/2+(R-4)*Math.cos(a),y1:SIZE/2+(R-4)*Math.sin(a),x2:SIZE/2+(R-4-(major?16:8))*Math.cos(a),y2:SIZE/2+(R-4-(major?16:8))*Math.sin(a),stroke:darkMode?"#c9a84c":"#cbd5e1",strokeWidth:major?2.5:1.2,strokeLinecap:"round"}); })}
               {/* Minute ticks */}
-              {Array.from({length:60},function(_,i){if(i%5===0)return null;var a=(i*6-90)*Math.PI/180;return React.createElement("line",{key:i,x1:SIZE/2+(R-4)*Math.cos(a),y1:SIZE/2+(R-4)*Math.sin(a),x2:SIZE/2+(R-8)*Math.cos(a),y2:SIZE/2+(R-8)*Math.sin(a),stroke:"rgba(201,168,76,.25)",strokeWidth:0.5});})}
+              {Array.from({length:60},function(_,i){if(i%5===0)return null;var a=(i*6-90)*Math.PI/180;return React.createElement("line",{key:i,x1:SIZE/2+(R-4)*Math.cos(a),y1:SIZE/2+(R-4)*Math.sin(a),x2:SIZE/2+(R-8)*Math.cos(a),y2:SIZE/2+(R-8)*Math.sin(a),stroke:darkMode?"rgba(201,168,76,.25)":"rgba(203,213,225,.25)",strokeWidth:0.5});})}
               {/* Roman numerals */}
-              {["XII","I","II","III","IV","V","VI","VII","VIII","IX","X","XI"].map(function(num,i) { var a=(i*30-90)*Math.PI/180; var major=i%3===0; return React.createElement("text",{key:i,x:SIZE/2+(R-(major?30:26))*Math.cos(a),y:SIZE/2+(R-(major?30:26))*Math.sin(a),textAnchor:"middle",dominantBaseline:"central",fill:"#e8d5a3",fontSize:major?16:10,fontWeight:major?"900":"600",fontFamily:"'Times New Roman',Georgia,serif",opacity:major?1:0.5},num); })}
+              {["XII","I","II","III","IV","V","VI","VII","VIII","IX","X","XI"].map(function(num,i) { var a=(i*30-90)*Math.PI/180; var major=i%3===0; return React.createElement("text",{key:i,x:SIZE/2+(R-(major?30:26))*Math.cos(a),y:SIZE/2+(R-(major?30:26))*Math.sin(a),textAnchor:"middle",dominantBaseline:"central",fill:darkMode?"#e8d5a3":"#cbd5e1",fontSize:major?16:10,fontWeight:major?"900":"600",fontFamily:"'Times New Roman',Georgia,serif",opacity:major?1:0.5},num); })}
               {/* Brand */}
-              <text x={SIZE/2} y={SIZE/2-44} textAnchor="middle" fill="#c9a84c" fontSize={8} fontWeight="700" fontFamily="'Times New Roman',serif" letterSpacing="3" opacity={0.6}>HMA ENGINEERING</text>
-              <text x={SIZE/2} y={SIZE/2-33} textAnchor="middle" fill="rgba(201,168,76,.4)" fontSize={6} fontFamily="'Times New Roman',serif" letterSpacing="2">ATTENDANCE SYSTEM</text>
+              <text x={SIZE/2} y={SIZE/2-44} textAnchor="middle" fill={darkMode?"#c9a84c":"#94a3b8"} fontSize={8} fontWeight="700" fontFamily="'Times New Roman',serif" letterSpacing="3" opacity={0.6}>HMA ENGINEERING</text>
+              <text x={SIZE/2} y={SIZE/2-33} textAnchor="middle" fill={darkMode?"rgba(201,168,76,.4)":"rgba(148,163,184,.4)"} fontSize={6} fontFamily="'Times New Roman',serif" letterSpacing="2">ATTENDANCE SYSTEM</text>
               {/* Hour hand */}
-              <line x1={SIZE/2} y1={SIZE/2} x2={SIZE/2+60*Math.cos(hA*Math.PI/180)} y2={SIZE/2+60*Math.sin(hA*Math.PI/180)} stroke="#e8d5a3" strokeWidth={5.5} strokeLinecap="round" filter="url(#lxSh)" />
-              <line x1={SIZE/2} y1={SIZE/2} x2={SIZE/2+14*Math.cos((hA+180)*Math.PI/180)} y2={SIZE/2+14*Math.sin((hA+180)*Math.PI/180)} stroke="#e8d5a3" strokeWidth={3.5} strokeLinecap="round" />
+              <line x1={SIZE/2} y1={SIZE/2} x2={SIZE/2+60*Math.cos(hA*Math.PI/180)} y2={SIZE/2+60*Math.sin(hA*Math.PI/180)} stroke={darkMode?"#e8d5a3":"#e2e8f0"} strokeWidth={5.5} strokeLinecap="round" filter="url(#lxSh)" />
+              <line x1={SIZE/2} y1={SIZE/2} x2={SIZE/2+14*Math.cos((hA+180)*Math.PI/180)} y2={SIZE/2+14*Math.sin((hA+180)*Math.PI/180)} stroke={darkMode?"#e8d5a3":"#e2e8f0"} strokeWidth={3.5} strokeLinecap="round" />
               {/* Minute hand */}
-              <line x1={SIZE/2} y1={SIZE/2} x2={SIZE/2+85*Math.cos(mA*Math.PI/180)} y2={SIZE/2+85*Math.sin(mA*Math.PI/180)} stroke="#e8d5a3" strokeWidth={3} strokeLinecap="round" filter="url(#lxSh)" />
-              <line x1={SIZE/2} y1={SIZE/2} x2={SIZE/2+18*Math.cos((mA+180)*Math.PI/180)} y2={SIZE/2+18*Math.sin((mA+180)*Math.PI/180)} stroke="#e8d5a3" strokeWidth={2.5} strokeLinecap="round" />
+              <line x1={SIZE/2} y1={SIZE/2} x2={SIZE/2+85*Math.cos(mA*Math.PI/180)} y2={SIZE/2+85*Math.sin(mA*Math.PI/180)} stroke={darkMode?"#e8d5a3":"#e2e8f0"} strokeWidth={3} strokeLinecap="round" filter="url(#lxSh)" />
+              <line x1={SIZE/2} y1={SIZE/2} x2={SIZE/2+18*Math.cos((mA+180)*Math.PI/180)} y2={SIZE/2+18*Math.sin((mA+180)*Math.PI/180)} stroke={darkMode?"#e8d5a3":"#e2e8f0"} strokeWidth={2.5} strokeLinecap="round" />
               {/* Second hand — red */}
               <line x1={SIZE/2} y1={SIZE/2} x2={SIZE/2+92*Math.cos(sA*Math.PI/180)} y2={SIZE/2+92*Math.sin(sA*Math.PI/180)} stroke="#E2192C" strokeWidth={1} />
               <line x1={SIZE/2} y1={SIZE/2} x2={SIZE/2+22*Math.cos((sA+180)*Math.PI/180)} y2={SIZE/2+22*Math.sin((sA+180)*Math.PI/180)} stroke="#E2192C" strokeWidth={1.5} />
               {/* Center jewel */}
-              <circle cx={SIZE/2} cy={SIZE/2} r={7} fill="#c9a84c" stroke="#e8d5a3" strokeWidth={2} />
-              <circle cx={SIZE/2} cy={SIZE/2} r={3.5} fill="#e8d5a3" />
+              <circle cx={SIZE/2} cy={SIZE/2} r={7} fill={darkMode?"#c9a84c":"#64748b"} stroke={darkMode?"#e8d5a3":"#e2e8f0"} strokeWidth={2} />
+              <circle cx={SIZE/2} cy={SIZE/2} r={3.5} fill={darkMode?"#e8d5a3":"#e2e8f0"} />
               {/* Date window */}
-              <rect x={SIZE/2+34} y={SIZE/2-9} width={30} height={18} rx={3} fill="#080c14" stroke="rgba(201,168,76,.4)" strokeWidth={0.8} />
-              <text x={SIZE/2+49} y={SIZE/2+1} textAnchor="middle" dominantBaseline="central" fill="#e8d5a3" fontSize={11} fontWeight="800" fontFamily="system-ui">{now.getDate()}</text>
+              <rect x={SIZE/2+34} y={SIZE/2-9} width={30} height={18} rx={3} fill="#080c14" stroke={darkMode?"rgba(201,168,76,.4)":"rgba(148,163,184,.5)"} strokeWidth={0.8} />
+              <text x={SIZE/2+49} y={SIZE/2+1} textAnchor="middle" dominantBaseline="central" fill={darkMode?"#e8d5a3":"#cbd5e1"} fontSize={11} fontWeight="800" fontFamily="system-ui">{now.getDate()}</text>
             </svg>
           </div>
           {/* Digital time — below clock, not absolute */}
