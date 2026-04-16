@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef } from "react";
+import { ALL_VIOLATIONS_DEFAULT, PENALTY_TYPES, LAIHA_INFO, COMPLAINT_STATUS, VIOLATION_STATUS, PROCEDURE_RULES } from "./laiha";
 
 const APP = "بصمة HMA";
 const CO = "هاني محمد عسيري للإستشارات الهندسية";
@@ -309,7 +310,11 @@ export default function AdminApp() {
     { id: "employees", icon: "👥", label: "الموظفين" },
     { id: "leaves", icon: "📋", label: "الإجازات", badge: pending },
     { id: "admin_requests", icon: "📝", label: "الطلبات" },
-    { id: "violations", icon: "⚠️", label: "المخالفات" },
+    { id: "complaints", icon: "📣", label: "الشكاوى (HR)" },
+    { id: "investigations", icon: "🔍", label: "التحقيقات (HR)" },
+    { id: "violations_v2", icon: "⚖️", label: "المخالفات الرسمية" },
+    { id: "laiha", icon: "📜", label: "لائحة العمل" },
+    { id: "violations", icon: "⚠️", label: "مخالفات (قديم)" },
     { id: "custody_admin", icon: "📦", label: "العهد" },
     { id: "tracking", icon: "🛰️", label: "تتبّع الحركة" },
     { id: "termination", icon: "🚪", label: "إنهاء خدمات" },
@@ -789,6 +794,18 @@ export default function AdminApp() {
         {hrQuestions.length === 0 && <div style={{ textAlign: "center", color: t.txM, fontSize: 12, padding: 30 }}>لا توجد أسئلة مخصصة — سيستخدم النظام الأسئلة الافتراضية</div>}
       </>}
 
+      {/* ═══ LAIHA — إدارة لائحة العمل (المدير العام) ═══ */}
+      {tab === "laiha" && <LaihaPanel t={t} B={B} />}
+
+      {/* ═══ COMPLAINTS — HR Panel ═══ */}
+      {tab === "complaints" && <ComplaintsPanel t={t} B={B} emps={emps} />}
+
+      {/* ═══ INVESTIGATIONS — HR Panel ═══ */}
+      {tab === "investigations" && <InvestigationsPanel t={t} B={B} emps={emps} />}
+
+      {/* ═══ VIOLATIONS V2 — المخالفات الرسمية ═══ */}
+      {tab === "violations_v2" && <ViolationsV2Panel t={t} B={B} emps={emps} />}
+
       {/* ═══ SETTINGS ═══ */}
       {tab === "settings" && <>
         {/* Sub-tabs for settings */}
@@ -989,3 +1006,679 @@ export default function AdminApp() {
 const td = { padding: "10px 12px", borderBottom: "1px solid #E5E5EA", fontSize: 12 };
 const actBtn = { padding: "7px 14px", borderRadius: 8, fontSize: 11, fontWeight: 700, border: "none", cursor: "pointer", background: B.blue, color: "#fff" };
 const sinp = { width: 70, padding: "5px 8px", borderRadius: 6, border: "1px solid #E5E5EA", fontSize: 13, fontWeight: 700, textAlign: "center", outline: "none", fontFamily: "'IBM Plex Sans Arabic',-apple-system,sans-serif" };
+
+/* ═══════════════════════════════════════════════════════
+   LAIHA PANEL — المدير العام يدير لائحة العمل
+   ═══════════════════════════════════════════════════════ */
+function LaihaPanel({ t, B }) {
+  var [settings, setSettings] = useState({});
+  var [loading, setLoading] = useState(true);
+  var [filterChapter, setFilterChapter] = useState("all");
+  var [globalAutoApply, setGlobalAutoApply] = useState(() => {
+    return localStorage.getItem("laiha_global_auto") !== "off";
+  });
+  var [editingItem, setEditingItem] = useState(null);
+
+  useEffect(function() {
+    loadSettings();
+  }, []);
+
+  async function loadSettings() {
+    try {
+      var r = await fetch("/api/data?action=laiha_settings");
+      var s = await r.json();
+      setSettings(s || {});
+    } catch(e) { console.error(e); }
+    setLoading(false);
+  }
+
+  async function updateSetting(item, changes) {
+    var merged = { ...(settings[item.id] || {}), ...changes, id: item.id };
+    setSettings(function(prev){ var n = {...prev}; n[item.id] = merged; return n; });
+    try {
+      await fetch("/api/data?action=laiha_settings", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(merged),
+      });
+    } catch(e) { console.error(e); }
+  }
+
+  async function resetSetting(id) {
+    if (!confirm("إعادة هذا البند للإعداد الافتراضي من اللائحة؟")) return;
+    setSettings(function(prev){ var n = {...prev}; delete n[id]; return n; });
+    try {
+      await fetch("/api/data?action=laiha_settings&id=" + id, { method: "DELETE" });
+    } catch(e) { console.error(e); }
+  }
+
+  function getEffective(item) {
+    var custom = settings[item.id];
+    if (!custom) return { enabled: item.enabled, autoApply: item.autoApply, description: item.description, penalties: item.penalties };
+    return {
+      enabled: custom.enabled !== undefined ? custom.enabled : item.enabled,
+      autoApply: custom.autoApply !== undefined ? custom.autoApply : item.autoApply,
+      description: custom.customDescription || item.description,
+      penalties: custom.customPenalties || item.penalties,
+      isCustom: true,
+    };
+  }
+
+  var chapters = [
+    { id: "all", label: "الكل (" + ALL_VIOLATIONS_DEFAULT.length + ")" },
+    { id: "مواعيد العمل", label: "الفصل الأول: مواعيد العمل (16)" },
+    { id: "تنظيم العمل", label: "الفصل الثاني: تنظيم العمل (18)" },
+    { id: "سلوك العامل", label: "الفصل الثالث: سلوك العامل (16)" },
+  ];
+
+  var items = ALL_VIOLATIONS_DEFAULT.filter(function(i){ return filterChapter === "all" || i.chapter === filterChapter; });
+
+  if (loading) return <div style={{ padding: 30, textAlign: "center", color: t.tx2 }}>جارِ التحميل...</div>;
+
+  return (
+    <div>
+      {/* Header — Source info */}
+      <div style={{ background: t.card, border: "1px solid " + t.sep, borderRadius: 12, padding: 16, marginBottom: 16 }}>
+        <div style={{ fontSize: 18, fontWeight: 900, color: B.blue, marginBottom: 4 }}>📜 لائحة تنظيم العمل</div>
+        <div style={{ fontSize: 11, color: t.tx2, marginBottom: 8 }}>المصدر: {LAIHA_INFO.source}</div>
+        <div style={{ display: "flex", gap: 16, fontSize: 11, color: t.tx2, flexWrap: "wrap" }}>
+          <span>رقم الاعتماد: <strong style={{ color: B.blue }}>{LAIHA_INFO.approvalNumber}</strong></span>
+          <span>تاريخ: {LAIHA_INFO.approvalDate}</span>
+          <span>المنشأة: {LAIHA_INFO.company}</span>
+        </div>
+      </div>
+
+      {/* Global toggle */}
+      <div style={{ background: t.card, border: "2px solid " + B.yellow, borderRadius: 12, padding: 14, marginBottom: 16, display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+        <div>
+          <div style={{ fontSize: 14, fontWeight: 800, color: t.tx }}>🎛️ التطبيق العام</div>
+          <div style={{ fontSize: 11, color: t.tx2, marginTop: 4 }}>{globalAutoApply ? "الإعدادات الفردية تعمل" : "كل الإنذارات تمر على HR بغض النظر عن الإعدادات الفردية"}</div>
+        </div>
+        <Toggle on={globalAutoApply} onClick={function(){ var n = !globalAutoApply; setGlobalAutoApply(n); localStorage.setItem("laiha_global_auto", n ? "on" : "off"); }} t={t} />
+      </div>
+
+      {/* Chapter filter */}
+      <div style={{ display: "flex", gap: 6, marginBottom: 16, flexWrap: "wrap" }}>
+        {chapters.map(function(ch) {
+          var a = filterChapter === ch.id;
+          return <button key={ch.id} onClick={function(){ setFilterChapter(ch.id); }} style={{ padding: "8px 14px", borderRadius: 10, border: a ? "none" : "1px solid " + t.sep, background: a ? B.blue : t.card, color: a ? "#fff" : t.tx2, fontSize: 11, fontWeight: 700, cursor: "pointer" }}>{ch.label}</button>;
+        })}
+      </div>
+
+      {/* Items grid */}
+      <div style={{ display: "grid", gridTemplateColumns: "1fr", gap: 10 }}>
+        {items.map(function(item) {
+          var eff = getEffective(item);
+          return (
+            <div key={item.id} style={{ background: t.card, border: "1px solid " + t.sep, borderRadius: 10, padding: 14, opacity: eff.enabled ? 1 : 0.5 }}>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 12, marginBottom: 10 }}>
+                <div style={{ flex: 1 }}>
+                  <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 4 }}>
+                    <span style={{ fontSize: 10, fontWeight: 700, color: "#fff", background: B.blue, padding: "2px 8px", borderRadius: 4 }}>{item.id}</span>
+                    <span style={{ fontSize: 10, color: t.tx2 }}>{item.chapter} — البند {item.number}</span>
+                    {eff.isCustom && <span style={{ fontSize: 9, color: "#fff", background: B.gold, padding: "2px 6px", borderRadius: 4 }}>معدّل</span>}
+                    {item.autoDetectable && <span style={{ fontSize: 9, color: "#fff", background: "#10b981", padding: "2px 6px", borderRadius: 4 }}>قابل للاكتشاف آلياً</span>}
+                  </div>
+                  <div style={{ fontSize: 12, fontWeight: 700, color: t.tx, lineHeight: 1.6 }}>{eff.description}</div>
+                  {item.notes && <div style={{ fontSize: 10, color: t.tx2, marginTop: 4, fontStyle: "italic" }}>ملاحظة: {item.notes}</div>}
+                </div>
+                <Toggle on={eff.enabled} onClick={function(){ updateSetting(item, { enabled: !eff.enabled, autoApply: eff.autoApply }); }} t={t} />
+              </div>
+
+              {/* Penalties grid */}
+              <div style={{ display: "grid", gridTemplateColumns: "repeat(4,1fr)", gap: 6, marginBottom: 10 }}>
+                {["first","second","third","fourth"].map(function(occ, idx) {
+                  var code = eff.penalties[occ];
+                  var label = code ? (PENALTY_TYPES[code] || {}).label : "—";
+                  return (
+                    <div key={occ} style={{ background: t.bg, border: "1px solid " + t.sep, borderRadius: 6, padding: 6, textAlign: "center" }}>
+                      <div style={{ fontSize: 9, color: t.tx2, marginBottom: 2 }}>{["أول","ثاني","ثالث","رابع"][idx] + " مرة"}</div>
+                      <div style={{ fontSize: 10, fontWeight: 700, color: code ? t.tx : t.txM }}>{label}</div>
+                    </div>
+                  );
+                })}
+              </div>
+
+              {/* Auto/HR toggle */}
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", paddingTop: 8, borderTop: "1px solid " + t.sep }}>
+                <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                  <span style={{ fontSize: 11, color: t.tx2 }}>التطبيق:</span>
+                  <button onClick={function(){ updateSetting(item, { autoApply: !eff.autoApply, enabled: eff.enabled }); }} style={{ padding: "5px 10px", borderRadius: 6, border: "1px solid " + (eff.autoApply ? "#10b981" : B.gold), background: (eff.autoApply ? "#10b981" : B.gold) + "15", color: eff.autoApply ? "#10b981" : B.gold, fontSize: 10, fontWeight: 800, cursor: "pointer" }}>
+                    {eff.autoApply ? "🤖 تلقائي" : "👤 يمر على HR"}
+                  </button>
+                </div>
+                <div style={{ display: "flex", gap: 6 }}>
+                  <button onClick={function(){ setEditingItem(item); }} style={{ padding: "5px 12px", borderRadius: 6, border: "1px solid " + B.blue, background: "transparent", color: B.blue, fontSize: 10, fontWeight: 700, cursor: "pointer" }}>✏️ تعديل النص</button>
+                  {eff.isCustom && <button onClick={function(){ resetSetting(item.id); }} style={{ padding: "5px 12px", borderRadius: 6, border: "1px solid " + B.red, background: "transparent", color: B.red, fontSize: 10, fontWeight: 700, cursor: "pointer" }}>🔄 استرجاع الأصل</button>}
+                </div>
+              </div>
+            </div>
+          );
+        })}
+      </div>
+
+      {/* Edit modal */}
+      {editingItem && <EditLaihaItemModal item={editingItem} current={settings[editingItem.id]} onSave={function(changes){ updateSetting(editingItem, changes); setEditingItem(null); }} onClose={function(){ setEditingItem(null); }} t={t} B={B} />}
+    </div>
+  );
+}
+
+function EditLaihaItemModal({ item, current, onSave, onClose, t, B }) {
+  var [desc, setDesc] = useState((current && current.customDescription) || item.description);
+  var [penalties, setPenalties] = useState((current && current.customPenalties) || item.penalties);
+
+  function save() {
+    onSave({
+      customDescription: desc !== item.description ? desc : null,
+      customPenalties: JSON.stringify(penalties) !== JSON.stringify(item.penalties) ? penalties : null,
+      enabled: current ? current.enabled : item.enabled,
+      autoApply: current ? current.autoApply : item.autoApply,
+    });
+  }
+
+  var penaltyOptions = Object.keys(PENALTY_TYPES).map(function(k){ return { value: k, label: PENALTY_TYPES[k].label }; });
+
+  return (
+    <div onClick={onClose} style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,.6)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 1000, padding: 16 }}>
+      <div onClick={function(e){ e.stopPropagation(); }} style={{ background: t.card, borderRadius: 12, padding: 20, maxWidth: 620, width: "100%", maxHeight: "90vh", overflow: "auto" }}>
+        <div style={{ fontSize: 16, fontWeight: 900, color: B.blue, marginBottom: 6 }}>تعديل البند {item.id}</div>
+        <div style={{ fontSize: 10, color: t.tx2, marginBottom: 14 }}>{item.chapter}</div>
+
+        <label style={{ fontSize: 11, fontWeight: 700, color: t.tx }}>وصف المخالفة</label>
+        <textarea value={desc} onChange={function(e){ setDesc(e.target.value); }} rows={4} style={{ width: "100%", padding: 10, borderRadius: 8, border: "1px solid " + t.sep, fontSize: 12, marginTop: 6, marginBottom: 14, fontFamily: "inherit", resize: "vertical", background: t.inp, color: t.tx }} />
+
+        <div style={{ fontSize: 11, fontWeight: 700, color: t.tx, marginBottom: 6 }}>الجزاءات</div>
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(2,1fr)", gap: 10, marginBottom: 14 }}>
+          {["first","second","third","fourth"].map(function(occ, idx) {
+            return (
+              <div key={occ}>
+                <div style={{ fontSize: 10, color: t.tx2, marginBottom: 4 }}>{["أول","ثاني","ثالث","رابع"][idx] + " مرة"}</div>
+                <select value={penalties[occ] || ""} onChange={function(e){ var v = e.target.value || null; setPenalties(function(p){ var n = {...p}; n[occ] = v; return n; }); }} style={{ width: "100%", padding: 8, borderRadius: 6, border: "1px solid " + t.sep, fontSize: 11, background: t.inp, color: t.tx }}>
+                  <option value="">لا جزاء</option>
+                  {penaltyOptions.map(function(p){ return <option key={p.value} value={p.value}>{p.label}</option>; })}
+                </select>
+              </div>
+            );
+          })}
+        </div>
+
+        <div style={{ background: B.yellow + "20", border: "1px solid " + B.yellow, borderRadius: 8, padding: 10, fontSize: 10, color: t.tx, marginBottom: 14 }}>
+          ⚠️ تعديل النص أو الجزاء هو صلاحية خاصة بالمدير العام. يتم التعديل فقط عند تحديث اللائحة رسمياً من الوزارة.
+        </div>
+
+        <div style={{ display: "flex", gap: 10, justifyContent: "flex-end" }}>
+          <button onClick={onClose} style={{ padding: "10px 20px", borderRadius: 8, border: "1px solid " + t.sep, background: t.card, color: t.tx2, fontSize: 12, fontWeight: 700, cursor: "pointer" }}>إلغاء</button>
+          <button onClick={save} style={{ padding: "10px 20px", borderRadius: 8, border: "none", background: B.blue, color: "#fff", fontSize: 12, fontWeight: 700, cursor: "pointer" }}>حفظ التعديل</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/* ═══════════════════════════════════════════════════════
+   COMPLAINTS PANEL — HR يستقبل الشكاوى ويقرر
+   ═══════════════════════════════════════════════════════ */
+function ComplaintsPanel({ t, B, emps }) {
+  var [complaints, setComplaints] = useState([]);
+  var [loading, setLoading] = useState(true);
+  var [filter, setFilter] = useState("PENDING_HR");
+  var [selected, setSelected] = useState(null);
+
+  useEffect(function() { load(); }, []);
+  async function load() {
+    try { var r = await fetch("/api/data?action=complaints"); setComplaints(await r.json()); } catch(e) {}
+    setLoading(false);
+  }
+
+  var filtered = complaints.filter(function(c){ return filter === "all" || c.status === filter; });
+  var pendingCount = complaints.filter(function(c){ return c.status === "PENDING_HR"; }).length;
+
+  return (
+    <div>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16 }}>
+        <div>
+          <div style={{ fontSize: 18, fontWeight: 900, color: t.tx }}>📣 الشكاوى الرسمية</div>
+          <div style={{ fontSize: 11, color: t.tx2, marginTop: 4 }}>يديرها مدير الموارد البشرية</div>
+        </div>
+        <div style={{ background: B.red + "20", border: "1px solid " + B.red, borderRadius: 8, padding: "6px 14px", fontSize: 12, fontWeight: 800, color: B.red }}>
+          {pendingCount} بانتظار المراجعة
+        </div>
+      </div>
+
+      <div style={{ display: "flex", gap: 6, marginBottom: 16, flexWrap: "wrap" }}>
+        {[{ id: "PENDING_HR", l: "بانتظار المراجعة" }, { id: "UNDER_INVESTIGATION", l: "قيد التحقيق" }, { id: "CONVERTED", l: "تحولت لمخالفة" }, { id: "REJECTED", l: "مرفوضة" }, { id: "CLOSED", l: "مغلقة" }, { id: "all", l: "الكل" }].map(function(f) {
+          var a = filter === f.id;
+          return <button key={f.id} onClick={function(){ setFilter(f.id); }} style={{ padding: "8px 14px", borderRadius: 10, border: a ? "none" : "1px solid " + t.sep, background: a ? B.blue : t.card, color: a ? "#fff" : t.tx2, fontSize: 11, fontWeight: 700, cursor: "pointer" }}>{f.l}</button>;
+        })}
+      </div>
+
+      {loading && <div style={{ textAlign: "center", padding: 30, color: t.tx2 }}>جارِ التحميل...</div>}
+      {!loading && filtered.length === 0 && <div style={{ textAlign: "center", padding: 40, color: t.tx2, background: t.card, borderRadius: 12 }}>لا توجد شكاوى في هذه الحالة</div>}
+
+      <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+        {filtered.map(function(c) {
+          var st = COMPLAINT_STATUS[c.status] || { label: c.status, color: t.tx2 };
+          return (
+            <div key={c.id} onClick={function(){ setSelected(c); }} style={{ background: t.card, border: "1px solid " + t.sep, borderRadius: 10, padding: 14, cursor: "pointer" }}>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 8 }}>
+                <div style={{ flex: 1 }}>
+                  <div style={{ fontSize: 13, fontWeight: 800, color: t.tx }}>{c.title || "شكوى رسمية"}</div>
+                  <div style={{ fontSize: 10, color: t.tx2, marginTop: 3 }}>من: {c.filedByName} ← ضد: {c.againstName}</div>
+                </div>
+                <span style={{ fontSize: 10, fontWeight: 700, color: st.color, background: st.color + "20", padding: "3px 10px", borderRadius: 6, whiteSpace: "nowrap" }}>{st.label}</span>
+              </div>
+              <div style={{ fontSize: 11, color: t.tx2, marginBottom: 6 }}>{(c.details || "").slice(0, 150)}{c.details && c.details.length > 150 ? "..." : ""}</div>
+              <div style={{ display: "flex", justifyContent: "space-between", fontSize: 10, color: t.tx2 }}>
+                <span>البند: {c.violationId || "غير محدد"}</span>
+                <span>{new Date(c.createdAt).toLocaleString("ar-SA")}</span>
+              </div>
+            </div>
+          );
+        })}
+      </div>
+
+      {selected && <ComplaintDetailModal complaint={selected} emps={emps} onClose={function(){ setSelected(null); }} onUpdate={function(){ load(); setSelected(null); }} t={t} B={B} />}
+    </div>
+  );
+}
+
+function ComplaintDetailModal({ complaint, emps, onClose, onUpdate, t, B }) {
+  var [action, setAction] = useState(null); // reject | investigate | convert
+  var [notes, setNotes] = useState("");
+  var [investQuestions, setInvestQuestions] = useState(["ما ردك على هذه الشكوى؟", "هل هناك ظروف خاصة؟"]);
+  var [loading, setLoading] = useState(false);
+
+  var viol = ALL_VIOLATIONS_DEFAULT.find(function(v){ return v.id === complaint.violationId; });
+
+  async function submit() {
+    setLoading(true);
+    try {
+      if (action === "reject") {
+        await fetch("/api/data?action=complaints", {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ id: complaint.id, status: "REJECTED", hrDecision: "reject", hrNotes: notes, decidedAt: new Date().toISOString() }),
+        });
+      } else if (action === "investigate") {
+        var deadline = new Date();
+        deadline.setHours(deadline.getHours() + 24);
+        await fetch("/api/data?action=investigations", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            complaintId: complaint.id,
+            empId: complaint.against,
+            empName: complaint.againstName,
+            violationId: complaint.violationId,
+            chapter: complaint.chapter,
+            title: complaint.title,
+            description: complaint.details,
+            questions: investQuestions.filter(function(q){ return q.trim(); }),
+            deadline: deadline.toISOString(),
+            createdBy: "HR",
+          }),
+        });
+      } else if (action === "convert") {
+        // Create violation directly
+        var penaltyKey = "first";
+        var penaltyCode = viol ? viol.penalties[penaltyKey] : null;
+        var penaltyLabel = penaltyCode ? PENALTY_TYPES[penaltyCode].label : "—";
+        await fetch("/api/data?action=violations_v2", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            empId: complaint.against,
+            empName: complaint.againstName,
+            violationId: complaint.violationId,
+            chapter: complaint.chapter,
+            description: viol ? viol.description : complaint.title,
+            penaltyCode: penaltyCode,
+            penaltyLabel: penaltyLabel,
+            penalties: viol ? viol.penalties : {},
+            complaintId: complaint.id,
+            source: "from_complaint",
+            notes: notes,
+            createdBy: "HR",
+            approvedBy: "HR",
+          }),
+        });
+        await fetch("/api/data?action=complaints", {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ id: complaint.id, status: "CONVERTED", hrDecision: "convert", hrNotes: notes, decidedAt: new Date().toISOString() }),
+        });
+      }
+      onUpdate();
+    } catch(e) {
+      alert("فشلت العملية: " + e.message);
+    }
+    setLoading(false);
+  }
+
+  return (
+    <div onClick={onClose} style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,.6)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 1000, padding: 16 }}>
+      <div onClick={function(e){ e.stopPropagation(); }} style={{ background: t.card, borderRadius: 12, padding: 20, maxWidth: 680, width: "100%", maxHeight: "90vh", overflow: "auto" }}>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 14 }}>
+          <div style={{ fontSize: 16, fontWeight: 900, color: B.blue }}>📋 تفاصيل الشكوى</div>
+          <button onClick={onClose} style={{ background: "none", border: "none", fontSize: 22, cursor: "pointer", color: t.tx2 }}>×</button>
+        </div>
+
+        {/* Complaint info */}
+        <div style={{ background: t.bg, borderRadius: 10, padding: 14, marginBottom: 14 }}>
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8, marginBottom: 10, fontSize: 11 }}>
+            <div><span style={{ color: t.tx2 }}>من:</span> <strong style={{ color: t.tx }}>{complaint.filedByName}</strong></div>
+            <div><span style={{ color: t.tx2 }}>ضد:</span> <strong style={{ color: t.tx }}>{complaint.againstName}</strong></div>
+            <div><span style={{ color: t.tx2 }}>التاريخ:</span> <strong style={{ color: t.tx }}>{new Date(complaint.createdAt).toLocaleString("ar-SA")}</strong></div>
+            <div><span style={{ color: t.tx2 }}>الفصل:</span> <strong style={{ color: t.tx }}>{complaint.chapter || "—"}</strong></div>
+          </div>
+          <div style={{ fontSize: 12, fontWeight: 700, color: t.tx, marginBottom: 4 }}>{complaint.title}</div>
+          {viol && <div style={{ fontSize: 10, background: B.blue + "15", padding: 8, borderRadius: 6, color: t.tx, marginBottom: 6 }}>
+            <strong>البند القانوني ({viol.id}):</strong> {viol.description}
+          </div>}
+          <div style={{ fontSize: 11, color: t.tx, lineHeight: 1.7, whiteSpace: "pre-wrap" }}>{complaint.details}</div>
+        </div>
+
+        {/* Action selector */}
+        {complaint.status === "PENDING_HR" && (
+          <div>
+            <div style={{ fontSize: 12, fontWeight: 800, color: t.tx, marginBottom: 10 }}>📌 القرار</div>
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(3,1fr)", gap: 8, marginBottom: 14 }}>
+              {[
+                { id: "reject", l: "رفض الشكوى", c: "#64748b", ico: "✗" },
+                { id: "investigate", l: "فتح تحقيق", c: B.blue, ico: "🔍" },
+                { id: "convert", l: "تحويل لمخالفة", c: B.red, ico: "⚖️" },
+              ].map(function(a) {
+                var sel = action === a.id;
+                return <button key={a.id} onClick={function(){ setAction(a.id); }} style={{ padding: 12, borderRadius: 10, border: "2px solid " + a.c, background: sel ? a.c : "transparent", color: sel ? "#fff" : a.c, fontSize: 11, fontWeight: 800, cursor: "pointer" }}>{a.ico} {a.l}</button>;
+              })}
+            </div>
+
+            {action && (
+              <div style={{ marginBottom: 14 }}>
+                {action === "investigate" && (
+                  <div style={{ marginBottom: 10 }}>
+                    <div style={{ fontSize: 11, fontWeight: 700, color: t.tx, marginBottom: 6 }}>أسئلة التحقيق (يرد عليها الموظف خلال 24 ساعة):</div>
+                    {investQuestions.map(function(q, i) {
+                      return (
+                        <div key={i} style={{ display: "flex", gap: 6, marginBottom: 6 }}>
+                          <input value={q} onChange={function(e){ var nq = [...investQuestions]; nq[i] = e.target.value; setInvestQuestions(nq); }} placeholder={"سؤال " + (i+1)} style={{ flex: 1, padding: 8, borderRadius: 6, border: "1px solid " + t.sep, fontSize: 11, background: t.inp, color: t.tx }} />
+                          <button onClick={function(){ setInvestQuestions(investQuestions.filter(function(_,j){ return j !== i; })); }} style={{ padding: "0 12px", background: B.red + "20", border: "1px solid " + B.red, color: B.red, borderRadius: 6, cursor: "pointer" }}>×</button>
+                        </div>
+                      );
+                    })}
+                    <button onClick={function(){ setInvestQuestions([...investQuestions, ""]); }} style={{ padding: "6px 12px", background: "transparent", border: "1px dashed " + B.blue, color: B.blue, borderRadius: 6, fontSize: 10, fontWeight: 700, cursor: "pointer" }}>+ إضافة سؤال</button>
+                  </div>
+                )}
+
+                <label style={{ fontSize: 11, fontWeight: 700, color: t.tx }}>ملاحظات HR</label>
+                <textarea value={notes} onChange={function(e){ setNotes(e.target.value); }} rows={3} placeholder="المبررات والملاحظات..." style={{ width: "100%", padding: 10, borderRadius: 8, border: "1px solid " + t.sep, fontSize: 11, marginTop: 6, fontFamily: "inherit", resize: "vertical", background: t.inp, color: t.tx }} />
+              </div>
+            )}
+          </div>
+        )}
+
+        <div style={{ display: "flex", gap: 10, justifyContent: "flex-end" }}>
+          <button onClick={onClose} style={{ padding: "10px 20px", borderRadius: 8, border: "1px solid " + t.sep, background: t.card, color: t.tx2, fontSize: 12, fontWeight: 700, cursor: "pointer" }}>إغلاق</button>
+          {complaint.status === "PENDING_HR" && action && <button onClick={submit} disabled={loading} style={{ padding: "10px 20px", borderRadius: 8, border: "none", background: action === "reject" ? "#64748b" : action === "convert" ? B.red : B.blue, color: "#fff", fontSize: 12, fontWeight: 700, cursor: "pointer" }}>{loading ? "جارِ..." : "تنفيذ القرار"}</button>}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/* ═══════════════════════════════════════════════════════
+   INVESTIGATIONS PANEL — HR يتابع التحقيقات
+   ═══════════════════════════════════════════════════════ */
+function InvestigationsPanel({ t, B, emps }) {
+  var [investigations, setInvestigations] = useState([]);
+  var [loading, setLoading] = useState(true);
+  var [filter, setFilter] = useState("RESPONSE_RECEIVED");
+  var [selected, setSelected] = useState(null);
+
+  useEffect(function() { load(); }, []);
+  async function load() {
+    try { var r = await fetch("/api/data?action=investigations"); setInvestigations(await r.json()); } catch(e) {}
+    setLoading(false);
+  }
+
+  var filtered = investigations.filter(function(i){ return filter === "all" || i.status === filter; });
+  var waiting = investigations.filter(function(i){ return i.status === "RESPONSE_RECEIVED"; }).length;
+
+  return (
+    <div>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16 }}>
+        <div>
+          <div style={{ fontSize: 18, fontWeight: 900, color: t.tx }}>🔍 التحقيقات</div>
+          <div style={{ fontSize: 11, color: t.tx2, marginTop: 4 }}>استمارات التحقيق المرسلة للموظفين وردودهم</div>
+        </div>
+        <div style={{ background: B.blue + "20", border: "1px solid " + B.blue, borderRadius: 8, padding: "6px 14px", fontSize: 12, fontWeight: 800, color: B.blue }}>
+          {waiting} بانتظار القرار النهائي
+        </div>
+      </div>
+
+      <div style={{ display: "flex", gap: 6, marginBottom: 16, flexWrap: "wrap" }}>
+        {[{ id: "WAITING_RESPONSE", l: "بانتظار رد الموظف" }, { id: "RESPONSE_RECEIVED", l: "تم الرد" }, { id: "CONVERTED", l: "تحولت لمخالفة" }, { id: "CLOSED", l: "أُغلقت (برئ)" }, { id: "all", l: "الكل" }].map(function(f) {
+          var a = filter === f.id;
+          return <button key={f.id} onClick={function(){ setFilter(f.id); }} style={{ padding: "8px 14px", borderRadius: 10, border: a ? "none" : "1px solid " + t.sep, background: a ? B.blue : t.card, color: a ? "#fff" : t.tx2, fontSize: 11, fontWeight: 700, cursor: "pointer" }}>{f.l}</button>;
+        })}
+      </div>
+
+      {loading && <div style={{ textAlign: "center", padding: 30, color: t.tx2 }}>جارِ التحميل...</div>}
+      {!loading && filtered.length === 0 && <div style={{ textAlign: "center", padding: 40, color: t.tx2, background: t.card, borderRadius: 12 }}>لا توجد تحقيقات</div>}
+
+      <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+        {filtered.map(function(inv) {
+          var now = new Date();
+          var deadline = new Date(inv.deadline);
+          var hoursLeft = Math.floor((deadline - now) / 3600000);
+          var overdue = hoursLeft < 0 && inv.status === "WAITING_RESPONSE";
+          return (
+            <div key={inv.id} onClick={function(){ setSelected(inv); }} style={{ background: t.card, border: "1px solid " + (overdue ? B.red : t.sep), borderRadius: 10, padding: 14, cursor: "pointer" }}>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 8 }}>
+                <div style={{ flex: 1 }}>
+                  <div style={{ fontSize: 13, fontWeight: 800, color: t.tx }}>{inv.title || "تحقيق"}</div>
+                  <div style={{ fontSize: 10, color: t.tx2, marginTop: 3 }}>الموظف: {inv.empName} | البند: {inv.violationId}</div>
+                </div>
+                <div style={{ textAlign: "left" }}>
+                  <div style={{ fontSize: 10, fontWeight: 700, color: overdue ? B.red : t.tx2 }}>
+                    {inv.status === "WAITING_RESPONSE" ? (overdue ? "⚠️ تجاوز المهلة" : "⏱ " + hoursLeft + " ساعة متبقية") : (inv.status === "RESPONSE_RECEIVED" ? "📬 تم الرد" : inv.status)}
+                  </div>
+                </div>
+              </div>
+              <div style={{ fontSize: 11, color: t.tx2 }}>{inv.questions.length} سؤال</div>
+            </div>
+          );
+        })}
+      </div>
+
+      {selected && <InvestigationDetailModal investigation={selected} onClose={function(){ setSelected(null); }} onUpdate={function(){ load(); setSelected(null); }} t={t} B={B} />}
+    </div>
+  );
+}
+
+function InvestigationDetailModal({ investigation, onClose, onUpdate, t, B }) {
+  var [decision, setDecision] = useState(null); // convert_to_violation | close_innocent
+  var [notes, setNotes] = useState("");
+  var [loading, setLoading] = useState(false);
+  var viol = ALL_VIOLATIONS_DEFAULT.find(function(v){ return v.id === investigation.violationId; });
+
+  async function submit() {
+    if (!decision) return;
+    setLoading(true);
+    try {
+      if (decision === "convert_to_violation" && viol) {
+        var penaltyCode = viol.penalties.first;
+        var penaltyLabel = PENALTY_TYPES[penaltyCode] ? PENALTY_TYPES[penaltyCode].label : "—";
+        await fetch("/api/data?action=violations_v2", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            empId: investigation.empId,
+            empName: investigation.empName,
+            violationId: investigation.violationId,
+            chapter: investigation.chapter,
+            description: viol.description,
+            penaltyCode: penaltyCode,
+            penaltyLabel: penaltyLabel,
+            penalties: viol.penalties,
+            complaintId: investigation.complaintId,
+            investigationId: investigation.id,
+            source: "from_investigation",
+            notes: notes,
+            createdBy: "HR",
+            approvedBy: "HR",
+          }),
+        });
+      }
+      await fetch("/api/data?action=investigations", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ id: investigation.id, status: decision === "convert_to_violation" ? "CONVERTED" : "CLOSED", hrDecision: decision, hrDecisionNotes: notes, hrDecidedAt: new Date().toISOString(), hrDecidedBy: "HR" }),
+      });
+      if (investigation.complaintId) {
+        await fetch("/api/data?action=complaints", {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ id: investigation.complaintId, status: decision === "convert_to_violation" ? "CONVERTED" : "CLOSED" }),
+        });
+      }
+      onUpdate();
+    } catch(e) { alert("فشل: " + e.message); }
+    setLoading(false);
+  }
+
+  return (
+    <div onClick={onClose} style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,.6)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 1000, padding: 16 }}>
+      <div onClick={function(e){ e.stopPropagation(); }} style={{ background: t.card, borderRadius: 12, padding: 20, maxWidth: 720, width: "100%", maxHeight: "90vh", overflow: "auto" }}>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 14 }}>
+          <div style={{ fontSize: 16, fontWeight: 900, color: B.blue }}>🔍 تفاصيل التحقيق</div>
+          <button onClick={onClose} style={{ background: "none", border: "none", fontSize: 22, cursor: "pointer", color: t.tx2 }}>×</button>
+        </div>
+
+        <div style={{ background: t.bg, borderRadius: 10, padding: 14, marginBottom: 14 }}>
+          <div style={{ fontSize: 12, fontWeight: 800, color: t.tx, marginBottom: 6 }}>الموظف: {investigation.empName}</div>
+          {viol && <div style={{ fontSize: 10, background: B.blue + "15", padding: 8, borderRadius: 6, color: t.tx, marginBottom: 10 }}>
+            <strong>{viol.id}:</strong> {viol.description}
+          </div>}
+          <div style={{ fontSize: 11, color: t.tx }}>{investigation.description}</div>
+        </div>
+
+        {/* Questions */}
+        <div style={{ marginBottom: 14 }}>
+          <div style={{ fontSize: 12, fontWeight: 800, color: t.tx, marginBottom: 8 }}>❓ الأسئلة الموجهة</div>
+          {investigation.questions.map(function(q, i) {
+            return <div key={i} style={{ background: t.bg, padding: 10, borderRadius: 6, marginBottom: 6, fontSize: 11, color: t.tx }}>{i+1}. {q}</div>;
+          })}
+        </div>
+
+        {/* Employee response */}
+        {investigation.empResponse && (
+          <div style={{ marginBottom: 14 }}>
+            <div style={{ fontSize: 12, fontWeight: 800, color: t.tx, marginBottom: 8 }}>📬 رد الموظف</div>
+            <div style={{ background: "#10b98115", border: "1px solid #10b981", padding: 12, borderRadius: 8, fontSize: 11, color: t.tx, lineHeight: 1.7, whiteSpace: "pre-wrap" }}>{investigation.empResponse}</div>
+            <div style={{ fontSize: 10, color: t.tx2, marginTop: 4 }}>تم الرد في: {new Date(investigation.empResponseAt).toLocaleString("ar-SA")}</div>
+          </div>
+        )}
+
+        {!investigation.empResponse && investigation.status === "WAITING_RESPONSE" && (
+          <div style={{ background: B.yellow + "20", border: "1px solid " + B.yellow, padding: 10, borderRadius: 8, fontSize: 11, color: t.tx, marginBottom: 14 }}>
+            ⏱ بانتظار رد الموظف — المهلة: {new Date(investigation.deadline).toLocaleString("ar-SA")}
+          </div>
+        )}
+
+        {/* Decision */}
+        {investigation.status === "RESPONSE_RECEIVED" && (
+          <div>
+            <div style={{ fontSize: 12, fontWeight: 800, color: t.tx, marginBottom: 10 }}>⚖️ القرار النهائي</div>
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8, marginBottom: 12 }}>
+              <button onClick={function(){ setDecision("close_innocent"); }} style={{ padding: 12, borderRadius: 10, border: "2px solid #10b981", background: decision === "close_innocent" ? "#10b981" : "transparent", color: decision === "close_innocent" ? "#fff" : "#10b981", fontSize: 11, fontWeight: 800, cursor: "pointer" }}>✓ إغلاق (الموظف بريء)</button>
+              <button onClick={function(){ setDecision("convert_to_violation"); }} style={{ padding: 12, borderRadius: 10, border: "2px solid " + B.red, background: decision === "convert_to_violation" ? B.red : "transparent", color: decision === "convert_to_violation" ? "#fff" : B.red, fontSize: 11, fontWeight: 800, cursor: "pointer" }}>⚖️ إصدار مخالفة</button>
+            </div>
+            {decision && (
+              <textarea value={notes} onChange={function(e){ setNotes(e.target.value); }} rows={3} placeholder="ملاحظات القرار (مطلوب للتوثيق)" style={{ width: "100%", padding: 10, borderRadius: 8, border: "1px solid " + t.sep, fontSize: 11, fontFamily: "inherit", resize: "vertical", marginBottom: 12, background: t.inp, color: t.tx }} />
+            )}
+          </div>
+        )}
+
+        <div style={{ display: "flex", gap: 10, justifyContent: "flex-end" }}>
+          <button onClick={onClose} style={{ padding: "10px 20px", borderRadius: 8, border: "1px solid " + t.sep, background: t.card, color: t.tx2, fontSize: 12, fontWeight: 700, cursor: "pointer" }}>إغلاق</button>
+          {decision && <button onClick={submit} disabled={loading} style={{ padding: "10px 20px", borderRadius: 8, border: "none", background: decision === "convert_to_violation" ? B.red : "#10b981", color: "#fff", fontSize: 12, fontWeight: 700, cursor: "pointer" }}>{loading ? "جارِ..." : "تأكيد القرار"}</button>}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/* ═══════════════════════════════════════════════════════
+   VIOLATIONS V2 PANEL — المخالفات الرسمية بالسجل القانوني
+   ═══════════════════════════════════════════════════════ */
+function ViolationsV2Panel({ t, B, emps }) {
+  var [vios, setVios] = useState([]);
+  var [loading, setLoading] = useState(true);
+  var [filter, setFilter] = useState("ACTIVE");
+
+  useEffect(function() { load(); }, []);
+  async function load() {
+    try { var r = await fetch("/api/data?action=violations_v2"); setVios(await r.json()); } catch(e) {}
+    setLoading(false);
+  }
+
+  var filtered = vios.filter(function(v){ return filter === "all" || v.status === filter; });
+  var active = vios.filter(function(v){ return v.status === "ACTIVE"; }).length;
+
+  return (
+    <div>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16 }}>
+        <div>
+          <div style={{ fontSize: 18, fontWeight: 900, color: t.tx }}>⚖️ سجل المخالفات الرسمية</div>
+          <div style={{ fontSize: 11, color: t.tx2, marginTop: 4 }}>وفق اللائحة المعتمدة رقم {LAIHA_INFO.approvalNumber}</div>
+        </div>
+        <div style={{ background: B.red + "20", border: "1px solid " + B.red, borderRadius: 8, padding: "6px 14px", fontSize: 12, fontWeight: 800, color: B.red }}>
+          {active} مخالفة سارية
+        </div>
+      </div>
+
+      <div style={{ display: "flex", gap: 6, marginBottom: 16, flexWrap: "wrap" }}>
+        {[{ id: "ACTIVE", l: "سارية" }, { id: "APPEALED", l: "متظلم عليها" }, { id: "CANCELLED", l: "ملغاة" }, { id: "all", l: "الكل" }].map(function(f) {
+          var a = filter === f.id;
+          return <button key={f.id} onClick={function(){ setFilter(f.id); }} style={{ padding: "8px 14px", borderRadius: 10, border: a ? "none" : "1px solid " + t.sep, background: a ? B.blue : t.card, color: a ? "#fff" : t.tx2, fontSize: 11, fontWeight: 700, cursor: "pointer" }}>{f.l}</button>;
+        })}
+      </div>
+
+      {loading && <div style={{ textAlign: "center", padding: 30, color: t.tx2 }}>جارِ التحميل...</div>}
+      {!loading && filtered.length === 0 && <div style={{ textAlign: "center", padding: 40, color: t.tx2, background: t.card, borderRadius: 12 }}>لا توجد مخالفات</div>}
+
+      <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+        {filtered.map(function(v) {
+          var st = VIOLATION_STATUS[v.status] || { label: v.status, color: t.tx2 };
+          return (
+            <div key={v.id} style={{ background: t.card, border: "1px solid " + t.sep, borderRadius: 10, padding: 14 }}>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 8 }}>
+                <div style={{ flex: 1 }}>
+                  <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 4 }}>
+                    <span style={{ fontSize: 9, fontWeight: 700, color: "#fff", background: B.blue, padding: "2px 6px", borderRadius: 4 }}>{v.violationId}</span>
+                    <span style={{ fontSize: 10, color: t.tx2 }}>المرة {v.occurrence}</span>
+                    <span style={{ fontSize: 9, fontWeight: 700, color: st.color, background: st.color + "20", padding: "2px 8px", borderRadius: 4 }}>{st.label}</span>
+                  </div>
+                  <div style={{ fontSize: 13, fontWeight: 800, color: t.tx }}>{v.empName}</div>
+                  <div style={{ fontSize: 11, color: t.tx2, marginTop: 4, lineHeight: 1.6 }}>{v.description}</div>
+                </div>
+                <div style={{ textAlign: "left", minWidth: 100 }}>
+                  <div style={{ fontSize: 10, color: t.tx2 }}>الجزاء</div>
+                  <div style={{ fontSize: 12, fontWeight: 800, color: B.red }}>{v.penaltyLabel || "—"}</div>
+                </div>
+              </div>
+              <div style={{ fontSize: 9, color: t.tx2, background: t.bg, padding: 8, borderRadius: 6, marginTop: 8 }}>
+                📜 <strong>المرجع القانوني:</strong> {v.legalRef}
+              </div>
+              <div style={{ display: "flex", justifyContent: "space-between", fontSize: 10, color: t.tx2, marginTop: 6 }}>
+                <span>المصدر: {v.source === "manual" ? "يدوي" : v.source === "auto" ? "تلقائي" : v.source === "from_investigation" ? "من تحقيق" : v.source === "from_complaint" ? "من شكوى" : v.source}</span>
+                <span>{new Date(v.createdAt).toLocaleString("ar-SA")}</span>
+              </div>
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}

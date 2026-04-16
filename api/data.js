@@ -779,12 +779,260 @@ export default async function handler(req, res) {
           return res.json(types);
         }
         if (req.method === 'POST') {
-          // Admin updates entire list
           await dbSet('attachment_types', req.body.types || []);
           return res.json({ ok: true });
         }
         break;
       }
+
+      /* ═══ LAIHA SETTINGS (إعدادات لائحة المخالفات — يديرها المدير العام) ═══ */
+      case 'laiha_settings': {
+        if (req.method === 'GET') {
+          // Returns admin overrides: { "WH-01": { enabled: true, autoApply: false, customPenalties: {...} } }
+          var settings = await dbGet('laiha_settings') || {};
+          return res.json(settings);
+        }
+        if (req.method === 'POST') {
+          // Update single item: { id, enabled, autoApply, customDescription, customPenalties }
+          var settings = await dbGet('laiha_settings') || {};
+          settings[req.body.id] = {
+            enabled: req.body.enabled !== undefined ? req.body.enabled : true,
+            autoApply: req.body.autoApply !== undefined ? req.body.autoApply : false,
+            customDescription: req.body.customDescription || null,
+            customPenalties: req.body.customPenalties || null,
+            updatedAt: new Date().toISOString(),
+            updatedBy: req.body.updatedBy || 'admin',
+          };
+          await dbSet('laiha_settings', settings);
+          return res.json({ ok: true });
+        }
+        if (req.method === 'DELETE') {
+          // Reset specific item to default
+          var settings = await dbGet('laiha_settings') || {};
+          delete settings[req.query.id];
+          await dbSet('laiha_settings', settings);
+          return res.json({ ok: true });
+        }
+        break;
+      }
+
+      /* ═══ COMPLAINTS (الشكاوى الرسمية) ═══ */
+      case 'complaints': {
+        if (req.method === 'GET') {
+          var complaints = await dbGet('complaints') || [];
+          if (req.query.filedBy) complaints = complaints.filter(c => c.filedBy === req.query.filedBy);
+          if (req.query.against) complaints = complaints.filter(c => c.against === req.query.against);
+          if (req.query.status) complaints = complaints.filter(c => c.status === req.query.status);
+          if (req.query.id) complaints = complaints.filter(c => c.id === req.query.id);
+          return res.json(complaints);
+        }
+        if (req.method === 'POST') {
+          var complaints = await dbGet('complaints') || [];
+          var newComplaint = {
+            id: 'CMP' + Date.now(),
+            status: 'PENDING_HR',
+            createdAt: new Date().toISOString(),
+            filedBy: req.body.filedBy,       // ID الشاكي
+            filedByName: req.body.filedByName,
+            against: req.body.against,        // ID المشكو عليه
+            againstName: req.body.againstName,
+            violationId: req.body.violationId, // من اللائحة
+            chapter: req.body.chapter,         // الفصل
+            title: req.body.title,
+            details: req.body.details,
+            evidence: req.body.evidence || [], // مرفقات
+            hrNotes: null,
+            hrDecision: null,                  // rejected | investigate | convert
+            decidedAt: null,
+            decidedBy: null,
+            investigationId: null,
+            violationCreatedId: null,
+          };
+          complaints.push(newComplaint);
+          await dbSet('complaints', complaints);
+          return res.json({ ok: true, complaint: newComplaint });
+        }
+        if (req.method === 'PUT') {
+          // HR decision or status update
+          var complaints = await dbGet('complaints') || [];
+          var idx = complaints.findIndex(c => c.id === req.body.id);
+          if (idx >= 0) {
+            complaints[idx] = { ...complaints[idx], ...req.body, updatedAt: new Date().toISOString() };
+            await dbSet('complaints', complaints);
+          }
+          return res.json({ ok: true });
+        }
+        break;
+      }
+
+      /* ═══ INVESTIGATIONS (التحقيقات) ═══ */
+      case 'investigations': {
+        if (req.method === 'GET') {
+          var investigations = await dbGet('investigations') || [];
+          if (req.query.empId) investigations = investigations.filter(i => i.empId === req.query.empId);
+          if (req.query.complaintId) investigations = investigations.filter(i => i.complaintId === req.query.complaintId);
+          if (req.query.status) investigations = investigations.filter(i => i.status === req.query.status);
+          if (req.query.id) investigations = investigations.filter(i => i.id === req.query.id);
+          return res.json(investigations);
+        }
+        if (req.method === 'POST') {
+          var investigations = await dbGet('investigations') || [];
+          var newInv = {
+            id: 'INV' + Date.now(),
+            complaintId: req.body.complaintId,
+            empId: req.body.empId,
+            empName: req.body.empName,
+            violationId: req.body.violationId,
+            chapter: req.body.chapter,
+            title: req.body.title,
+            description: req.body.description,
+            questions: req.body.questions || [], // الأسئلة الموجهة للموظف
+            createdAt: new Date().toISOString(),
+            createdBy: req.body.createdBy,
+            deadline: req.body.deadline,          // 24 ساعة من الإنشاء
+            status: 'WAITING_RESPONSE',
+            empResponse: null,                     // نص الرد
+            empResponseAttachments: [],            // مرفقات الرد
+            empResponseAt: null,
+            hrDecision: null,                      // convert_to_violation | close_innocent
+            hrDecisionNotes: null,
+            hrDecidedAt: null,
+            hrDecidedBy: null,
+          };
+          investigations.push(newInv);
+          await dbSet('investigations', investigations);
+          // Link to complaint
+          if (req.body.complaintId) {
+            var complaints = await dbGet('complaints') || [];
+            var cIdx = complaints.findIndex(c => c.id === req.body.complaintId);
+            if (cIdx >= 0) {
+              complaints[cIdx].status = 'UNDER_INVESTIGATION';
+              complaints[cIdx].investigationId = newInv.id;
+              await dbSet('complaints', complaints);
+            }
+          }
+          return res.json({ ok: true, investigation: newInv });
+        }
+        if (req.method === 'PUT') {
+          var investigations = await dbGet('investigations') || [];
+          var idx = investigations.findIndex(i => i.id === req.body.id);
+          if (idx >= 0) {
+            investigations[idx] = { ...investigations[idx], ...req.body, updatedAt: new Date().toISOString() };
+            await dbSet('investigations', investigations);
+          }
+          return res.json({ ok: true });
+        }
+        break;
+      }
+
+      /* ═══ VIOLATIONS V2 (المخالفات الرسمية) — الجدول الجديد ═══ */
+      case 'violations_v2': {
+        if (req.method === 'GET') {
+          var vios = await dbGet('violations_v2') || [];
+          if (req.query.empId) vios = vios.filter(v => v.empId === req.query.empId);
+          if (req.query.status) vios = vios.filter(v => v.status === req.query.status);
+          return res.json(vios);
+        }
+        if (req.method === 'POST') {
+          var vios = await dbGet('violations_v2') || [];
+          // Count previous same-violation for this employee (within 180 days)
+          var now = new Date();
+          var oneEightyAgo = new Date(now.getTime() - 180 * 24 * 3600 * 1000);
+          var sameViolationCount = vios.filter(v =>
+            v.empId === req.body.empId &&
+            v.violationId === req.body.violationId &&
+            v.status === 'ACTIVE' &&
+            new Date(v.createdAt) > oneEightyAgo
+          ).length;
+          var occurrence = sameViolationCount + 1; // 1=first, 2=second, 3=third, 4=fourth
+          var penaltyKey = occurrence === 1 ? 'first' : occurrence === 2 ? 'second' : occurrence === 3 ? 'third' : 'fourth';
+          var newVio = {
+            id: 'VIO' + Date.now(),
+            empId: req.body.empId,
+            empName: req.body.empName,
+            violationId: req.body.violationId,
+            chapter: req.body.chapter,
+            description: req.body.description,
+            occurrence: occurrence,
+            penaltyCode: req.body.penaltyCode || (req.body.penalties && req.body.penalties[penaltyKey]),
+            penaltyLabel: req.body.penaltyLabel,
+            complaintId: req.body.complaintId || null,
+            investigationId: req.body.investigationId || null,
+            source: req.body.source || 'manual', // auto | manual | from_investigation
+            legalRef: req.body.legalRef || 'اللائحة التنفيذية لنظام العمل السعودي - رقم الاعتماد 978004',
+            createdAt: new Date().toISOString(),
+            createdBy: req.body.createdBy,
+            approvedBy: req.body.approvedBy || null,
+            status: 'ACTIVE',
+            appealedAt: null,
+            appealResponse: null,
+            notes: req.body.notes || null,
+          };
+          vios.push(newVio);
+          await dbSet('violations_v2', vios);
+          return res.json({ ok: true, violation: newVio });
+        }
+        if (req.method === 'PUT') {
+          var vios = await dbGet('violations_v2') || [];
+          var idx = vios.findIndex(v => v.id === req.body.id);
+          if (idx >= 0) {
+            vios[idx] = { ...vios[idx], ...req.body, updatedAt: new Date().toISOString() };
+            await dbSet('violations_v2', vios);
+          }
+          return res.json({ ok: true });
+        }
+        break;
+      }
+
+      /* ═══ APPEALS (التظلمات) ═══ */
+      case 'appeals': {
+        if (req.method === 'GET') {
+          var appeals = await dbGet('appeals') || [];
+          if (req.query.empId) appeals = appeals.filter(a => a.empId === req.query.empId);
+          if (req.query.violationId) appeals = appeals.filter(a => a.violationId === req.query.violationId);
+          return res.json(appeals);
+        }
+        if (req.method === 'POST') {
+          var appeals = await dbGet('appeals') || [];
+          var newAppeal = {
+            id: 'APL' + Date.now(),
+            violationId: req.body.violationId,
+            empId: req.body.empId,
+            empName: req.body.empName,
+            reason: req.body.reason,
+            attachments: req.body.attachments || [],
+            createdAt: new Date().toISOString(),
+            deadline: new Date(new Date().getTime() + 5 * 24 * 3600 * 1000).toISOString(),
+            status: 'PENDING',
+            decision: null,
+            decisionNotes: null,
+            decidedAt: null,
+            decidedBy: null,
+          };
+          appeals.push(newAppeal);
+          // Link to violation
+          var vios = await dbGet('violations_v2') || [];
+          var vIdx = vios.findIndex(v => v.id === req.body.violationId);
+          if (vIdx >= 0) {
+            vios[vIdx].status = 'APPEALED';
+            vios[vIdx].appealedAt = new Date().toISOString();
+            await dbSet('violations_v2', vios);
+          }
+          await dbSet('appeals', appeals);
+          return res.json({ ok: true, appeal: newAppeal });
+        }
+        if (req.method === 'PUT') {
+          var appeals = await dbGet('appeals') || [];
+          var idx = appeals.findIndex(a => a.id === req.body.id);
+          if (idx >= 0) {
+            appeals[idx] = { ...appeals[idx], ...req.body, updatedAt: new Date().toISOString() };
+            await dbSet('appeals', appeals);
+          }
+          return res.json({ ok: true });
+        }
+        break;
+      }
+
 
       /* ═══ AUTO VIOLATIONS (الإنذارات التلقائية) ═══ */
       case 'auto_violations': {

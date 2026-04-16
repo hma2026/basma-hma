@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useRef, useCallback } from "react";
 import { COLORS, SPACING, TYPOGRAPHY, RADIUS, SHADOWS, Button, Card, Section, Icons, setTheme } from "./theme";
+import { ALL_VIOLATIONS_DEFAULT, PENALTY_TYPES, LAIHA_INFO, COMPLAINT_STATUS, VIOLATION_STATUS } from "./laiha";
 
 /* ═══════════════════════════════════════════
    بصمة HMA v4.51 — Mobile App
@@ -848,11 +849,11 @@ function HomePage({ user, branch, now, todayAtt, allAtt, gps, gpsDist, streak, l
       {/* Header */}
       <div style={{ padding: "16px 20px 0", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
         <div>
-          <div style={{ color: "#fff", fontSize: 18, fontWeight: 800, fontFamily: "'Cairo',sans-serif" }}>{"أهلاً، " + (user.name || "").split(" ")[0] + " 👋"}</div>
-          <div style={{ color: "rgba(255,255,255,.6)", fontSize: 11 }}>{formatArabicDate(now)}</div>
+          <div style={{ color: C.text, fontSize: 18, fontWeight: 800, fontFamily: "'Cairo',sans-serif" }}>{"أهلاً، " + (user.name || "").split(" ")[0] + " 👋"}</div>
+          <div style={{ color: C.sub, fontSize: 11 }}>{formatArabicDate(now)}</div>
         </div>
         <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
-          <span style={{ fontSize: 11, color: "rgba(255,255,255,.6)" }}>{badge.icon + " " + badge.label}</span>
+          <span style={{ fontSize: 11, color: C.sub }}>{badge.icon + " " + badge.label}</span>
           <span style={{ fontSize: 10, color: C.gold, fontWeight: 800 }}>{"⭐" + (user.points || 0)}</span>
           {pendingCount > 0 && <div style={{ position: "relative" }}><span style={{ fontSize: 14 }}>🔔</span><div style={{ position: "absolute", top: -4, right: -6, width: 14, height: 14, borderRadius: 7, background: C.red, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 8, fontWeight: 800, color: "#fff" }}>{pendingCount}</div></div>}
         </div>
@@ -956,7 +957,7 @@ function HomePage({ user, branch, now, todayAtt, allAtt, gps, gpsDist, streak, l
           <div style={{ textAlign: "center", marginTop: SPACING.md }}>
             {outsideNoCheckin && <div style={{ ...TYPOGRAPHY.caption, fontWeight: 800, color: COLORS.textDanger }}>لم تقم بتسجيل الحضور</div>}
             {outsideNoCheckin && gpsDist && <div style={{ ...TYPOGRAPHY.tiny, color: COLORS.textMuted, marginTop: 2 }}>{"خارج منطقة العمل (" + gpsDist + " م)"}</div>}
-            <div style={{ fontSize: 20, fontWeight: 800, color: COLORS.goldLight, fontFamily: TYPOGRAPHY.fontSerif, letterSpacing: 3, marginTop: 4, textShadow: "0 0 10px rgba(201,168,76,.3)" }}>{time}<span style={{ fontSize: 12, opacity: .4 }}>:{sec}</span> <span style={{ fontSize: 11, opacity: .4 }}>{ampm}</span></div>
+            <div style={{ fontSize: 20, fontWeight: 800, color: COLORS.goldDark, fontFamily: TYPOGRAPHY.fontSerif, letterSpacing: 3, marginTop: 4, textShadow: darkMode ? "0 0 10px rgba(201,168,76,.3)" : "none" }}>{time}<span style={{ fontSize: 12, opacity: .4 }}>:{sec}</span> <span style={{ fontSize: 11, opacity: .4 }}>{ampm}</span></div>
           </div>
           </>
         )}
@@ -1094,7 +1095,7 @@ function ReportPage({ user, allAtt, todayAtt, branch, isOffDay, myLeaves, allEmp
     <div style={{ flex: 1, paddingBottom: 80, background: "linear-gradient(180deg, "+COLORS.bg1+" 0%, "+COLORS.bg2+" 50%, "+COLORS.bg3+" 100%)", minHeight: "100vh" }}>
       {/* Header */}
       <div style={{ padding: SPACING.lg, textAlign: "center" }}>
-        <div style={{ ...TYPOGRAPHY.h1, color: COLORS.white, fontFamily: TYPOGRAPHY.fontCairo }}>تقريري</div>
+        <div style={{ ...TYPOGRAPHY.h1, color: COLORS.textPrimary, fontFamily: TYPOGRAPHY.fontCairo }}>تقريري</div>
       </div>
 
       <div style={{ padding: "0 " + SPACING.lg + "px", display: "flex", flexDirection: "column", gap: SPACING.md }}>
@@ -1268,13 +1269,14 @@ function ProfilePage({ user, branch, onLogout, onTicket, myTickets, darkMode, to
     { id: "health", icon: <Icons.alert size={18} />, label: "الإفصاح" },
     { id: "docs", icon: <Icons.clipboard size={18} />, label: "المرفقات" },
     { id: "custody", icon: <Icons.building size={18} />, label: "العهد" },
+    { id: "legal", icon: <Icons.alert size={18} />, label: "الشؤون القانونية" },
   ];
 
   return (
     <div style={{ flex: 1, paddingBottom: 80, background: "linear-gradient(180deg, "+COLORS.bg1+" 0%, "+COLORS.bg2+" 50%, "+COLORS.bg3+" 100%)", minHeight: "100vh" }}>
       {/* Header */}
       <div style={{ padding: SPACING.lg, textAlign: "center" }}>
-        <div style={{ ...TYPOGRAPHY.h1, color: COLORS.white, fontFamily: TYPOGRAPHY.fontCairo }}>حسابي</div>
+        <div style={{ ...TYPOGRAPHY.h1, color: COLORS.textPrimary, fontFamily: TYPOGRAPHY.fontCairo }}>حسابي</div>
       </div>
 
       <div style={{ padding: "0 " + SPACING.lg + "px", display: "flex", flexDirection: "column", gap: SPACING.md }}>
@@ -1288,11 +1290,11 @@ function ProfilePage({ user, branch, onLogout, onTicket, myTickets, darkMode, to
         </div>
 
         {/* Profile Tabs */}
-        <div style={{ display: "flex", gap: SPACING.xs, background: COLORS.metallic, border: "1px solid " + COLORS.metallicBorder, borderRadius: RADIUS.lg, padding: SPACING.xs, boxShadow: SHADOWS.button }}>
+        <div style={{ display: "flex", gap: SPACING.xs, background: COLORS.metallic, border: "1px solid " + COLORS.metallicBorder, borderRadius: RADIUS.lg, padding: SPACING.xs, boxShadow: SHADOWS.button, overflowX: "auto" }}>
           {tabs.map(function(t) {
             var active = tab === t.id;
             return (
-              <button key={t.id} onClick={function(){ setTab(t.id); }} style={{ flex: 1, padding: SPACING.sm + "px " + SPACING.xs + "px", borderRadius: RADIUS.md, background: active ? COLORS.metallic : "transparent", border: "1px solid " + (active ? COLORS.goldLight : "transparent"), cursor: "pointer", textAlign: "center", display: "flex", flexDirection: "column", alignItems: "center", gap: 2, color: active ? COLORS.goldLight : COLORS.textMuted }}>
+              <button key={t.id} onClick={function(){ setTab(t.id); }} style={{ flex: "0 0 auto", minWidth: 72, padding: SPACING.sm + "px " + SPACING.xs + "px", borderRadius: RADIUS.md, background: active ? COLORS.metallic : "transparent", border: "1px solid " + (active ? COLORS.goldLight : "transparent"), cursor: "pointer", textAlign: "center", display: "flex", flexDirection: "column", alignItems: "center", gap: 2, color: active ? COLORS.goldLight : COLORS.textMuted }}>
                 {t.icon}
                 <span style={{ ...TYPOGRAPHY.tiny, fontWeight: 700 }}>{t.label}</span>
               </button>
@@ -1378,6 +1380,7 @@ function ProfilePage({ user, branch, onLogout, onTicket, myTickets, darkMode, to
         {tab === "health" && <Card><HealthDisclosureTab user={user} /></Card>}
         {tab === "docs" && <Card><AttachmentsTab user={user} /></Card>}
         {tab === "custody" && <Card><CustodyTab user={user} /></Card>}
+        {tab === "legal" && <LegalTab user={user} />}
 
         {/* Manager panel button */}
         {(user.isManager || user.isAssistant) && (
@@ -1419,7 +1422,7 @@ function BenefitsPage({ user }) {
     <div style={{ flex: 1, paddingBottom: 80, background: "linear-gradient(180deg, "+COLORS.bg1+" 0%, "+COLORS.bg2+" 50%, "+COLORS.bg3+" 100%)", minHeight: "100vh" }}>
       {/* Header */}
       <div style={{ padding: SPACING.lg, textAlign: "center" }}>
-        <div style={{ ...TYPOGRAPHY.h1, color: COLORS.white, fontFamily: TYPOGRAPHY.fontCairo }}>امتيازات العضوية</div>
+        <div style={{ ...TYPOGRAPHY.h1, color: COLORS.textPrimary, fontFamily: TYPOGRAPHY.fontCairo }}>امتيازات العضوية</div>
       </div>
 
       <div style={{ padding: "0 " + SPACING.lg + "px", display: "flex", flexDirection: "column", gap: SPACING.md }}>
@@ -2411,7 +2414,7 @@ function BottomNav({ page, setPage }) {
     { id: "profile", icon: Icons.user, label: "حسابي" },
   ];
   return (
-    <div style={{ position: "fixed", bottom: 0, left: 0, right: 0, maxWidth: 430, margin: "0 auto", background: "rgba(7,20,40,.85)", backdropFilter: "blur(10px)", borderTop: "1px solid " + COLORS.cardBorder, display: "flex", justifyContent: "space-around", padding: "10px 0 16px", zIndex: 50 }}>
+    <div style={{ position: "fixed", bottom: 0, left: 0, right: 0, maxWidth: 430, margin: "0 auto", background: "rgba(" + (C === DARK ? "7,20,40" : "255,255,255") + ",.85)", backdropFilter: "blur(10px)", borderTop: "1px solid " + COLORS.metallicBorder, display: "flex", justifyContent: "space-around", padding: "10px 0 16px", zIndex: 50 }}>
       {items.map(function(n) {
         var active = page === n.id;
         var IconComp = n.icon;
@@ -2430,6 +2433,504 @@ function BottomNav({ page, setPage }) {
 /* ═══════════ STYLES ═══════════ */
 
 /* ═══════════ CUSTODY (العهد) ═══════════ */
+/* ═══════════ LEGAL TAB — الشؤون القانونية (الشكاوى/التحقيقات/المخالفات) ═══════════ */
+function LegalTab({ user }) {
+  var [subTab, setSubTab] = useState("summary");
+  var [complaints, setComplaints] = useState([]);
+  var [investigations, setInvestigations] = useState([]);
+  var [violations, setViolations] = useState([]);
+  var [loading, setLoading] = useState(true);
+  var [showComplaintModal, setShowComplaintModal] = useState(false);
+  var [activeInvestigation, setActiveInvestigation] = useState(null);
+  var [activeViolation, setActiveViolation] = useState(null);
+
+  useEffect(function() { loadAll(); }, []);
+  async function loadAll() {
+    setLoading(true);
+    try {
+      var [myC, againstMe, invs, vios] = await Promise.all([
+        api("complaints", { params: { filedBy: user.id } }),
+        api("complaints", { params: { against: user.id } }),
+        api("investigations", { params: { empId: user.id } }),
+        api("violations_v2", { params: { empId: user.id } }),
+      ]);
+      var allC = [...(myC || []), ...(againstMe || [])];
+      var uniq = {};
+      allC.forEach(function(c){ uniq[c.id] = c; });
+      setComplaints(Object.values(uniq));
+      setInvestigations(invs || []);
+      setViolations(vios || []);
+    } catch(e) { console.error(e); }
+    setLoading(false);
+  }
+
+  // Check for pending investigation that needs response
+  var pendingInv = investigations.find(function(i){ return i.status === "WAITING_RESPONSE"; });
+  var activeViolations = violations.filter(function(v){ return v.status === "ACTIVE"; });
+  var myOpenComplaints = complaints.filter(function(c){ return c.filedBy === user.id && ["PENDING_HR","UNDER_INVESTIGATION"].includes(c.status); });
+
+  return (
+    <div>
+      {/* Urgent alert for pending investigation */}
+      {pendingInv && (
+        <div onClick={function(){ setActiveInvestigation(pendingInv); }} style={{ background: "linear-gradient(135deg, " + COLORS.textDanger + "25, " + COLORS.textDanger + "15)", border: "2px solid " + COLORS.textDanger, borderRadius: RADIUS.xl, padding: SPACING.md, marginBottom: SPACING.md, cursor: "pointer", boxShadow: SHADOWS.button }}>
+          <div style={{ fontSize: 14, fontWeight: 900, color: COLORS.textDanger, marginBottom: 4 }}>⚠️ استمارة تحقيق بانتظارك</div>
+          <div style={{ ...TYPOGRAPHY.caption, color: COLORS.textPrimary, marginBottom: 6 }}>{pendingInv.title}</div>
+          <div style={{ ...TYPOGRAPHY.tiny, color: COLORS.textMuted }}>
+            المهلة: {new Date(pendingInv.deadline).toLocaleString("ar-SA")} — اضغط للرد
+          </div>
+        </div>
+      )}
+
+      {/* Sub-tabs */}
+      <div style={{ display: "flex", gap: SPACING.xs, marginBottom: SPACING.md, overflowX: "auto" }}>
+        {[
+          { id: "summary", l: "ملخصي" },
+          { id: "violations", l: "مخالفاتي (" + activeViolations.length + ")" },
+          { id: "investigations", l: "التحقيقات (" + investigations.length + ")" },
+          { id: "mine", l: "شكاواي (" + myOpenComplaints.length + ")" },
+          { id: "laiha", l: "اللائحة" },
+        ].map(function(s) {
+          var a = subTab === s.id;
+          return <button key={s.id} onClick={function(){ setSubTab(s.id); }} style={{ padding: "7px 12px", borderRadius: RADIUS.sm, background: a ? COLORS.goldGradient : COLORS.metallic, border: "1px solid " + (a ? COLORS.goldLight : COLORS.metallicBorder), color: a ? COLORS.textOnGold : COLORS.textMuted, ...TYPOGRAPHY.tiny, fontWeight: 800, cursor: "pointer", whiteSpace: "nowrap", fontFamily: TYPOGRAPHY.fontTajawal }}>{s.l}</button>;
+        })}
+      </div>
+
+      {loading && <div style={{ textAlign: "center", padding: SPACING.xl, color: COLORS.textMuted }}>جارِ التحميل...</div>}
+
+      {/* SUMMARY */}
+      {!loading && subTab === "summary" && (
+        <div>
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(2,1fr)", gap: SPACING.sm, marginBottom: SPACING.md }}>
+            <Card padding={SPACING.md}>
+              <div style={{ ...TYPOGRAPHY.h2, color: activeViolations.length > 0 ? COLORS.textDanger : COLORS.goldLight }}>{activeViolations.length}</div>
+              <div style={{ ...TYPOGRAPHY.tiny, color: COLORS.textMuted }}>مخالفات سارية</div>
+            </Card>
+            <Card padding={SPACING.md}>
+              <div style={{ ...TYPOGRAPHY.h2, color: pendingInv ? COLORS.textDanger : COLORS.goldLight }}>{investigations.filter(function(i){ return i.status === "WAITING_RESPONSE"; }).length}</div>
+              <div style={{ ...TYPOGRAPHY.tiny, color: COLORS.textMuted }}>تحقيقات مفتوحة</div>
+            </Card>
+          </div>
+
+          <button onClick={function(){ setShowComplaintModal(true); }} style={{ width: "100%", height: 52, borderRadius: RADIUS.xl, background: COLORS.goldGradient, border: "1px solid " + COLORS.goldLight, color: COLORS.textOnGold, fontSize: 14, fontWeight: 800, cursor: "pointer", fontFamily: TYPOGRAPHY.fontCairo, boxShadow: SHADOWS.gold, marginBottom: SPACING.md }}>
+            ✏️ رفع شكوى رسمية
+          </button>
+
+          <div style={{ background: COLORS.metallic, border: "1px solid " + COLORS.metallicBorder, borderRadius: RADIUS.md, padding: SPACING.md }}>
+            <div style={{ ...TYPOGRAPHY.caption, fontWeight: 700, color: COLORS.goldLight, marginBottom: 4 }}>📜 المرجع القانوني</div>
+            <div style={{ ...TYPOGRAPHY.tiny, color: COLORS.textMuted, lineHeight: 1.7 }}>
+              اللائحة التنفيذية لنظام العمل السعودي — لائحة تنظيم العمل المعتمدة رقم {LAIHA_INFO.approvalNumber} بتاريخ {LAIHA_INFO.approvalDate}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* VIOLATIONS */}
+      {!loading && subTab === "violations" && (
+        <div>
+          {violations.length === 0 && <div style={{ textAlign: "center", padding: SPACING.xl, color: COLORS.textMuted }}>لا توجد مخالفات — سجلك نظيف 👌</div>}
+          {violations.map(function(v) {
+            var st = VIOLATION_STATUS[v.status] || { label: v.status, color: COLORS.textMuted };
+            return (
+              <div key={v.id} onClick={function(){ setActiveViolation(v); }} style={{ background: COLORS.metallic, border: "1px solid " + (v.status === "ACTIVE" ? COLORS.textDanger + "60" : COLORS.metallicBorder), borderRadius: RADIUS.md, padding: SPACING.md, marginBottom: SPACING.sm, cursor: "pointer", boxShadow: SHADOWS.button }}>
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 6 }}>
+                  <div style={{ flex: 1 }}>
+                    <div style={{ display: "flex", gap: 6, alignItems: "center", marginBottom: 4 }}>
+                      <span style={{ fontSize: 9, fontWeight: 700, color: "#fff", background: COLORS.goldDark, padding: "2px 6px", borderRadius: 4 }}>{v.violationId}</span>
+                      <span style={{ ...TYPOGRAPHY.tiny, color: COLORS.textMuted }}>المرة {v.occurrence}</span>
+                    </div>
+                    <div style={{ ...TYPOGRAPHY.caption, fontWeight: 700, color: COLORS.textPrimary, lineHeight: 1.5 }}>{v.description}</div>
+                  </div>
+                  <span style={{ ...TYPOGRAPHY.tiny, fontWeight: 800, color: st.color, background: st.color + "20", padding: "3px 8px", borderRadius: RADIUS.sm }}>{st.label}</span>
+                </div>
+                <div style={{ display: "flex", justifyContent: "space-between", marginTop: 8, paddingTop: 8, borderTop: "1px solid rgba(255,255,255,.08)" }}>
+                  <span style={{ ...TYPOGRAPHY.tiny, color: COLORS.textMuted }}>{new Date(v.createdAt).toLocaleDateString("ar-SA")}</span>
+                  <span style={{ ...TYPOGRAPHY.caption, fontWeight: 800, color: COLORS.textDanger }}>{v.penaltyLabel}</span>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      )}
+
+      {/* INVESTIGATIONS */}
+      {!loading && subTab === "investigations" && (
+        <div>
+          {investigations.length === 0 && <div style={{ textAlign: "center", padding: SPACING.xl, color: COLORS.textMuted }}>لا توجد تحقيقات</div>}
+          {investigations.map(function(inv) {
+            var statusLabel = inv.status === "WAITING_RESPONSE" ? "بانتظار ردك" : inv.status === "RESPONSE_RECEIVED" ? "تم الرد — بانتظار القرار" : inv.status === "CONVERTED" ? "تحولت لمخالفة" : inv.status === "CLOSED" ? "أُغلقت — برئ" : inv.status;
+            var statusColor = inv.status === "WAITING_RESPONSE" ? COLORS.textDanger : inv.status === "RESPONSE_RECEIVED" ? COLORS.goldLight : inv.status === "CLOSED" ? "#10b981" : COLORS.textMuted;
+            return (
+              <div key={inv.id} onClick={function(){ setActiveInvestigation(inv); }} style={{ background: COLORS.metallic, border: "1px solid " + (inv.status === "WAITING_RESPONSE" ? COLORS.textDanger : COLORS.metallicBorder), borderRadius: RADIUS.md, padding: SPACING.md, marginBottom: SPACING.sm, cursor: "pointer", boxShadow: SHADOWS.button }}>
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 6 }}>
+                  <div style={{ flex: 1 }}>
+                    <div style={{ ...TYPOGRAPHY.caption, fontWeight: 800, color: COLORS.textPrimary }}>{inv.title}</div>
+                    <div style={{ ...TYPOGRAPHY.tiny, color: COLORS.textMuted, marginTop: 3 }}>{inv.questions.length} سؤال</div>
+                  </div>
+                  <span style={{ ...TYPOGRAPHY.tiny, fontWeight: 800, color: statusColor, background: statusColor + "20", padding: "3px 8px", borderRadius: RADIUS.sm }}>{statusLabel}</span>
+                </div>
+                {inv.status === "WAITING_RESPONSE" && (
+                  <div style={{ ...TYPOGRAPHY.tiny, color: COLORS.textDanger, marginTop: 6 }}>⏱ المهلة: {new Date(inv.deadline).toLocaleString("ar-SA")}</div>
+                )}
+              </div>
+            );
+          })}
+        </div>
+      )}
+
+      {/* MY COMPLAINTS */}
+      {!loading && subTab === "mine" && (
+        <div>
+          <button onClick={function(){ setShowComplaintModal(true); }} style={{ width: "100%", height: 48, borderRadius: RADIUS.lg, background: COLORS.goldGradient, border: "1px solid " + COLORS.goldLight, color: COLORS.textOnGold, fontSize: 13, fontWeight: 800, cursor: "pointer", fontFamily: TYPOGRAPHY.fontCairo, boxShadow: SHADOWS.gold, marginBottom: SPACING.md }}>
+            + رفع شكوى جديدة
+          </button>
+          {complaints.filter(function(c){ return c.filedBy === user.id; }).length === 0 && <div style={{ textAlign: "center", padding: SPACING.xl, color: COLORS.textMuted }}>لم ترفع أي شكوى</div>}
+          {complaints.filter(function(c){ return c.filedBy === user.id; }).map(function(c) {
+            var st = COMPLAINT_STATUS[c.status] || { label: c.status, color: COLORS.textMuted };
+            return (
+              <div key={c.id} style={{ background: COLORS.metallic, border: "1px solid " + COLORS.metallicBorder, borderRadius: RADIUS.md, padding: SPACING.md, marginBottom: SPACING.sm, boxShadow: SHADOWS.button }}>
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 4 }}>
+                  <div style={{ ...TYPOGRAPHY.caption, fontWeight: 800, color: COLORS.textPrimary }}>{c.title}</div>
+                  <span style={{ ...TYPOGRAPHY.tiny, fontWeight: 800, color: st.color, background: st.color + "20", padding: "3px 8px", borderRadius: RADIUS.sm }}>{st.label}</span>
+                </div>
+                <div style={{ ...TYPOGRAPHY.tiny, color: COLORS.textMuted, marginTop: 4 }}>ضد: {c.againstName}</div>
+              </div>
+            );
+          })}
+        </div>
+      )}
+
+      {/* LAIHA */}
+      {!loading && subTab === "laiha" && <LaihaViewer />}
+
+      {/* Modals */}
+      {showComplaintModal && <FileComplaintModal user={user} onClose={function(){ setShowComplaintModal(false); }} onSubmit={function(){ setShowComplaintModal(false); loadAll(); }} />}
+      {activeInvestigation && <RespondInvestigationModal investigation={activeInvestigation} onClose={function(){ setActiveInvestigation(null); }} onSubmit={function(){ setActiveInvestigation(null); loadAll(); }} />}
+      {activeViolation && <ViolationDetailModal violation={activeViolation} user={user} onClose={function(){ setActiveViolation(null); }} onAppeal={function(){ setActiveViolation(null); loadAll(); }} />}
+    </div>
+  );
+}
+
+/* ── LAIHA VIEWER (لقراءة اللائحة) ── */
+function LaihaViewer() {
+  var [chapter, setChapter] = useState("مواعيد العمل");
+  var items = ALL_VIOLATIONS_DEFAULT.filter(function(i){ return i.chapter === chapter; });
+
+  return (
+    <div>
+      <div style={{ background: COLORS.metallic, border: "1px solid " + COLORS.goldLight, borderRadius: RADIUS.md, padding: SPACING.md, marginBottom: SPACING.md }}>
+        <div style={{ ...TYPOGRAPHY.caption, fontWeight: 800, color: COLORS.goldLight }}>📜 لائحة تنظيم العمل</div>
+        <div style={{ ...TYPOGRAPHY.tiny, color: COLORS.textMuted, marginTop: 4, lineHeight: 1.7 }}>
+          رقم الاعتماد: <strong style={{ color: COLORS.textPrimary }}>{LAIHA_INFO.approvalNumber}</strong><br />
+          المصدر: {LAIHA_INFO.source}
+        </div>
+      </div>
+
+      <div style={{ display: "flex", gap: SPACING.xs, marginBottom: SPACING.md, overflowX: "auto" }}>
+        {["مواعيد العمل", "تنظيم العمل", "سلوك العامل"].map(function(ch) {
+          var a = chapter === ch;
+          return <button key={ch} onClick={function(){ setChapter(ch); }} style={{ padding: "7px 12px", borderRadius: RADIUS.sm, background: a ? COLORS.goldGradient : COLORS.metallic, border: "1px solid " + (a ? COLORS.goldLight : COLORS.metallicBorder), color: a ? COLORS.textOnGold : COLORS.textMuted, ...TYPOGRAPHY.tiny, fontWeight: 800, cursor: "pointer", whiteSpace: "nowrap" }}>{ch}</button>;
+        })}
+      </div>
+
+      {items.map(function(item) {
+        return (
+          <div key={item.id} style={{ background: COLORS.metallic, border: "1px solid " + COLORS.metallicBorder, borderRadius: RADIUS.md, padding: SPACING.md, marginBottom: SPACING.sm }}>
+            <div style={{ display: "flex", gap: 6, alignItems: "center", marginBottom: 4 }}>
+              <span style={{ fontSize: 9, fontWeight: 800, color: "#fff", background: COLORS.goldDark, padding: "2px 6px", borderRadius: 4 }}>{item.id}</span>
+              <span style={{ ...TYPOGRAPHY.tiny, color: COLORS.textMuted }}>البند {item.number}</span>
+            </div>
+            <div style={{ ...TYPOGRAPHY.caption, color: COLORS.textPrimary, lineHeight: 1.6, marginBottom: 8 }}>{item.description}</div>
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(4,1fr)", gap: 4 }}>
+              {["first","second","third","fourth"].map(function(occ, idx) {
+                var code = item.penalties[occ];
+                var label = code ? (PENALTY_TYPES[code] || {}).label : "—";
+                return (
+                  <div key={occ} style={{ background: "rgba(0,0,0,.2)", borderRadius: 4, padding: 4, textAlign: "center" }}>
+                    <div style={{ fontSize: 8, color: COLORS.textMuted }}>{["أول","ثاني","ثالث","رابع"][idx]}</div>
+                    <div style={{ fontSize: 9, fontWeight: 700, color: code ? COLORS.goldLight : COLORS.textMuted }}>{label}</div>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+/* ── FILE COMPLAINT MODAL (رفع شكوى) ── */
+function FileComplaintModal({ user, onClose, onSubmit }) {
+  var [step, setStep] = useState(1);
+  var [allEmps, setAllEmps] = useState([]);
+  var [againstId, setAgainstId] = useState("");
+  var [violationId, setViolationId] = useState("");
+  var [title, setTitle] = useState("");
+  var [details, setDetails] = useState("");
+  var [saving, setSaving] = useState(false);
+
+  useEffect(function() {
+    api("employees").then(function(e){ setAllEmps((e || []).filter(function(x){ return x.id !== user.id; })); }).catch(function(){});
+  }, []);
+
+  async function submit() {
+    if (!againstId || !violationId || !details) { alert("املأ جميع الحقول"); return; }
+    setSaving(true);
+    var target = allEmps.find(function(e){ return e.id === againstId; });
+    var viol = ALL_VIOLATIONS_DEFAULT.find(function(v){ return v.id === violationId; });
+    try {
+      await api("complaints", {
+        method: "POST",
+        body: {
+          filedBy: user.id,
+          filedByName: user.name,
+          against: againstId,
+          againstName: target ? target.name : againstId,
+          violationId: violationId,
+          chapter: viol ? viol.chapter : null,
+          title: title || (viol ? viol.description.slice(0, 80) : "شكوى"),
+          details: details,
+        },
+      });
+      alert("✓ تم رفع الشكوى بنجاح — ستصل لمدير الموارد البشرية");
+      onSubmit();
+    } catch(e) { alert("فشل: " + e.message); }
+    setSaving(false);
+  }
+
+  var filteredViols = ALL_VIOLATIONS_DEFAULT;
+
+  return (
+    <div onClick={onClose} style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,.8)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 1000, padding: SPACING.md }}>
+      <div onClick={function(e){ e.stopPropagation(); }} style={{ background: "linear-gradient(180deg, " + COLORS.bg1 + ", " + COLORS.bg2 + ")", borderRadius: RADIUS.xl, padding: SPACING.lg, maxWidth: 500, width: "100%", maxHeight: "90vh", overflow: "auto", border: "1px solid " + COLORS.metallicBorder, boxShadow: SHADOWS.button }}>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: SPACING.md }}>
+          <div style={{ ...TYPOGRAPHY.h2, color: COLORS.goldLight }}>رفع شكوى رسمية</div>
+          <button onClick={onClose} style={{ background: "none", border: "none", fontSize: 22, cursor: "pointer", color: COLORS.textMuted }}>×</button>
+        </div>
+
+        <div style={{ background: "rgba(0,0,0,.3)", padding: SPACING.sm, borderRadius: RADIUS.md, marginBottom: SPACING.md, border: "1px solid " + COLORS.metallicBorder }}>
+          <div style={{ ...TYPOGRAPHY.tiny, color: COLORS.textMuted, lineHeight: 1.7 }}>
+            ⚠️ الشكوى الكيدية (غير الصادقة) تعرّضك لجزاء وفق البند <strong style={{ color: COLORS.textDanger }}>BH-14</strong> من اللائحة
+          </div>
+        </div>
+
+        <div style={{ marginBottom: SPACING.md }}>
+          <label style={{ ...TYPOGRAPHY.caption, fontWeight: 700, color: COLORS.textPrimary }}>المشكو ضده</label>
+          <select value={againstId} onChange={function(e){ setAgainstId(e.target.value); }} style={{ width: "100%", padding: SPACING.sm + "px " + SPACING.md + "px", borderRadius: RADIUS.md, border: "1px solid " + COLORS.metallicBorder, background: "rgba(0,0,0,.25)", color: COLORS.textPrimary, fontSize: 13, marginTop: 6, fontFamily: TYPOGRAPHY.fontTajawal }}>
+            <option value="" style={{ background: "#0d2445" }}>-- اختر --</option>
+            {allEmps.map(function(e){ return <option key={e.id} value={e.id} style={{ background: "#0d2445", color: "#fff" }}>{e.name} ({e.id})</option>; })}
+          </select>
+        </div>
+
+        <div style={{ marginBottom: SPACING.md }}>
+          <label style={{ ...TYPOGRAPHY.caption, fontWeight: 700, color: COLORS.textPrimary }}>نوع المخالفة (من اللائحة)</label>
+          <select value={violationId} onChange={function(e){ setViolationId(e.target.value); }} style={{ width: "100%", padding: SPACING.sm + "px " + SPACING.md + "px", borderRadius: RADIUS.md, border: "1px solid " + COLORS.metallicBorder, background: "rgba(0,0,0,.25)", color: COLORS.textPrimary, fontSize: 12, marginTop: 6, fontFamily: TYPOGRAPHY.fontTajawal }}>
+            <option value="" style={{ background: "#0d2445" }}>-- اختر البند --</option>
+            {["مواعيد العمل", "تنظيم العمل", "سلوك العامل"].map(function(ch) {
+              var chapterItems = filteredViols.filter(function(v){ return v.chapter === ch; });
+              return (
+                <optgroup key={ch} label={ch} style={{ background: "#0d2445", color: "#fff" }}>
+                  {chapterItems.map(function(v){ return <option key={v.id} value={v.id} style={{ background: "#0d2445", color: "#fff" }}>{v.id}: {v.description.slice(0, 60)}...</option>; })}
+                </optgroup>
+              );
+            })}
+          </select>
+        </div>
+
+        <div style={{ marginBottom: SPACING.md }}>
+          <label style={{ ...TYPOGRAPHY.caption, fontWeight: 700, color: COLORS.textPrimary }}>عنوان الشكوى (اختياري)</label>
+          <input value={title} onChange={function(e){ setTitle(e.target.value); }} placeholder="عنوان مختصر" style={{ width: "100%", padding: SPACING.sm + "px " + SPACING.md + "px", borderRadius: RADIUS.md, border: "1px solid " + COLORS.metallicBorder, background: "rgba(0,0,0,.25)", color: COLORS.textPrimary, fontSize: 13, marginTop: 6, fontFamily: TYPOGRAPHY.fontTajawal }} />
+        </div>
+
+        <div style={{ marginBottom: SPACING.lg }}>
+          <label style={{ ...TYPOGRAPHY.caption, fontWeight: 700, color: COLORS.textPrimary }}>التفاصيل (الواقعة والأدلة)</label>
+          <textarea value={details} onChange={function(e){ setDetails(e.target.value); }} rows={6} placeholder="اذكر الوقت والمكان وتفاصيل الواقعة بدقة..." style={{ width: "100%", padding: SPACING.sm + "px " + SPACING.md + "px", borderRadius: RADIUS.md, border: "1px solid " + COLORS.metallicBorder, background: "rgba(0,0,0,.25)", color: COLORS.textPrimary, fontSize: 12, marginTop: 6, fontFamily: TYPOGRAPHY.fontTajawal, resize: "vertical" }} />
+        </div>
+
+        <div style={{ display: "flex", gap: SPACING.sm }}>
+          <button onClick={onClose} style={{ flex: 1, height: 44, borderRadius: RADIUS.lg, background: COLORS.metallic, border: "1px solid " + COLORS.metallicBorder, color: COLORS.textMuted, fontSize: 13, fontWeight: 700, cursor: "pointer", fontFamily: TYPOGRAPHY.fontCairo }}>إلغاء</button>
+          <button onClick={submit} disabled={saving || !againstId || !violationId || !details} style={{ flex: 2, height: 44, borderRadius: RADIUS.lg, background: (saving || !againstId || !violationId || !details) ? COLORS.metallic : COLORS.goldGradient, border: "1px solid " + COLORS.goldLight, color: (saving || !againstId || !violationId || !details) ? COLORS.textMuted : COLORS.textOnGold, fontSize: 13, fontWeight: 800, cursor: "pointer", fontFamily: TYPOGRAPHY.fontCairo, boxShadow: SHADOWS.gold }}>{saving ? "جارِ الإرسال..." : "✉️ رفع الشكوى"}</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/* ── RESPOND INVESTIGATION MODAL ── */
+function RespondInvestigationModal({ investigation, onClose, onSubmit }) {
+  var [response, setResponse] = useState(investigation.empResponse || "");
+  var [saving, setSaving] = useState(false);
+  var viol = ALL_VIOLATIONS_DEFAULT.find(function(v){ return v.id === investigation.violationId; });
+
+  var readOnly = investigation.status !== "WAITING_RESPONSE";
+
+  async function submit() {
+    if (!response.trim()) { alert("الرد مطلوب"); return; }
+    setSaving(true);
+    try {
+      await api("investigations", {
+        method: "PUT",
+        body: {
+          id: investigation.id,
+          status: "RESPONSE_RECEIVED",
+          empResponse: response,
+          empResponseAt: new Date().toISOString(),
+        },
+      });
+      alert("✓ تم إرسال ردك — بانتظار قرار مدير الموارد البشرية");
+      onSubmit();
+    } catch(e) { alert("فشل: " + e.message); }
+    setSaving(false);
+  }
+
+  var now = new Date();
+  var deadline = new Date(investigation.deadline);
+  var hoursLeft = Math.floor((deadline - now) / 3600000);
+  var overdue = hoursLeft < 0;
+
+  return (
+    <div onClick={onClose} style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,.85)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 1000, padding: SPACING.md }}>
+      <div onClick={function(e){ e.stopPropagation(); }} style={{ background: "linear-gradient(180deg, " + COLORS.bg1 + ", " + COLORS.bg2 + ")", borderRadius: RADIUS.xl, padding: SPACING.lg, maxWidth: 600, width: "100%", maxHeight: "90vh", overflow: "auto", border: "2px solid " + COLORS.textDanger, boxShadow: SHADOWS.button }}>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: SPACING.md }}>
+          <div style={{ ...TYPOGRAPHY.h2, color: COLORS.textDanger }}>🔍 استمارة تحقيق</div>
+          <button onClick={onClose} style={{ background: "none", border: "none", fontSize: 22, cursor: "pointer", color: COLORS.textMuted }}>×</button>
+        </div>
+
+        {!readOnly && (
+          <div style={{ background: overdue ? COLORS.textDanger + "25" : "rgba(234, 179, 8, 0.2)", border: "1px solid " + (overdue ? COLORS.textDanger : "#eab308"), padding: SPACING.sm, borderRadius: RADIUS.md, marginBottom: SPACING.md }}>
+            <div style={{ ...TYPOGRAPHY.caption, fontWeight: 800, color: overdue ? COLORS.textDanger : "#eab308" }}>
+              {overdue ? "⚠️ تجاوزت المهلة" : "⏱ " + hoursLeft + " ساعة متبقية"}
+            </div>
+            <div style={{ ...TYPOGRAPHY.tiny, color: COLORS.textMuted, marginTop: 2 }}>المهلة: {deadline.toLocaleString("ar-SA")}</div>
+          </div>
+        )}
+
+        <div style={{ background: "rgba(0,0,0,.3)", padding: SPACING.md, borderRadius: RADIUS.md, marginBottom: SPACING.md, border: "1px solid " + COLORS.metallicBorder }}>
+          <div style={{ ...TYPOGRAPHY.caption, fontWeight: 800, color: COLORS.textPrimary, marginBottom: 6 }}>{investigation.title}</div>
+          {viol && (
+            <div style={{ background: COLORS.goldDark + "30", padding: 8, borderRadius: 6, marginTop: 8, marginBottom: 8 }}>
+              <div style={{ ...TYPOGRAPHY.tiny, fontWeight: 700, color: COLORS.goldLight, marginBottom: 2 }}>📜 البند القانوني: {viol.id}</div>
+              <div style={{ ...TYPOGRAPHY.tiny, color: COLORS.textMuted, lineHeight: 1.6 }}>{viol.description}</div>
+            </div>
+          )}
+          <div style={{ ...TYPOGRAPHY.tiny, color: COLORS.textMuted, lineHeight: 1.7, whiteSpace: "pre-wrap" }}>{investigation.description}</div>
+        </div>
+
+        <div style={{ marginBottom: SPACING.md }}>
+          <div style={{ ...TYPOGRAPHY.caption, fontWeight: 800, color: COLORS.goldLight, marginBottom: SPACING.sm }}>❓ الأسئلة</div>
+          {investigation.questions.map(function(q, i) {
+            return (
+              <div key={i} style={{ background: "rgba(0,0,0,.25)", padding: SPACING.sm, borderRadius: RADIUS.sm, marginBottom: 6, border: "1px solid " + COLORS.metallicBorder }}>
+                <div style={{ ...TYPOGRAPHY.caption, color: COLORS.textPrimary }}><strong>{i+1}.</strong> {q}</div>
+              </div>
+            );
+          })}
+        </div>
+
+        <div style={{ marginBottom: SPACING.lg }}>
+          <label style={{ ...TYPOGRAPHY.caption, fontWeight: 800, color: COLORS.textPrimary }}>ردك المفصل</label>
+          <textarea value={response} onChange={function(e){ setResponse(e.target.value); }} rows={8} disabled={readOnly} placeholder="اشرح موقفك بتفصيل شامل على جميع الأسئلة — هذا الرد سيُوثق في ملفك..." style={{ width: "100%", padding: SPACING.md, borderRadius: RADIUS.md, border: "1px solid " + COLORS.metallicBorder, background: "rgba(0,0,0,.25)", color: COLORS.textPrimary, fontSize: 12, marginTop: 6, fontFamily: TYPOGRAPHY.fontTajawal, resize: "vertical", lineHeight: 1.7 }} />
+        </div>
+
+        {investigation.hrDecisionNotes && (
+          <div style={{ background: investigation.hrDecision === "close_innocent" ? "#10b98115" : COLORS.textDanger + "15", border: "1px solid " + (investigation.hrDecision === "close_innocent" ? "#10b981" : COLORS.textDanger), padding: SPACING.md, borderRadius: RADIUS.md, marginBottom: SPACING.md }}>
+            <div style={{ ...TYPOGRAPHY.caption, fontWeight: 800, color: investigation.hrDecision === "close_innocent" ? "#10b981" : COLORS.textDanger, marginBottom: 4 }}>
+              {investigation.hrDecision === "close_innocent" ? "✓ قرار HR: الإغلاق (برئ)" : "⚖️ قرار HR: تحويل لمخالفة"}
+            </div>
+            <div style={{ ...TYPOGRAPHY.tiny, color: COLORS.textMuted, lineHeight: 1.7 }}>{investigation.hrDecisionNotes}</div>
+          </div>
+        )}
+
+        <div style={{ display: "flex", gap: SPACING.sm }}>
+          <button onClick={onClose} style={{ flex: 1, height: 44, borderRadius: RADIUS.lg, background: COLORS.metallic, border: "1px solid " + COLORS.metallicBorder, color: COLORS.textMuted, fontSize: 13, fontWeight: 700, cursor: "pointer", fontFamily: TYPOGRAPHY.fontCairo }}>إغلاق</button>
+          {!readOnly && <button onClick={submit} disabled={saving || !response.trim()} style={{ flex: 2, height: 44, borderRadius: RADIUS.lg, background: (saving || !response.trim()) ? COLORS.metallic : COLORS.goldGradient, border: "1px solid " + COLORS.goldLight, color: (saving || !response.trim()) ? COLORS.textMuted : COLORS.textOnGold, fontSize: 13, fontWeight: 800, cursor: "pointer", fontFamily: TYPOGRAPHY.fontCairo, boxShadow: SHADOWS.gold }}>{saving ? "جارِ..." : "✉️ إرسال الرد"}</button>}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/* ── VIOLATION DETAIL + APPEAL ── */
+function ViolationDetailModal({ violation, user, onClose, onAppeal }) {
+  var [showAppeal, setShowAppeal] = useState(false);
+  var [reason, setReason] = useState("");
+  var [saving, setSaving] = useState(false);
+  var viol = ALL_VIOLATIONS_DEFAULT.find(function(v){ return v.id === violation.violationId; });
+
+  async function submitAppeal() {
+    if (!reason.trim()) { alert("أسباب التظلم مطلوبة"); return; }
+    setSaving(true);
+    try {
+      await api("appeals", {
+        method: "POST",
+        body: {
+          violationId: violation.id,
+          empId: user.id,
+          empName: user.name,
+          reason: reason,
+        },
+      });
+      alert("✓ تم رفع التظلم — سيتم الرد خلال 5 أيام عمل");
+      onAppeal();
+    } catch(e) { alert("فشل: " + e.message); }
+    setSaving(false);
+  }
+
+  return (
+    <div onClick={onClose} style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,.85)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 1000, padding: SPACING.md }}>
+      <div onClick={function(e){ e.stopPropagation(); }} style={{ background: "linear-gradient(180deg, " + COLORS.bg1 + ", " + COLORS.bg2 + ")", borderRadius: RADIUS.xl, padding: SPACING.lg, maxWidth: 500, width: "100%", maxHeight: "90vh", overflow: "auto", border: "1px solid " + COLORS.metallicBorder, boxShadow: SHADOWS.button }}>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: SPACING.md }}>
+          <div style={{ ...TYPOGRAPHY.h2, color: COLORS.textDanger }}>⚖️ تفاصيل المخالفة</div>
+          <button onClick={onClose} style={{ background: "none", border: "none", fontSize: 22, cursor: "pointer", color: COLORS.textMuted }}>×</button>
+        </div>
+
+        <div style={{ background: "rgba(0,0,0,.3)", padding: SPACING.md, borderRadius: RADIUS.md, marginBottom: SPACING.md, border: "1px solid " + COLORS.metallicBorder }}>
+          <div style={{ display: "flex", gap: 6, alignItems: "center", marginBottom: 6 }}>
+            <span style={{ fontSize: 9, fontWeight: 800, color: "#fff", background: COLORS.goldDark, padding: "3px 8px", borderRadius: 4 }}>{violation.violationId}</span>
+            <span style={{ ...TYPOGRAPHY.tiny, color: COLORS.textMuted }}>المرة {violation.occurrence}</span>
+          </div>
+          <div style={{ ...TYPOGRAPHY.caption, fontWeight: 700, color: COLORS.textPrimary, lineHeight: 1.7, marginBottom: 8 }}>{violation.description}</div>
+          <div style={{ display: "flex", justifyContent: "space-between", padding: 10, background: COLORS.textDanger + "25", borderRadius: RADIUS.sm }}>
+            <span style={{ ...TYPOGRAPHY.caption, color: COLORS.textMuted }}>الجزاء:</span>
+            <span style={{ ...TYPOGRAPHY.caption, fontWeight: 800, color: COLORS.textDanger }}>{violation.penaltyLabel}</span>
+          </div>
+        </div>
+
+        <div style={{ background: COLORS.goldDark + "20", padding: SPACING.sm, borderRadius: RADIUS.md, marginBottom: SPACING.md, border: "1px solid " + COLORS.goldLight }}>
+          <div style={{ ...TYPOGRAPHY.tiny, fontWeight: 700, color: COLORS.goldLight, marginBottom: 4 }}>📜 المرجع القانوني</div>
+          <div style={{ ...TYPOGRAPHY.tiny, color: COLORS.textMuted, lineHeight: 1.7 }}>{violation.legalRef}</div>
+        </div>
+
+        {violation.notes && (
+          <div style={{ background: "rgba(0,0,0,.2)", padding: SPACING.sm, borderRadius: RADIUS.md, marginBottom: SPACING.md }}>
+            <div style={{ ...TYPOGRAPHY.tiny, fontWeight: 700, color: COLORS.goldLight, marginBottom: 4 }}>ملاحظات</div>
+            <div style={{ ...TYPOGRAPHY.tiny, color: COLORS.textMuted, lineHeight: 1.7 }}>{violation.notes}</div>
+          </div>
+        )}
+
+        {violation.status === "ACTIVE" && !showAppeal && (
+          <button onClick={function(){ setShowAppeal(true); }} style={{ width: "100%", height: 44, borderRadius: RADIUS.lg, background: COLORS.metallic, border: "1px solid " + COLORS.textDanger, color: COLORS.textDanger, fontSize: 13, fontWeight: 700, cursor: "pointer", fontFamily: TYPOGRAPHY.fontCairo, marginBottom: SPACING.sm }}>📢 تقديم تظلم</button>
+        )}
+
+        {showAppeal && (
+          <div style={{ background: "rgba(0,0,0,.3)", padding: SPACING.md, borderRadius: RADIUS.md, marginBottom: SPACING.md, border: "1px solid " + COLORS.textDanger }}>
+            <div style={{ ...TYPOGRAPHY.caption, fontWeight: 800, color: COLORS.textDanger, marginBottom: 8 }}>📢 تظلم من المخالفة (المادة 54)</div>
+            <textarea value={reason} onChange={function(e){ setReason(e.target.value); }} rows={6} placeholder="اشرح أسباب التظلم..." style={{ width: "100%", padding: SPACING.sm, borderRadius: RADIUS.sm, border: "1px solid " + COLORS.metallicBorder, background: "rgba(0,0,0,.25)", color: COLORS.textPrimary, fontSize: 12, fontFamily: TYPOGRAPHY.fontTajawal, resize: "vertical", marginBottom: SPACING.sm }} />
+            <div style={{ display: "flex", gap: SPACING.sm }}>
+              <button onClick={function(){ setShowAppeal(false); }} style={{ flex: 1, height: 40, borderRadius: RADIUS.md, background: COLORS.metallic, border: "1px solid " + COLORS.metallicBorder, color: COLORS.textMuted, fontSize: 12, fontWeight: 700, cursor: "pointer" }}>إلغاء</button>
+              <button onClick={submitAppeal} disabled={saving} style={{ flex: 2, height: 40, borderRadius: RADIUS.md, background: COLORS.textDanger, border: "none", color: "#fff", fontSize: 12, fontWeight: 800, cursor: "pointer" }}>{saving ? "..." : "رفع التظلم"}</button>
+            </div>
+          </div>
+        )}
+
+        <button onClick={onClose} style={{ width: "100%", height: 44, borderRadius: RADIUS.lg, background: COLORS.metallic, border: "1px solid " + COLORS.metallicBorder, color: COLORS.textMuted, fontSize: 13, fontWeight: 700, cursor: "pointer", fontFamily: TYPOGRAPHY.fontCairo }}>إغلاق</button>
+      </div>
+    </div>
+  );
+}
+
+/* ═══════════ CUSTODY ═══════════ */
 function CustodyTab({ user }) {
   var [items, setItems] = useState([]);
   useEffect(function() {
