@@ -937,9 +937,9 @@ function HomePage({ user, branch, now, todayAtt, allAtt, gps, gpsDist, streak, l
 
         {/* GPS indicator */}
         <div style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: SPACING.sm }}>
-          <div style={{ width: 7, height: 7, borderRadius: RADIUS.pill, background: gps ? (inRange ? COLORS.success : COLORS.textDanger) : COLORS.warning }} />
+          <div style={{ width: 7, height: 7, borderRadius: RADIUS.pill, background: gps ? (inRange ? COLORS.goldLight : COLORS.textDanger) : COLORS.textMuted }} />
           <span style={{ ...TYPOGRAPHY.caption, color: COLORS.textMuted }}>{gps ? (inRange ? "في النطاق" : "خارج النطاق") + (branch ? " — " + branch.name : "") : "تحديد الموقع..."}</span>
-          {streak > 0 && <span style={{ ...TYPOGRAPHY.caption, fontWeight: 800, color: COLORS.warning }}>{"🔥 " + streak}</span>}
+          {streak > 0 && <span style={{ ...TYPOGRAPHY.caption, fontWeight: 800, color: COLORS.goldLight }}>{"🔥 " + streak}</span>}
         </div>
 
         {/* إجازة + إذن (secondary) */}
@@ -1069,10 +1069,10 @@ function ReportPage({ user, allAtt, todayAtt, branch, isOffDay, myLeaves, allEmp
           </div>
           <div style={{ display: "grid", gridTemplateColumns: "repeat(4,1fr)", gap: SPACING.sm }}>
             {[
-              { num: todayCheckin ? 1 : 0, label: "حاضر", color: COLORS.success },
-              { num: todayLate ? 1 : 0, label: "متأخر", color: COLORS.warning },
-              { num: todayAbsent ? 1 : 0, label: "غائب", color: COLORS.danger },
-              { num: 0, label: "إجازة", color: COLORS.info },
+              { num: todayCheckin ? 1 : 0, label: "حاضر", color: COLORS.goldLight },
+              { num: todayLate ? 1 : 0, label: "متأخر", color: COLORS.goldLight },
+              { num: todayAbsent ? 1 : 0, label: "غائب", color: COLORS.goldLight },
+              { num: 0, label: "إجازة", color: COLORS.goldLight },
             ].map(function(s, i){
               return <div key={i} style={{ textAlign: "center" }}>
                 <div style={{ fontSize: 24, fontWeight: 900, color: s.color, fontFamily: TYPOGRAPHY.fontCairo }}>{s.num}</div>
@@ -1092,9 +1092,9 @@ function ReportPage({ user, allAtt, todayAtt, branch, isOffDay, myLeaves, allEmp
         {/* Month stats — 3 cards */}
         <div style={{ display: "flex", gap: SPACING.sm }}>
           {[
-            { num: presentDays, label: "حاضر", color: COLORS.success },
-            { num: lateDays, label: "متأخر", color: COLORS.warning },
-            { num: absentDays, label: "غائب", color: COLORS.danger },
+            { num: presentDays, label: "حاضر", color: COLORS.goldLight },
+            { num: lateDays, label: "متأخر", color: COLORS.goldLight },
+            { num: absentDays, label: "غائب", color: COLORS.goldLight },
           ].map(function(s, i){
             return <div key={i} style={{ flex: 1, background: COLORS.metallic, border: "1px solid " + COLORS.metallicBorder, borderRadius: RADIUS.lg, padding: SPACING.md, textAlign: "center", boxShadow: "0 2px 8px rgba(0,0,0,.2), inset 0 1px 0 rgba(255,255,255,.1)" }}>
               <div style={{ fontSize: 22, fontWeight: 900, color: s.color, fontFamily: TYPOGRAPHY.fontCairo }}>{s.num}</div>
@@ -1108,9 +1108,9 @@ function ReportPage({ user, allAtt, todayAtt, branch, isOffDay, myLeaves, allEmp
           <div style={{ ...TYPOGRAPHY.h3, color: COLORS.textPrimary, marginBottom: SPACING.md }}>إحصائيات الشهر</div>
           <div style={{ display: "grid", gridTemplateColumns: "repeat(3,1fr)", gap: SPACING.sm }}>
             {[
-              { num: attendPct + "%", label: "نسبة الحضور", color: COLORS.success },
-              { num: overtimeHrs, label: "ساعات إضافية", color: COLORS.info },
-              { num: leaveDays, label: "أيام إجازة", color: COLORS.warning },
+              { num: attendPct + "%", label: "نسبة الحضور", color: COLORS.goldLight },
+              { num: overtimeHrs, label: "ساعات إضافية", color: COLORS.goldLight },
+              { num: leaveDays, label: "أيام إجازة", color: COLORS.goldLight },
             ].map(function(s, i){
               return <div key={i} style={{ textAlign: "center", padding: SPACING.sm, background: "rgba(255,255,255,.03)", borderRadius: RADIUS.md }}>
                 <div style={{ fontSize: 22, fontWeight: 900, color: s.color, fontFamily: TYPOGRAPHY.fontCairo }}>{s.num}</div>
@@ -1130,8 +1130,8 @@ function ReportPage({ user, allAtt, todayAtt, branch, isOffDay, myLeaves, allEmp
             {["أحد","اثن","ثلا","أرب","خمي","جمع","سبت"].map(function(d){ return <div key={d} style={{ ...TYPOGRAPHY.tiny, color: COLORS.textMuted, padding: 4 }}>{d}</div>; })}
             {calDays.map(function(cd, idx) {
               if (!cd) return <div key={"e"+idx} />;
-              var bg = cd.isToday ? COLORS.gold : cd.hasAtt ? (cd.isLate ? COLORS.warning+"20" : COLORS.success+"20") : "transparent";
-              var color = cd.isToday ? COLORS.textOnGold : cd.hasAtt ? (cd.isLate ? COLORS.warning : COLORS.success) : COLORS.textMuted;
+              var bg = cd.isToday ? "rgba(201,168,76,.3)" : cd.hasAtt ? "rgba(232,213,163,.1)" : "transparent";
+              var color = cd.isToday ? COLORS.goldLight : cd.hasAtt ? COLORS.goldLight : COLORS.textMuted;
               var border = cd.isToday ? "none" : cd.hasAtt ? "1px solid " + (cd.isLate ? COLORS.warning+"40" : COLORS.success+"40") : "1px solid " + COLORS.cardBorder;
               return (
                 <div key={cd.day} style={{ width: "100%", aspectRatio: "1", borderRadius: RADIUS.sm, background: bg, border: border, display: "flex", alignItems: "center", justifyContent: "center", ...TYPOGRAPHY.caption, fontWeight: 700, color: color }}>
@@ -1141,9 +1141,9 @@ function ReportPage({ user, allAtt, todayAtt, branch, isOffDay, myLeaves, allEmp
             })}
           </div>
           <div style={{ display: "flex", gap: SPACING.md, justifyContent: "center", marginTop: SPACING.md }}>
-            <span style={{ ...TYPOGRAPHY.tiny, color: COLORS.success }}>● حاضر</span>
-            <span style={{ ...TYPOGRAPHY.tiny, color: COLORS.warning }}>● متأخر</span>
-            <span style={{ ...TYPOGRAPHY.tiny, color: COLORS.gold }}>● اليوم</span>
+            <span style={{ ...TYPOGRAPHY.tiny, color: COLORS.goldLight }}>● حاضر</span>
+            <span style={{ ...TYPOGRAPHY.tiny, color: COLORS.textMuted }}>● متأخر</span>
+            <span style={{ ...TYPOGRAPHY.tiny, color: COLORS.goldLight, fontWeight: 800 }}>● اليوم</span>
           </div>
         </Card>
 
@@ -1162,12 +1162,12 @@ function ReportPage({ user, allAtt, todayAtt, branch, isOffDay, myLeaves, allEmp
                 var info = typeMap[r.type] || { label: r.type, color: COLORS.textMuted, icon: "📌" };
                 return (
                   <div key={r.id || i} style={{ display: "flex", alignItems: "center", gap: SPACING.md, padding: SPACING.md + "px 0", borderBottom: i < recent.length - 1 ? "1px solid " + COLORS.cardBorder : "none" }}>
-                    <div style={{ width: 36, height: 36, borderRadius: RADIUS.pill, background: info.color + "20", display: "flex", alignItems: "center", justifyContent: "center", color: info.color }}>
+                    <div style={{ width: 36, height: 36, borderRadius: RADIUS.pill, background: "rgba(232,213,163,.1)", display: "flex", alignItems: "center", justifyContent: "center", color: COLORS.goldLight, border: "1px solid " + COLORS.metallicBorder }}>
                       <Icons.check size={18} />
                     </div>
                     <div style={{ flex: 1 }}>
                       <div style={{ ...TYPOGRAPHY.bodySm, fontWeight: 700, color: COLORS.textPrimary }}>{user.name}</div>
-                      <div style={{ ...TYPOGRAPHY.caption, color: info.color, marginTop: 1 }}>{info.label + " · " + r.date}</div>
+                      <div style={{ ...TYPOGRAPHY.caption, color: COLORS.textMuted, marginTop: 1 }}>{info.label + " · " + r.date}</div>
                     </div>
                     <div style={{ ...TYPOGRAPHY.caption, fontWeight: 700, color: COLORS.textMuted }}>{formatTimeStr(r.ts)}</div>
                   </div>
@@ -1182,7 +1182,7 @@ function ReportPage({ user, allAtt, todayAtt, branch, isOffDay, myLeaves, allEmp
           <Card>
             <div style={{ ...TYPOGRAPHY.h3, color: COLORS.textPrimary, marginBottom: SPACING.md }}>إجازاتي</div>
             {myLeaves.slice(0, 5).map(function(l, i) {
-              var statusMap = { pending: { label: "قيد المراجعة", color: COLORS.warning }, approved: { label: "مقبولة", color: COLORS.success }, rejected: { label: "مرفوضة", color: COLORS.danger } };
+              var statusMap = { pending: { label: "قيد المراجعة", color: COLORS.textMuted }, approved: { label: "مقبولة", color: COLORS.goldLight }, rejected: { label: "مرفوضة", color: COLORS.textDanger } };
               var s = statusMap[l.status] || statusMap.pending;
               var typeLabels = { annual: "سنوية", sick: "مرضية", emergency: "طارئة", personal: "شخصية" };
               return (
@@ -1282,7 +1282,7 @@ function ProfilePage({ user, branch, onLogout, onTicket, myTickets, darkMode, to
               <div style={{ ...TYPOGRAPHY.h3, color: COLORS.textPrimary, marginBottom: SPACING.md }}>الإعدادات</div>
               <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: SPACING.sm + "px 0", borderBottom: "1px solid " + COLORS.cardBorder }}>
                 <span style={{ ...TYPOGRAPHY.bodySm, fontWeight: 600, color: COLORS.textPrimary }}>الوضع الليلي</span>
-                <div onClick={toggleDark} style={{ width: 44, height: 24, borderRadius: 12, background: darkMode ? COLORS.gold : COLORS.cardBorder, position: "relative", cursor: "pointer", transition: "background .3s" }}>
+                <div onClick={toggleDark} style={{ width: 44, height: 24, borderRadius: 12, background: darkMode ? COLORS.goldLight : "rgba(255,255,255,.15)", position: "relative", cursor: "pointer", transition: "background .3s" }}>
                   <div style={{ width: 18, height: 18, borderRadius: 9, background: COLORS.white, position: "absolute", top: 3, transition: "all .3s", left: darkMode ? 3 : undefined, right: darkMode ? undefined : 3, boxShadow: "0 1px 3px rgba(0,0,0,.2)" }} />
                 </div>
               </div>
@@ -1291,7 +1291,7 @@ function ProfilePage({ user, branch, onLogout, onTicket, myTickets, darkMode, to
               <FaceResetRow empId={user.id} />
               <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: SPACING.sm + "px 0", borderTop: "1px solid " + COLORS.cardBorder }}>
                 <span style={{ ...TYPOGRAPHY.bodySm, fontWeight: 600, color: COLORS.textPrimary }}>إصدار التطبيق</span>
-                <span style={{ ...TYPOGRAPHY.caption, fontWeight: 800, color: COLORS.gold }}>{"v" + VER}</span>
+                <span style={{ ...TYPOGRAPHY.caption, fontWeight: 800, color: COLORS.goldLight }}>{"v" + VER}</span>
               </div>
             </Card>
 
@@ -1303,7 +1303,7 @@ function ProfilePage({ user, branch, onLogout, onTicket, myTickets, darkMode, to
                   <span style={{ ...TYPOGRAPHY.caption, color: COLORS.textMuted }}>رقم العضوية</span>
                 </div>
                 <div style={{ display: "flex", justifyContent: "space-between", padding: SPACING.sm + "px 0", borderTop: "1px solid " + COLORS.cardBorder }}>
-                  <span style={{ ...TYPOGRAPHY.body, fontWeight: 700, color: user.sceStatus === "active" ? COLORS.success : COLORS.danger }}>{user.sceStatus === "active" ? "ساري" : "منتهي"}</span>
+                  <span style={{ ...TYPOGRAPHY.body, fontWeight: 700, color: user.sceStatus === "active" ? COLORS.goldLight : COLORS.textDanger }}>{user.sceStatus === "active" ? "ساري" : "منتهي"}</span>
                   <span style={{ ...TYPOGRAPHY.caption, color: COLORS.textMuted }}>{"انتهاء: " + user.sceExpiry}</span>
                 </div>
               </Card>
@@ -1313,7 +1313,7 @@ function ProfilePage({ user, branch, onLogout, onTicket, myTickets, darkMode, to
               <Card>
                 <div style={{ ...TYPOGRAPHY.h3, color: COLORS.textPrimary, marginBottom: SPACING.md }}>تذاكري</div>
                 {myTickets.slice(0, 5).map(function(t, i) {
-                  var statusMap = { pending: { label: "قيد المراجعة", color: COLORS.warning }, open: { label: "مفتوحة", color: COLORS.info }, resolved: { label: "تم الحل", color: COLORS.success }, closed: { label: "مغلقة", color: COLORS.textMuted } };
+                  var statusMap = { pending: { label: "قيد المراجعة", color: COLORS.textMuted }, open: { label: "مفتوحة", color: COLORS.goldLight }, resolved: { label: "تم الحل", color: COLORS.goldLight }, closed: { label: "مغلقة", color: COLORS.textMuted } };
                   var st = statusMap[t.status] || statusMap.pending;
                   return (
                     <div key={t.id || i} style={{ display: "flex", alignItems: "center", gap: SPACING.sm, padding: SPACING.sm + "px 0", borderBottom: i < Math.min(myTickets.length, 5) - 1 ? "1px solid " + COLORS.cardBorder : "none" }}>
@@ -1422,8 +1422,8 @@ function BenefitsPage({ user }) {
                 <div style={{ width: 44, height: 44, borderRadius: RADIUS.md, background: available ? COLORS.goldLight + "20" : "rgba(255,255,255,.05)", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 22 }}>{coupon.icon}</div>
                 <div style={{ flex: 1 }}>
                   <div style={{ ...TYPOGRAPHY.bodySm, fontWeight: 700, color: COLORS.textPrimary }}>{coupon.brand}</div>
-                  <div style={{ ...TYPOGRAPHY.caption, color: available ? COLORS.success : COLORS.textMuted, fontWeight: 600 }}>{coupon.discount}</div>
-                  {!available && <div style={{ ...TYPOGRAPHY.tiny, color: COLORS.warning }}>{"يتطلب " + tierName}</div>}
+                  <div style={{ ...TYPOGRAPHY.caption, color: available ? COLORS.goldLight : COLORS.textMuted, fontWeight: 600 }}>{coupon.discount}</div>
+                  {!available && <div style={{ ...TYPOGRAPHY.tiny, color: COLORS.textMuted }}>{"يتطلب " + tierName}</div>}
                 </div>
                 <div style={{ textAlign: "center" }}>
                   <div style={{ fontSize: 16, fontWeight: 900, color: canAfford && available ? COLORS.goldLight : COLORS.textMuted, fontFamily: TYPOGRAPHY.fontCairo }}>{coupon.pts}</div>
@@ -1439,7 +1439,7 @@ function BenefitsPage({ user }) {
 
         {isRamadan && (
           <Card>
-            <div style={{ textAlign: "center", ...TYPOGRAPHY.bodySm, fontWeight: 700, color: COLORS.warning }}>
+            <div style={{ textAlign: "center", ...TYPOGRAPHY.bodySm, fontWeight: 700, color: COLORS.goldLight }}>
               عروض رمضان الخاصة متاحة
             </div>
           </Card>
