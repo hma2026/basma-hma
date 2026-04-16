@@ -191,10 +191,34 @@ const CHALLENGES = [
   { q: "ما هو الحد الأدنى لغطاء الخرسانة للأعمدة؟", opts: ["25 مم","40 مم","75 مم"], correct: 1, type: "هندسي" },
   { q: "كم يوم يلزم لمعالجة الخرسانة بالماء؟", opts: ["3 أيام","7 أيام","14 يوم"], correct: 1, type: "هندسي" },
   { q: "ما الشيء الذي يمشي بلا أرجل؟", opts: ["الماء","الوقت","الهواء"], correct: 1, type: "لغز" },
-  { q: "كم عدد أركان الإسلام؟", opts: ["ثلاثة","خمسة","سبعة"], correct: 1, type: "سؤال" },
-  { q: "كم ركعة صلاة التراويح؟", opts: ["8 أو 20","12","6"], correct: 0, type: "معلومة" },
+  { q: "كم عدد أركان الإسلام؟", opts: ["ثلاثة","خمسة","سبعة"], correct: 1, type: "عام" },
+  { q: "كم ركعة صلاة التراويح؟", opts: ["8 أو 20","12","6"], correct: 0, type: "عام" },
   { q: "ما هي نسبة الماء إلى الأسمنت المثالية؟", opts: ["0.30","0.45","0.60"], correct: 1, type: "هندسي" },
   { q: "ما أول شي يُراجع عند استلام موقع جديد؟", opts: ["المخططات","الميزانية","المعدات"], correct: 0, type: "هندسي" },
+  // أسئلة نظام العمل
+  { q: "كم يوم مدة التظلم من جزاء تأديبي؟", opts: ["يوم واحد","3 أيام عمل","7 أيام"], correct: 1, type: "نظام العمل" },
+  { q: "بعد كم يوم غياب متصل يُفسخ العقد (م.80)؟", opts: ["10 أيام","15 يوم","30 يوم"], correct: 1, type: "نظام العمل" },
+  { q: "كم يوم الإجازة السنوية لمن خدم أقل من 5 سنوات؟", opts: ["15 يوم","21 يوم","30 يوم"], correct: 1, type: "نظام العمل" },
+  { q: "بعد كم يوم من المخالفة لا يُعتبر عائداً (م.44)؟", opts: ["90 يوم","180 يوم","365 يوم"], correct: 1, type: "نظام العمل" },
+  { q: "كم ساعة عمل يومياً في رمضان للمسلمين؟", opts: ["5 ساعات","6 ساعات","7 ساعات"], correct: 1, type: "نظام العمل" },
+  // أسئلة سلامة
+  { q: "ما أول إجراء عند اكتشاف حريق في الموقع؟", opts: ["إطفاء الحريق","إنذار الجميع والإخلاء","الاتصال بالشرطة"], correct: 1, type: "سلامة" },
+  { q: "ما لون خوذة السلامة للمهندس عادة؟", opts: ["أبيض","أصفر","أحمر"], correct: 0, type: "سلامة" },
+  { q: "كم المسافة الآمنة من حافة الحفريات؟", opts: ["0.5 متر","1 متر","2 متر"], correct: 2, type: "سلامة" },
+  // أسئلة هندسية
+  { q: "ما الفرق بين الإسمنت البورتلاندي العادي والمقاوم؟", opts: ["اللون","مقاومة الكبريتات","السعر"], correct: 1, type: "هندسي" },
+  { q: "ما الحد الأقصى لـ slump الخرسانة العادية؟", opts: ["50 مم","100 مم","150 مم"], correct: 1, type: "هندسي" },
+  { q: "ما المسافة بين أعمدة القالب (الشدّة) عادة؟", opts: ["50 سم","100 سم","200 سم"], correct: 1, type: "هندسي" },
+  { q: "كم يوم قبل فك شدّة البلاطة؟", opts: ["3 أيام","7 أيام","21 يوم"], correct: 2, type: "هندسي" },
+  // أسئلة عامة
+  { q: "ما عاصمة المملكة العربية السعودية؟", opts: ["جدة","الرياض","مكة"], correct: 1, type: "عام" },
+  { q: "في أي سنة تأسست المملكة؟", opts: ["1902","1932","1945"], correct: 1, type: "عام" },
+  { q: "كم عدد مناطق المملكة الإدارية؟", opts: ["10","13","15"], correct: 1, type: "عام" },
+  { q: "ما هي رؤية المملكة؟", opts: ["رؤية 2025","رؤية 2030","رؤية 2035"], correct: 1, type: "عام" },
+  { q: "ما الطعم الذي لا تستطيع الطيور تذوقه؟", opts: ["المالح","الحار","الحلو"], correct: 1, type: "لغز" },
+  { q: "كم عدد العظام في جسم الإنسان البالغ؟", opts: ["176","206","256"], correct: 1, type: "عام" },
+  { q: "ما أقوى عضلة في جسم الإنسان؟", opts: ["القلب","اللسان","الفك"], correct: 2, type: "عام" },
+  { q: "أكمل الحديث: إنما الأعمال ...", opts: ["بالنيات","بالخواتيم","بالإخلاص"], correct: 0, type: "ذكر" },
 ];
 
 /* ── Mascot Messages ── */
@@ -266,24 +290,6 @@ function getBreakOffset() {
 }
 
 /* ── Labor Law Violations (لائحة العمل السعودية) ── */
-const VIOLATION_ESCALATION = [
-  { level: 1, type: "تنبيه إلكتروني", action: "تنبيه شفهي", response: "إلكتروني", icon: "💬" },
-  { level: 2, type: "إنذار إلكتروني أول", action: "إنذار كتابي", response: "إلكتروني", icon: "⚠️" },
-  { level: 3, type: "إنذار كتابي", action: "إنذار كتابي + خصم يوم", response: "كتابي + إفادة موقعة", icon: "📋" },
-  { level: 4, type: "إنذار نهائي", action: "إنذار نهائي + خصم 3 أيام", response: "إفادة ورقية موقعة مصورة", icon: "🔴" },
-  { level: 5, type: "إنهاء خدمات", action: "إنهاء العلاقة التعاقدية", response: "—", icon: "❌" },
-];
-
-const VIOLATION_TYPES = {
-  late: { label: "تأخر في الحضور", category: "انضباط" },
-  absent: { label: "غياب بدون إذن", category: "انضباط" },
-  early_leave: { label: "انصراف مبكر", category: "انضباط" },
-  geofence: { label: "تسجيل من خارج النطاق", category: "انضباط" },
-  no_face: { label: "عدم التحقق بالوجه", category: "أمان" },
-  missed_break: { label: "عدم تسجيل الاستراحة", category: "انضباط" },
-};
-
-
 /* ═══════════ ERROR BOUNDARY ═══════════ */
 class ErrorBoundary extends React.Component {
   constructor(props) { super(props); this.state = { hasError: false, error: null }; }
@@ -352,6 +358,7 @@ function MobileAppInner() {
   const [teamToday, setTeamToday] = useState([]);
   const [allEmps, setAllEmps] = useState([]);
   const [kadwarNotifs, setKadwarNotifs] = useState({ tasks: 0, exams: 0, alerts: 0 });
+  const [legalAlerts, setLegalAlerts] = useState(0);
   const [pwaPrompt, setPwaPrompt] = useState(null);
   const [callBanner, setCallBanner] = useState(null); // { type, msg }
   const [initDone, setInitDone] = useState(false);
@@ -591,6 +598,12 @@ function MobileAppInner() {
         var notifs = await api("kadwar_notifs", { params: { empId: emp.id } });
         if (notifs && !notifs.error) setKadwarNotifs({ tasks: notifs.tasks || 0, exams: notifs.exams || 0, alerts: notifs.alerts || 0 });
       } catch(e) { /**/ }
+      // Fetch legal alerts (pending investigations + active violations)
+      try {
+        var invs = await api("investigations", { params: { empId: emp.id, status: "WAITING_RESPONSE" } });
+        var vios = await api("violations_v2", { params: { empId: emp.id, status: "ACTIVE" } });
+        setLegalAlerts(((invs || []).length) + ((vios || []).length));
+      } catch(e) { /**/ }
     } catch { /**/ }
   }
 
@@ -728,7 +741,7 @@ function MobileAppInner() {
         {page === "profile" && <ProfilePage user={user} branch={branch} onLogout={logout} onTicket={() => setTicketModal(true)} myTickets={myTickets} darkMode={darkMode} toggleDark={toggleDark} />}
       </div>
 
-      <BottomNav page={page} setPage={setPage} />
+      <BottomNav page={page} setPage={setPage} legalAlerts={legalAlerts} />
 
       {toast && <Toast msg={toast.msg} type={toast.type} />}
       {callBanner && <CallBanner type={callBanner.type} msg={callBanner.msg} onDismiss={function(){ setCallBanner(null); }} />}
@@ -2376,12 +2389,12 @@ function FaceResetRow({ empId }) {
   );
 }
 
-function BottomNav({ page, setPage }) {
+function BottomNav({ page, setPage, legalAlerts }) {
   var items = [
     { id: "home", icon: Icons.home, label: "الرئيسية" },
     { id: "benefits", icon: Icons.medal, label: "الامتيازات" },
     { id: "report", icon: Icons.chart, label: "تقريري" },
-    { id: "profile", icon: Icons.user, label: "حسابي" },
+    { id: "profile", icon: Icons.user, label: "حسابي", badge: legalAlerts || 0 },
   ];
   return (
     <div style={{ position: "fixed", bottom: 0, left: 0, right: 0, maxWidth: 430, margin: "0 auto", background: "rgba(" + (C === DARK ? "7,20,40" : "255,255,255") + ",.85)", backdropFilter: "blur(10px)", borderTop: "1px solid " + COLORS.metallicBorder, display: "flex", justifyContent: "space-around", padding: "10px 0 16px", zIndex: 50 }}>
@@ -2391,7 +2404,10 @@ function BottomNav({ page, setPage }) {
         return (
           <button key={n.id} onClick={function(){ setPage(n.id); }} style={{ background: "none", border: "none", display: "flex", flexDirection: "column", alignItems: "center", gap: 2, cursor: "pointer", position: "relative", padding: "4px 12px" }}>
             {active && <div style={{ position: "absolute", top: -10, left: "50%", transform: "translateX(-50%)", width: 24, height: 3, borderRadius: 2, background: COLORS.gold }} />}
-            <IconComp size={22} color={active ? COLORS.gold : COLORS.textMuted} />
+            <div style={{ position: "relative" }}>
+              <IconComp size={22} color={active ? COLORS.gold : COLORS.textMuted} />
+              {n.badge > 0 && <div style={{ position: "absolute", top: -4, right: -8, minWidth: 16, height: 16, borderRadius: 8, background: COLORS.textDanger || "#E2192C", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 9, fontWeight: 900, color: "#fff", padding: "0 3px" }}>{n.badge}</div>}
+            </div>
             <span style={{ ...TYPOGRAPHY.tiny, fontWeight: 700, color: active ? COLORS.gold : COLORS.textMuted }}>{n.label}</span>
           </button>
         );
