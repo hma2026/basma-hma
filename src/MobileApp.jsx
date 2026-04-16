@@ -1179,7 +1179,7 @@ function ReportPage({ user, allAtt, todayAtt, branch, isOffDay, myLeaves, allEmp
 /* ═══════════ PROFILE ═══════════ */
 function ProfilePage({ user, branch, onLogout, onTicket, myTickets, darkMode, toggleDark }) {
   var [tab, setTab] = useState("info");
-  const typeMap = { office: "🏢 مكتبي", field: "🏗️ ميداني", mixed: "🔀 مختلط", remote: "🏠 عن بعد" };
+  const typeMap = { office: "مكتبي", field: "ميداني", mixed: "مختلط", remote: "عن بعد" };
   const badge = memberBadge(user.points || 0);
   const rows = [
     ["الفرع", branch ? branch.name : "—"],
@@ -1190,149 +1190,143 @@ function ProfilePage({ user, branch, onLogout, onTicket, myTickets, darkMode, to
     ["النقاط", badge.icon + " " + (user.points || 0) + " نقطة"],
   ];
   var tabs = [
-    { id: "info", icon: "👤", label: "بياناتي" },
-    { id: "deps", icon: "👨‍👩‍👧", label: "المرافقين" },
-    { id: "health", icon: "🏥", label: "الإفصاح" },
-    { id: "docs", icon: "📎", label: "المرفقات" },
-    { id: "custody", icon: "📦", label: "العهد" },
+    { id: "info", icon: <Icons.user size={18} />, label: "بياناتي" },
+    { id: "deps", icon: <Icons.user size={18} />, label: "المرافقين" },
+    { id: "health", icon: <Icons.alert size={18} />, label: "الإفصاح" },
+    { id: "docs", icon: <Icons.clipboard size={18} />, label: "المرفقات" },
+    { id: "custody", icon: <Icons.building size={18} />, label: "العهد" },
   ];
 
   return (
-    <div style={{ flex: 1, paddingBottom: 80 }}>
-      <div style={S.detailHeader}>
-        <div style={{ width: 60 }} />
-        <div style={S.detailTitle}>حسابي</div>
-        <div style={{ width: 60 }} />
+    <div style={{ flex: 1, paddingBottom: 80, background: "linear-gradient(180deg, "+COLORS.bg1+" 0%, "+COLORS.bg2+" 50%, "+COLORS.bg3+" 100%)", minHeight: "100vh" }}>
+      {/* Header */}
+      <div style={{ padding: SPACING.lg, textAlign: "center" }}>
+        <div style={{ ...TYPOGRAPHY.h1, color: COLORS.white, fontFamily: TYPOGRAPHY.fontCairo }}>حسابي</div>
       </div>
-      <div style={{ padding: "16px 16px 0" }}>
-        <div style={{ textAlign: "center", marginBottom: 16 }} className="basma-fadein">
-          <div style={{ width: 80, height: 80, borderRadius: "50%", background: "linear-gradient(135deg,"+C.blue+","+C.blueBright+")", margin: "0 auto 10px", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 32, border: "3px solid #fff", boxShadow: "0 4px 15px rgba(43,94,167,.3)" }}>👤</div>
-          <div style={{ fontSize: 20, fontWeight: 800, fontFamily: "'Cairo',sans-serif" }}>{user.name}</div>
-          <div style={{ fontSize: 12, color: C.sub, marginTop: 2 }}>{user.role + " — " + user.id}</div>
+
+      <div style={{ padding: "0 " + SPACING.lg + "px", display: "flex", flexDirection: "column", gap: SPACING.md }}>
+        {/* Avatar card */}
+        <div style={{ textAlign: "center", padding: SPACING.lg + "px 0" }} className="basma-fadein">
+          <div style={{ width: 80, height: 80, borderRadius: RADIUS.pill, background: COLORS.goldGradient, margin: "0 auto " + SPACING.md + "px", display: "flex", alignItems: "center", justifyContent: "center", border: "3px solid " + COLORS.goldLight, boxShadow: "0 4px 15px rgba(201,168,76,.3)" }}>
+            <Icons.user size={36} color={COLORS.textOnGold} />
+          </div>
+          <div style={{ ...TYPOGRAPHY.h1, color: COLORS.textPrimary, fontFamily: TYPOGRAPHY.fontCairo }}>{user.name}</div>
+          <div style={{ ...TYPOGRAPHY.caption, color: COLORS.textMuted, marginTop: 2 }}>{user.role + " — " + user.id}</div>
         </div>
 
-        {/* ── Profile Tabs ── */}
-        <div style={{ display: "flex", gap: 4, marginBottom: 14, background: C.bg, borderRadius: 14, padding: 4 }}>
+        {/* Profile Tabs */}
+        <div style={{ display: "flex", gap: SPACING.xs, background: COLORS.card, border: "1px solid " + COLORS.cardBorder, borderRadius: RADIUS.lg, padding: SPACING.xs }}>
           {tabs.map(function(t) {
             var active = tab === t.id;
             return (
-              <button key={t.id} onClick={function(){ setTab(t.id); }} style={{ flex: 1, padding: "8px 4px", borderRadius: 10, background: active ? C.card : "transparent", border: "none", fontSize: 10, fontWeight: 700, color: active ? C.blue : C.sub, cursor: "pointer", textAlign: "center", boxShadow: active ? "0 1px 4px rgba(0,0,0,.08)" : "none" }}>
-                <div style={{ fontSize: 14 }}>{t.icon}</div>{t.label}
+              <button key={t.id} onClick={function(){ setTab(t.id); }} style={{ flex: 1, padding: SPACING.sm + "px " + SPACING.xs + "px", borderRadius: RADIUS.md, background: active ? COLORS.goldGradient : "transparent", border: "none", cursor: "pointer", textAlign: "center", display: "flex", flexDirection: "column", alignItems: "center", gap: 2, color: active ? COLORS.textOnGold : COLORS.textMuted }}>
+                {t.icon}
+                <span style={{ ...TYPOGRAPHY.tiny, fontWeight: 700 }}>{t.label}</span>
               </button>
             );
           })}
         </div>
 
-        {/* ── Tab: بياناتي ── */}
+        {/* Tab: بياناتي */}
         {tab === "info" && (
-          <div>
-            <div style={S.card} className="basma-fadein-d1">
+          <>
+            <Card>
               {rows.map(function(row, i) {
-            return (
-              <div key={row[0]} style={{ display: "flex", justifyContent: "space-between", padding: "11px 0", borderBottom: i < rows.length - 1 ? "1px solid " + C.bg : "none" }}>
-                <span style={{ fontSize: 14, fontWeight: 700, color: C.text }}>{row[1]}</span>
-                <span style={{ fontSize: 12, color: C.sub, fontWeight: 600 }}>{row[0]}</span>
-              </div>
-            );
-          })}
-        </div>
-
-        {/* ── Membership Card ── */}
-        <MembershipCard points={user.points || 0} />
-        <PointsLogCard user={user} allAtt={[]} />
-
-        <div style={S.card} className="basma-fadein-d2">
-          <div style={S.cardTitle}>الإعدادات</div>
-          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "10px 0", borderBottom: "1px solid " + C.bg }}>
-            <span style={{ fontSize: 13, fontWeight: 600 }}>🌙 الوضع الليلي</span>
-            <div onClick={toggleDark} style={{ width: 44, height: 24, borderRadius: 12, background: darkMode ? C.blue : "#ddd", position: "relative", cursor: "pointer", transition: "background .3s" }}>
-              <div style={{ width: 18, height: 18, borderRadius: 9, background: C.card, position: "absolute", top: 3, transition: "all .3s", left: darkMode ? 3 : undefined, right: darkMode ? undefined : 3, boxShadow: "0 1px 3px rgba(0,0,0,.2)" }} />
-            </div>
-          </div>
-          <ToggleRow label="📞 تذكير بالحضور" storeKey="remind_in" border={true} />
-          <ToggleRow label="📞 تذكير بالانصراف" storeKey="remind_out" border={true} />
-          <FaceResetRow empId={user.id} />
-          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "10px 0", borderTop: "1px solid " + C.bg }}>
-            <span style={{ fontSize: 13, fontWeight: 600 }}>📱 إصدار التطبيق</span>
-            <span style={{ fontSize: 12, fontWeight: 800, color: C.blue }}>{"v" + VER}</span>
-          </div>
-          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "10px 0", borderTop: "1px solid " + C.bg }}>
-            <span style={{ fontSize: 13, fontWeight: 600 }}>🏢 المكتب</span>
-            <span style={{ fontSize: 10, color: C.sub }}>{APP_CONFIG.COMPANY}</span>
-          </div>
-        </div>
-
-        {user.sceNumber && (
-          <div style={S.card} className="basma-fadein-d3">
-            <div style={S.cardTitle}>الهيئة السعودية للمهندسين</div>
-            <div style={{ display: "flex", justifyContent: "space-between", padding: "8px 0" }}>
-              <span style={{ fontSize: 13, fontWeight: 700, color: C.text }}>{user.sceNumber}</span>
-              <span style={{ fontSize: 11, color: C.sub }}>رقم العضوية</span>
-            </div>
-            <div style={{ display: "flex", justifyContent: "space-between", padding: "8px 0", borderTop: "1px solid " + C.bg }}>
-              <span style={{ fontSize: 13, fontWeight: 700, color: user.sceStatus === "active" ? C.green : C.red }}>{user.sceStatus === "active" ? "✓ ساري" : "✗ منتهي"}</span>
-              <span style={{ fontSize: 11, color: C.sub }}>{"انتهاء: " + user.sceExpiry}</span>
-            </div>
-          </div>
-        )}
-
-        {myTickets && myTickets.length > 0 && (
-          <div style={S.card} className="basma-fadein-d3">
-            <div style={S.cardTitle}>تذاكري</div>
-            {myTickets.slice(0, 5).map(function(t, i) {
-              var statusMap = { pending: { label: "قيد المراجعة", color: C.orange }, open: { label: "مفتوحة", color: C.blue }, resolved: { label: "تم الحل", color: C.green }, closed: { label: "مغلقة", color: C.sub } };
-              var st = statusMap[t.status] || statusMap.pending;
-              var prioMap = { low: "🟢", normal: "🔵", high: "🔴" };
-              return (
-                <div key={t.id || i} style={{ display: "flex", alignItems: "center", gap: 10, padding: "10px 0", borderBottom: i < Math.min(myTickets.length, 5) - 1 ? "1px solid " + C.bg : "none" }}>
-                  <span style={{ fontSize: 14 }}>{prioMap[t.priority] || "🔵"}</span>
-                  <div style={{ flex: 1 }}>
-                    <div style={{ fontSize: 12, fontWeight: 700, color: C.text }}>{t.subject}</div>
-                    <div style={{ fontSize: 10, color: C.sub }}>{t.ts ? t.ts.split("T")[0] : ""}</div>
+                return (
+                  <div key={row[0]} style={{ display: "flex", justifyContent: "space-between", padding: SPACING.md + "px 0", borderBottom: i < rows.length - 1 ? "1px solid " + COLORS.cardBorder : "none" }}>
+                    <span style={{ ...TYPOGRAPHY.body, fontWeight: 700, color: COLORS.textPrimary }}>{row[1]}</span>
+                    <span style={{ ...TYPOGRAPHY.caption, color: COLORS.textMuted }}>{row[0]}</span>
                   </div>
-                  <span style={{ fontSize: 10, fontWeight: 700, color: st.color, padding: "3px 8px", borderRadius: 8, background: st.color + "12" }}>{st.label}</span>
+                );
+              })}
+            </Card>
+
+            <MembershipCard points={user.points || 0} />
+            <PointsLogCard user={user} allAtt={[]} />
+
+            {/* Settings card */}
+            <Card>
+              <div style={{ ...TYPOGRAPHY.h3, color: COLORS.textPrimary, marginBottom: SPACING.md }}>الإعدادات</div>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: SPACING.sm + "px 0", borderBottom: "1px solid " + COLORS.cardBorder }}>
+                <span style={{ ...TYPOGRAPHY.bodySm, fontWeight: 600, color: COLORS.textPrimary }}>الوضع الليلي</span>
+                <div onClick={toggleDark} style={{ width: 44, height: 24, borderRadius: 12, background: darkMode ? COLORS.gold : COLORS.cardBorder, position: "relative", cursor: "pointer", transition: "background .3s" }}>
+                  <div style={{ width: 18, height: 18, borderRadius: 9, background: COLORS.white, position: "absolute", top: 3, transition: "all .3s", left: darkMode ? 3 : undefined, right: darkMode ? undefined : 3, boxShadow: "0 1px 3px rgba(0,0,0,.2)" }} />
                 </div>
-              );
-            })}
-          </div>
+              </div>
+              <ToggleRow label="تذكير بالحضور" storeKey="remind_in" border={true} />
+              <ToggleRow label="تذكير بالانصراف" storeKey="remind_out" border={true} />
+              <FaceResetRow empId={user.id} />
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: SPACING.sm + "px 0", borderTop: "1px solid " + COLORS.cardBorder }}>
+                <span style={{ ...TYPOGRAPHY.bodySm, fontWeight: 600, color: COLORS.textPrimary }}>إصدار التطبيق</span>
+                <span style={{ ...TYPOGRAPHY.caption, fontWeight: 800, color: COLORS.gold }}>{"v" + VER}</span>
+              </div>
+            </Card>
+
+            {user.sceNumber && (
+              <Card>
+                <div style={{ ...TYPOGRAPHY.h3, color: COLORS.textPrimary, marginBottom: SPACING.md }}>الهيئة السعودية للمهندسين</div>
+                <div style={{ display: "flex", justifyContent: "space-between", padding: SPACING.sm + "px 0" }}>
+                  <span style={{ ...TYPOGRAPHY.body, fontWeight: 700, color: COLORS.textPrimary }}>{user.sceNumber}</span>
+                  <span style={{ ...TYPOGRAPHY.caption, color: COLORS.textMuted }}>رقم العضوية</span>
+                </div>
+                <div style={{ display: "flex", justifyContent: "space-between", padding: SPACING.sm + "px 0", borderTop: "1px solid " + COLORS.cardBorder }}>
+                  <span style={{ ...TYPOGRAPHY.body, fontWeight: 700, color: user.sceStatus === "active" ? COLORS.success : COLORS.danger }}>{user.sceStatus === "active" ? "ساري" : "منتهي"}</span>
+                  <span style={{ ...TYPOGRAPHY.caption, color: COLORS.textMuted }}>{"انتهاء: " + user.sceExpiry}</span>
+                </div>
+              </Card>
+            )}
+
+            {myTickets && myTickets.length > 0 && (
+              <Card>
+                <div style={{ ...TYPOGRAPHY.h3, color: COLORS.textPrimary, marginBottom: SPACING.md }}>تذاكري</div>
+                {myTickets.slice(0, 5).map(function(t, i) {
+                  var statusMap = { pending: { label: "قيد المراجعة", color: COLORS.warning }, open: { label: "مفتوحة", color: COLORS.info }, resolved: { label: "تم الحل", color: COLORS.success }, closed: { label: "مغلقة", color: COLORS.textMuted } };
+                  var st = statusMap[t.status] || statusMap.pending;
+                  return (
+                    <div key={t.id || i} style={{ display: "flex", alignItems: "center", gap: SPACING.sm, padding: SPACING.sm + "px 0", borderBottom: i < Math.min(myTickets.length, 5) - 1 ? "1px solid " + COLORS.cardBorder : "none" }}>
+                      <div style={{ flex: 1 }}>
+                        <div style={{ ...TYPOGRAPHY.bodySm, fontWeight: 700, color: COLORS.textPrimary }}>{t.subject}</div>
+                        <div style={{ ...TYPOGRAPHY.caption, color: COLORS.textMuted }}>{t.ts ? t.ts.split("T")[0] : ""}</div>
+                      </div>
+                      <span style={{ ...TYPOGRAPHY.caption, fontWeight: 700, color: st.color, padding: "3px 8px", borderRadius: RADIUS.sm, background: st.color + "20" }}>{st.label}</span>
+                    </div>
+                  );
+                })}
+              </Card>
+            )}
+
+            <Button variant="secondary" size="md" icon={<Icons.alert size={20} />} onClick={onTicket}>
+              تذكرة دعم جديدة
+            </Button>
+          </>
         )}
 
-        <button onClick={onTicket} style={{ width: "100%", padding: 14, borderRadius: 16, background: "linear-gradient(135deg,"+C.orange+",#FF8021)", color: "#fff", fontSize: 15, fontWeight: 800, border: "none", cursor: "pointer", fontFamily: "'Cairo',sans-serif", marginBottom: 8 }}>
-          🎫 تذكرة دعم جديدة
-        </button>
+        {tab === "deps" && <Card><DependentsTab user={user} /></Card>}
+        {tab === "health" && <Card><HealthDisclosureTab user={user} /></Card>}
+        {tab === "docs" && <Card><AttachmentsTab user={user} /></Card>}
+        {tab === "custody" && <Card><CustodyTab user={user} /></Card>}
 
-          </div>
-        )}
-
-        {/* ── Tab: المرافقين ── */}
-        {tab === "deps" && <div style={S.card}><DependentsTab user={user} /></div>}
-
-        {/* ── Tab: الإفصاح الصحي ── */}
-        {tab === "health" && <div style={S.card}><HealthDisclosureTab user={user} /></div>}
-
-        {/* ── Tab: المرفقات ── */}
-        {tab === "docs" && <div style={S.card}><AttachmentsTab user={user} /></div>}
-
-        {/* ── Tab: العهد ── */}
-        {tab === "custody" && <div style={S.card}><CustodyTab user={user} /></div>}
-
-        {/* ── Action Buttons (always visible) ── */}
+        {/* Manager panel button */}
         {(user.isManager || user.isAssistant) && (
-          <button onClick={function(){ window.location.hash = "admin"; }} style={{ width: "100%", padding: 14, borderRadius: 16, background: "linear-gradient(135deg,"+C.hdr1+","+C.hdr2+")", color: "#fff", fontSize: 15, fontWeight: 800, border: "none", cursor: "pointer", fontFamily: "'Cairo',sans-serif", marginBottom: 8 }}>
-            🛡️ لوحة الإدارة
-          </button>
+          <Button variant="primary" size="md" icon={<Icons.building size={20} />} onClick={function(){ window.location.hash = "admin"; }}>
+            لوحة الإدارة
+          </Button>
         )}
 
-        <button onClick={onLogout} style={{ width: "100%", padding: 14, borderRadius: 16, border: "2px solid " + C.red, background: "transparent", color: C.red, fontSize: 15, fontWeight: 800, cursor: "pointer", fontFamily: "'Cairo',sans-serif" }}>
-          🚪 تسجيل خروج
-        </button>
-        <div style={{ textAlign: "center", marginTop: 16, marginBottom: 12, padding: 12, background: C.card, borderRadius: 16 }}>
-          <div style={{ fontSize: 20, marginBottom: 4 }}>🕐</div>
-          <div style={{ fontSize: 13, fontWeight: 800, fontFamily: "'Cairo',sans-serif", color: C.text }}>بصمة HMA</div>
-          <div style={{ fontSize: 10, color: C.sub, marginTop: 2 }}>نظام الحضور والانصراف الذكي</div>
-          <div style={{ fontSize: 10, color: C.sub, marginTop: 2 }}>هاني محمد عسيري للاستشارات الهندسية</div>
-          <div style={{ fontSize: 9, color: C.sub, marginTop: 6 }}>{"v" + VER + " · basma-hma.vercel.app"}</div>
-        </div>
+        {/* Logout */}
+        <Button variant="danger" size="md" onClick={onLogout}>
+          تسجيل خروج
+        </Button>
+
+        {/* Footer */}
+        <Card padding={SPACING.md}>
+          <div style={{ textAlign: "center" }}>
+            <div style={{ ...TYPOGRAPHY.h3, color: COLORS.goldLight, fontFamily: TYPOGRAPHY.fontCairo }}>بصمة HMA</div>
+            <div style={{ ...TYPOGRAPHY.caption, color: COLORS.textMuted, marginTop: SPACING.xs }}>نظام الحضور والانصراف الذكي</div>
+            <div style={{ ...TYPOGRAPHY.caption, color: COLORS.textMuted }}>هاني محمد عسيري للاستشارات الهندسية</div>
+            <div style={{ ...TYPOGRAPHY.tiny, color: COLORS.textMuted, marginTop: SPACING.sm }}>{"v" + VER + " · basma-hma.vercel.app"}</div>
+          </div>
+        </Card>
       </div>
     </div>
   );
