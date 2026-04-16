@@ -150,6 +150,11 @@ export default async function handler(req, res) {
       case 'face': {
         if (req.method === 'GET') {
           const faceId = req.query.empId;
+          // Admin: list all enrolled employees
+          if (req.query.listAll === '1') {
+            const faces = await dbGet('faces') || {};
+            return res.json({ ok: true, enrolled: Object.keys(faces) });
+          }
           if (!faceId) return res.status(400).json({ error: 'empId required' });
           const faces = await dbGet('faces') || {};
           if (faces[faceId]) return res.json({ ok: true, descriptor: faces[faceId] });
@@ -1036,73 +1041,114 @@ export default async function handler(req, res) {
 
       /* ═══ AUTO VIOLATIONS (الإنذارات التلقائية) ═══ */
       case 'auto_violations': {
-        // Called by cron or manually — checks today's attendance and generates violations
+        // Called by cron daily 6pm — checks today's attendance and generates violations per laiha
         var emps = await dbGet('employees') || [];
         var att = await dbGet('attendance') || [];
-        var violations = await dbGet('violations') || [];
-        var warnings = await dbGet('warnings') || [];
+        var violationsV2 = await dbGet('violations_v2') || [];
         var preAbs = await dbGet('pre_absences') || [];
-        var settings = await dbGet('settings') || {};
         var branches = await dbGet('branches') || [];
+        var laihaSettings = await dbGet('laiha_settings') || {};
         var today = new Date().toISOString().split('T')[0];
         var todayAtt = att.filter(a => a.date === today);
         var todayPreAbs = preAbs.filter(p => p.date === today);
         var generated = [];
 
-        var escalation = [
-          { level: 1, type: 'تنبيه إلكتروني' },
-          { level: 2, type: 'إنذار إلكتروني' },
-          { level: 3, type: 'إنذار كتابي' },
-          { level: 4, type: 'إنذار نهائي' },
-          { level: 5, type: 'إنهاء خدمات' },
+        // Penalties lookup (mirrors laiha.js PENALTY_TYPES)
+        var penaltyLabels = {
+          WARNING: 'إنذار كتابي', FINE_5: 'خصم 5%', FINE_10: 'خصم 10%', FINE_15: 'خصم 15%',
+          FINE_20: 'خصم 20%', FINE_25: 'خصم 25%', FINE_30: 'خصم 30%', FINE_50: 'خصم 50%',
+          FINE_75: 'خصم 75%', FINE_1DAY: 'خصم يوم', FINE_2DAYS: 'خصم يومين',
+          FINE_3DAYS: 'خصم 3 أيام', FINE_4DAYS: 'خصم 4 أيام', FINE_5DAYS: 'خصم 5 أيام',
+          DENY_PROMOTION: 'حرمان من الترقية/العلاوة',
+          TERMINATION_WITH: 'فصل مع المكافأة', TERMINATION_WITHOUT: 'فصل دون مكافأة (م.80)',
+        };
+
+        // Laiha rules (auto-detectable only)
+        var laihaRules = [
+          { id: 'WH-01', maxLate: 15, penalties: { first: 'WARNING', second: 'FINE_5', third: 'FINE_10', fourth: 'FINE_20' }, desc: 'التأخر لغاية 15 دقيقة دون إذن' },
+          { id: 'WH-03', minLate: 16, maxLate: 30, penalties: { first: 'FINE_10', second: 'FINE_15', third: 'FINE_25', fourth: 'FINE_50' }, desc: 'التأخر أكثر من 15 وحتى 30 دقيقة دون إذن' },
+          { id: 'WH-05', minLate: 31, maxLate: 60, penalties: { first: 'FINE_25', second: 'FINE_50', third: 'FINE_75', fourth: 'FINE_1DAY' }, desc: 'التأخر أكثر من 30 وحتى 60 دقيقة دون إذن' },
+          { id: 'WH-07', minLate: 61, penalties: { first: 'WARNING', second: 'FINE_1DAY', third: 'FINE_2DAYS', fourth: 'FINE_3DAYS' }, desc: 'التأخر لمدة تزيد على ساعة دون إذن' },
+          { id: 'WH-11', absentDays: 1, penalties: { first: 'FINE_2DAYS', second: 'FINE_3DAYS', third: 'FINE_4DAYS', fourth: 'DENY_PROMOTION' }, desc: 'الغياب يوم دون إذن كتابي' },
         ];
 
         emps.forEach(function(emp) {
           if (emp.terminated || emp.onLeave) return;
-          // Check if pre-absence filed
           if (todayPreAbs.some(p => p.empId === emp.id)) return;
 
           var branch = branches.find(b => b.id === emp.branch || b.name === emp.branch);
           if (!branch) return;
 
           var empAtt = todayAtt.filter(a => a.empId === emp.id);
-          var hasCheckin = empAtt.some(a => a.type === 'checkin');
-
-          // Check for absence (no checkin by end of day grace period)
+          var checkin = empAtt.find(a => a.type === 'checkin');
           var nowH = new Date().getHours();
-          if (!hasCheckin && nowH >= 12) {
-            // Count previous violations of same type in last 90 days
-            var d90 = new Date(); d90.setDate(d90.getDate() - 90);
-            var prevCount = violations.filter(v => v.empId === emp.id && v.type === 'absent' && v.date >= d90.toISOString().split('T')[0]).length;
-            var level = Math.min(prevCount + 1, 5);
-            var esc = escalation[level - 1];
 
-            violations.push({ id: 'V' + Date.now() + emp.id, empId: emp.id, type: 'absent', details: 'غياب بدون إذن — ' + today, date: today, status: 'open', ts: new Date().toISOString() });
-            warnings.push({ id: 'W' + Date.now() + emp.id, empId: emp.id, level: level, type: esc.type, details: 'غياب بدون إفادة مسبقة', date: today, status: 'pending', responseType: level >= 3 ? 'written' : 'electronic', deadline: new Date(Date.now() + 48 * 3600 * 1000).toISOString(), ts: new Date().toISOString() });
-            generated.push({ empId: emp.id, name: emp.name, violation: 'absent', level: level, warning: esc.type });
+          function applyRule(rule, extraDesc) {
+            // Check admin settings — is this rule enabled?
+            var setting = laihaSettings[rule.id];
+            var enabled = setting && setting.enabled !== undefined ? setting.enabled : true;
+            var autoApply = setting && setting.autoApply !== undefined ? setting.autoApply : (rule.id.startsWith('WH-0')); // defaults per laiha.js
+            if (!enabled) return;
+
+            // Count previous occurrences of same violation in 180 days (per المادة 44)
+            var d180 = new Date(); d180.setDate(d180.getDate() - 180);
+            var prevCount = violationsV2.filter(v =>
+              v.empId === emp.id && v.violationId === rule.id &&
+              v.status === 'ACTIVE' && new Date(v.createdAt) > d180
+            ).length;
+            var occurrence = Math.min(prevCount + 1, 4);
+            var penaltyKey = ['first','second','third','fourth'][occurrence - 1];
+            var penaltyCode = rule.penalties[penaltyKey];
+            if (!penaltyCode) return;
+
+            var chapter = rule.id.startsWith('WH') ? 'مواعيد العمل' : rule.id.startsWith('WO') ? 'تنظيم العمل' : 'سلوك العامل';
+            var newVio = {
+              id: 'VIO' + Date.now() + emp.id,
+              empId: emp.id,
+              empName: emp.name,
+              violationId: rule.id,
+              chapter: chapter,
+              description: rule.desc + (extraDesc ? ' — ' + extraDesc : ''),
+              occurrence: occurrence,
+              penaltyCode: penaltyCode,
+              penaltyLabel: penaltyLabels[penaltyCode] || penaltyCode,
+              source: 'auto',
+              legalRef: 'لائحة تنظيم العمل المعتمدة رقم 978004 — الفصل الثامن عشر، جدول المخالفات، البند ' + rule.id,
+              createdAt: new Date().toISOString(),
+              createdBy: 'system_cron',
+              status: autoApply ? 'ACTIVE' : 'PENDING_APPROVAL',
+              autoGenerated: true,
+            };
+            violationsV2.push(newVio);
+            generated.push({ empId: emp.id, name: emp.name, rule: rule.id, occurrence: occurrence, penalty: newVio.penaltyLabel, needsApproval: !autoApply });
           }
 
-          // Check for late arrival
-          if (hasCheckin && branch.start) {
-            var checkinRec = empAtt.find(a => a.type === 'checkin');
-            var checkinTime = new Date(checkinRec.ts);
+          // Check absence
+          if (!checkin && nowH >= 18) { // 6pm or later
+            var absRule = laihaRules.find(r => r.absentDays === 1);
+            if (absRule) applyRule(absRule, today);
+          }
+
+          // Check late arrival
+          if (checkin && branch.start) {
+            var checkinTime = new Date(checkin.ts);
             var startParts = branch.start.split(':');
             var startMin = parseInt(startParts[0]) * 60 + parseInt(startParts[1]);
             var checkinMin = checkinTime.getHours() * 60 + checkinTime.getMinutes();
             var lateMinutes = checkinMin - startMin;
-            if (lateMinutes > 15) { // More than 15 min late
-              violations.push({ id: 'V' + Date.now() + 'L' + emp.id, empId: emp.id, type: 'late', details: 'تأخر ' + lateMinutes + ' دقيقة', date: today, status: 'open', ts: new Date().toISOString() });
-              generated.push({ empId: emp.id, name: emp.name, violation: 'late', minutes: lateMinutes });
+            if (lateMinutes > 0) {
+              var lateRule = laihaRules.find(r => {
+                var min = r.minLate !== undefined ? r.minLate : 1;
+                var max = r.maxLate !== undefined ? r.maxLate : Infinity;
+                return lateMinutes >= min && lateMinutes <= max && !r.absentDays;
+              });
+              if (lateRule) applyRule(lateRule, 'تأخر ' + lateMinutes + ' دقيقة');
             }
           }
         });
 
-        if (generated.length > 0) {
-          await dbSet('violations', violations);
-          await dbSet('warnings', warnings);
-        }
-
-        return res.json({ ok: true, date: today, generated: generated, totalViolations: violations.length, totalWarnings: warnings.length });
+        await dbSet('violations_v2', violationsV2);
+        return res.json({ ok: true, generated: generated, count: generated.length, ranAt: new Date().toISOString() });
       }
 
       /* ═══ EXPORT INSURANCE (تصدير بيانات التأمين) ═══ */

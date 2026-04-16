@@ -809,7 +809,10 @@ export default function AdminApp() {
       {/* ═══ SETTINGS ═══ */}
       {tab === "settings" && <>
         {/* Sub-tabs for settings */}
-        <div style={{ display: "flex", gap: 6, marginBottom: 16, flexWrap: "wrap" }}>{[{ id: "general", l: "⚙️ عام" }, { id: "email", l: "📧 توجيه الإيميل" }, { id: "observation", l: "👁 تحت الملاحظة" }].map(st => <button key={st.id} onClick={() => setSettingsTab(st.id)} style={{ padding: "8px 18px", borderRadius: 10, border: settingsTab === st.id ? "none" : "1px solid " + t.sep, background: settingsTab === st.id ? B.blue : t.card, color: settingsTab === st.id ? "#fff" : t.tx2, fontSize: 12, fontWeight: 700, cursor: "pointer" }}>{st.l}</button>)}</div>
+        <div style={{ display: "flex", gap: 6, marginBottom: 16, flexWrap: "wrap" }}>{[{ id: "general", l: "⚙️ عام" }, { id: "email", l: "📧 توجيه الإيميل" }, { id: "observation", l: "👁 تحت الملاحظة" }, { id: "attachments", l: "📎 أنواع المرفقات" }, { id: "faces", l: "📸 بصمات الوجه" }].map(st => <button key={st.id} onClick={() => setSettingsTab(st.id)} style={{ padding: "8px 18px", borderRadius: 10, border: settingsTab === st.id ? "none" : "1px solid " + t.sep, background: settingsTab === st.id ? B.blue : t.card, color: settingsTab === st.id ? "#fff" : t.tx2, fontSize: 12, fontWeight: 700, cursor: "pointer" }}>{st.l}</button>)}</div>
+
+        {settingsTab === "attachments" && <AttachmentTypesManager t={t} B={B} />}
+        {settingsTab === "faces" && <FacesManager t={t} B={B} emps={emps} />}
 
         {/* GENERAL */}
         {settingsTab === "general" && <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
@@ -1679,6 +1682,168 @@ function ViolationsV2Panel({ t, B, emps }) {
           );
         })}
       </div>
+    </div>
+  );
+}
+
+/* ═══ ATTACHMENT TYPES MANAGER ═══ */
+function AttachmentTypesManager({ t, B }) {
+  var [types, setTypes] = useState([]);
+  var [loading, setLoading] = useState(true);
+  var [newType, setNewType] = useState("");
+
+  useEffect(function() { load(); }, []);
+  async function load() {
+    try {
+      var r = await fetch("/api/data?action=attachment_types");
+      setTypes(await r.json() || []);
+    } catch(e) { console.error(e); }
+    setLoading(false);
+  }
+
+  async function save(updated) {
+    try {
+      await fetch("/api/data?action=attachment_types", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ types: updated }),
+      });
+      setTypes(updated);
+    } catch(e) { alert("فشل: " + e.message); }
+  }
+
+  function addType() {
+    if (!newType.trim()) return;
+    if (types.includes(newType.trim())) { alert("النوع موجود مسبقاً"); return; }
+    save([...types, newType.trim()]);
+    setNewType("");
+  }
+
+  function removeType(tp) {
+    if (!confirm("حذف \"" + tp + "\"؟ الموظفون الذين لديهم مرفقات من هذا النوع سيبقون لكن لن يستطيعوا إضافة جديد.")) return;
+    save(types.filter(function(x){ return x !== tp; }));
+  }
+
+  function moveType(idx, dir) {
+    var newIdx = idx + dir;
+    if (newIdx < 0 || newIdx >= types.length) return;
+    var arr = [...types];
+    var tmp = arr[idx]; arr[idx] = arr[newIdx]; arr[newIdx] = tmp;
+    save(arr);
+  }
+
+  if (loading) return <div style={{ padding: 30, textAlign: "center", color: t.tx2 }}>جارِ التحميل...</div>;
+
+  return (
+    <div>
+      <div style={{ background: t.card, borderRadius: 12, padding: 16, marginBottom: 14, border: "1px solid " + t.sep }}>
+        <div style={{ fontSize: 14, fontWeight: 800, color: t.tx, marginBottom: 4 }}>📎 أنواع المرفقات</div>
+        <div style={{ fontSize: 11, color: t.tx2 }}>هذه القائمة تظهر للموظفين في قسم "المرفقات" — يمكن لكل موظف رفع مرفق واحد من كل نوع</div>
+      </div>
+
+      {/* Add new */}
+      <div style={{ background: t.card, border: "1px solid " + t.sep, borderRadius: 12, padding: 14, marginBottom: 14, display: "flex", gap: 8 }}>
+        <input value={newType} onChange={function(e){ setNewType(e.target.value); }} onKeyDown={function(e){ if (e.key === "Enter") addType(); }} placeholder="اسم النوع الجديد (مثل: شهادة ميلاد)" style={{ flex: 1, padding: 10, borderRadius: 8, border: "1px solid " + t.sep, fontSize: 12, fontFamily: "inherit", background: t.inp, color: t.tx }} />
+        <button onClick={addType} style={{ padding: "10px 20px", borderRadius: 8, border: "none", background: B.blue, color: "#fff", fontSize: 12, fontWeight: 700, cursor: "pointer" }}>+ إضافة</button>
+      </div>
+
+      {/* List */}
+      <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+        {types.map(function(tp, i) {
+          return (
+            <div key={tp} style={{ background: t.card, border: "1px solid " + t.sep, borderRadius: 10, padding: 12, display: "flex", alignItems: "center", gap: 10 }}>
+              <span style={{ fontSize: 10, fontWeight: 800, color: B.blue, minWidth: 24 }}>#{i + 1}</span>
+              <span style={{ flex: 1, fontSize: 13, color: t.tx, fontWeight: 600 }}>{tp}</span>
+              <button onClick={function(){ moveType(i, -1); }} disabled={i === 0} style={{ width: 28, height: 28, borderRadius: 6, border: "1px solid " + t.sep, background: t.card, color: t.tx2, cursor: i === 0 ? "default" : "pointer", opacity: i === 0 ? 0.3 : 1 }}>↑</button>
+              <button onClick={function(){ moveType(i, 1); }} disabled={i === types.length - 1} style={{ width: 28, height: 28, borderRadius: 6, border: "1px solid " + t.sep, background: t.card, color: t.tx2, cursor: i === types.length - 1 ? "default" : "pointer", opacity: i === types.length - 1 ? 0.3 : 1 }}>↓</button>
+              <button onClick={function(){ removeType(tp); }} style={{ width: 28, height: 28, borderRadius: 6, border: "1px solid " + B.red, background: "transparent", color: B.red, cursor: "pointer", fontSize: 14, fontWeight: 800 }}>×</button>
+            </div>
+          );
+        })}
+      </div>
+      {types.length === 0 && <div style={{ textAlign: "center", padding: 30, color: t.tx2 }}>لا توجد أنواع — أضف النوع الأول أعلاه</div>}
+    </div>
+  );
+}
+
+/* ═══ FACES MANAGER — Admin can reset any employee's face ═══ */
+function FacesManager({ t, B, emps }) {
+  var [enrolled, setEnrolled] = useState([]);
+  var [loading, setLoading] = useState(true);
+  var [search, setSearch] = useState("");
+
+  useEffect(function() { load(); }, []);
+  async function load() {
+    try {
+      var r = await fetch("/api/data?action=face&listAll=1");
+      var d = await r.json();
+      setEnrolled(d.enrolled || []);
+    } catch(e) { console.error(e); }
+    setLoading(false);
+  }
+
+  async function resetFace(empId, empName) {
+    if (!confirm("إعادة تعيين بصمة الوجه للموظف \"" + empName + "\"؟\nسيُطلب منه تسجيل وجهه مرة أخرى عند البصمة القادمة.")) return;
+    try {
+      await fetch("/api/data?action=face&empId=" + empId, { method: "DELETE" });
+      setEnrolled(function(prev){ return prev.filter(function(id){ return id !== empId; }); });
+      alert("✓ تم إعادة تعيين بصمة " + empName);
+    } catch(e) { alert("فشل: " + e.message); }
+  }
+
+  async function resetAll() {
+    if (!confirm("⚠️ إعادة تعيين بصمات كل الموظفين؟\nسيحتاج الجميع تسجيل وجوههم من جديد.\n\nهذه العملية لا يمكن التراجع عنها.")) return;
+    if (!confirm("هل أنت متأكد 100%؟")) return;
+    try {
+      await fetch("/api/data?action=face&empId=ALL", { method: "DELETE" });
+      setEnrolled([]);
+      alert("✓ تم مسح جميع بصمات الوجه");
+    } catch(e) { alert("فشل: " + e.message); }
+  }
+
+  if (loading) return <div style={{ padding: 30, textAlign: "center", color: t.tx2 }}>جارِ التحميل...</div>;
+
+  var filtered = emps.filter(function(e) {
+    if (!search) return true;
+    return (e.name || "").includes(search) || (e.id || "").includes(search);
+  });
+
+  return (
+    <div>
+      <div style={{ background: t.card, borderRadius: 12, padding: 16, marginBottom: 14, border: "1px solid " + t.sep }}>
+        <div style={{ fontSize: 14, fontWeight: 800, color: t.tx, marginBottom: 4 }}>📸 إدارة بصمات الوجه</div>
+        <div style={{ fontSize: 11, color: t.tx2, marginBottom: 8 }}>إعادة تعيين بصمة وجه موظف يجبره على تسجيل وجهه مرة أخرى عند البصمة القادمة</div>
+        <div style={{ display: "flex", gap: 10, fontSize: 11, color: t.tx2 }}>
+          <span>الموظفون المسجلون: <strong style={{ color: B.blue }}>{enrolled.length}</strong></span>
+          <span>•</span>
+          <span>الإجمالي: <strong style={{ color: t.tx }}>{emps.length}</strong></span>
+        </div>
+      </div>
+
+      <div style={{ display: "flex", gap: 8, marginBottom: 14 }}>
+        <input value={search} onChange={function(e){ setSearch(e.target.value); }} placeholder="🔍 البحث بالاسم أو الرقم" style={{ flex: 1, padding: 10, borderRadius: 8, border: "1px solid " + t.sep, fontSize: 12, fontFamily: "inherit", background: t.inp, color: t.tx }} />
+        {enrolled.length > 0 && <button onClick={resetAll} style={{ padding: "10px 16px", borderRadius: 8, border: "1px solid " + B.red, background: "transparent", color: B.red, fontSize: 11, fontWeight: 700, cursor: "pointer" }}>🗑 مسح الكل</button>}
+      </div>
+
+      <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+        {filtered.map(function(emp) {
+          var isEnrolled = enrolled.includes(emp.id);
+          return (
+            <div key={emp.id} style={{ background: t.card, border: "1px solid " + t.sep, borderRadius: 10, padding: 12, display: "flex", alignItems: "center", gap: 10 }}>
+              <div style={{ width: 36, height: 36, borderRadius: 18, background: (isEnrolled ? "#10b981" : "#64748b") + "20", color: isEnrolled ? "#10b981" : "#64748b", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 16 }}>{isEnrolled ? "✓" : "—"}</div>
+              <div style={{ flex: 1 }}>
+                <div style={{ fontSize: 13, fontWeight: 700, color: t.tx }}>{emp.name}</div>
+                <div style={{ fontSize: 10, color: t.tx2 }}>{emp.id} — {emp.role || "—"}</div>
+              </div>
+              <span style={{ fontSize: 10, fontWeight: 700, color: isEnrolled ? "#10b981" : t.tx2, padding: "3px 8px", borderRadius: 6, background: (isEnrolled ? "#10b981" : "#64748b") + "15" }}>
+                {isEnrolled ? "مسجّل" : "غير مسجّل"}
+              </span>
+              {isEnrolled && <button onClick={function(){ resetFace(emp.id, emp.name); }} style={{ padding: "7px 12px", borderRadius: 6, border: "1px solid " + B.red, background: "transparent", color: B.red, fontSize: 10, fontWeight: 700, cursor: "pointer" }}>🔄 إعادة تعيين</button>}
+            </div>
+          );
+        })}
+      </div>
+      {filtered.length === 0 && <div style={{ textAlign: "center", padding: 30, color: t.tx2 }}>لا توجد نتائج</div>}
     </div>
   );
 }

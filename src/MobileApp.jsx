@@ -312,6 +312,17 @@ function MobileAppInner() {
 
   // Persist page across refresh
   useEffect(function(){ localStorage.setItem("basma_page", page); }, [page]);
+
+  // Listen for "go to legal" event from InvestigationBanner
+  useEffect(function() {
+    function handleGotoLegal() {
+      setPage("profile");
+      // Set profile to legal tab
+      setTimeout(function(){ localStorage.setItem("basma_profile_tab", "legal"); window.dispatchEvent(new CustomEvent("basma:profile-tab-changed")); }, 50);
+    }
+    window.addEventListener("basma:goto-legal", handleGotoLegal);
+    return function() { window.removeEventListener("basma:goto-legal", handleGotoLegal); };
+  }, []);
   const [branch, setBranch] = useState(null);
   const [darkMode, setDarkMode] = useState(function(){ 
     var saved = localStorage.getItem("basma_dark");
@@ -859,7 +870,7 @@ function HomePage({ user, branch, now, todayAtt, allAtt, gps, gpsDist, streak, l
         </div>
       </div>
 
-      <div style={{ padding: "0 16px" }}><MembershipFreezeNotice user={user} /><BranchHolidayBanner branch={branch} /><OccasionBanner user={user} /></div>
+      <div style={{ padding: "0 16px" }}><InvestigationBanner user={user} /><MembershipFreezeNotice user={user} /><BranchHolidayBanner branch={branch} /><OccasionBanner user={user} /></div>
 
       {/* Clock centered */}
       <div style={{ flex: 1, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", padding: "0 8px", overflow: "visible" }}>
@@ -1239,6 +1250,7 @@ function ReportPage({ user, allAtt, todayAtt, branch, isOffDay, myLeaves, allEmp
           </Card>
         )}
 
+        <InvestigationBanner user={user} />
         <ViolationsCard user={user} />
         <DelegationCard user={user} />
 
@@ -1252,7 +1264,16 @@ function ReportPage({ user, allAtt, todayAtt, branch, isOffDay, myLeaves, allEmp
 
 /* ═══════════ PROFILE ═══════════ */
 function ProfilePage({ user, branch, onLogout, onTicket, myTickets, darkMode, toggleDark }) {
-  var [tab, setTab] = useState("info");
+  var [tab, setTab] = useState(function(){ return localStorage.getItem("basma_profile_tab") || "info"; });
+  useEffect(function(){ localStorage.setItem("basma_profile_tab", tab); }, [tab]);
+  useEffect(function() {
+    function handleTabChange() {
+      var saved = localStorage.getItem("basma_profile_tab");
+      if (saved) setTab(saved);
+    }
+    window.addEventListener("basma:profile-tab-changed", handleTabChange);
+    return function() { window.removeEventListener("basma:profile-tab-changed", handleTabChange); };
+  }, []);
   const typeMap = { office: "مكتبي", field: "ميداني", mixed: "مختلط", remote: "عن بعد" };
   const badge = memberBadge(user.points || 0);
   const rows = [
@@ -1266,7 +1287,6 @@ function ProfilePage({ user, branch, onLogout, onTicket, myTickets, darkMode, to
   var tabs = [
     { id: "info", icon: <Icons.user size={18} />, label: "بياناتي" },
     { id: "deps", icon: <Icons.user size={18} />, label: "المرافقين" },
-    { id: "health", icon: <Icons.alert size={18} />, label: "الإفصاح" },
     { id: "docs", icon: <Icons.clipboard size={18} />, label: "المرفقات" },
     { id: "custody", icon: <Icons.building size={18} />, label: "العهد" },
     { id: "legal", icon: <Icons.alert size={18} />, label: "الشؤون القانونية" },
@@ -1377,7 +1397,6 @@ function ProfilePage({ user, branch, onLogout, onTicket, myTickets, darkMode, to
         )}
 
         {tab === "deps" && <Card><DependentsTab user={user} /></Card>}
-        {tab === "health" && <Card><HealthDisclosureTab user={user} /></Card>}
         {tab === "docs" && <Card><AttachmentsTab user={user} /></Card>}
         {tab === "custody" && <Card><CustodyTab user={user} /></Card>}
         {tab === "legal" && <LegalTab user={user} />}
@@ -2994,54 +3013,79 @@ function DelegationCard({ user }) {
 }
 
 /* ═══════════ VIOLATIONS PANEL (سجل المخالفات والإنذارات) ═══════════ */
+function InvestigationBanner({ user }) {
+  var [pending, setPending] = useState(null);
+
+  useEffect(function() {
+    api("investigations", { params: { empId: user.id, status: "WAITING_RESPONSE" } }).then(function(list) {
+      if (list && list.length > 0) setPending(list[0]);
+    }).catch(function(){});
+  }, []);
+
+  if (!pending) return null;
+
+  var now = new Date();
+  var deadline = new Date(pending.deadline);
+  var hoursLeft = Math.floor((deadline - now) / 3600000);
+  var overdue = hoursLeft < 0;
+
+  function goToLegal() {
+    // Navigate to profile → legal tab
+    window.dispatchEvent(new CustomEvent("basma:goto-legal"));
+  }
+
+  return (
+    <div onClick={goToLegal} style={{ background: "linear-gradient(135deg, " + COLORS.textDanger + "30, " + COLORS.textDanger + "15)", border: "2px solid " + COLORS.textDanger, borderRadius: RADIUS.xl, padding: SPACING.md, marginBottom: SPACING.md, cursor: "pointer", boxShadow: SHADOWS.button, animation: overdue ? "pulse 2s infinite" : "none" }}>
+      <style>{`@keyframes pulse { 0%, 100% { box-shadow: 0 0 0 0 ${COLORS.textDanger}40; } 50% { box-shadow: 0 0 0 8px ${COLORS.textDanger}00; } }`}</style>
+      <div style={{ display: "flex", alignItems: "center", gap: SPACING.sm, marginBottom: 6 }}>
+        <span style={{ fontSize: 20 }}>⚠️</span>
+        <div style={{ ...TYPOGRAPHY.h3, color: COLORS.textDanger, flex: 1 }}>استمارة تحقيق بانتظار ردك</div>
+      </div>
+      <div style={{ ...TYPOGRAPHY.caption, color: COLORS.textPrimary, marginBottom: 4 }}>{pending.title}</div>
+      <div style={{ ...TYPOGRAPHY.tiny, color: overdue ? COLORS.textDanger : COLORS.textMuted, fontWeight: 700, marginTop: 6 }}>
+        {overdue ? "⚠️ تجاوزت المهلة القانونية" : "⏱ " + hoursLeft + " ساعة متبقية للرد"}
+      </div>
+      <div style={{ ...TYPOGRAPHY.tiny, color: COLORS.textMuted, marginTop: 4 }}>اضغط للذهاب للاستمارة →</div>
+    </div>
+  );
+}
+
 function ViolationsCard({ user }) {
   var [violations, setViolations] = useState([]);
-  var [warnings, setWarnings] = useState([]);
   var [expanded, setExpanded] = useState(false);
 
   useEffect(function() {
-    api("violations", { params: { empId: user.id } }).then(function(v) { setViolations(v || []); }).catch(function(){});
-    api("warnings", { params: { empId: user.id } }).then(function(w) { setWarnings(w || []); }).catch(function(){});
+    api("violations_v2", { params: { empId: user.id, status: "ACTIVE" } }).then(function(v) { setViolations(v || []); }).catch(function(){});
   }, []);
 
-  var total = violations.length + warnings.length;
+  var total = violations.length;
   if (total === 0) return null;
 
   return (
-    <div style={{ background: COLORS.metallic, border: "1px solid " + COLORS.metallicBorder, borderRadius: RADIUS.xl, padding: SPACING.lg, boxShadow: SHADOWS.button, marginBottom: SPACING.md }}>
+    <div style={{ background: COLORS.metallic, border: "1px solid " + COLORS.textDanger + "60", borderRadius: RADIUS.xl, padding: SPACING.lg, boxShadow: SHADOWS.button, marginBottom: SPACING.md }}>
       <div onClick={function(){ setExpanded(!expanded); }} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", cursor: "pointer" }}>
-        <span style={{ ...TYPOGRAPHY.h3, color: COLORS.textPrimary }}>{"المخالفات والإنذارات (" + total + ")"}</span>
+        <span style={{ ...TYPOGRAPHY.h3, color: COLORS.textPrimary }}>{"⚖️ مخالفات سارية (" + total + ")"}</span>
         <span style={{ color: COLORS.textDanger }}>{expanded ? "▲" : "▼"}</span>
       </div>
       {expanded && (
         <div style={{ marginTop: SPACING.md }}>
-          {warnings.map(function(w, i) {
-            var lvl = VIOLATION_ESCALATION.find(function(v){ return v.level === (w.level || 1); }) || VIOLATION_ESCALATION[0];
-            return (
-              <div key={w.id || i} style={{ display: "flex", alignItems: "center", gap: SPACING.sm, padding: SPACING.sm + "px 0", borderBottom: "1px solid " + COLORS.cardRowBorder }}>
-                <div style={{ flex: 1 }}>
-                  <div style={{ ...TYPOGRAPHY.caption, fontWeight: 700, color: COLORS.textPrimary }}>{lvl.type}</div>
-                  <div style={{ ...TYPOGRAPHY.tiny, color: COLORS.textMuted }}>{w.details || w.type || ""}</div>
-                  <div style={{ fontSize: 8, color: COLORS.textMuted }}>{w.ts ? w.ts.split("T")[0] : ""}</div>
-                </div>
-                <div style={{ ...TYPOGRAPHY.tiny, color: COLORS.goldLight, fontWeight: 700 }}>{"الرد: " + lvl.response}</div>
-              </div>
-            );
-          })}
           {violations.map(function(v, i) {
-            var vt = VIOLATION_TYPES[v.type] || { label: v.type || "مخالفة", category: "—" };
             return (
-              <div key={v.id || i} style={{ display: "flex", alignItems: "center", gap: SPACING.sm, padding: SPACING.sm + "px 0", borderBottom: i < violations.length - 1 ? "1px solid " + COLORS.cardRowBorder : "none" }}>
-                <div style={{ flex: 1 }}>
-                  <div style={{ ...TYPOGRAPHY.caption, fontWeight: 700, color: COLORS.textPrimary }}>{vt.label}</div>
-                  <div style={{ ...TYPOGRAPHY.tiny, color: COLORS.textMuted }}>{v.details || ""}</div>
+              <div key={v.id || i} style={{ padding: SPACING.sm + "px 0", borderBottom: i < violations.length - 1 ? "1px solid " + COLORS.cardRowBorder : "none" }}>
+                <div style={{ display: "flex", gap: 6, alignItems: "center", marginBottom: 4 }}>
+                  <span style={{ fontSize: 9, fontWeight: 700, color: "#fff", background: COLORS.goldDark, padding: "2px 6px", borderRadius: 4 }}>{v.violationId}</span>
+                  <span style={{ ...TYPOGRAPHY.tiny, color: COLORS.textMuted }}>المرة {v.occurrence}</span>
                 </div>
-                <span style={{ ...TYPOGRAPHY.tiny, color: v.status === "open" ? COLORS.textDanger : COLORS.goldLight, fontWeight: 700 }}>{v.status === "open" ? "مفتوحة" : "مغلقة"}</span>
+                <div style={{ ...TYPOGRAPHY.caption, fontWeight: 700, color: COLORS.textPrimary, lineHeight: 1.5 }}>{v.description}</div>
+                <div style={{ display: "flex", justifyContent: "space-between", marginTop: 6 }}>
+                  <span style={{ ...TYPOGRAPHY.tiny, color: COLORS.textMuted }}>{v.createdAt ? new Date(v.createdAt).toLocaleDateString("ar-SA") : ""}</span>
+                  <span style={{ ...TYPOGRAPHY.caption, fontWeight: 800, color: COLORS.textDanger }}>{v.penaltyLabel}</span>
+                </div>
               </div>
             );
           })}
-          <div style={{ ...TYPOGRAPHY.tiny, color: COLORS.textMuted, textAlign: "center", marginTop: SPACING.sm, padding: SPACING.sm, background: COLORS.metallic, border: "1px solid " + COLORS.metallicBorder, borderRadius: RADIUS.sm }}>
-            يحق لك الاعتراض على أي إنذار خلال 48 ساعة — افتح تذكرة دعم
+          <div style={{ marginTop: SPACING.sm, padding: SPACING.sm, background: "rgba(0,0,0,.15)", borderRadius: RADIUS.sm, ...TYPOGRAPHY.tiny, color: COLORS.textMuted, textAlign: "center" }}>
+            اذهب إلى: حسابي → الشؤون القانونية لعرض التفاصيل والتظلم
           </div>
         </div>
       )}
@@ -3197,6 +3241,31 @@ function DependentsTab({ user }) {
           </div>
         );
       })}
+      <HealthDisclosureCollapsible user={user} />
+    </div>
+  );
+}
+
+/* ── Collapsible wrapper for HealthDisclosure inside Dependents ── */
+function HealthDisclosureCollapsible({ user }) {
+  var [open, setOpen] = useState(false);
+  return (
+    <div style={{ marginTop: SPACING.lg, borderTop: "1px solid " + COLORS.metallicBorder, paddingTop: SPACING.md }}>
+      <button onClick={function(){ setOpen(!open); }} style={{ width: "100%", display: "flex", justifyContent: "space-between", alignItems: "center", background: "transparent", border: "none", padding: SPACING.sm + "px 0", cursor: "pointer" }}>
+        <div style={{ display: "flex", alignItems: "center", gap: SPACING.sm }}>
+          <div style={{ width: 32, height: 32, borderRadius: RADIUS.md, background: COLORS.metallic, border: "1px solid " + COLORS.metallicBorder, display: "flex", alignItems: "center", justifyContent: "center", color: COLORS.goldLight }}><Icons.alert size={16} /></div>
+          <div style={{ textAlign: "right" }}>
+            <div style={{ ...TYPOGRAPHY.h3, color: COLORS.textPrimary }}>الإفصاح الصحي</div>
+            <div style={{ ...TYPOGRAPHY.tiny, color: COLORS.textMuted, marginTop: 2 }}>أسئلة التأمين — يُعتمد من HR</div>
+          </div>
+        </div>
+        <div style={{ color: COLORS.goldLight, fontSize: 14, transform: open ? "rotate(180deg)" : "rotate(0)", transition: "transform .3s" }}>▼</div>
+      </button>
+      {open && (
+        <div style={{ marginTop: SPACING.sm }}>
+          <HealthDisclosureTab user={user} />
+        </div>
+      )}
     </div>
   );
 }
