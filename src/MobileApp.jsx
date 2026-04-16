@@ -1310,11 +1310,11 @@ function ProfilePage({ user, branch, onLogout, onTicket, myTickets, darkMode, to
         </div>
 
         {/* Profile Tabs */}
-        <div style={{ display: "flex", gap: 2, background: COLORS.metallic, border: "1px solid " + COLORS.metallicBorder, borderRadius: RADIUS.lg, padding: 4, boxShadow: SHADOWS.button, overflowX: "auto" }}>
+        <div style={{ display: "flex", gap: 2, background: COLORS.metallic, border: "1px solid " + COLORS.metallicBorder, borderRadius: RADIUS.lg, padding: 4, boxShadow: SHADOWS.button, overflowX: "auto", justifyContent: "center" }}>
           {tabs.map(function(t) {
             var active = tab === t.id;
             return (
-              <button key={t.id} onClick={function(){ setTab(t.id); }} style={{ flex: "0 0 auto", minWidth: 56, padding: "8px 4px", borderRadius: RADIUS.md, background: active ? COLORS.metallic : "transparent", border: "1px solid " + (active ? COLORS.goldLight : "transparent"), cursor: "pointer", textAlign: "center", display: "flex", flexDirection: "column", alignItems: "center", gap: 2, color: active ? COLORS.goldLight : COLORS.textMuted }}>
+              <button key={t.id} onClick={function(){ setTab(t.id); }} style={{ flex: 1, minWidth: 56, padding: "8px 4px", borderRadius: RADIUS.md, background: active ? COLORS.metallic : "transparent", border: "1px solid " + (active ? COLORS.goldLight : "transparent"), cursor: "pointer", textAlign: "center", display: "flex", flexDirection: "column", alignItems: "center", gap: 2, color: active ? COLORS.goldLight : COLORS.textMuted }}>
                 {t.icon}
                 <span style={{ ...TYPOGRAPHY.tiny, fontWeight: 700 }}>{t.label}</span>
               </button>
