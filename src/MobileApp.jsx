@@ -884,12 +884,24 @@ function HomePage({ user, branch, now, todayAtt, allAtt, gps, gpsDist, streak, l
                 <radialGradient id="lxFace" cx="50%" cy="45%" r="48%"><stop offset="0%" stopColor="#151c2c"/><stop offset="70%" stopColor="#0a0f1e"/><stop offset="100%" stopColor="#060a12"/></radialGradient>
                 <linearGradient id="lxRim" x1="0%" y1="0%" x2="100%" y2="100%"><stop offset="0%" stopColor="#f5e6b8"/><stop offset="20%" stopColor="#e8d5a3"/><stop offset="50%" stopColor="#c9a84c"/><stop offset="80%" stopColor="#8b6914"/><stop offset="100%" stopColor="#a08430"/></linearGradient>
                 <linearGradient id="lxRim2" x1="0%" y1="100%" x2="100%" y2="0%"><stop offset="0%" stopColor="#8b6914"/><stop offset="50%" stopColor="#c9a84c"/><stop offset="100%" stopColor="#e8d5a3"/></linearGradient>
+                {/* ANIMATED SHINE — moving highlight around gold rim */}
+                <linearGradient id="lxShine" x1="0%" y1="0%" x2="100%" y2="0%">
+                  <stop offset="0%" stopColor="rgba(255,248,220,0)"/>
+                  <stop offset="45%" stopColor="rgba(255,248,220,0)"/>
+                  <stop offset="50%" stopColor="rgba(255,248,220,.85)"/>
+                  <stop offset="55%" stopColor="rgba(255,248,220,0)"/>
+                  <stop offset="100%" stopColor="rgba(255,248,220,0)"/>
+                  <animate attributeName="x1" values="-100%;200%" dur="4s" repeatCount="indefinite"/>
+                  <animate attributeName="x2" values="0%;300%" dur="4s" repeatCount="indefinite"/>
+                </linearGradient>
                 <filter id="lxSh"><feDropShadow dx="0" dy="1" stdDeviation="2" floodColor="rgba(0,0,0,.5)"/></filter>
               </defs>
               {/* Outer bezel — thick gold */}
               <circle cx={SIZE/2} cy={SIZE/2} r={R+8} fill="none" stroke="url(#lxRim)" strokeWidth={7} />
               <circle cx={SIZE/2} cy={SIZE/2} r={R+4} fill="none" stroke="#8b6914" strokeWidth={1} opacity={0.6} />
               <circle cx={SIZE/2} cy={SIZE/2} r={R+1.5} fill="none" stroke="url(#lxRim2)" strokeWidth={0.8} />
+              {/* Animated shine sweep over rim */}
+              <circle cx={SIZE/2} cy={SIZE/2} r={R+8} fill="none" stroke="url(#lxShine)" strokeWidth={8} opacity={0.9} />
               {/* Face */}
               <circle cx={SIZE/2} cy={SIZE/2} r={R} fill="url(#lxFace)" />
               <circle cx={SIZE/2} cy={SIZE/2} r={R-14} fill="none" stroke="rgba(201,168,76,.08)" strokeWidth={0.5} />
