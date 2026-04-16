@@ -916,6 +916,21 @@ export default async function handler(req, res) {
               await dbSet('complaints', complaints);
             }
           }
+          // Auto-notify employee about investigation
+          try {
+            var notifs = await dbGet('notifications') || [];
+            notifs.push({
+              id: 'NTF' + Date.now(),
+              empId: newInv.empId,
+              type: 'investigation',
+              title: '🔍 استمارة تحقيق',
+              body: 'فُتح تحقيق بخصوص: ' + (newInv.title || '').slice(0, 60) + ' — يجب الرد خلال 24 ساعة',
+              refId: newInv.id,
+              read: false,
+              createdAt: new Date().toISOString(),
+            });
+            await dbSet('notifications', notifs);
+          } catch(e) { /**/ }
           return res.json({ ok: true, investigation: newInv });
         }
         if (req.method === 'PUT') {
@@ -975,6 +990,21 @@ export default async function handler(req, res) {
           };
           vios.push(newVio);
           await dbSet('violations_v2', vios);
+          // Auto-notify employee
+          try {
+            var notifs = await dbGet('notifications') || [];
+            notifs.push({
+              id: 'NTF' + Date.now(),
+              empId: newVio.empId,
+              type: 'violation',
+              title: '⚖️ مخالفة جديدة',
+              body: 'صدرت مخالفة بحقك: ' + (newVio.description || '').slice(0, 80) + ' — الجزاء: ' + (newVio.penaltyLabel || ''),
+              refId: newVio.id,
+              read: false,
+              createdAt: new Date().toISOString(),
+            });
+            await dbSet('notifications', notifs);
+          } catch(e) { /**/ }
           return res.json({ ok: true, violation: newVio });
         }
         if (req.method === 'PUT') {
@@ -1148,7 +1178,70 @@ export default async function handler(req, res) {
         });
 
         await dbSet('violations_v2', violationsV2);
+        // Auto-notify employees about their violations
+        if (generated.length > 0) {
+          try {
+            var notifs = await dbGet('notifications') || [];
+            generated.forEach(function(g) {
+              notifs.push({
+                id: 'NTF' + Date.now() + g.empId,
+                empId: g.empId,
+                type: 'violation',
+                title: g.needsApproval ? '📋 مخالفة بانتظار الاعتماد' : '⚖️ مخالفة جديدة',
+                body: 'البند ' + g.rule + ' — المرة ' + g.occurrence + ' — الجزاء: ' + g.penalty,
+                read: false,
+                createdAt: new Date().toISOString(),
+              });
+            });
+            await dbSet('notifications', notifs);
+          } catch(e) { /**/ }
+        }
         return res.json({ ok: true, generated: generated, count: generated.length, ranAt: new Date().toISOString() });
+      }
+
+      /* ═══ NOTIFICATIONS (إشعارات الموظفين) ═══ */
+      case 'notifications': {
+        if (req.method === 'GET') {
+          var notifs = await dbGet('notifications') || [];
+          if (req.query.empId) notifs = notifs.filter(n => n.empId === req.query.empId);
+          if (req.query.unread === '1') notifs = notifs.filter(n => !n.read);
+          return res.json(notifs.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt)).slice(0, 50));
+        }
+        if (req.method === 'POST') {
+          var notifs = await dbGet('notifications') || [];
+          var newNotif = {
+            id: 'NTF' + Date.now(),
+            empId: req.body.empId,
+            type: req.body.type, // violation | investigation | appeal_result | complaint_update
+            title: req.body.title,
+            body: req.body.body,
+            refId: req.body.refId || null, // ID of related entity
+            read: false,
+            createdAt: new Date().toISOString(),
+          };
+          notifs.push(newNotif);
+          // Keep only last 200 per employee
+          var empNotifs = notifs.filter(n => n.empId === req.body.empId);
+          if (empNotifs.length > 200) {
+            var keep = new Set(empNotifs.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt)).slice(0, 200).map(n => n.id));
+            notifs = notifs.filter(n => n.empId !== req.body.empId || keep.has(n.id));
+          }
+          await dbSet('notifications', notifs);
+          return res.json({ ok: true, notification: newNotif });
+        }
+        if (req.method === 'PUT') {
+          // Mark as read
+          var notifs = await dbGet('notifications') || [];
+          if (req.body.markAllRead && req.body.empId) {
+            notifs = notifs.map(n => n.empId === req.body.empId ? { ...n, read: true } : n);
+          } else if (req.body.id) {
+            var idx = notifs.findIndex(n => n.id === req.body.id);
+            if (idx >= 0) notifs[idx].read = true;
+          }
+          await dbSet('notifications', notifs);
+          return res.json({ ok: true });
+        }
+        break;
       }
 
       /* ═══ EXPORT INSURANCE (تصدير بيانات التأمين) ═══ */

@@ -359,6 +359,9 @@ function MobileAppInner() {
   const [allEmps, setAllEmps] = useState([]);
   const [kadwarNotifs, setKadwarNotifs] = useState({ tasks: 0, exams: 0, alerts: 0 });
   const [legalAlerts, setLegalAlerts] = useState(0);
+  const [notifications, setNotifications] = useState([]);
+  const [unreadCount, setUnreadCount] = useState(0);
+  const [showNotifs, setShowNotifs] = useState(false);
   const [pwaPrompt, setPwaPrompt] = useState(null);
   const [callBanner, setCallBanner] = useState(null); // { type, msg }
   const [initDone, setInitDone] = useState(false);
@@ -604,6 +607,12 @@ function MobileAppInner() {
         var vios = await api("violations_v2", { params: { empId: emp.id, status: "ACTIVE" } });
         setLegalAlerts(((invs || []).length) + ((vios || []).length));
       } catch(e) { /**/ }
+      // Fetch notifications
+      try {
+        var allNotifs = await api("notifications", { params: { empId: emp.id } });
+        setNotifications(allNotifs || []);
+        setUnreadCount((allNotifs || []).filter(function(n){ return !n.read; }).length);
+      } catch(e) { /**/ }
     } catch { /**/ }
   }
 
@@ -742,6 +751,19 @@ function MobileAppInner() {
       </div>
 
       <BottomNav page={page} setPage={setPage} legalAlerts={legalAlerts} />
+
+      {/* Notification Bell — floating */}
+      {user && unreadCount > 0 && !showNotifs && (
+        <button onClick={function(){ setShowNotifs(true); }} style={{ position: "fixed", top: 16, left: 16, zIndex: 60, width: 44, height: 44, borderRadius: 22, background: COLORS.textDanger, border: "none", boxShadow: "0 4px 12px rgba(226,25,44,.4)", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", animation: "pulse 2s infinite" }}>
+          <span style={{ fontSize: 18 }}>🔔</span>
+          <div style={{ position: "absolute", top: -2, right: -2, minWidth: 18, height: 18, borderRadius: 9, background: "#fff", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 10, fontWeight: 900, color: COLORS.textDanger }}>{unreadCount}</div>
+        </button>
+      )}
+
+      {/* Notification Panel */}
+      {showNotifs && <NotificationPanel notifications={notifications} onClose={function(){ setShowNotifs(false); }} onMarkRead={async function(){
+        try { await api("notifications", { method: "PUT", body: { markAllRead: true, empId: user.id } }); setUnreadCount(0); setNotifications(function(prev){ return prev.map(function(n){ return {...n, read: true}; }); }); } catch(e) {}
+      }} onGoToLegal={function(){ setShowNotifs(false); setPage("profile"); setTimeout(function(){ localStorage.setItem("basma_profile_tab","legal"); window.dispatchEvent(new CustomEvent("basma:profile-tab-changed")); }, 50); }} />}
 
       {toast && <Toast msg={toast.msg} type={toast.type} />}
       {callBanner && <CallBanner type={callBanner.type} msg={callBanner.msg} onDismiss={function(){ setCallBanner(null); }} />}
@@ -2385,6 +2407,45 @@ function FaceResetRow({ empId }) {
       <button onClick={reset} disabled={resetting || done} style={{ padding: "6px 14px", borderRadius: RADIUS.sm, border: "1px solid " + (done ? COLORS.goldLight : COLORS.textDanger), background: COLORS.metallic, color: done ? COLORS.goldLight : COLORS.textDanger, ...TYPOGRAPHY.caption, fontWeight: 700, cursor: resetting || done ? "default" : "pointer", fontFamily: TYPOGRAPHY.fontTajawal }}>
         {done ? "✓ تم الحذف" : resetting ? "جارِ..." : "إعادة تعيين"}
       </button>
+    </div>
+  );
+}
+
+/* ═══════════ NOTIFICATION PANEL ═══════════ */
+function NotificationPanel({ notifications, onClose, onMarkRead, onGoToLegal }) {
+  var typeIcons = { violation: "⚖️", investigation: "🔍", appeal_result: "📢", complaint_update: "📣" };
+  var typeLabels = { violation: "مخالفة", investigation: "تحقيق", appeal_result: "نتيجة تظلم", complaint_update: "تحديث شكوى" };
+
+  return (
+    <div onClick={onClose} style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,.7)", zIndex: 100, display: "flex", flexDirection: "column", justifyContent: "flex-start" }}>
+      <div onClick={function(e){ e.stopPropagation(); }} style={{ background: "linear-gradient(180deg, " + COLORS.bg1 + ", " + COLORS.bg2 + ")", borderRadius: "0 0 " + RADIUS.xl + "px " + RADIUS.xl + "px", maxHeight: "70vh", overflow: "auto", boxShadow: "0 8px 32px rgba(0,0,0,.5)" }}>
+        <div style={{ padding: SPACING.lg, display: "flex", justifyContent: "space-between", alignItems: "center", borderBottom: "1px solid " + COLORS.metallicBorder }}>
+          <div style={{ ...TYPOGRAPHY.h2, color: COLORS.textPrimary }}>🔔 الإشعارات</div>
+          <div style={{ display: "flex", gap: SPACING.sm }}>
+            <button onClick={onMarkRead} style={{ padding: "6px 12px", borderRadius: RADIUS.sm, background: COLORS.metallic, border: "1px solid " + COLORS.metallicBorder, color: COLORS.textMuted, ...TYPOGRAPHY.tiny, fontWeight: 700, cursor: "pointer" }}>قراءة الكل</button>
+            <button onClick={onClose} style={{ background: "none", border: "none", color: COLORS.textMuted, fontSize: 22, cursor: "pointer" }}>×</button>
+          </div>
+        </div>
+
+        <div style={{ padding: SPACING.md }}>
+          {notifications.length === 0 && <div style={{ textAlign: "center", padding: SPACING.xl, color: COLORS.textMuted }}>لا توجد إشعارات</div>}
+          {notifications.slice(0, 30).map(function(n) {
+            return (
+              <div key={n.id} onClick={function(){ if (n.type === "violation" || n.type === "investigation") onGoToLegal(); }} style={{ display: "flex", gap: SPACING.sm, padding: SPACING.md, borderBottom: "1px solid " + COLORS.metallicBorder, cursor: "pointer", background: n.read ? "transparent" : COLORS.goldDark + "15", borderRadius: RADIUS.sm, marginBottom: 4 }}>
+                <div style={{ fontSize: 20, width: 32, textAlign: "center" }}>{typeIcons[n.type] || "📌"}</div>
+                <div style={{ flex: 1 }}>
+                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 4 }}>
+                    <div style={{ ...TYPOGRAPHY.caption, fontWeight: 800, color: n.read ? COLORS.textMuted : COLORS.textPrimary }}>{n.title}</div>
+                    {!n.read && <div style={{ width: 8, height: 8, borderRadius: 4, background: COLORS.textDanger }} />}
+                  </div>
+                  <div style={{ ...TYPOGRAPHY.tiny, color: COLORS.textMuted, lineHeight: 1.6 }}>{n.body}</div>
+                  <div style={{ ...TYPOGRAPHY.tiny, color: COLORS.goldLight, marginTop: 4, fontSize: 9 }}>{n.createdAt ? new Date(n.createdAt).toLocaleString("ar-SA") : ""}</div>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      </div>
     </div>
   );
 }
