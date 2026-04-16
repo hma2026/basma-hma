@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useRef, useCallback } from "react";
+import { COLORS, SPACING, TYPOGRAPHY, RADIUS, SHADOWS, Button, Card, Section } from "./theme";
 
 /* ═══════════════════════════════════════════
    بصمة HMA v4.51 — Mobile App
@@ -916,37 +917,38 @@ function HomePage({ user, branch, now, todayAtt, allAtt, gps, gpsDist, streak, l
 
         {/* Checkin button below clock */}
         {!showChallenge && challengeAnswer === null && btnAction && (
-          <button onClick={function(){ if(!loading) onCheckin(btnAction, btnLabel); }} disabled={loading} style={{ marginTop: 28, padding: "14px 44px", borderRadius: 16, background: "linear-gradient(180deg, rgba(255,255,255,.2) 0%, rgba(255,255,255,.08) 50%, rgba(255,255,255,.15) 100%)", boxShadow: "0 3px 12px rgba(0,0,0,.2), inset 0 1px 0 rgba(255,255,255,.25)", border: "1.5px solid rgba(255,255,255,.25)", color: "#fff", fontSize: 15, fontWeight: 800, fontFamily: "'Cairo',sans-serif", cursor: "pointer", backdropFilter: "blur(10px)" }}>{loading ? "⏳" : btnText}</button>
+          <div style={{ width: "80%", maxWidth: 280, marginTop: SPACING.xl }}>
+            <Button variant="secondary" size="lg" onClick={function(){ if(!loading) onCheckin(btnAction, btnLabel); }} disabled={loading}>
+              {loading ? "⏳ جارٍ التسجيل..." : btnText}
+            </Button>
+          </div>
         )}
         {!showChallenge && challengeAnswer === null && !btnAction && <div style={{ marginTop: 12, fontSize: 13, color: "rgba(255,255,255,.5)", fontWeight: 700 }}>{btnText}</div>}
         {dayState === "before" && !showChallenge && challengeAnswer === null && challengeDoneToday && <div style={{ marginTop: 8, fontSize: 11, color: "rgba(255,255,255,.6)" }}>{"✓ أجبت على تحدي اليوم"}</div>}
 
         {/* GPS */}
-        <div style={{ display: "flex", alignItems: "center", gap: 6, marginTop: 10 }}>
-          <div style={{ width: 7, height: 7, borderRadius: "50%", background: gps ? (inRange ? "#5ec47a" : "#FF6B6B") : "#f59e0b" }} />
-          <span style={{ fontSize: 10, fontWeight: 600, color: "rgba(255,255,255,.6)" }}>{gps ? (inRange ? "📍 في النطاق" : "📍 خارج النطاق") + (branch ? " — " + branch.name : "") : "📍 تحديد الموقع..."}</span>
-          {streak > 0 && <span style={{ fontSize: 10, fontWeight: 800, color: "#f59e0b" }}>{"🔥" + streak}</span>}
+        <div style={{ display: "flex", alignItems: "center", gap: SPACING.sm, marginTop: SPACING.md }}>
+          <div style={{ width: 7, height: 7, borderRadius: RADIUS.pill, background: gps ? (inRange ? COLORS.success : COLORS.textDanger) : COLORS.warning }} />
+          <span style={{ ...TYPOGRAPHY.caption, color: COLORS.textMuted }}>{gps ? (inRange ? "في النطاق" : "خارج النطاق") + (branch ? " — " + branch.name : "") : "تحديد الموقع..."}</span>
+          {streak > 0 && <span style={{ ...TYPOGRAPHY.caption, fontWeight: 800, color: COLORS.warning }}>{"🔥 " + streak}</span>}
         </div>
       </div>
 
-      {/* Bottom */}
-      <div style={{ padding: "0 16px 2px" }}>
-        <div style={{ display: "flex", gap: 6, marginBottom: 4 }}>
-          <button onClick={onLeave} style={{ flex: 1, padding: "12px 8px", borderRadius: 14, background: "linear-gradient(180deg, rgba(255,255,255,.18) 0%, rgba(255,255,255,.06) 50%, rgba(255,255,255,.12) 100%)", border: "1px solid rgba(255,255,255,.25)", display: "flex", alignItems: "center", justifyContent: "center", gap: 6, cursor: "pointer", boxShadow: "0 2px 8px rgba(0,0,0,.2), inset 0 1px 0 rgba(255,255,255,.2)" }}><span style={{ fontSize: 15 }}>📝</span><span style={{ fontSize: 12, fontWeight: 800, color: "#e8d5a3" }}>إجازة</span></button>
-          <button onClick={onPermission} style={{ flex: 1, padding: "12px 8px", borderRadius: 14, background: "linear-gradient(180deg, rgba(255,255,255,.18) 0%, rgba(255,255,255,.06) 50%, rgba(255,255,255,.12) 100%)", border: "1px solid rgba(255,255,255,.25)", display: "flex", alignItems: "center", justifyContent: "center", gap: 6, cursor: "pointer", boxShadow: "0 2px 8px rgba(0,0,0,.2), inset 0 1px 0 rgba(255,255,255,.2)" }}><span style={{ fontSize: 15 }}>🙋</span><span style={{ fontSize: 12, fontWeight: 800, color: "#e8d5a3" }}>إذن</span></button>
+      {/* ═══ BOTTOM ACTIONS (unified) ═══ */}
+      <div style={{ padding: SPACING.lg + "px", display: "flex", flexDirection: "column", gap: SPACING.sm }}>
+        <div style={{ display: "flex", gap: SPACING.sm }}>
+          <Button variant="secondary" size="md" icon="📝" onClick={onLeave}>إجازة</Button>
+          <Button variant="secondary" size="md" icon="🙋" onClick={onPermission}>إذن</Button>
         </div>
         <div className="basma-flip-container">
           <div className={"basma-flip-inner" + (kadwarFlip ? " flipped" : "")} style={{ minHeight: 44 }}>
-            {/* Front — Gold button */}
             <div className="basma-flip-front">
-              <button onClick={function(){ setKadwarFlip(true); }} style={{ width: "100%", padding: "12px 16px", borderRadius: 14, background: "linear-gradient(180deg, #e8d5a3 0%, #c9a84c 40%, #8b6914 100%)", border: "1px solid #e8d5a3", color: "#1a1a1a", boxShadow: "0 4px 15px rgba(201,168,76,.4), inset 0 1px 0 rgba(255,255,255,.4)", fontSize: 13, fontWeight: 800, fontFamily: "'Cairo',sans-serif", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", gap: 8, boxShadow: "0 4px 15px rgba(201,168,76,.3)" }}>
-                <span style={{ fontSize: 16 }}>🏛️</span>
+              <Button variant="primary" size="md" icon="🏛️" onClick={function(){ setKadwarFlip(true); }}>
                 الدخول إلى منصة كوادر
-              </button>
+              </Button>
             </div>
-            {/* Back — 3 buttons */}
             <div className="basma-flip-back">
-              <div style={{ display: "flex", gap: 6 }}>
+              <div style={{ display: "flex", gap: SPACING.xs }}>
                 <KadwarBtn icon="💬" label="تواصل" count={kadwarNotifs.tasks} />
                 <KadwarBtn icon="📝" label="اختبار" count={kadwarNotifs.exams} />
                 <KadwarBtn icon="👤" label="حسابي" count={kadwarNotifs.alerts} />
