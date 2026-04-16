@@ -1,45 +1,47 @@
 /* ═══════════════════════════════════════════════════════
-   BASMA HMA — DESIGN SYSTEM
+   BASMA HMA — DESIGN SYSTEM (supports DARK + LIGHT modes)
    ═══════════════════════════════════════════════════════ */
 
-/* ── COLOR TOKENS ── */
-export const COLORS = {
-  // Backgrounds
-  bg1: "#0d2445",          // gradient top
-  bg2: "#091a38",          // gradient mid
-  bg3: "#071428",          // gradient bottom
-  card: "#142537",         // card surface
-  cardBorder: "#1f3a55",   // card border
-  cardHover: "#1a2e47",    // card hover state
-
-  // Brand
-  gold: "#c9a84c",
-  goldLight: "#e8d5a3",
-  goldDark: "#8b6914",
+/* ── DARK PALETTE ── */
+const DARK_COLORS = {
+  bg1: "#0d2445", bg2: "#091a38", bg3: "#071428",
+  card: "#142537", cardBorder: "#1f3a55", cardHover: "#1a2e47",
+  gold: "#c9a84c", goldLight: "#e8d5a3", goldDark: "#8b6914",
   goldGradient: "linear-gradient(180deg, #fae7b8 0%, #e8d19a 15%, #c9a84c 45%, #a17e2f 70%, #8b6914 100%)",
-
-  // Metallic surface (for secondary buttons/cards)
   metallic: "linear-gradient(180deg, rgba(255,255,255,.14) 0%, rgba(255,255,255,.05) 50%, rgba(255,255,255,.1) 100%)",
   metallicBorder: "rgba(255,255,255,.18)",
-
-  // Semantic
-  success: "#10b981",
-  warning: "#d4a017",
-  danger: "#E2192C",
-  info: "#2b5ea7",
-
-  // Text
-  textPrimary: "#e8edf4",      // main text on dark bg
-  textSecondary: "#a8b5cc",    // sub text
-  textMuted: "#7a8fa8",        // muted labels
-  textOnGold: "#1a1200",       // text on gold buttons
-  textDanger: "#FF6B6B",
-
-  // Utility
-  white: "#ffffff",
-  black: "#000000",
-  transparent: "transparent",
+  success: "#10b981", warning: "#d4a017", danger: "#E2192C", info: "#2b5ea7",
+  textPrimary: "#e8edf4", textSecondary: "#a8b5cc", textMuted: "#7a8fa8",
+  textOnGold: "#1a1200", textDanger: "#FF6B6B",
+  white: "#ffffff", black: "#000000", transparent: "transparent",
+  innerShadow: "rgba(255,255,255,.2)",
+  cardRowBorder: "rgba(255,255,255,.08)",
 };
+
+/* ── LIGHT PALETTE (same gold identity, light background) ── */
+const LIGHT_COLORS = {
+  bg1: "#f5efe1", bg2: "#ebe3d0", bg3: "#dfd4b8",
+  card: "#faf6ea", cardBorder: "rgba(139,105,20,.25)", cardHover: "#f0e9d4",
+  gold: "#8b6914", goldLight: "#a17e2f", goldDark: "#5c4410",
+  goldGradient: "linear-gradient(180deg, #c9a84c 0%, #a17e2f 40%, #8b6914 80%, #5c4410 100%)",
+  metallic: "linear-gradient(180deg, rgba(139,105,20,.12) 0%, rgba(139,105,20,.04) 50%, rgba(139,105,20,.08) 100%)",
+  metallicBorder: "rgba(139,105,20,.25)",
+  success: "#059669", warning: "#b8860b", danger: "#c0392b", info: "#2b5ea7",
+  textPrimary: "#3d2e0c", textSecondary: "#6b5419", textMuted: "#8a7548",
+  textOnGold: "#ffffff", textDanger: "#c0392b",
+  white: "#ffffff", black: "#000000", transparent: "transparent",
+  innerShadow: "rgba(255,255,255,.5)",
+  cardRowBorder: "rgba(139,105,20,.15)",
+};
+
+/* ── Active COLORS — mutable, updated by setTheme() ── */
+export const COLORS = { ...DARK_COLORS };
+
+/* ── Switch theme at runtime ── */
+export function setTheme(isDark) {
+  var palette = isDark ? DARK_COLORS : LIGHT_COLORS;
+  Object.keys(palette).forEach(function(k){ COLORS[k] = palette[k]; });
+}
 
 /* ── SPACING SCALE (4pt grid) ── */
 export const SPACING = {

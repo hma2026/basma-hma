@@ -762,6 +762,27 @@ export default async function handler(req, res) {
           if (idx >= 0) { docs[idx] = { ...docs[idx], ...req.body }; await dbSet('attachments', docs); }
           return res.json({ ok: true });
         }
+        if (req.method === 'DELETE') {
+          var docs = await dbGet('attachments') || [];
+          docs = docs.filter(d => d.id !== req.query.id);
+          await dbSet('attachments', docs);
+          return res.json({ ok: true });
+        }
+        break;
+      }
+
+      /* ═══ ATTACHMENT TYPES (أنواع المرفقات — يديرها الأدمن) ═══ */
+      case 'attachment_types': {
+        if (req.method === 'GET') {
+          var types = await dbGet('attachment_types');
+          if (!types) types = ["بطاقة هوية", "جواز سفر", "رخصة قيادة", "عقد عمل", "IBAN بنكي", "أخرى"];
+          return res.json(types);
+        }
+        if (req.method === 'POST') {
+          // Admin updates entire list
+          await dbSet('attachment_types', req.body.types || []);
+          return res.json({ ok: true });
+        }
         break;
       }
 

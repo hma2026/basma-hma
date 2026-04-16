@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef, useCallback } from "react";
-import { COLORS, SPACING, TYPOGRAPHY, RADIUS, SHADOWS, Button, Card, Section, Icons } from "./theme";
+import { COLORS, SPACING, TYPOGRAPHY, RADIUS, SHADOWS, Button, Card, Section, Icons, setTheme } from "./theme";
 
 /* ═══════════════════════════════════════════
    بصمة HMA v4.51 — Mobile App
@@ -20,14 +20,14 @@ const VER = APP_CONFIG.VER;
 
 /* ── Colors ── */
 const LIGHT = {
-  hdr1: "#0f2847", hdr2: "#1a3a6e", hdr3: "#2b5ea7",
+  hdr1: "#f5efe1", hdr2: "#ebe3d0", hdr3: "#dfd4b8",
   green: "#10b981", greenDark: "#059669",
   orange: "#d4a017", orangeDark: "#b8860b",
   red: "#E2192C", redDark: "#c0392b",
   blue: "#2b5ea7", blueBright: "#3a7bd5",
-  bg: "#f0f2f7", card: "#fff", text: "#1a1a1a", sub: "#888",
-  gold: "#c9a84c", goldLight: "#e8d5a3", goldDark: "#8b6914",
-  cardBorder: "rgba(0,0,0,.08)",
+  bg: "#ebe3d0", card: "#faf6ea", text: "#3d2e0c", sub: "#8a7548",
+  gold: "#8b6914", goldLight: "#a17e2f", goldDark: "#5c4410",
+  cardBorder: "rgba(139,105,20,.25)",
 };
 const DARK = {
   hdr1: "#0d2445", hdr2: "#091a38", hdr3: "#071428",
@@ -41,6 +41,16 @@ const DARK = {
 };
 var C = DARK;
 function CB() { return C.cardBorder || C.bg; }
+
+// Initialize theme from localStorage BEFORE first render
+(function initTheme() {
+  try {
+    var saved = localStorage.getItem("basma_dark");
+    var isDark = saved === null ? true : saved === "1";
+    C = isDark ? DARK : LIGHT;
+    setTheme(isDark);
+  } catch(e) { setTheme(true); }
+})();
 
 /* ── Inject Global CSS ── */
 if (typeof document !== "undefined" && !document.getElementById("basma-css")) {
@@ -338,9 +348,14 @@ function MobileAppInner() {
   useEffect(function() {
     C = darkMode ? DARK : LIGHT;
     S = buildS();
-    document.body.style.background = C.bg;
+    setTheme(darkMode);  // Sync new theme system
+    document.body.style.background = darkMode ? DARK.hdr3 : LIGHT.hdr3;
     localStorage.setItem("basma_dark", darkMode ? "1" : "0");
+    // Force re-render by updating a state
+    setThemeVersion(function(v){ return v + 1; });
   }, [darkMode]);
+
+  var [themeVersion, setThemeVersion] = useState(0);
 
   function toggleDark() { setDarkMode(function(d){ return !d; }); }
 
@@ -1246,8 +1261,8 @@ function ProfilePage({ user, branch, onLogout, onTicket, myTickets, darkMode, to
           <div style={{ width: 80, height: 80, borderRadius: RADIUS.pill, background: COLORS.metallic, border: "1px solid " + COLORS.metallicBorder, margin: "0 auto " + SPACING.md + "px", display: "flex", alignItems: "center", justifyContent: "center", boxShadow: SHADOWS.button }}>
             <Icons.user size={36} color={COLORS.goldLight} />
           </div>
-          <div style={{ ...TYPOGRAPHY.h1, color: COLORS.textPrimary, fontFamily: TYPOGRAPHY.fontCairo }}>{user.name}</div>
-          <div style={{ ...TYPOGRAPHY.caption, color: COLORS.textMuted, marginTop: 2 }}>{user.role + " — " + user.id}</div>
+          <div style={{ ...TYPOGRAPHY.h1, color: COLORS.textPrimary, fontFamily: TYPOGRAPHY.fontCairo, marginBottom: SPACING.xs }}>{user.name}</div>
+          <div style={{ ...TYPOGRAPHY.caption, color: COLORS.textMuted }}>{user.role + " — " + user.id}</div>
         </div>
 
         {/* Profile Tabs */}
@@ -2192,7 +2207,7 @@ function ToggleRow({ label, storeKey, border }) {
     localStorage.setItem("basma_" + storeKey, next ? "1" : "0");
   }
   return (
-    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: SPACING.sm + "px 0", borderBottom: border ? "1px solid rgba(255,255,255,.08)" : "none" }}>
+    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: SPACING.sm + "px 0", borderBottom: border ? "1px solid " + COLORS.cardRowBorder : "none" }}>
       <span style={{ ...TYPOGRAPHY.bodySm, fontWeight: 600, color: COLORS.textPrimary }}>{label}</span>
       <div onClick={toggle} style={{ width: 44, height: 24, borderRadius: 12, background: on ? COLORS.goldLight : COLORS.metallic, border: "1px solid " + (on ? COLORS.goldLight : COLORS.metallicBorder), position: "relative", cursor: "pointer", transition: "background .3s" }}>
         <div style={{ width: 18, height: 18, borderRadius: 9, background: "#fff", position: "absolute", top: 2, transition: "all .3s", left: on ? 2 : undefined, right: on ? undefined : 2, boxShadow: "0 1px 3px rgba(0,0,0,.3)" }} />
@@ -2357,9 +2372,9 @@ function FaceResetRow({ empId }) {
   }
 
   return (
-    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "10px 0" }}>
-      <span style={{ fontSize: 13, fontWeight: 600 }}>📸 بصمة الوجه</span>
-      <button onClick={reset} disabled={resetting || done} style={{ padding: "5px 14px", borderRadius: 10, border: done ? "1px solid " + C.green : "1px solid " + C.red + "50", background: done ? C.green + "10" : C.red + "08", color: done ? C.green : C.red, fontSize: 11, fontWeight: 700, cursor: resetting || done ? "default" : "pointer" }}>
+    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: SPACING.sm + "px 0", borderBottom: "1px solid " + COLORS.cardRowBorder }}>
+      <span style={{ ...TYPOGRAPHY.bodySm, fontWeight: 600, color: COLORS.textPrimary }}>بصمة الوجه</span>
+      <button onClick={reset} disabled={resetting || done} style={{ padding: "6px 14px", borderRadius: RADIUS.sm, border: "1px solid " + (done ? COLORS.goldLight : COLORS.textDanger), background: COLORS.metallic, color: done ? COLORS.goldLight : COLORS.textDanger, ...TYPOGRAPHY.caption, fontWeight: 700, cursor: resetting || done ? "default" : "pointer", fontFamily: TYPOGRAPHY.fontTajawal }}>
         {done ? "✓ تم الحذف" : resetting ? "جارِ..." : "إعادة تعيين"}
       </button>
     </div>
@@ -2374,7 +2389,7 @@ function BottomNav({ page, setPage }) {
     { id: "profile", icon: Icons.user, label: "حسابي" },
   ];
   return (
-    <div style={{ position: "fixed", bottom: 0, left: 0, right: 0, maxWidth: 430, margin: "0 auto", background: "rgba(7,20,40,.85)", backdropFilter: "blur(10px)", borderTop: "1px solid rgba(255,255,255,.1)", display: "flex", justifyContent: "space-around", padding: "10px 0 16px", zIndex: 50 }}>
+    <div style={{ position: "fixed", bottom: 0, left: 0, right: 0, maxWidth: 430, margin: "0 auto", background: "rgba(7,20,40,.85)", backdropFilter: "blur(10px)", borderTop: "1px solid " + COLORS.cardBorder, display: "flex", justifyContent: "space-around", padding: "10px 0 16px", zIndex: 50 }}>
       {items.map(function(n) {
         var active = page === n.id;
         var IconComp = n.icon;
@@ -2408,7 +2423,7 @@ function CustodyTab({ user }) {
       {items.map(function(item, i) {
         var s = statusMap[item.status] || statusMap.active;
         return (
-          <div key={item.id || i} style={{ display: "flex", alignItems: "center", gap: SPACING.sm, padding: SPACING.sm + "px 0", borderBottom: i < items.length - 1 ? "1px solid rgba(255,255,255,.08)" : "none" }}>
+          <div key={item.id || i} style={{ display: "flex", alignItems: "center", gap: SPACING.sm, padding: SPACING.sm + "px 0", borderBottom: i < items.length - 1 ? "1px solid " + COLORS.cardRowBorder : "none" }}>
             <div style={{ flex: 1 }}>
               <div style={{ ...TYPOGRAPHY.bodySm, fontWeight: 700, color: COLORS.textPrimary }}>{item.name || "عهدة"}</div>
               <div style={{ ...TYPOGRAPHY.tiny, color: COLORS.textMuted }}>{(item.serial ? "SN: " + item.serial + " · " : "") + (item.createdAt ? item.createdAt.split("T")[0] : "")}</div>
@@ -2442,7 +2457,7 @@ function DelegationCard({ user }) {
       {delegations.map(function(dl, i) {
         var s = statusMap[dl.status] || statusMap.pending;
         return (
-          <div key={dl.id || i} style={{ display: "flex", alignItems: "center", gap: SPACING.sm, padding: SPACING.sm + "px 0", borderBottom: i < delegations.length - 1 ? "1px solid rgba(255,255,255,.08)" : "none" }}>
+          <div key={dl.id || i} style={{ display: "flex", alignItems: "center", gap: SPACING.sm, padding: SPACING.sm + "px 0", borderBottom: i < delegations.length - 1 ? "1px solid " + COLORS.cardRowBorder : "none" }}>
             <div style={{ flex: 1 }}>
               <div style={{ ...TYPOGRAPHY.bodySm, fontWeight: 700, color: COLORS.textPrimary }}>{dl.reason || "انتداب"}</div>
               <div style={{ ...TYPOGRAPHY.tiny, color: COLORS.textMuted }}>{(dl.from || "") + " → " + (dl.to || "")}</div>
@@ -2480,7 +2495,7 @@ function ViolationsCard({ user }) {
           {warnings.map(function(w, i) {
             var lvl = VIOLATION_ESCALATION.find(function(v){ return v.level === (w.level || 1); }) || VIOLATION_ESCALATION[0];
             return (
-              <div key={w.id || i} style={{ display: "flex", alignItems: "center", gap: SPACING.sm, padding: SPACING.sm + "px 0", borderBottom: "1px solid rgba(255,255,255,.08)" }}>
+              <div key={w.id || i} style={{ display: "flex", alignItems: "center", gap: SPACING.sm, padding: SPACING.sm + "px 0", borderBottom: "1px solid " + COLORS.cardRowBorder }}>
                 <div style={{ flex: 1 }}>
                   <div style={{ ...TYPOGRAPHY.caption, fontWeight: 700, color: COLORS.textPrimary }}>{lvl.type}</div>
                   <div style={{ ...TYPOGRAPHY.tiny, color: COLORS.textMuted }}>{w.details || w.type || ""}</div>
@@ -2493,7 +2508,7 @@ function ViolationsCard({ user }) {
           {violations.map(function(v, i) {
             var vt = VIOLATION_TYPES[v.type] || { label: v.type || "مخالفة", category: "—" };
             return (
-              <div key={v.id || i} style={{ display: "flex", alignItems: "center", gap: SPACING.sm, padding: SPACING.sm + "px 0", borderBottom: i < violations.length - 1 ? "1px solid rgba(255,255,255,.08)" : "none" }}>
+              <div key={v.id || i} style={{ display: "flex", alignItems: "center", gap: SPACING.sm, padding: SPACING.sm + "px 0", borderBottom: i < violations.length - 1 ? "1px solid " + COLORS.cardRowBorder : "none" }}>
                 <div style={{ flex: 1 }}>
                   <div style={{ ...TYPOGRAPHY.caption, fontWeight: 700, color: COLORS.textPrimary }}>{vt.label}</div>
                   <div style={{ ...TYPOGRAPHY.tiny, color: COLORS.textMuted }}>{v.details || ""}</div>
@@ -2650,7 +2665,7 @@ function DependentsTab({ user }) {
         var statusColors = { pending: COLORS.textMuted, approved: COLORS.goldLight, rejected: COLORS.textDanger };
         var statusLabels = { pending: "بانتظار الاعتماد", approved: "معتمد", rejected: "مرفوض" };
         return (
-          <div key={d.id || i} style={{ display: "flex", alignItems: "center", gap: SPACING.sm, padding: SPACING.sm + "px 0", borderBottom: i < deps.length - 1 ? "1px solid rgba(255,255,255,.08)" : "none" }}>
+          <div key={d.id || i} style={{ display: "flex", alignItems: "center", gap: SPACING.sm, padding: SPACING.sm + "px 0", borderBottom: i < deps.length - 1 ? "1px solid " + COLORS.cardRowBorder : "none" }}>
             <div style={{ flex: 1 }}>
               <div style={{ ...TYPOGRAPHY.bodySm, fontWeight: 700, color: COLORS.textPrimary }}>{d.name}</div>
               <div style={{ ...TYPOGRAPHY.tiny, color: COLORS.textMuted }}>{d.relation + (d.externalInsurance ? " · تأمين خارجي" : "")}</div>
@@ -2705,11 +2720,18 @@ function HealthDisclosureTab({ user }) {
 
 /* ═══════════ ATTACHMENTS (المرفقات) ═══════════ */
 function AttachmentsTab({ user }) {
-  var docTypes = ["بطاقة هوية", "جواز سفر", "إقامة", "رخصة قيادة", "شهادة صحية", "عقد عمل", "IBAN بنكي", "أخرى"];
+  var [docTypes, setDocTypes] = useState([]);
   var [docs, setDocs] = useState([]);
 
   useEffect(function() {
     api("attachments", { params: { empId: user.id } }).then(function(d) { setDocs(d || []); }).catch(function(){});
+    // Load doc types from admin settings, fallback to default
+    api("attachment_types").then(function(types){
+      if (types && types.length) setDocTypes(types);
+      else setDocTypes(["بطاقة هوية", "جواز سفر", "رخصة قيادة", "عقد عمل", "IBAN بنكي", "أخرى"]);
+    }).catch(function(){
+      setDocTypes(["بطاقة هوية", "جواز سفر", "رخصة قيادة", "عقد عمل", "IBAN بنكي", "أخرى"]);
+    });
   }, []);
 
   function upload(type) {
@@ -2730,17 +2752,24 @@ function AttachmentsTab({ user }) {
     input.click();
   }
 
+  function removeDoc(docId) {
+    if (!confirm("هل تريد حذف هذا المرفق؟")) return;
+    setDocs(function(prev){ return prev.filter(function(d){ return d.id !== docId; }); });
+    api("attachments", { method: "DELETE", params: { id: docId } }).catch(function(){});
+  }
+
   return (
     <div>
       <div style={{ ...TYPOGRAPHY.h3, color: COLORS.textPrimary, marginBottom: SPACING.xs }}>المرفقات</div>
       <div style={{ ...TYPOGRAPHY.tiny, color: COLORS.textMuted, marginBottom: SPACING.md }}>ارفع مستنداتك — الشهادات تُضاف من كوادر للقراءة فقط</div>
 
-      <div style={{ display: "flex", flexWrap: "wrap", gap: SPACING.xs, marginBottom: SPACING.md }}>
+      {/* Equal-width grid 3 columns */}
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: SPACING.sm, marginBottom: SPACING.md }}>
         {docTypes.map(function(dt) {
-          var exists = docs.some(function(d){ return d.type === dt; });
+          var exists = docs.find(function(d){ return d.type === dt; });
           return (
-            <button key={dt} onClick={function(){ if(!exists) upload(dt); }} style={{ padding: "7px 14px", borderRadius: RADIUS.sm, background: COLORS.metallic, border: "1px solid " + (exists ? COLORS.goldLight : COLORS.metallicBorder), ...TYPOGRAPHY.caption, fontWeight: 600, color: exists ? COLORS.goldLight : COLORS.textMuted, cursor: exists ? "default" : "pointer", fontFamily: TYPOGRAPHY.fontTajawal }}>
-              {exists ? "✓ " : "+ "}{dt}
+            <button key={dt} onClick={function(){ if(!exists) upload(dt); }} style={{ height: 40, padding: "0 " + SPACING.sm + "px", borderRadius: RADIUS.md, background: COLORS.metallic, border: "1px solid " + (exists ? COLORS.goldLight : COLORS.metallicBorder), ...TYPOGRAPHY.caption, fontWeight: 700, color: exists ? COLORS.goldLight : COLORS.textMuted, cursor: exists ? "default" : "pointer", fontFamily: TYPOGRAPHY.fontTajawal, display: "flex", alignItems: "center", justifyContent: "center", textAlign: "center", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
+              {(exists ? "✓ " : "+ ") + dt}
             </button>
           );
         })}
@@ -2749,12 +2778,13 @@ function AttachmentsTab({ user }) {
       {docs.map(function(d, i) {
         var statusColors = { pending: COLORS.textMuted, approved: COLORS.goldLight, rejected: COLORS.textDanger };
         return (
-          <div key={d.id || i} style={{ display: "flex", alignItems: "center", gap: SPACING.sm, padding: SPACING.sm + "px 0", borderBottom: i < docs.length - 1 ? "1px solid rgba(255,255,255,.08)" : "none" }}>
+          <div key={d.id || i} style={{ display: "flex", alignItems: "center", gap: SPACING.sm, padding: SPACING.sm + "px 0", borderBottom: i < docs.length - 1 ? "1px solid " + COLORS.cardRowBorder : "none" }}>
             <div style={{ flex: 1 }}>
               <div style={{ ...TYPOGRAPHY.caption, fontWeight: 700, color: COLORS.textPrimary }}>{d.type}</div>
               <div style={{ ...TYPOGRAPHY.tiny, color: COLORS.textMuted }}>{d.date}</div>
             </div>
             <span style={{ ...TYPOGRAPHY.tiny, fontWeight: 700, color: statusColors[d.status] || COLORS.textMuted, padding: "3px 8px", borderRadius: RADIUS.sm, background: (statusColors[d.status] || COLORS.textMuted) + "20" }}>{d.status === "approved" ? "معتمد" : d.status === "rejected" ? "مرفوض" : "بانتظار"}</span>
+            <button onClick={function(){ removeDoc(d.id); }} style={{ background: "transparent", border: "1px solid " + COLORS.textDanger, color: COLORS.textDanger, width: 28, height: 28, borderRadius: RADIUS.sm, cursor: "pointer", fontSize: 14, fontWeight: 800, padding: 0 }}>×</button>
           </div>
         );
       })}
@@ -2850,7 +2880,7 @@ function PointsLogCard({ user, allAtt }) {
         <div style={{ marginTop: SPACING.md }}>
           {log.map(function(l, i) {
             return (
-              <div key={i} style={{ display: "flex", alignItems: "center", gap: SPACING.sm, padding: SPACING.sm + "px 0", borderBottom: i < log.length - 1 ? "1px solid rgba(255,255,255,.08)" : "none" }}>
+              <div key={i} style={{ display: "flex", alignItems: "center", gap: SPACING.sm, padding: SPACING.sm + "px 0", borderBottom: i < log.length - 1 ? "1px solid " + COLORS.cardRowBorder : "none" }}>
                 <div style={{ flex: 1, ...TYPOGRAPHY.caption, fontWeight: 600, color: COLORS.textPrimary }}>{l.label}</div>
                 <div style={{ ...TYPOGRAPHY.tiny, color: COLORS.textMuted }}>{l.detail}</div>
                 <div style={{ ...TYPOGRAPHY.bodySm, fontWeight: 800, color: COLORS.goldLight }}>{"+" + l.pts}</div>
