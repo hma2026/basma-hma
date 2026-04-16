@@ -39,7 +39,7 @@ const DARK = {
   gold: "#c9a84c", goldLight: "#e8d5a3", goldDark: "#8b6914",
   cardBorder: "#1f3a55",
 };
-var C = LIGHT;
+var C = DARK;
 function CB() { return C.cardBorder || C.bg; }
 
 /* ── Inject Global CSS ── */
@@ -302,7 +302,10 @@ function MobileAppInner() {
   // Persist page across refresh
   useEffect(function(){ localStorage.setItem("basma_page", page); }, [page]);
   const [branch, setBranch] = useState(null);
-  const [darkMode, setDarkMode] = useState(function(){ return localStorage.getItem("basma_dark") === "1"; });
+  const [darkMode, setDarkMode] = useState(function(){ 
+    var saved = localStorage.getItem("basma_dark");
+    return saved === null ? true : saved === "1";
+  });
   const [todayAtt, setTodayAtt] = useState([]);
   const [allAtt, setAllAtt] = useState([]);
   const [now, setNow] = useState(new Date());
