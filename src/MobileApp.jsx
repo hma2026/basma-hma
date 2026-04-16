@@ -1250,6 +1250,9 @@ function ReportPage({ user, allAtt, todayAtt, branch, isOffDay, myLeaves, allEmp
           </Card>
         )}
 
+        {/* رسم بياني أسبوعي */}
+        <WeeklyChart allAtt={allAtt} empId={user.id} branch={branch} />
+
         <InvestigationBanner user={user} />
         <ViolationsCard user={user} />
         <DelegationCard user={user} />
@@ -2335,58 +2338,6 @@ function MembershipCard({ points }) {
   );
 }
 
-function WeeklyChart({ allAtt, branch }) {
-  // Get last 7 days
-  var days = [];
-  var maxHrs = 0;
-  for (var i = 6; i >= 0; i--) {
-    var d = new Date();
-    d.setDate(d.getDate() - i);
-    var ds = d.toISOString().split("T")[0];
-    var dayName = AR_DAYS[d.getDay()].slice(0, 3);
-    var dayRecs = allAtt.filter(function(r){ return r.date === ds; });
-    var cin = dayRecs.find(function(r){ return r.type === "checkin"; });
-    var cout = dayRecs.find(function(r){ return r.type === "checkout"; });
-    var hrs = 0;
-    if (cin && cout) {
-      var ms = new Date(cout.ts) - new Date(cin.ts);
-      var bS = dayRecs.find(function(r){ return r.type === "break_start"; });
-      var bE = dayRecs.find(function(r){ return r.type === "break_end"; });
-      if (bS && bE) ms -= (new Date(bE.ts) - new Date(bS.ts));
-      hrs = Math.max(0, ms / 3600000);
-    } else if (cin && i === 0) {
-      hrs = Math.max(0, (new Date() - new Date(cin.ts)) / 3600000);
-    }
-    if (hrs > maxHrs) maxHrs = hrs;
-    var isLate = branch && cin && (new Date(cin.ts).getHours() * 60 + new Date(cin.ts).getMinutes()) > timeToMin(branch.start) + 5;
-    days.push({ dayName: dayName, hrs: hrs, isLate: isLate, isToday: i === 0 });
-  }
-  var expected = branch ? (timeToMin(branch.end) - timeToMin(branch.start) - 30) / 60 : 8;
-  var barMax = Math.max(maxHrs, expected) * 1.1;
-
-  return (
-    <div style={S.card} className="basma-fadein-d2">
-      <div style={S.cardTitle}><span>ساعات الأسبوع</span><span style={{ fontSize: 11, color: C.sub }}>آخر 7 أيام</span></div>
-      <div style={{ display: "flex", alignItems: "flex-end", gap: 6, height: 100, padding: "0 4px" }}>
-        {days.map(function(day, idx) {
-          var pct = barMax > 0 ? Math.round((day.hrs / barMax) * 100) : 0;
-          var col = day.hrs === 0 ? "#e0e0e0" : day.isLate ? C.orange : day.hrs >= expected ? C.green : C.blue;
-          return (
-            <div key={idx} style={{ flex: 1, display: "flex", flexDirection: "column", alignItems: "center", gap: 3 }}>
-              <div style={{ fontSize: 8, fontWeight: 700, color: day.hrs > 0 ? C.text : "#ccc" }}>{day.hrs > 0 ? day.hrs.toFixed(1) : ""}</div>
-              <div style={{ width: "100%", borderRadius: 6, background: col, height: Math.max(4, pct) + "%", minHeight: 4, transition: "height .5s ease", opacity: day.isToday ? 1 : 0.7 }} />
-              <div style={{ fontSize: 8, fontWeight: 700, color: day.isToday ? C.blue : C.sub }}>{day.dayName}</div>
-            </div>
-          );
-        })}
-      </div>
-      <div style={{ height: 1, background: C.bg, marginTop: 4, position: "relative" }}>
-        <div style={{ position: "absolute", top: -8, left: 0, fontSize: 8, color: C.green }}>{expected + "h"}</div>
-      </div>
-    </div>
-  );
-}
-
 function KadwarBtn({ icon, label, count }) {
   return (
     <button onClick={function(){ window.open("https://hma.engineer", "_blank"); }} style={{ flex: 1, height: 44, borderRadius: RADIUS.lg, background: COLORS.metallic, border: "1px solid rgba(232,213,163,.25)", display: "flex", alignItems: "center", justifyContent: "center", gap: SPACING.xs, cursor: "pointer", position: "relative", boxShadow: SHADOWS.button }}>
@@ -2687,11 +2638,27 @@ function FileComplaintModal({ user, onClose, onSubmit }) {
   var [violationId, setViolationId] = useState("");
   var [title, setTitle] = useState("");
   var [details, setDetails] = useState("");
+  var [evidence, setEvidence] = useState([]);
   var [saving, setSaving] = useState(false);
+  var fileRef = useRef(null);
 
   useEffect(function() {
     api("employees").then(function(e){ setAllEmps((e || []).filter(function(x){ return x.id !== user.id; })); }).catch(function(){});
   }, []);
+
+  function addPhoto(e) {
+    var files = e.target.files;
+    if (!files || files.length === 0) return;
+    Array.from(files).forEach(function(file) {
+      if (file.size > 2 * 1024 * 1024) { alert("حجم الملف كبير — الحد 2 ميجابايت"); return; }
+      var reader = new FileReader();
+      reader.onload = function(ev) {
+        setEvidence(function(prev){ return [...prev, { name: file.name, type: file.type, data: ev.target.result }]; });
+      };
+      reader.readAsDataURL(file);
+    });
+    e.target.value = "";
+  }
 
   async function submit() {
     if (!againstId || !violationId || !details) { alert("املأ جميع الحقول"); return; }
@@ -2710,6 +2677,7 @@ function FileComplaintModal({ user, onClose, onSubmit }) {
           chapter: viol ? viol.chapter : null,
           title: title || (viol ? viol.description.slice(0, 80) : "شكوى"),
           details: details,
+          evidence: evidence.map(function(e){ return { name: e.name, type: e.type }; }),
         },
       });
       alert("✓ تم رفع الشكوى بنجاح — ستصل لمدير الموارد البشرية");
@@ -2765,6 +2733,24 @@ function FileComplaintModal({ user, onClose, onSubmit }) {
         <div style={{ marginBottom: SPACING.lg }}>
           <label style={{ ...TYPOGRAPHY.caption, fontWeight: 700, color: COLORS.textPrimary }}>التفاصيل (الواقعة والأدلة)</label>
           <textarea value={details} onChange={function(e){ setDetails(e.target.value); }} rows={6} placeholder="اذكر الوقت والمكان وتفاصيل الواقعة بدقة..." style={{ width: "100%", padding: SPACING.sm + "px " + SPACING.md + "px", borderRadius: RADIUS.md, border: "1px solid " + COLORS.metallicBorder, background: "rgba(0,0,0,.25)", color: COLORS.textPrimary, fontSize: 12, marginTop: 6, fontFamily: TYPOGRAPHY.fontTajawal, resize: "vertical" }} />
+        </div>
+
+        {/* Evidence photos */}
+        <div style={{ marginBottom: SPACING.lg }}>
+          <label style={{ ...TYPOGRAPHY.caption, fontWeight: 700, color: COLORS.textPrimary }}>مرفقات (صور/أدلة) — اختياري</label>
+          <input ref={fileRef} type="file" accept="image/*" multiple onChange={addPhoto} style={{ display: "none" }} />
+          <div style={{ display: "flex", gap: SPACING.sm, marginTop: 8, flexWrap: "wrap" }}>
+            {evidence.map(function(ev, i) {
+              return (
+                <div key={i} style={{ position: "relative", width: 64, height: 64, borderRadius: RADIUS.md, overflow: "hidden", border: "1px solid " + COLORS.metallicBorder }}>
+                  <img src={ev.data} style={{ width: "100%", height: "100%", objectFit: "cover" }} />
+                  <button onClick={function(){ setEvidence(function(p){ return p.filter(function(_, j){ return j !== i; }); }); }} style={{ position: "absolute", top: 2, left: 2, width: 18, height: 18, borderRadius: 9, background: COLORS.textDanger, border: "none", color: "#fff", fontSize: 10, fontWeight: 800, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center" }}>×</button>
+                </div>
+              );
+            })}
+            <button onClick={function(){ fileRef.current && fileRef.current.click(); }} style={{ width: 64, height: 64, borderRadius: RADIUS.md, background: "rgba(0,0,0,.2)", border: "1px dashed " + COLORS.metallicBorder, color: COLORS.textMuted, fontSize: 22, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center" }}>+</button>
+          </div>
+          <div style={{ ...TYPOGRAPHY.tiny, color: COLORS.textMuted, marginTop: 4 }}>الحد: 2 ميجابايت لكل صورة</div>
         </div>
 
         <div style={{ display: "flex", gap: SPACING.sm }}>
@@ -3013,6 +2999,70 @@ function DelegationCard({ user }) {
 }
 
 /* ═══════════ VIOLATIONS PANEL (سجل المخالفات والإنذارات) ═══════════ */
+/* ═══════════ WEEKLY CHART — رسم بياني أسبوعي للحضور ═══════════ */
+function WeeklyChart({ allAtt, empId, branch }) {
+  var dayNames = ["أحد", "اثن", "ثلا", "أرب", "خمي", "جمع", "سبت"];
+
+  // Last 14 days (excluding Fridays)
+  var bars = [];
+  for (var i = 13; i >= 0; i--) {
+    var d = new Date();
+    d.setDate(d.getDate() - i);
+    if (d.getDay() === 5) continue; // skip Friday
+    var ds = d.toISOString().split("T")[0];
+    var dayAtt = allAtt.filter(function(a){ return a.empId === empId && a.date === ds; });
+    var checkin = dayAtt.find(function(a){ return a.type === "checkin"; });
+    var status = "absent";
+    var lateMin = 0;
+    if (checkin) {
+      status = "present";
+      if (branch && branch.start) {
+        var parts = branch.start.split(":");
+        var startMin = parseInt(parts[0]) * 60 + parseInt(parts[1]);
+        var cMin = new Date(checkin.ts).getHours() * 60 + new Date(checkin.ts).getMinutes();
+        lateMin = Math.max(0, cMin - startMin);
+        if (lateMin > 5) status = "late";
+      }
+    }
+    bars.push({ date: ds, day: dayNames[d.getDay()], dayNum: d.getDate(), status: status, lateMin: lateMin });
+  }
+
+  if (bars.length === 0) return null;
+
+  var presentCount = bars.filter(function(b){ return b.status === "present"; }).length;
+  var lateCount = bars.filter(function(b){ return b.status === "late"; }).length;
+  var absentCount = bars.filter(function(b){ return b.status === "absent"; }).length;
+
+  return (
+    <Card>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: SPACING.md }}>
+        <span style={{ ...TYPOGRAPHY.h3, color: COLORS.textPrimary }}>آخر أسبوعين</span>
+        <div style={{ display: "flex", gap: SPACING.sm }}>
+          {[
+            { c: "#10b981", l: "حاضر " + presentCount },
+            { c: "#eab308", l: "متأخر " + lateCount },
+            { c: COLORS.textDanger, l: "غائب " + absentCount },
+          ].map(function(x, i){ return <span key={i} style={{ ...TYPOGRAPHY.tiny, color: x.c, fontWeight: 700, display: "flex", alignItems: "center", gap: 3 }}><span style={{ width: 6, height: 6, borderRadius: 3, background: x.c, display: "inline-block" }} />{x.l}</span>; })}
+        </div>
+      </div>
+      <div style={{ display: "flex", alignItems: "flex-end", gap: 4, height: 80 }}>
+        {bars.map(function(b, i) {
+          var color = b.status === "present" ? "#10b981" : b.status === "late" ? "#eab308" : COLORS.textDanger + "60";
+          var h = b.status === "absent" ? 8 : b.status === "late" ? 30 + Math.min(b.lateMin, 40) : 72;
+          var isToday = b.date === new Date().toISOString().split("T")[0];
+          return (
+            <div key={i} style={{ flex: 1, textAlign: "center", display: "flex", flexDirection: "column", alignItems: "center" }}>
+              <div style={{ width: "100%", maxWidth: 20, height: h, borderRadius: 4, background: color, transition: "height .3s", border: isToday ? "2px solid " + COLORS.goldLight : "none" }} />
+              <div style={{ ...TYPOGRAPHY.tiny, color: isToday ? COLORS.goldLight : COLORS.textMuted, marginTop: 4, fontWeight: isToday ? 800 : 400, fontSize: 8 }}>{b.day}</div>
+              <div style={{ fontSize: 7, color: COLORS.textMuted }}>{b.dayNum}</div>
+            </div>
+          );
+        })}
+      </div>
+    </Card>
+  );
+}
+
 function InvestigationBanner({ user }) {
   var [pending, setPending] = useState(null);
 
