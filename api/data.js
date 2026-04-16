@@ -585,7 +585,14 @@ export default async function handler(req, res) {
 
       case 'events': {
         if (req.method === 'GET') return res.json(await dbGet('events') || []);
-        if (req.method === 'POST') { const es = await dbGet('events') || []; es.push({ id: 'EV' + Date.now(), ...req.body }); await dbSet('events', es); return res.json({ ok: true }); }
+        if (req.method === 'POST') {
+          // Bulk save (full array) or single add
+          if (Array.isArray(req.body)) {
+            await dbSet('events', req.body);
+            return res.json({ ok: true });
+          }
+          const es = await dbGet('events') || []; es.push({ id: 'EV' + Date.now(), ...req.body }); await dbSet('events', es); return res.json({ ok: true });
+        }
         if (req.method === 'PUT') {
           const es = await dbGet('events') || [];
           const { id, ...up } = req.body;

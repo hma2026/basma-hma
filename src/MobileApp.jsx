@@ -2480,7 +2480,24 @@ function BottomNav({ page, setPage, legalAlerts }) {
 /* ═══════════ STYLES ═══════════ */
 
 /* ═══════════ CUSTODY (العهد) ═══════════ */
-/* ═══════════ LEGAL TAB — الشؤون القانونية (الشكاوى/التحقيقات/المخالفات) ═══════════ */
+/* ── Export violations record for printing ── */
+function exportViolationsRecord(user, violations) {
+  var rows = violations.map(function(v, i) {
+    var st = v.status === "ACTIVE" ? "سارية" : v.status === "APPEALED" ? "متظلم عليها" : v.status === "CANCELLED" ? "ملغاة" : v.status;
+    return "<tr><td>" + (i+1) + "</td><td>" + (v.violationId || "") + "</td><td>" + (v.description || "").replace(/</g,"&lt;") + "</td><td>" + (v.occurrence || "") + "</td><td>" + (v.penaltyLabel || "") + "</td><td>" + st + "</td><td>" + (v.createdAt ? new Date(v.createdAt).toLocaleDateString("ar-SA") : "") + "</td></tr>";
+  }).join("");
+  var html = "<!DOCTYPE html><html dir='rtl' lang='ar'><head><meta charset='utf-8'><title>سجل المخالفات — " + user.name + "</title><style>body{font-family:'Segoe UI',Tahoma,sans-serif;margin:30px;color:#1a1a1a}h1{font-size:18px;text-align:center;color:#2B5EA7}h2{font-size:14px;text-align:center;color:#666;margin-bottom:20px}.info{display:flex;justify-content:space-between;margin-bottom:16px;font-size:12px;border:1px solid #ddd;padding:12px;border-radius:8px;background:#f9f9f9}table{width:100%;border-collapse:collapse;margin-top:12px}th{background:#2B5EA7;color:#fff;padding:8px 6px;font-size:11px;text-align:right}td{padding:8px 6px;border-bottom:1px solid #eee;font-size:11px}.footer{margin-top:24px;text-align:center;font-size:10px;color:#999;border-top:1px solid #eee;padding-top:12px}@media print{body{margin:10px}}</style></head><body>" +
+    "<h1>📜 سجل المخالفات الرسمية</h1>" +
+    "<h2>مكتب هاني محمد عسيري للاستشارات الهندسية</h2>" +
+    "<div class='info'><div><strong>الموظف:</strong> " + user.name + "</div><div><strong>الرقم:</strong> " + user.id + "</div><div><strong>المسمى:</strong> " + (user.role || "—") + "</div><div><strong>التاريخ:</strong> " + new Date().toLocaleDateString("ar-SA") + "</div></div>" +
+    "<table><thead><tr><th>#</th><th>البند</th><th>الوصف</th><th>المرة</th><th>الجزاء</th><th>الحالة</th><th>التاريخ</th></tr></thead><tbody>" + rows + "</tbody></table>" +
+    "<div class='footer'>وفق لائحة تنظيم العمل المعتمدة رقم 978004 — وزارة الموارد البشرية والتنمية الاجتماعية<br/>تم التصدير: " + new Date().toLocaleString("ar-SA") + "</div>" +
+    "<script>setTimeout(function(){window.print()},500)<\/script></body></html>";
+  var w = window.open("", "_blank");
+  if (w) { w.document.write(html); w.document.close(); }
+}
+
+/* ═══════════ LEGAL TAB ═══════════ */
 function LegalTab({ user }) {
   var [subTab, setSubTab] = useState("summary");
   var [complaints, setComplaints] = useState([]);
@@ -2559,9 +2576,15 @@ function LegalTab({ user }) {
             </Card>
           </div>
 
-          <button onClick={function(){ setShowComplaintModal(true); }} style={{ width: "100%", height: 52, borderRadius: RADIUS.xl, background: COLORS.goldGradient, border: "1px solid " + COLORS.goldLight, color: COLORS.textOnGold, fontSize: 14, fontWeight: 800, cursor: "pointer", fontFamily: TYPOGRAPHY.fontCairo, boxShadow: SHADOWS.gold, marginBottom: SPACING.md }}>
+          <button onClick={function(){ setShowComplaintModal(true); }} style={{ width: "100%", height: 52, borderRadius: RADIUS.xl, background: COLORS.goldGradient, border: "1px solid " + COLORS.goldLight, color: COLORS.textOnGold, fontSize: 14, fontWeight: 800, cursor: "pointer", fontFamily: TYPOGRAPHY.fontCairo, boxShadow: SHADOWS.gold, marginBottom: SPACING.sm }}>
             ✏️ رفع شكوى رسمية
           </button>
+
+          {violations.length > 0 && (
+            <button onClick={function(){ exportViolationsRecord(user, violations); }} style={{ width: "100%", height: 44, borderRadius: RADIUS.lg, background: COLORS.metallic, border: "1px solid " + COLORS.metallicBorder, color: COLORS.goldLight, fontSize: 13, fontWeight: 700, cursor: "pointer", fontFamily: TYPOGRAPHY.fontCairo, marginBottom: SPACING.md }}>
+              🖨️ طباعة سجل المخالفات
+            </button>
+          )}
 
           <div style={{ background: COLORS.metallic, border: "1px solid " + COLORS.metallicBorder, borderRadius: RADIUS.md, padding: SPACING.md }}>
             <div style={{ ...TYPOGRAPHY.caption, fontWeight: 700, color: COLORS.goldLight, marginBottom: 4 }}>📜 المرجع القانوني</div>

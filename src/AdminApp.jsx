@@ -196,6 +196,21 @@ export default function AdminApp() {
   const [newQ, setNewQ] = useState({ type: "ذكر", q: "", correct: "", wrong1: "", wrong2: "" });
   const [selEmp, setSelEmp] = useState(null);
   const [events, setEvents] = useState(EVENTS);
+  const eventsLoaded = useRef(false);
+
+  // Load events from DB
+  useEffect(function() {
+    fetch("/api/data?action=events").then(r => r.json()).then(function(data) {
+      if (data && Array.isArray(data) && data.length > 0) setEvents(data);
+      eventsLoaded.current = true;
+    }).catch(function(){ eventsLoaded.current = true; });
+  }, []);
+
+  // Auto-save events to DB
+  useEffect(function() {
+    if (!eventsLoaded.current) return;
+    fetch("/api/data?action=events", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(events) }).catch(function(){});
+  }, [events]);
   const [branches, setBranches] = useState(BRANCHES);
   const [emps, setEmps] = useState(EMPS);
   const [mapTarget, setMapTarget] = useState(null);
@@ -1667,6 +1682,14 @@ function ViolationsV2Panel({ t, B, emps }) {
         </div>
         <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
           <button onClick={function(){ setShowDirect(true); }} style={{ padding: "8px 16px", borderRadius: 8, border: "none", background: B.red, color: "#fff", fontSize: 11, fontWeight: 700, cursor: "pointer" }}>+ تسجيل مخالفة</button>
+          <button onClick={function(){
+            var rows = vios.map(function(v, i) {
+              var st = v.status === "ACTIVE" ? "سارية" : v.status === "APPEALED" ? "متظلم" : v.status === "CANCELLED" ? "ملغاة" : v.status;
+              return "<tr><td>"+(i+1)+"</td><td>"+(v.empName||"")+"</td><td>"+(v.violationId||"")+"</td><td>"+(v.description||"").replace(/</g,"&lt;").slice(0,60)+"</td><td>"+(v.occurrence||"")+"</td><td>"+(v.penaltyLabel||"")+"</td><td>"+st+"</td><td>"+(v.createdAt?new Date(v.createdAt).toLocaleDateString("ar-SA"):"")+"</td></tr>";
+            }).join("");
+            var html="<!DOCTYPE html><html dir=rtl><head><meta charset=utf-8><title>سجل المخالفات</title><style>body{font-family:Segoe UI,sans-serif;margin:30px}h1{font-size:18px;text-align:center;color:#2B5EA7}table{width:100%;border-collapse:collapse}th{background:#2B5EA7;color:#fff;padding:8px;font-size:10px;text-align:right}td{padding:6px;border-bottom:1px solid #eee;font-size:10px}.f{margin-top:20px;text-align:center;font-size:9px;color:#999}@media print{body{margin:10px}}</style></head><body><h1>سجل المخالفات الرسمية — HMA Engineering</h1><p style=text-align:center;font-size:11px>تاريخ التصدير: "+new Date().toLocaleString("ar-SA")+"</p><table><thead><tr><th>#</th><th>الموظف</th><th>البند</th><th>الوصف</th><th>المرة</th><th>الجزاء</th><th>الحالة</th><th>التاريخ</th></tr></thead><tbody>"+rows+"</tbody></table><div class=f>لائحة تنظيم العمل رقم 978004</div><script>setTimeout(function(){window.print()},500)<\/script></body></html>";
+            var w=window.open("","_blank"); if(w){w.document.write(html);w.document.close();}
+          }} style={{ padding: "8px 16px", borderRadius: 8, border: "1px solid " + t.sep, background: t.card, color: t.tx2, fontSize: 11, fontWeight: 700, cursor: "pointer" }}>🖨️ طباعة</button>
           <div style={{ background: B.red + "20", border: "1px solid " + B.red, borderRadius: 8, padding: "6px 14px", fontSize: 12, fontWeight: 800, color: B.red }}>
             {active} سارية
           </div>
