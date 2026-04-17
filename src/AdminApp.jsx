@@ -640,74 +640,7 @@ export default function AdminApp() {
       </>}
 
       {/* ═══ TRACKING (Admin only — secret) ═══ */}
-      {tab === "tracking" && <>
-        <div style={{ background: t.card, borderRadius: 14, padding: "18px", border: "1px solid " + t.sep, marginBottom: 14 }}>
-          <div style={{ fontSize: 14, fontWeight: 700, marginBottom: 4 }}>🛰️ تحليل حركة الموظفين</div>
-          <div style={{ fontSize: 11, color: t.txM, marginBottom: 14 }}>سري — يظهر فقط لمدير النظام. الموظفين لا يعلمون بوجوده.</div>
-          <div style={{ fontSize: 11, color: t.txM }}>اختر الموظف واليوم لعرض تقرير الحركة:</div>
-          <div style={{ display: "flex", gap: 8, marginTop: 10 }}>
-            <select id="track-emp" style={{ flex: 2, padding: 10, borderRadius: 10, border: "1px solid " + t.sep, fontSize: 12, background: t.inp, color: t.tx }}>{safeEmps.map(function(e) { return <option key={e.id} value={e.id}>{e.name}</option>; })}</select>
-            <input id="track-date" type="date" defaultValue={new Date().toISOString().split("T")[0]} style={{ flex: 1, padding: 10, borderRadius: 10, border: "1px solid " + t.sep, fontSize: 12, background: t.inp, color: t.tx }} />
-            <button onClick={async function() {
-              var empId = document.getElementById("track-emp").value;
-              var date = document.getElementById("track-date").value;
-              var logs = await api("gps_log", "GET", null, "&empId=" + empId + "&date=" + date);
-              if (!Array.isArray(logs) || logs.length === 0) { alert("لا توجد بيانات لهذا اليوم"); return; }
-              var el = document.getElementById("track-results");
-              // Analyze movement vs stationary
-              var stationary = 0, moving = 0;
-              for (var i = 1; i < logs.length; i++) {
-                var d = Math.sqrt(Math.pow(logs[i].lat - logs[i-1].lat, 2) + Math.pow(logs[i].lng - logs[i-1].lng, 2)) * 111000;
-                if (d < 20) stationary++; else moving++;
-              }
-              var total = stationary + moving || 1;
-              el.innerHTML = "<div style='padding:12px'><div style='font-size:13px;font-weight:700;margin-bottom:8px'>📍 " + logs.length + " نقطة مسجّلة</div>" +
-                "<div style='display:flex;gap:8px;margin-bottom:10px'><div style='flex:1;text-align:center;padding:10px;border-radius:10px;background:#30D15815'><div style='font-size:20px;font-weight:800;color:#30D158'>" + Math.round(moving/total*100) + "%</div><div style='font-size:9px;color:#6E6E73'>متحرّك</div></div><div style='flex:1;text-align:center;padding:10px;border-radius:10px;background:#FF9F0A15'><div style='font-size:20px;font-weight:800;color:#FF9F0A'>" + Math.round(stationary/total*100) + "%</div><div style='font-size:9px;color:#6E6E73'>ثابت</div></div></div>" +
-                "<div style='font-size:10px;color:#8E8E93'>أول نقطة: " + new Date(logs[0].ts).toLocaleTimeString("ar-SA") + " — آخر نقطة: " + new Date(logs[logs.length-1].ts).toLocaleTimeString("ar-SA") + "</div></div>";
-            }} style={{ padding: "10px 18px", borderRadius: 10, background: B.blue, color: "#fff", fontSize: 12, fontWeight: 700, border: "none", cursor: "pointer" }}>تحليل</button>
-          </div>
-          <div id="track-results" style={{ marginTop: 12, borderRadius: 10, background: t.bg, minHeight: 20 }}></div>
-        </div>
-        <div style={{ background: t.warnLt, borderRadius: 10, padding: "10px 14px", fontSize: 10, color: "#92400E" }}>⚠️ هذه الميزة سرية — تظهر فقط لمدير النظام. الموظفين لا يعلمون بوجود تتبّع الحركة. يتم التتبّع فقط خلال ساعات الدوام الرسمية.</div>
-
-        {/* Cluster detection */}
-        <div style={{ background: t.card, borderRadius: 14, padding: "18px", border: "1px solid " + t.sep, marginTop: 14 }}>
-          <div style={{ fontSize: 14, fontWeight: 700, marginBottom: 8 }}>👥 كشف التجمّعات</div>
-          <div style={{ fontSize: 11, color: t.txM, marginBottom: 10 }}>كشف مجموعات الموظفين المتواجدين في نفس الموقع لفترة طويلة</div>
-          <button onClick={async function() {
-            var r = await api("clusters");
-            var el = document.getElementById("cluster-results");
-            if (!r || !r.clusters) { el.innerHTML = "<div style='padding:10px;color:#8E8E93'>لا توجد بيانات</div>"; return; }
-            if (r.clusters.length === 0) { el.innerHTML = "<div style='padding:10px;color:#30D158;font-weight:700'>✅ لا توجد تجمّعات مشبوهة اليوم</div>"; return; }
-            var html = r.clusters.map(function(c) {
-              return "<div style='padding:8px;border-radius:8px;background:#FF9F0A12;margin-bottom:6px;border:1px solid #FF9F0A33'>" +
-                "<div style='font-size:12px;font-weight:700;color:#FF9F0A'>⚠️ تجمّع " + c.count + " موظفين — الساعة " + c.time + "</div>" +
-                "<div style='font-size:10px;color:#6E6E73;margin-top:4px'>" + c.employees.join("، ") + "</div></div>";
-            }).join("");
-            el.innerHTML = html;
-          }} style={{ width: "100%", padding: "10px", borderRadius: 10, background: t.warn, color: "#fff", fontSize: 12, fontWeight: 700, border: "none", cursor: "pointer" }}>👥 فحص التجمّعات اليوم</button>
-          <div id="cluster-results" style={{ marginTop: 8 }}></div>
-        </div>
-
-        {/* Weekly comparison */}
-        <div style={{ background: t.card, borderRadius: 14, padding: "18px", border: "1px solid " + t.sep, marginTop: 14 }}>
-          <div style={{ fontSize: 14, fontWeight: 700, marginBottom: 8 }}>📊 مقارنة أسبوعية</div>
-          <div style={{ fontSize: 11, color: t.txM, marginBottom: 10 }}>ترتيب الموظفين حسب نسبة الحركة خلال آخر 7 أيام</div>
-          <button onClick={async function() {
-            var r = await api("comparison");
-            var el = document.getElementById("comparison-results");
-            if (!r || !r.employees) { el.innerHTML = "<div style='padding:10px;color:#8E8E93'>لا توجد بيانات</div>"; return; }
-            var html = "<table style='width:100%;border-collapse:collapse;font-size:10px'><tr style='background:#F8F9FA'><th style='padding:6px;text-align:right'>#</th><th style='text-align:right'>الموظف</th><th>حركة%</th><th>ثبات%</th><th>نقاط GPS</th><th>إغلاق</th></tr>";
-            r.employees.forEach(function(e, i) {
-              var mc = e.movementPct >= 50 ? "#30D158" : e.movementPct >= 30 ? "#FF9F0A" : "#FF3B30";
-              html += "<tr style='border-bottom:1px solid #F0F0F0'><td style='padding:5px;font-weight:700'>" + (i+1) + "</td><td style='font-weight:600'>" + e.name + "</td><td style='text-align:center;color:" + mc + ";font-weight:700'>" + e.movementPct + "%</td><td style='text-align:center;color:#FF9F0A'>" + e.stationaryPct + "%</td><td style='text-align:center'>" + e.totalPoints + "</td><td style='text-align:center;color:" + (e.appCloses > 5 ? "#FF3B30" : "#8E8E93") + "'>" + e.appCloses + "</td></tr>";
-            });
-            html += "</table><div style='font-size:9px;color:#8E8E93;margin-top:6px'>" + r.from + " → " + r.to + "</div>";
-            el.innerHTML = html;
-          }} style={{ width: "100%", padding: "10px", borderRadius: 10, background: B.blueDk, color: "#fff", fontSize: 12, fontWeight: 700, border: "none", cursor: "pointer" }}>📊 عرض المقارنة</button>
-          <div id="comparison-results" style={{ marginTop: 8 }}></div>
-        </div>
-      </>}
+      {tab === "tracking" && <TrackingPanel t={t} B={B} emps={safeEmps} branches={branches} />}
 
       {/* ═══ CUSTODY ADMIN ═══ */}
       {tab === "custody_admin" && <>
@@ -1950,6 +1883,182 @@ function AppealsPanel({ t, B, emps }) {
           </div>
         );
       })}
+    </div>
+  );
+}
+
+/* ═══ TRACKING PANEL — خريطة تتبع الحركة + خريطة حرارية ═══ */
+function TrackingPanel({ t, B, emps, branches }) {
+  var [empId, setEmpId] = useState("all");
+  var [date, setDate] = useState(new Date().toISOString().split("T")[0]);
+  var [mode, setMode] = useState("markers"); // markers | trail | heatmap
+  var [logs, setLogs] = useState([]);
+  var [loading, setLoading] = useState(false);
+  var [stats, setStats] = useState(null);
+  var mapRef = useRef(null);
+  var mapInstance = useRef(null);
+  var layerGroup = useRef(null);
+  var heatLayer = useRef(null);
+
+  // Init map
+  useEffect(function() {
+    if (!mapRef.current || !window.L) return;
+    if (mapInstance.current) return;
+    var center = branches.length > 0 ? [branches[0].lat || 21.54, branches[0].lng || 39.17] : [21.54, 39.17];
+    var map = window.L.map(mapRef.current, { zoomControl: true }).setView(center, 12);
+    window.L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
+      attribution: "&copy; OpenStreetMap",
+      maxZoom: 19,
+    }).addTo(map);
+    layerGroup.current = window.L.layerGroup().addTo(map);
+    mapInstance.current = map;
+    // Add branch circles
+    branches.forEach(function(br) {
+      if (br.lat && br.lng) {
+        window.L.circle([br.lat, br.lng], { radius: br.radius || 150, color: B.blue, fillColor: B.blue, fillOpacity: 0.08, weight: 1.5, dashArray: "5,5" }).addTo(map).bindPopup("<b>" + br.name + "</b><br/>نطاق " + (br.radius || 150) + "م");
+      }
+    });
+    setTimeout(function(){ map.invalidateSize(); }, 200);
+  }, []);
+
+  // Load GPS data
+  async function loadData() {
+    setLoading(true);
+    setStats(null);
+    try {
+      var params = "&date=" + date;
+      if (empId !== "all") params += "&empId=" + empId;
+      var r = await api("gps_log", "GET", null, params);
+      var data = Array.isArray(r) ? r : [];
+      setLogs(data);
+      // Compute stats
+      if (data.length > 0) {
+        var moving = 0, stationary = 0;
+        for (var i = 1; i < data.length; i++) {
+          var d = Math.sqrt(Math.pow(data[i].lat - data[i-1].lat, 2) + Math.pow(data[i].lng - data[i-1].lng, 2)) * 111000;
+          if (d < 20) stationary++; else moving++;
+        }
+        var total = moving + stationary || 1;
+        var empIds = new Set(data.map(function(l){ return l.empId; }));
+        setStats({ total: data.length, employees: empIds.size, movePct: Math.round(moving / total * 100), statPct: Math.round(stationary / total * 100), first: data[0].ts, last: data[data.length - 1].ts });
+      }
+      renderMap(data);
+    } catch(e) { console.error(e); }
+    setLoading(false);
+  }
+
+  function renderMap(data) {
+    if (!mapInstance.current || !layerGroup.current) return;
+    layerGroup.current.clearLayers();
+    if (heatLayer.current) { mapInstance.current.removeLayer(heatLayer.current); heatLayer.current = null; }
+    if (data.length === 0) return;
+
+    var empColors = {};
+    var palette = ["#2B5EA7", "#E2192C", "#10b981", "#F59E0B", "#8B5CF6", "#EC4899", "#06B6D4", "#F97316"];
+    var colorIdx = 0;
+
+    if (mode === "heatmap") {
+      // Heatmap
+      var heatData = data.map(function(l){ return [l.lat, l.lng, 0.6]; });
+      if (window.L.heatLayer) {
+        heatLayer.current = window.L.heatLayer(heatData, { radius: 25, blur: 15, maxZoom: 17, gradient: { 0.2: "#2B5EA7", 0.4: "#10b981", 0.6: "#F59E0B", 0.8: "#F97316", 1.0: "#E2192C" } }).addTo(mapInstance.current);
+      }
+    } else if (mode === "trail") {
+      // Trail per employee
+      var grouped = {};
+      data.forEach(function(l) {
+        if (!grouped[l.empId]) grouped[l.empId] = [];
+        grouped[l.empId].push(l);
+      });
+      Object.keys(grouped).forEach(function(eid) {
+        var pts = grouped[eid].sort(function(a, b) { return new Date(a.ts) - new Date(b.ts); });
+        if (!empColors[eid]) { empColors[eid] = palette[colorIdx % palette.length]; colorIdx++; }
+        var color = empColors[eid];
+        var latlngs = pts.map(function(p) { return [p.lat, p.lng]; });
+        window.L.polyline(latlngs, { color: color, weight: 3, opacity: 0.8 }).addTo(layerGroup.current);
+        // Start/end markers
+        var emp = emps.find(function(e) { return e.id === eid; });
+        var name = emp ? emp.name : eid;
+        if (pts.length > 0) {
+          window.L.circleMarker([pts[0].lat, pts[0].lng], { radius: 8, color: "#fff", fillColor: "#10b981", fillOpacity: 1, weight: 2 }).addTo(layerGroup.current).bindPopup("<b>" + name + "</b><br/>🟢 بداية: " + new Date(pts[0].ts).toLocaleTimeString("ar-SA"));
+          window.L.circleMarker([pts[pts.length-1].lat, pts[pts.length-1].lng], { radius: 8, color: "#fff", fillColor: "#E2192C", fillOpacity: 1, weight: 2 }).addTo(layerGroup.current).bindPopup("<b>" + name + "</b><br/>🔴 نهاية: " + new Date(pts[pts.length-1].ts).toLocaleTimeString("ar-SA"));
+        }
+      });
+    } else {
+      // Markers
+      data.forEach(function(l) {
+        if (!empColors[l.empId]) { empColors[l.empId] = palette[colorIdx % palette.length]; colorIdx++; }
+        var emp = emps.find(function(e) { return e.id === l.empId; });
+        var name = emp ? emp.name : l.empId;
+        window.L.circleMarker([l.lat, l.lng], { radius: 5, color: empColors[l.empId], fillColor: empColors[l.empId], fillOpacity: 0.7, weight: 1 }).addTo(layerGroup.current).bindPopup("<b>" + name + "</b><br/>" + new Date(l.ts).toLocaleTimeString("ar-SA") + "<br/>دقة: " + Math.round(l.accuracy || 0) + "م");
+      });
+    }
+    // Fit bounds
+    var allPts = data.map(function(l) { return [l.lat, l.lng]; });
+    if (allPts.length > 0) mapInstance.current.fitBounds(allPts, { padding: [30, 30] });
+  }
+
+  // Re-render when mode changes
+  useEffect(function() { if (logs.length > 0) renderMap(logs); }, [mode]);
+
+  var btnStyle = function(active) { return { padding: "8px 14px", borderRadius: 8, border: active ? "none" : "1px solid " + t.sep, background: active ? B.blue : t.card, color: active ? "#fff" : t.tx2, fontSize: 11, fontWeight: 700, cursor: "pointer" }; };
+
+  return (
+    <div>
+      <div style={{ background: t.card, borderRadius: 14, padding: 16, border: "1px solid " + t.sep, marginBottom: 12 }}>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>
+          <div>
+            <div style={{ fontSize: 16, fontWeight: 900, color: t.tx }}>🛰️ تتبع حركة الموظفين</div>
+            <div style={{ fontSize: 10, color: t.txM, marginTop: 2 }}>سري — خلال ساعات الدوام فقط</div>
+          </div>
+        </div>
+        {/* Controls */}
+        <div style={{ display: "flex", gap: 8, marginBottom: 12, flexWrap: "wrap" }}>
+          <select value={empId} onChange={function(e){ setEmpId(e.target.value); }} style={{ flex: 2, padding: 10, borderRadius: 10, border: "1px solid " + t.sep, fontSize: 12, background: t.inp, color: t.tx, minWidth: 120 }}>
+            <option value="all">جميع الموظفين</option>
+            {emps.map(function(e) { return <option key={e.id} value={e.id}>{e.name}</option>; })}
+          </select>
+          <input type="date" value={date} onChange={function(e){ setDate(e.target.value); }} style={{ flex: 1, padding: 10, borderRadius: 10, border: "1px solid " + t.sep, fontSize: 12, background: t.inp, color: t.tx, minWidth: 120 }} />
+          <button onClick={loadData} disabled={loading} style={{ padding: "10px 20px", borderRadius: 10, background: loading ? t.sep : B.blue, color: "#fff", fontSize: 12, fontWeight: 700, border: "none", cursor: "pointer" }}>{loading ? "⏳" : "🔍 عرض"}</button>
+        </div>
+        {/* Mode toggle */}
+        <div style={{ display: "flex", gap: 6, marginBottom: 12 }}>
+          <button onClick={function(){ setMode("markers"); }} style={btnStyle(mode === "markers")}>📍 نقاط</button>
+          <button onClick={function(){ setMode("trail"); }} style={btnStyle(mode === "trail")}>🛤️ مسار الحركة</button>
+          <button onClick={function(){ setMode("heatmap"); }} style={btnStyle(mode === "heatmap")}>🔥 خريطة حرارية</button>
+        </div>
+      </div>
+
+      {/* Map */}
+      <div style={{ borderRadius: 14, overflow: "hidden", border: "2px solid " + t.sep, marginBottom: 12 }}>
+        <div ref={mapRef} style={{ height: 420, width: "100%", background: "#e8e8e8" }} />
+      </div>
+
+      {/* Stats */}
+      {stats && (
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(4,1fr)", gap: 8, marginBottom: 12 }}>
+          {[
+            { l: "نقاط GPS", v: stats.total, c: B.blue },
+            { l: "موظفين", v: stats.employees, c: B.gold },
+            { l: "متحرّك", v: stats.movePct + "%", c: "#10b981" },
+            { l: "ثابت", v: stats.statPct + "%", c: "#FF9F0A" },
+          ].map(function(s, i) {
+            return <div key={i} style={{ background: t.card, borderRadius: 10, padding: 12, textAlign: "center", border: "1px solid " + t.sep }}>
+              <div style={{ fontSize: 22, fontWeight: 800, color: s.c }}>{s.v}</div>
+              <div style={{ fontSize: 9, color: t.txM, marginTop: 2 }}>{s.l}</div>
+            </div>;
+          })}
+        </div>
+      )}
+      {stats && (
+        <div style={{ background: t.card, borderRadius: 10, padding: 12, border: "1px solid " + t.sep, marginBottom: 12, fontSize: 10, color: t.txM }}>
+          أول نقطة: {new Date(stats.first).toLocaleTimeString("ar-SA")} — آخر نقطة: {new Date(stats.last).toLocaleTimeString("ar-SA")}
+        </div>
+      )}
+      {!stats && !loading && (
+        <div style={{ textAlign: "center", padding: 30, color: t.txM, background: t.card, borderRadius: 12, border: "1px solid " + t.sep }}>اختر الموظف والتاريخ ثم اضغط "عرض"</div>
+      )}
+      <div style={{ background: t.warnLt, borderRadius: 10, padding: "10px 14px", fontSize: 10, color: "#92400E" }}>⚠️ سري — الموظفين لا يعلمون بوجود تتبّع الحركة. يتم التتبّع خلال ساعات الدوام فقط.</div>
     </div>
   );
 }
