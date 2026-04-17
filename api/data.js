@@ -610,6 +610,11 @@ export default async function handler(req, res) {
         break;
       }
 
+      /* ═══ PING — اختبار بسيط بدون fetch ═══ */
+      case 'ping': {
+        return res.json({ ok: true, msg: 'pong', ts: new Date().toISOString(), nodeVer: process.version, fetchAvailable: typeof fetch === 'function' });
+      }
+
       /* ═══ TEST KADWAR SYNC — اختبار الاتصال بكوادر ═══ */
       case 'test-kadwar-sync': {
         var url = 'https://hma.engineer/api/basma-sync?action=employees';
@@ -830,7 +835,7 @@ export default async function handler(req, res) {
         }
         if (req.method === 'POST') {
           // Selective cleanup
-          var action = req.body.action; // 'delete_older' | 'delete_recent' | 'delete_all' | 'keep_recent'
+          var cleanupAction = req.body.action; // 'delete_older' | 'delete_recent' | 'delete_all' | 'keep_recent'
           var target = req.body.target;  // table name or 'all'
           var days = req.body.days || 0;
           var results = {};
@@ -846,7 +851,7 @@ export default async function handler(req, res) {
             if (!data) return { before: 0, after: 0 };
             var before = Array.isArray(data) ? data.length : Object.keys(data).length;
 
-            if (action === 'delete_all') {
+            if (cleanupAction === 'delete_all') {
               await dbSet(tbl, Array.isArray(data) ? [] : {});
               return { before: before, after: 0 };
             }
@@ -854,19 +859,19 @@ export default async function handler(req, res) {
             if (!Array.isArray(data)) return { before: before, after: before, skipped: 'not array' };
 
             var filtered;
-            if (action === 'delete_older') {
+            if (cleanupAction === 'delete_older') {
               // Delete records OLDER than X days (keep recent)
               filtered = data.filter(function(r) {
                 var d = r.date || (r.createdAt ? r.createdAt.split('T')[0] : '') || (r.ts ? r.ts.split('T')[0] : '');
                 return d >= cutoff;
               });
-            } else if (action === 'delete_recent') {
+            } else if (cleanupAction === 'delete_recent') {
               // Delete records from the LAST X days (keep older)
               filtered = data.filter(function(r) {
                 var d = r.date || (r.createdAt ? r.createdAt.split('T')[0] : '') || (r.ts ? r.ts.split('T')[0] : '');
                 return d < cutoff;
               });
-            } else if (action === 'keep_recent') {
+            } else if (cleanupAction === 'keep_recent') {
               // Keep ONLY the last X days
               filtered = data.filter(function(r) {
                 var d = r.date || (r.createdAt ? r.createdAt.split('T')[0] : '') || (r.ts ? r.ts.split('T')[0] : '');
@@ -887,7 +892,7 @@ export default async function handler(req, res) {
             results[target] = await cleanTable(target);
           }
 
-          return res.json({ ok: true, action: action, days: days, cutoff: cutoff, results: results });
+          return res.json({ ok: true, action: cleanupAction, days: days, cutoff: cutoff, results: results });
         }
         break;
       }
