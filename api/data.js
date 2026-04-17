@@ -108,12 +108,33 @@ export default async function handler(req, res) {
       }
 
       case 'login': {
-        const { empId, code } = req.body || {};
-        const emps = await dbGet('employees') || INIT_EMP;
-        const e = emps.find(x => x.id === empId?.toUpperCase());
-        if (!e) return res.status(404).json({ error: 'غير موجود' });
-        if (e.code !== code) return res.status(401).json({ error: 'رمز خاطئ' });
-        return res.json({ ok: true, employee: e });
+        var body = req.body || {};
+        var loginId = (body.empId || body.email || '').toLowerCase().trim();
+        var password = body.code || body.password || '';
+        if (!loginId || !password) return res.status(400).json({ error: 'بيانات ناقصة' });
+
+        // 1. Check general manager (admin) — stored in basma
+        var admin = await dbGet('admin_config');
+        if (admin && admin.email && admin.email === loginId) {
+          if (admin.password !== password) return res.status(401).json({ error: 'كلمة المرور خاطئة' });
+          return res.json({ ok: true, employee: {
+            id: admin.email, email: admin.email,
+            name: admin.name || 'المدير العام',
+            role: admin.role || 'المدير العام',
+            branch: 'jed',
+            isGeneralManager: true, isManager: true, isAdmin: true,
+          }});
+        }
+
+        // 2. Regular employee — local verification with synced password from kadwar
+        var emps = await dbGet('employees') || [];
+        var emp = emps.find(function(x) {
+          if (!x) return false;
+          return (x.email || '').toLowerCase() === loginId;
+        });
+        if (!emp) return res.status(404).json({ error: 'الموظف غير موجود — اطلب من الإدارة مزامنة مع كوادر' });
+        if (emp.password !== password) return res.status(401).json({ error: 'كلمة المرور غير صحيحة' });
+        return res.json({ ok: true, employee: emp });
       }
 
       case 'employees': {
@@ -627,7 +648,7 @@ export default async function handler(req, res) {
           var data = await r.json();
           if (!data || !Array.isArray(data.employees)) { summary.error = 'invalid response shape'; summary.raw = data; return res.json(summary); }
 
-          // 2. Branch name mapping (kadwar → basma)
+          // 2. Branch mapping (kadwar → basma)
           var branchMap = {
             'المركز الرئيسي — جدة': 'jed',
             'المركز الرئيسي': 'jed',
@@ -640,55 +661,73 @@ export default async function handler(req, res) {
           function mapBranch(kadBranch) {
             if (!kadBranch) return 'jed';
             if (branchMap[kadBranch]) return branchMap[kadBranch];
-            // Partial match
             var lower = kadBranch.toLowerCase();
             if (lower.indexOf('جدة') >= 0) return 'jed';
             if (lower.indexOf('رياض') >= 0) return 'riy';
             if (lower.indexOf('اسطنبول') >= 0 || lower.indexOf('istanbul') >= 0) return 'ist';
             if (lower.indexOf('غازي') >= 0 || lower.indexOf('عنتاب') >= 0) return 'gaz';
-            return 'jed'; // default
+            return 'jed';
           }
 
-          // 3. Load existing basma employees to preserve basma-specific fields
+          // 3. Load existing to preserve basma-specific data (points, face, etc.)
           var existing = await dbGet('employees') || [];
-          var existingById = {};
-          existing.forEach(function(e) { existingById[e.id] = e; });
+          var existingByEmail = {};
+          var existingByKadwarId = {};
+          existing.forEach(function(e) {
+            if (e.email) existingByEmail[e.email.toLowerCase()] = e;
+            if (e.kadwarId) existingByKadwarId[e.kadwarId] = e;
+          });
 
-          // 4. Merge: kadwar data + basma-specific preserved
+          // 4. Build kadwar-id → email mapping (for hierarchy)
+          var kadIdToEmail = {};
+          data.employees.forEach(function(kad) {
+            var kadId = kad.id || kad.uid || kad.idNumber;
+            var email = (kad.email || '').toLowerCase();
+            if (kadId && email) kadIdToEmail[kadId] = email;
+          });
+
+          // 5. Merge: kadwar data + basma-specific preserved
           var merged = data.employees.map(function(kad) {
-            var id = kad.id || kad.uid || kad.idNumber;
-            var prev = existingById[id] || {};
-            // Auto-generate login code from last 6 digits of idNumber, or fallback
+            var email = (kad.email || '').toLowerCase();
+            var kadId = kad.id || kad.uid || kad.idNumber;
+            var prev = existingByEmail[email] || existingByKadwarId[kadId] || {};
             var idDigits = (kad.idNumber || '').replace(/\D/g, '');
-            var defaultCode = idDigits.length >= 6 ? idDigits.slice(-6) : ('10' + String(Date.now()).slice(-4));
+            var defaultCode = idDigits.length >= 6 ? idDigits.slice(-6) : '000000';
+            // Resolve manager email from managerId
+            var managerEmail = kad.managerId && kadIdToEmail[kad.managerId] ? kadIdToEmail[kad.managerId] : '';
+            var supervisorEmail = kad.supervisorId && kadIdToEmail[kad.supervisorId] ? kadIdToEmail[kad.supervisorId] : '';
             return {
-              // Kadwar (authoritative)
-              id: id,
-              idNumber: kad.idNumber || id,
-              uid: kad.uid || id,
+              // Identity
+              id: email || kadId,                  // Primary ID = email (login)
+              email: email,                         // Login
+              kadwarId: kadId,                      // Reference to kadwar
+              idNumber: kad.idNumber || '',
+              // Profile (from kadwar)
               name: kad.name || prev.name || '',
               role: (kad.role || prev.role || '').trim(),
               department: kad.department || prev.department || '',
               branch: mapBranch(kad.branch),
               branchName: kad.branch || '',
-              managerId: kad.managerId || '',
-              supervisorId: kad.supervisorId || '',
-              email: kad.email || prev.email || '',
               phone: kad.phone || prev.phone || '',
               status: kad.status || 'active',
+              // Hierarchy (from kadwar)
+              managerKadwarId: kad.managerId || '',
+              managerEmail: managerEmail,
+              supervisorKadwarId: kad.supervisorId || '',
+              supervisorEmail: supervisorEmail,
+              isManager: (kad.role || '').indexOf('مدير') >= 0 || prev.isManager || false,
+              // Auth (password from kadwar — managed there, used here locally)
+              password: kad.password || prev.password || '',
+              passwordUpdatedAt: kad.passwordUpdatedAt || prev.passwordUpdatedAt || null,
               // Basma-specific (preserved)
-              code: prev.code || defaultCode,
               points: prev.points || 0,
               type: prev.type || 'office',
               flexBase: prev.flexBase || false,
               flexOT: prev.flexOT || false,
               flexOTMax: prev.flexOTMax || 0,
               remote: prev.remote || false,
-              managers: prev.managers || [],
               observed: prev.observed || false,
               onLeave: prev.onLeave || false,
-              isManager: prev.isManager || (kad.role && kad.role.indexOf('مدير') >= 0),
-              isAssistant: prev.isAssistant || false,
               salary: prev.salary || 0,
               joinDate: prev.joinDate || '',
               dob: prev.dob || '',
@@ -701,36 +740,73 @@ export default async function handler(req, res) {
             };
           });
 
-          // 5. Save to BOTH:
-          //    - kadwar_employees (audit log — raw from kadwar)
-          //    - employees (the actual working store)
+          // 6. Build subordinates list (reverse lookup)
+          merged.forEach(function(emp) {
+            emp.subordinates = merged.filter(function(e) {
+              return e.managerEmail === emp.email && e.email !== emp.email;
+            }).map(function(e) { return e.email; });
+            emp.subordinatesCount = emp.subordinates.length;
+          });
+
+          // 7. Save
           await dbSet('kadwar_employees', merged);
           await dbSet('employees', merged);
 
-          // 6. Build summary
-          var added = merged.filter(function(e) { return !existingById[e.id]; }).length;
-          var updated = merged.length - added;
-          var removed = existing.filter(function(e) { return !merged.find(function(m) { return m.id === e.id; }); });
+          // 8. Summary
+          var existingEmails = Object.keys(existingByEmail);
+          var newEmails = merged.filter(function(e) { return !existingByEmail[e.email]; });
+          var removed = existing.filter(function(e) { return !merged.find(function(m) { return m.email === (e.email || '').toLowerCase(); }); });
 
           summary.ok = true;
           summary.count = merged.length;
-          summary.added = added;
-          summary.updated = updated;
+          summary.added = newEmails.length;
+          summary.updated = merged.length - newEmails.length;
           summary.removedCount = removed.length;
-          summary.removed = removed.map(function(e) { return { id: e.id, name: e.name }; });
+          summary.removed = removed.map(function(e) { return { id: e.id, name: e.name, email: e.email }; });
           summary.byBranch = merged.reduce(function(acc, e) {
-            var k = e.branch || 'unknown';
-            acc[k] = (acc[k] || 0) + 1;
+            acc[e.branch] = (acc[e.branch] || 0) + 1;
             return acc;
           }, {});
+          summary.managers = merged.filter(function(e) { return e.isManager; }).length;
           summary.sample = merged.slice(0, 3).map(function(e) {
-            return { id: e.id, name: e.name, role: e.role, branch: e.branch, code: e.code };
+            return { email: e.email, name: e.name, role: e.role, branch: e.branch, code: e.code, manager: e.managerEmail, subordinatesCount: e.subordinatesCount };
           });
           return res.json(summary);
         } catch (e) {
           summary.error = 'exception: ' + (e && e.message ? e.message : String(e));
           return res.json(summary);
         }
+      }
+
+      /* ═══ ADMIN CONFIG — بيانات المدير العام (خاص ببصمة) ═══ */
+      case 'admin-config': {
+        if (req.method === 'GET') {
+          var admin = await dbGet('admin_config') || null;
+          if (!admin) return res.json({ ok: true, exists: false });
+          // Don't send password back
+          return res.json({ ok: true, exists: true, email: admin.email, name: admin.name, updatedAt: admin.updatedAt });
+        }
+        if (req.method === 'POST') {
+          // Set or update admin credentials
+          var body = req.body || {};
+          if (!body.email || !body.password) return res.status(400).json({ error: 'email and password required' });
+          var current = await dbGet('admin_config');
+          // If updating, verify current password
+          if (current && body.currentPassword !== current.password) {
+            return res.status(401).json({ error: 'current password incorrect' });
+          }
+          var admin = {
+            email: body.email.toLowerCase(),
+            password: body.password,
+            name: body.name || current?.name || 'المدير العام',
+            role: 'المدير العام',
+            isGeneralManager: true,
+            updatedAt: new Date().toISOString(),
+          };
+          await dbSet('admin_config', admin);
+          return res.json({ ok: true, email: admin.email });
+        }
+        break;
       }
 
       /* ═══ READ KADWAR EMPLOYEES — عرض الموظفين المُزامَنين ═══ */
