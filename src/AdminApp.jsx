@@ -692,7 +692,7 @@ export default function AdminApp() {
                 "<div style='font-size:10px;color:#6E6E73;margin-top:4px'>" + c.employees.join("، ") + "</div></div>";
             }).join("");
             el.innerHTML = html;
-          }} style={{ width: "100%", padding: "10px", borderRadius: 10, background: C.warn, color: "#fff", fontSize: 12, fontWeight: 700, border: "none", cursor: "pointer" }}>👥 فحص التجمّعات اليوم</button>
+          }} style={{ width: "100%", padding: "10px", borderRadius: 10, background: t.warn, color: "#fff", fontSize: 12, fontWeight: 700, border: "none", cursor: "pointer" }}>👥 فحص التجمّعات اليوم</button>
           <div id="cluster-results" style={{ marginTop: 8 }}></div>
         </div>
 
@@ -883,10 +883,11 @@ export default function AdminApp() {
       {/* ═══ SETTINGS ═══ */}
       {tab === "settings" && <>
         {/* Sub-tabs for settings */}
-        <div style={{ display: "flex", gap: 6, marginBottom: 16, flexWrap: "wrap" }}>{[{ id: "general", l: "⚙️ عام" }, { id: "email", l: "📧 توجيه الإيميل" }, { id: "observation", l: "👁 تحت الملاحظة" }, { id: "attachments", l: "📎 أنواع المرفقات" }, { id: "faces", l: "📸 بصمات الوجه" }].map(st => <button key={st.id} onClick={() => setSettingsTab(st.id)} style={{ padding: "8px 18px", borderRadius: 10, border: settingsTab === st.id ? "none" : "1px solid " + t.sep, background: settingsTab === st.id ? B.blue : t.card, color: settingsTab === st.id ? "#fff" : t.tx2, fontSize: 12, fontWeight: 700, cursor: "pointer" }}>{st.l}</button>)}</div>
+        <div style={{ display: "flex", gap: 6, marginBottom: 16, flexWrap: "wrap" }}>{[{ id: "general", l: "⚙️ عام" }, { id: "email", l: "📧 توجيه الإيميل" }, { id: "observation", l: "👁 تحت الملاحظة" }, { id: "attachments", l: "📎 أنواع المرفقات" }, { id: "faces", l: "📸 بصمات الوجه" }, { id: "cleanup", l: "🧹 تنظيف البيانات" }].map(st => <button key={st.id} onClick={() => setSettingsTab(st.id)} style={{ padding: "8px 18px", borderRadius: 10, border: settingsTab === st.id ? "none" : "1px solid " + t.sep, background: settingsTab === st.id ? B.blue : t.card, color: settingsTab === st.id ? "#fff" : t.tx2, fontSize: 12, fontWeight: 700, cursor: "pointer" }}>{st.l}</button>)}</div>
 
         {settingsTab === "attachments" && <AttachmentTypesManager t={t} B={B} />}
         {settingsTab === "faces" && <FacesManager t={t} B={B} emps={emps} />}
+        {settingsTab === "cleanup" && <DataCleanupManager t={t} B={B} />}
 
         {/* GENERAL */}
         {settingsTab === "general" && <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
@@ -2118,6 +2119,189 @@ function FacesManager({ t, B, emps }) {
         })}
       </div>
       {filtered.length === 0 && <div style={{ textAlign: "center", padding: 30, color: t.tx2 }}>لا توجد نتائج</div>}
+    </div>
+  );
+}
+
+/* ═══ DATA CLEANUP MANAGER — تنظيف بيانات الفترة التجريبية ═══ */
+function DataCleanupManager({ t, B }) {
+  var [sizes, setSizes] = useState(null);
+  var [loading, setLoading] = useState(true);
+  var [action, setAction] = useState("keep_recent");
+  var [days, setDays] = useState(5);
+  var [targets, setTargets] = useState({
+    attendance: true,
+    violations_v2: true,
+    complaints: true,
+    investigations: true,
+    appeals: true,
+    notifications: true,
+    leaves: false,
+    permissions: false,
+    gps_log: true,
+    tickets: false,
+  });
+  var [running, setRunning] = useState(false);
+  var [results, setResults] = useState(null);
+
+  useEffect(function() { loadSizes(); }, []);
+
+  async function loadSizes() {
+    setLoading(true);
+    try {
+      var r = await fetch("/api/data?action=cleanup");
+      var d = await r.json();
+      setSizes(d.tables || {});
+    } catch(e) { console.error(e); }
+    setLoading(false);
+  }
+
+  async function execute() {
+    var selectedTargets = Object.keys(targets).filter(function(k){ return targets[k]; });
+    if (selectedTargets.length === 0) { alert("اختر جدول واحد على الأقل"); return; }
+
+    var msgs = {
+      keep_recent: "الإبقاء على آخر " + days + " يوم وحذف ما قبلها",
+      delete_recent: "حذف آخر " + days + " يوم فقط",
+      delete_older: "حذف ما قبل " + days + " يوم",
+      delete_all: "مسح كل البيانات بالكامل",
+    };
+    if (!confirm("⚠️ " + msgs[action] + "\n\nالجداول: " + selectedTargets.join("، ") + "\n\nهذا الإجراء لا يمكن التراجع عنه. متأكد؟")) return;
+    if (action === "delete_all" && !confirm("🚨 تأكيد نهائي: مسح كل البيانات بالكامل؟")) return;
+
+    setRunning(true);
+    setResults(null);
+    var allResults = {};
+    try {
+      for (var tbl of selectedTargets) {
+        var r = await fetch("/api/data?action=cleanup", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ action: action, target: tbl, days: days }),
+        });
+        var d = await r.json();
+        if (d.results) Object.assign(allResults, d.results);
+      }
+      setResults(allResults);
+      loadSizes();
+    } catch(e) { alert("فشل: " + e.message); }
+    setRunning(false);
+  }
+
+  var tableLabels = {
+    attendance: "📍 سجل الحضور",
+    violations_v2: "⚖️ المخالفات الرسمية",
+    complaints: "📣 الشكاوى",
+    investigations: "🔍 التحقيقات",
+    appeals: "📢 التظلمات",
+    notifications: "🔔 الإشعارات",
+    leaves: "📋 الإجازات",
+    permissions: "🤚 الأذونات",
+    gps_log: "🛰️ سجل GPS",
+    tickets: "🎫 تذاكر الدعم",
+  };
+
+  if (loading) return <div style={{ padding: 30, textAlign: "center", color: t.tx2 }}>جارِ التحميل...</div>;
+
+  return (
+    <div>
+      <div style={{ background: t.card, borderRadius: 12, padding: 16, marginBottom: 14, border: "2px solid " + B.red }}>
+        <div style={{ fontSize: 14, fontWeight: 900, color: B.red, marginBottom: 4 }}>🧹 تنظيف بيانات الفترة التجريبية</div>
+        <div style={{ fontSize: 11, color: t.tx2 }}>هذه الأداة تحذف بيانات تجريبية بشكل انتقائي — استخدمها بحذر</div>
+      </div>
+
+      {/* Data sizes */}
+      <div style={{ background: t.card, borderRadius: 12, padding: 14, marginBottom: 14, border: "1px solid " + t.sep }}>
+        <div style={{ fontSize: 12, fontWeight: 700, color: t.tx, marginBottom: 10 }}>📊 حجم البيانات الحالية</div>
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(3,1fr)", gap: 8 }}>
+          {Object.keys(tableLabels).map(function(key) {
+            var s = sizes[key] || { count: 0 };
+            return (
+              <div key={key} style={{ background: t.bg, borderRadius: 8, padding: 8, textAlign: "center" }}>
+                <div style={{ fontSize: 18, fontWeight: 800, color: s.count > 0 ? B.blue : t.txM }}>{s.count}</div>
+                <div style={{ fontSize: 9, color: t.tx2 }}>{tableLabels[key]}</div>
+              </div>
+            );
+          })}
+        </div>
+      </div>
+
+      {/* Action selector */}
+      <div style={{ background: t.card, borderRadius: 12, padding: 14, marginBottom: 14, border: "1px solid " + t.sep }}>
+        <div style={{ fontSize: 12, fontWeight: 700, color: t.tx, marginBottom: 10 }}>🎯 نوع التنظيف</div>
+        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8, marginBottom: 12 }}>
+          {[
+            { id: "keep_recent", l: "الإبقاء على آخر X يوم", d: "حذف كل شي ما عدا الأيام الأخيرة", c: "#10b981" },
+            { id: "delete_recent", l: "حذف آخر X يوم", d: "حذف الأيام الأخيرة فقط", c: B.gold },
+            { id: "delete_older", l: "حذف ما قبل X يوم", d: "الإبقاء على الأخيرة وحذف القديم", c: B.blue },
+            { id: "delete_all", l: "مسح الكل", d: "حذف كامل بدون استثناء", c: B.red },
+          ].map(function(a) {
+            var sel = action === a.id;
+            return (
+              <button key={a.id} onClick={function(){ setAction(a.id); }} style={{ padding: 12, borderRadius: 10, border: "2px solid " + (sel ? a.c : t.sep), background: sel ? a.c + "15" : t.card, cursor: "pointer", textAlign: "right" }}>
+                <div style={{ fontSize: 11, fontWeight: 800, color: sel ? a.c : t.tx }}>{a.l}</div>
+                <div style={{ fontSize: 9, color: t.tx2, marginTop: 3 }}>{a.d}</div>
+              </button>
+            );
+          })}
+        </div>
+
+        {action !== "delete_all" && (
+          <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 12 }}>
+            <span style={{ fontSize: 11, fontWeight: 700, color: t.tx }}>عدد الأيام:</span>
+            {[3, 5, 7, 10, 14, 30].map(function(d) {
+              return <button key={d} onClick={function(){ setDays(d); }} style={{ padding: "6px 14px", borderRadius: 8, border: days === d ? "2px solid " + B.blue : "1px solid " + t.sep, background: days === d ? B.blue + "15" : t.card, color: days === d ? B.blue : t.tx2, fontSize: 12, fontWeight: 700, cursor: "pointer" }}>{d}</button>;
+            })}
+          </div>
+        )}
+      </div>
+
+      {/* Table selector */}
+      <div style={{ background: t.card, borderRadius: 12, padding: 14, marginBottom: 14, border: "1px solid " + t.sep }}>
+        <div style={{ fontSize: 12, fontWeight: 700, color: t.tx, marginBottom: 10 }}>📋 الجداول المراد تنظيفها</div>
+        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 6 }}>
+          {Object.keys(tableLabels).map(function(key) {
+            var checked = targets[key];
+            var s = sizes[key] || { count: 0 };
+            return (
+              <label key={key} style={{ display: "flex", alignItems: "center", gap: 8, padding: 8, borderRadius: 8, background: checked ? B.blue + "10" : "transparent", cursor: "pointer", border: "1px solid " + (checked ? B.blue : "transparent") }}>
+                <input type="checkbox" checked={checked || false} onChange={function(){ setTargets(function(p){ var n = Object.assign({}, p); n[key] = !n[key]; return n; }); }} style={{ accentColor: B.blue }} />
+                <div>
+                  <div style={{ fontSize: 11, fontWeight: 600, color: t.tx }}>{tableLabels[key]}</div>
+                  <div style={{ fontSize: 9, color: t.tx2 }}>{s.count} سجل</div>
+                </div>
+              </label>
+            );
+          })}
+        </div>
+        <div style={{ display: "flex", gap: 8, marginTop: 10 }}>
+          <button onClick={function(){ var all = {}; Object.keys(tableLabels).forEach(function(k){ all[k] = true; }); setTargets(all); }} style={{ padding: "4px 12px", borderRadius: 6, border: "1px solid " + B.blue, background: "transparent", color: B.blue, fontSize: 10, fontWeight: 700, cursor: "pointer" }}>تحديد الكل</button>
+          <button onClick={function(){ var none = {}; Object.keys(tableLabels).forEach(function(k){ none[k] = false; }); setTargets(none); }} style={{ padding: "4px 12px", borderRadius: 6, border: "1px solid " + t.sep, background: "transparent", color: t.tx2, fontSize: 10, fontWeight: 700, cursor: "pointer" }}>إلغاء الكل</button>
+        </div>
+      </div>
+
+      {/* Execute */}
+      <button onClick={execute} disabled={running} style={{ width: "100%", padding: 14, borderRadius: 12, border: "none", background: running ? t.sep : B.red, color: "#fff", fontSize: 14, fontWeight: 800, cursor: running ? "default" : "pointer" }}>
+        {running ? "⏳ جارِ التنظيف..." : "🗑️ تنفيذ التنظيف"}
+      </button>
+
+      {/* Results */}
+      {results && (
+        <div style={{ background: t.card, borderRadius: 12, padding: 14, marginTop: 14, border: "2px solid #10b981" }}>
+          <div style={{ fontSize: 12, fontWeight: 800, color: "#10b981", marginBottom: 10 }}>✓ نتائج التنظيف</div>
+          {Object.keys(results).map(function(key) {
+            var r = results[key];
+            return (
+              <div key={key} style={{ display: "flex", justifyContent: "space-between", padding: "6px 0", borderBottom: "1px solid " + t.sep, fontSize: 11 }}>
+                <span style={{ color: t.tx }}>{tableLabels[key] || key}</span>
+                <span style={{ color: r.deleted > 0 ? B.red : t.tx2, fontWeight: 700 }}>
+                  {r.deleted > 0 ? "حُذف " + r.deleted + " سجل (بقي " + r.after + ")" : r.before === 0 ? "فارغ" : "لم يتأثر (" + r.after + ")"}
+                </span>
+              </div>
+            );
+          })}
+        </div>
+      )}
     </div>
   );
 }

@@ -611,9 +611,73 @@ export default async function handler(req, res) {
       }
 
       case 'kadwar-sync': {
+        // ═══ API for kadwar (hma.engineer) to read basma data ═══
+        // Called from: hma.engineer → GET b.hma.engineer/api/data?action=kadwar-sync
         if (req.method === 'GET') {
-          const emps = await dbGet('employees') || [];
-          return res.json({ employees: emps.map(e => ({ id: e.id, compliance: Math.round((e.points || 0) / 15), points: e.points || 0 })), syncDate: new Date().toISOString() });
+          var emps = await dbGet('employees') || [];
+          var att = await dbGet('attendance') || [];
+          var violationsV2 = await dbGet('violations_v2') || [];
+          var today = new Date().toISOString().split('T')[0];
+          var d30 = new Date(); d30.setDate(d30.getDate() - 30);
+          var d30Str = d30.toISOString().split('T')[0];
+
+          // Single employee detail
+          if (req.query.empId) {
+            var emp = emps.find(e => e.id === req.query.empId);
+            if (!emp) return res.json({ error: 'not found' });
+            var empAtt = att.filter(a => a.empId === emp.id);
+            var last30Att = empAtt.filter(a => a.type === 'checkin' && a.date >= d30Str);
+            var compliance = Math.min(100, Math.round((last30Att.length / 26) * 100));
+            var empVios = violationsV2.filter(v => v.empId === emp.id && v.status === 'ACTIVE');
+            var todayCheckin = empAtt.find(a => a.date === today && a.type === 'checkin');
+            return res.json({
+              id: emp.id, name: emp.name, role: emp.role, branch: emp.branch,
+              compliance: compliance,
+              points: emp.points || 0,
+              activeViolations: empVios.length,
+              violations: empVios.map(v => ({ id: v.id, violationId: v.violationId, description: v.description, penaltyLabel: v.penaltyLabel, occurrence: v.occurrence, createdAt: v.createdAt })),
+              todayStatus: todayCheckin ? 'present' : 'absent',
+              todayCheckinTime: todayCheckin ? todayCheckin.ts : null,
+              last30Days: last30Att.length,
+              syncDate: new Date().toISOString(),
+            });
+          }
+
+          // All employees summary
+          var summary = emps.filter(e => !e.terminated).map(function(emp) {
+            var empAtt30 = att.filter(a => a.empId === emp.id && a.type === 'checkin' && a.date >= d30Str);
+            var compliance = Math.min(100, Math.round((empAtt30.length / 26) * 100));
+            var activeVios = violationsV2.filter(v => v.empId === emp.id && v.status === 'ACTIVE').length;
+            var todayCheckin = att.find(a => a.empId === emp.id && a.date === today && a.type === 'checkin');
+            return {
+              id: emp.id, name: emp.name, branch: emp.branch,
+              compliance: compliance,
+              points: emp.points || 0,
+              activeViolations: activeVios,
+              todayStatus: todayCheckin ? 'present' : 'absent',
+            };
+          });
+          return res.json({ employees: summary, total: summary.length, syncDate: new Date().toISOString() });
+        }
+
+        // kadwar pushes employee data to basma
+        if (req.method === 'POST') {
+          // Sync: kadwar sends tasks/evaluations/notifications for an employee
+          var empId = req.body.empId;
+          if (!empId) return res.json({ error: 'empId required' });
+          var kadwarData = await dbGet('kadwar_data') || {};
+          kadwarData[empId] = {
+            tasks: req.body.tasks || [],
+            evaluations: req.body.evaluations || [],
+            notifications: req.body.notifications || { tasks: 0, exams: 0, alerts: 0 },
+            updatedAt: new Date().toISOString(),
+          };
+          await dbSet('kadwar_data', kadwarData);
+          // Also update kadwar_notifs for badge display
+          var notifs = await dbGet('kadwar_notifs') || {};
+          notifs[empId] = req.body.notifications || { tasks: 0, exams: 0, alerts: 0 };
+          await dbSet('kadwar_notifs', notifs);
+          return res.json({ ok: true });
         }
         break;
       }
@@ -692,19 +756,125 @@ export default async function handler(req, res) {
         return res.json({ error: 'unknown type' });
       }
 
-      case 'cleanup': {
-        var result = await dbCleanup();
-        return res.json(result);
+      /* ═══ EMPLOYEE RECORDS (سجل وظيفي — عقود/ترقيات) ═══ */
+      case 'emp_records': {
+        if (req.method === 'GET') {
+          var records = await dbGet('emp_records') || [];
+          if (req.query.empId) records = records.filter(r => r.empId === req.query.empId);
+          if (req.query.type) records = records.filter(r => r.recordType === req.query.type);
+          return res.json(records);
+        }
+        if (req.method === 'POST') {
+          var records = await dbGet('emp_records') || [];
+          records.push({
+            id: 'REC' + Date.now(),
+            createdAt: new Date().toISOString(),
+            ...req.body,
+          });
+          await dbSet('emp_records', records);
+          return res.json({ ok: true });
+        }
+        if (req.method === 'DELETE') {
+          var records = await dbGet('emp_records') || [];
+          records = records.filter(r => r.id !== req.query.id);
+          await dbSet('emp_records', records);
+          return res.json({ ok: true });
+        }
+        break;
       }
 
-      /* ═══ KADWAR NOTIFICATIONS (إشعارات كوادر) ═══ */
+      case 'cleanup': {
+        if (req.method === 'GET') {
+          // Return data sizes for each table
+          var tables = ['attendance','violations','violations_v2','warnings','complaints','investigations','appeals','notifications','leaves','permissions','pre_absences','tickets','gps_log','faces','attachments','health_disclosures','dependents','custody','events','kadwar_data','kadwar_notifs','employees','branches','settings','laiha_settings'];
+          var sizes = {};
+          for (var tbl of tables) {
+            var data = await dbGet(tbl);
+            if (data === null) sizes[tbl] = { count: 0, type: 'null' };
+            else if (Array.isArray(data)) sizes[tbl] = { count: data.length, type: 'array' };
+            else if (typeof data === 'object') sizes[tbl] = { count: Object.keys(data).length, type: 'object' };
+            else sizes[tbl] = { count: 1, type: typeof data };
+          }
+          return res.json({ tables: sizes });
+        }
+        if (req.method === 'POST') {
+          // Selective cleanup
+          var action = req.body.action; // 'delete_older' | 'delete_recent' | 'delete_all' | 'keep_recent'
+          var target = req.body.target;  // table name or 'all'
+          var days = req.body.days || 0;
+          var results = {};
+
+          var cutoffDate = new Date();
+          cutoffDate.setDate(cutoffDate.getDate() - days);
+          var cutoff = cutoffDate.toISOString().split('T')[0];
+
+          var dateTables = ['attendance','violations_v2','complaints','investigations','appeals','notifications','leaves','permissions','pre_absences','tickets','gps_log'];
+
+          async function cleanTable(tbl) {
+            var data = await dbGet(tbl);
+            if (!data) return { before: 0, after: 0 };
+            var before = Array.isArray(data) ? data.length : Object.keys(data).length;
+
+            if (action === 'delete_all') {
+              await dbSet(tbl, Array.isArray(data) ? [] : {});
+              return { before: before, after: 0 };
+            }
+
+            if (!Array.isArray(data)) return { before: before, after: before, skipped: 'not array' };
+
+            var filtered;
+            if (action === 'delete_older') {
+              // Delete records OLDER than X days (keep recent)
+              filtered = data.filter(function(r) {
+                var d = r.date || (r.createdAt ? r.createdAt.split('T')[0] : '') || (r.ts ? r.ts.split('T')[0] : '');
+                return d >= cutoff;
+              });
+            } else if (action === 'delete_recent') {
+              // Delete records from the LAST X days (keep older)
+              filtered = data.filter(function(r) {
+                var d = r.date || (r.createdAt ? r.createdAt.split('T')[0] : '') || (r.ts ? r.ts.split('T')[0] : '');
+                return d < cutoff;
+              });
+            } else if (action === 'keep_recent') {
+              // Keep ONLY the last X days
+              filtered = data.filter(function(r) {
+                var d = r.date || (r.createdAt ? r.createdAt.split('T')[0] : '') || (r.ts ? r.ts.split('T')[0] : '');
+                return d >= cutoff;
+              });
+            } else {
+              return { before: before, after: before, error: 'unknown action' };
+            }
+            await dbSet(tbl, filtered);
+            return { before: before, after: filtered.length, deleted: before - filtered.length };
+          }
+
+          if (target === 'all') {
+            for (var tbl of dateTables) {
+              results[tbl] = await cleanTable(tbl);
+            }
+          } else {
+            results[target] = await cleanTable(target);
+          }
+
+          return res.json({ ok: true, action: action, days: days, cutoff: cutoff, results: results });
+        }
+        break;
+      }
+
+      /* ═══ KADWAR NOTIFICATIONS + DATA ═══ */
       case 'kadwar_notifs': {
-        // Returns notification counts for kadwar badges in basma
-        // In future: read from shared Redis with kadwar
         var empId = req.query.empId;
         var notifs = await dbGet('kadwar_notifs') || {};
         var empNotifs = notifs[empId] || { tasks: 0, exams: 0, alerts: 0 };
         return res.json(empNotifs);
+      }
+
+      case 'kadwar_data': {
+        // Employee reads their kadwar data (tasks, evaluations) from basma
+        var empId = req.query.empId;
+        if (!empId) return res.json({ error: 'empId required' });
+        var kadwarData = await dbGet('kadwar_data') || {};
+        return res.json(kadwarData[empId] || { tasks: [], evaluations: [], notifications: { tasks: 0, exams: 0, alerts: 0 } });
       }
 
       /* ═══ PERMISSIONS (طلب إذن) ═══ */

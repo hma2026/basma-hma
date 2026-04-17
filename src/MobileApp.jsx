@@ -14,7 +14,7 @@ const APP_CONFIG = {
   NAME: "بصمة HMA",
   FULL_NAME: "نظام الحضور والانصراف الذكي",
   COMPANY: "هاني محمد عسيري للاستشارات الهندسية",
-  URL: "basma-hma.vercel.app",
+  URL: "b.hma.engineer",
   KADWAR_URL: "https://hma.engineer",
 };
 const VER = APP_CONFIG.VER;
@@ -820,7 +820,7 @@ function LoginScreen({ onLogin, loading }) {
           {loading ? "جارِ الدخول..." : "تسجيل دخول"}
         </button>
       </div>
-      <div className="basma-fadein-d3" style={{ color: "rgba(255,255,255,.3)", fontSize: 10, marginTop: 24 }}>{"v"+VER+" · basma-hma.vercel.app"}</div>
+      <div className="basma-fadein-d3" style={{ color: "rgba(255,255,255,.3)", fontSize: 10, marginTop: 24 }}>{"v"+VER+" · b.hma.engineer"}</div>
     </div>
   );
 }
@@ -1327,7 +1327,8 @@ function ProfilePage({ user, branch, onLogout, onTicket, myTickets, darkMode, to
     { id: "deps", icon: <Icons.user size={18} />, label: "المرافقين" },
     { id: "docs", icon: <Icons.clipboard size={18} />, label: "المرفقات" },
     { id: "custody", icon: <Icons.building size={18} />, label: "العهد" },
-    { id: "legal", icon: <Icons.alert size={18} />, label: "الشؤون القانونية" },
+    { id: "record", icon: <Icons.clipboard size={18} />, label: "السجل الوظيفي" },
+    { id: "legal", icon: <Icons.alert size={18} />, label: "القانونية" },
   ];
 
   return (
@@ -1437,6 +1438,7 @@ function ProfilePage({ user, branch, onLogout, onTicket, myTickets, darkMode, to
         {tab === "deps" && <Card><DependentsTab user={user} /></Card>}
         {tab === "docs" && <Card><AttachmentsTab user={user} /></Card>}
         {tab === "custody" && <Card><CustodyTab user={user} /></Card>}
+        {tab === "record" && <EmployeeRecordTab user={user} />}
         {tab === "legal" && <LegalTab user={user} />}
 
         {/* Manager panel button */}
@@ -1457,7 +1459,7 @@ function ProfilePage({ user, branch, onLogout, onTicket, myTickets, darkMode, to
             <div style={{ ...TYPOGRAPHY.h3, color: COLORS.goldLight, fontFamily: TYPOGRAPHY.fontCairo }}>بصمة HMA</div>
             <div style={{ ...TYPOGRAPHY.caption, color: COLORS.textMuted, marginTop: SPACING.xs }}>نظام الحضور والانصراف الذكي</div>
             <div style={{ ...TYPOGRAPHY.caption, color: COLORS.textMuted }}>هاني محمد عسيري للاستشارات الهندسية</div>
-            <div style={{ ...TYPOGRAPHY.tiny, color: COLORS.textMuted, marginTop: SPACING.sm }}>{"v" + VER + " · basma-hma.vercel.app"}</div>
+            <div style={{ ...TYPOGRAPHY.tiny, color: COLORS.textMuted, marginTop: SPACING.sm }}>{"v" + VER + " · b.hma.engineer"}</div>
           </div>
         </Card>
       </div>
@@ -2480,6 +2482,169 @@ function BottomNav({ page, setPage, legalAlerts }) {
 /* ═══════════ STYLES ═══════════ */
 
 /* ═══════════ CUSTODY (العهد) ═══════════ */
+/* ═══════════ EMPLOYEE RECORD TAB — السجل الوظيفي الكامل ═══════════ */
+function EmployeeRecordTab({ user }) {
+  var [subTab, setSubTab] = useState("contracts");
+  var [contracts, setContracts] = useState([]);
+  var [leaves, setLeaves] = useState([]);
+  var [violations, setViolations] = useState([]);
+  var [loading, setLoading] = useState(true);
+  var [showAdd, setShowAdd] = useState(false);
+  var [addType, setAddType] = useState("contract");
+
+  useEffect(function() { loadAll(); }, []);
+  async function loadAll() {
+    setLoading(true);
+    try {
+      var [c, l, v] = await Promise.all([
+        api("emp_records", { params: { empId: user.id, type: "contract" } }),
+        api("leaves", { params: { empId: user.id } }),
+        api("violations_v2", { params: { empId: user.id } }),
+      ]);
+      setContracts(c || []);
+      setLeaves(l || []);
+      setViolations(v || []);
+    } catch(e) { console.error(e); }
+    setLoading(false);
+  }
+
+  var tabs = [
+    { id: "contracts", l: "العقود", count: contracts.length },
+    { id: "leaves", l: "الإجازات", count: leaves.length },
+    { id: "violations", l: "المخالفات", count: violations.length },
+    { id: "promotions", l: "الترقيات" },
+  ];
+
+  return (
+    <div>
+      <div style={{ display: "flex", gap: 2, marginBottom: SPACING.md, overflowX: "auto" }}>
+        {tabs.map(function(t) {
+          var a = subTab === t.id;
+          return <button key={t.id} onClick={function(){ setSubTab(t.id); }} style={{ flex: 1, padding: "7px 8px", borderRadius: RADIUS.sm, background: a ? COLORS.goldGradient : COLORS.metallic, border: "1px solid " + (a ? COLORS.goldLight : COLORS.metallicBorder), color: a ? COLORS.textOnGold : COLORS.textMuted, ...TYPOGRAPHY.tiny, fontWeight: 800, cursor: "pointer", whiteSpace: "nowrap" }}>
+            {t.l}{t.count > 0 ? " (" + t.count + ")" : ""}
+          </button>;
+        })}
+      </div>
+
+      {loading && <div style={{ textAlign: "center", padding: SPACING.xl, color: COLORS.textMuted }}>جارِ التحميل...</div>}
+
+      {/* العقود */}
+      {!loading && subTab === "contracts" && (
+        <div>
+          <button onClick={function(){ setAddType("contract"); setShowAdd(true); }} style={{ width: "100%", height: 44, borderRadius: RADIUS.lg, background: COLORS.metallic, border: "1px dashed " + COLORS.goldLight, color: COLORS.goldLight, fontSize: 12, fontWeight: 700, cursor: "pointer", marginBottom: SPACING.md }}>+ إضافة عقد سابق</button>
+          {contracts.length === 0 && <div style={{ textAlign: "center", padding: SPACING.xl, color: COLORS.textMuted }}>لا توجد عقود مسجّلة</div>}
+          {contracts.map(function(c) {
+            return (
+              <div key={c.id} style={{ background: COLORS.metallic, border: "1px solid " + COLORS.metallicBorder, borderRadius: RADIUS.md, padding: SPACING.md, marginBottom: SPACING.sm }}>
+                <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 6 }}>
+                  <div style={{ ...TYPOGRAPHY.caption, fontWeight: 800, color: COLORS.textPrimary }}>{c.title || "عقد عمل"}</div>
+                  <span style={{ ...TYPOGRAPHY.tiny, color: c.status === "active" ? "#10b981" : COLORS.textMuted, fontWeight: 700 }}>{c.status === "active" ? "ساري" : "منتهي"}</span>
+                </div>
+                <div style={{ ...TYPOGRAPHY.tiny, color: COLORS.textMuted }}>
+                  {c.startDate || "—"} → {c.endDate || "مفتوح"} | {c.type || "غير محدد المدة"}
+                </div>
+                {c.notes && <div style={{ ...TYPOGRAPHY.tiny, color: COLORS.textMuted, marginTop: 4, fontStyle: "italic" }}>{c.notes}</div>}
+              </div>
+            );
+          })}
+        </div>
+      )}
+
+      {/* الإجازات */}
+      {!loading && subTab === "leaves" && (
+        <div>
+          {leaves.length === 0 && <div style={{ textAlign: "center", padding: SPACING.xl, color: COLORS.textMuted }}>لا توجد إجازات</div>}
+          {leaves.map(function(l) {
+            var typeLabels = { annual: "سنوية", sick: "مرضية", emergency: "طارئة", personal: "شخصية", unpaid: "بدون راتب" };
+            var statusColors = { pending: COLORS.textMuted, approved: "#10b981", rejected: COLORS.textDanger };
+            var statusLabels = { pending: "قيد المراجعة", approved: "معتمدة", rejected: "مرفوضة" };
+            return (
+              <div key={l.id} style={{ background: COLORS.metallic, border: "1px solid " + COLORS.metallicBorder, borderRadius: RADIUS.md, padding: SPACING.md, marginBottom: SPACING.sm }}>
+                <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 4 }}>
+                  <div style={{ ...TYPOGRAPHY.caption, fontWeight: 700, color: COLORS.textPrimary }}>{typeLabels[l.type] || l.type || "إجازة"}</div>
+                  <span style={{ ...TYPOGRAPHY.tiny, fontWeight: 700, color: statusColors[l.status] || COLORS.textMuted, background: (statusColors[l.status] || COLORS.textMuted) + "20", padding: "2px 8px", borderRadius: RADIUS.sm }}>{statusLabels[l.status] || l.status}</span>
+                </div>
+                <div style={{ ...TYPOGRAPHY.tiny, color: COLORS.textMuted }}>{(l.from || "—") + " → " + (l.to || "—")}{l.days ? " (" + l.days + " يوم)" : ""}</div>
+              </div>
+            );
+          })}
+        </div>
+      )}
+
+      {/* المخالفات */}
+      {!loading && subTab === "violations" && (
+        <div>
+          {violations.length === 0 && <div style={{ textAlign: "center", padding: SPACING.xl, color: COLORS.textMuted }}>سجل نظيف 👌</div>}
+          {violations.map(function(v) {
+            var st = VIOLATION_STATUS[v.status] || { label: v.status, color: COLORS.textMuted };
+            return (
+              <div key={v.id} style={{ background: COLORS.metallic, border: "1px solid " + COLORS.metallicBorder, borderRadius: RADIUS.md, padding: SPACING.md, marginBottom: SPACING.sm }}>
+                <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 4 }}>
+                  <span style={{ fontSize: 9, fontWeight: 700, color: "#fff", background: COLORS.goldDark, padding: "2px 6px", borderRadius: 4 }}>{v.violationId}</span>
+                  <span style={{ ...TYPOGRAPHY.tiny, fontWeight: 700, color: st.color, background: st.color + "20", padding: "2px 8px", borderRadius: RADIUS.sm }}>{st.label}</span>
+                </div>
+                <div style={{ ...TYPOGRAPHY.caption, color: COLORS.textPrimary, lineHeight: 1.5, marginTop: 4 }}>{v.description}</div>
+                <div style={{ display: "flex", justifyContent: "space-between", marginTop: 6, ...TYPOGRAPHY.tiny, color: COLORS.textMuted }}>
+                  <span>المرة {v.occurrence} — {v.penaltyLabel}</span>
+                  <span>{v.createdAt ? new Date(v.createdAt).toLocaleDateString("ar-SA") : ""}</span>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      )}
+
+      {/* الترقيات */}
+      {!loading && subTab === "promotions" && (
+        <div>
+          <button onClick={function(){ setAddType("promotion"); setShowAdd(true); }} style={{ width: "100%", height: 44, borderRadius: RADIUS.lg, background: COLORS.metallic, border: "1px dashed " + COLORS.goldLight, color: COLORS.goldLight, fontSize: 12, fontWeight: 700, cursor: "pointer", marginBottom: SPACING.md }}>+ إضافة ترقية / تغيير مسمى</button>
+          <div style={{ textAlign: "center", padding: SPACING.xl, color: COLORS.textMuted }}>سجل الترقيات يُحدّث من لوحة الإدارة</div>
+        </div>
+      )}
+
+      {showAdd && <AddRecordModal type={addType} user={user} onClose={function(){ setShowAdd(false); }} onSave={function(){ setShowAdd(false); loadAll(); }} />}
+    </div>
+  );
+}
+
+function AddRecordModal({ type, user, onClose, onSave }) {
+  var [form, setForm] = useState({ title: "", type: "محدد المدة", startDate: "", endDate: "", notes: "", status: "active" });
+  var [saving, setSaving] = useState(false);
+
+  async function submit() {
+    setSaving(true);
+    try {
+      await api("emp_records", {
+        method: "POST",
+        body: { empId: user.id, empName: user.name, recordType: type, ...form },
+      });
+      onSave();
+    } catch(e) { alert("فشل: " + e.message); }
+    setSaving(false);
+  }
+
+  var inputStyle = { width: "100%", padding: SPACING.sm + "px " + SPACING.md + "px", borderRadius: RADIUS.md, border: "1px solid " + COLORS.metallicBorder, background: "rgba(0,0,0,.25)", color: COLORS.textPrimary, fontSize: 12, marginBottom: SPACING.sm, fontFamily: TYPOGRAPHY.fontTajawal };
+
+  return (
+    <div onClick={onClose} style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,.8)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 1000, padding: SPACING.md }}>
+      <div onClick={function(e){ e.stopPropagation(); }} style={{ background: "linear-gradient(180deg, " + COLORS.bg1 + ", " + COLORS.bg2 + ")", borderRadius: RADIUS.xl, padding: SPACING.lg, maxWidth: 450, width: "100%", border: "1px solid " + COLORS.metallicBorder }}>
+        <div style={{ ...TYPOGRAPHY.h2, color: COLORS.goldLight, marginBottom: SPACING.md }}>{type === "contract" ? "إضافة عقد" : "إضافة ترقية"}</div>
+        <input value={form.title} onChange={function(e){ setForm({...form, title: e.target.value}); }} placeholder={type === "contract" ? "عنوان العقد (مثل: عقد عمل 2023)" : "المسمى الجديد"} style={inputStyle} />
+        {type === "contract" && <select value={form.type} onChange={function(e){ setForm({...form, type: e.target.value}); }} style={inputStyle}><option value="محدد المدة">محدد المدة</option><option value="غير محدد">غير محدد المدة</option><option value="تجربة">فترة تجربة</option></select>}
+        <div style={{ display: "flex", gap: SPACING.xs }}>
+          <input type="date" value={form.startDate} onChange={function(e){ setForm({...form, startDate: e.target.value}); }} style={{...inputStyle, flex: 1}} placeholder="تاريخ البداية" />
+          <input type="date" value={form.endDate} onChange={function(e){ setForm({...form, endDate: e.target.value}); }} style={{...inputStyle, flex: 1}} placeholder="تاريخ النهاية" />
+        </div>
+        <textarea value={form.notes} onChange={function(e){ setForm({...form, notes: e.target.value}); }} rows={3} placeholder="ملاحظات..." style={{...inputStyle, resize: "vertical"}} />
+        <div style={{ display: "flex", gap: SPACING.sm }}>
+          <button onClick={onClose} style={{ flex: 1, height: 44, borderRadius: RADIUS.lg, background: COLORS.metallic, border: "1px solid " + COLORS.metallicBorder, color: COLORS.textMuted, fontSize: 13, fontWeight: 700, cursor: "pointer" }}>إلغاء</button>
+          <button onClick={submit} disabled={saving} style={{ flex: 2, height: 44, borderRadius: RADIUS.lg, background: COLORS.goldGradient, border: "1px solid " + COLORS.goldLight, color: COLORS.textOnGold, fontSize: 13, fontWeight: 800, cursor: "pointer" }}>{saving ? "..." : "حفظ"}</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 /* ── Export violations record for printing ── */
 function exportViolationsRecord(user, violations) {
   var rows = violations.map(function(v, i) {
