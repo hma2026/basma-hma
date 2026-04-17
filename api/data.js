@@ -615,6 +615,73 @@ export default async function handler(req, res) {
         return res.json({ ok: true, msg: 'pong', ts: new Date().toISOString(), nodeVer: process.version, fetchAvailable: typeof fetch === 'function' });
       }
 
+      /* ═══ SYNC KADWAR — جلب الموظفين من كوادر وحفظهم ═══ */
+      case 'sync-kadwar': {
+        var sourceUrl = 'https://hma.engineer/api/basma-sync?action=employees';
+        var summary = { ok: false, url: sourceUrl, ts: new Date().toISOString() };
+        try {
+          // 1. Fetch from kadwar
+          var r = await fetch(sourceUrl, { method: 'GET' });
+          summary.fetchStatus = r.status;
+          if (!r.ok) { summary.error = 'fetch failed with status ' + r.status; return res.json(summary); }
+          var data = await r.json();
+          if (!data || !Array.isArray(data.employees)) { summary.error = 'invalid response shape'; summary.raw = data; return res.json(summary); }
+
+          // 2. Map kadwar → basma schema
+          var mapped = data.employees.map(function(e) {
+            return {
+              id: e.id || e.uid || e.idNumber,
+              idNumber: e.idNumber || e.uid || e.id,
+              uid: e.uid || e.id,
+              name: e.name || '',
+              role: (e.role || '').trim(),
+              department: e.department || '',
+              branch: e.branch || '',
+              managerId: e.managerId || '',
+              supervisorId: e.supervisorId || '',
+              email: e.email || '',
+              phone: e.phone || '',
+              status: e.status || 'active',
+              source: 'kadwar',
+              syncedAt: new Date().toISOString(),
+              // Preserve any additional fields
+              ...(e.extra || {}),
+            };
+          });
+
+          // 3. Save to separate store (does NOT touch INIT_EMP/employees)
+          await dbSet('kadwar_employees', mapped);
+
+          // 4. Build summary
+          summary.ok = true;
+          summary.count = mapped.length;
+          summary.byBranch = mapped.reduce(function(acc, e) {
+            var k = e.branch || 'بدون فرع';
+            acc[k] = (acc[k] || 0) + 1;
+            return acc;
+          }, {});
+          summary.byDepartment = mapped.reduce(function(acc, e) {
+            var k = e.department || 'بدون قسم';
+            acc[k] = (acc[k] || 0) + 1;
+            return acc;
+          }, {});
+          summary.sample = mapped.slice(0, 3).map(function(e) {
+            return { id: e.id, name: e.name, role: e.role, branch: e.branch };
+          });
+          return res.json(summary);
+        } catch (e) {
+          summary.error = 'exception: ' + (e && e.message ? e.message : String(e));
+          return res.json(summary);
+        }
+      }
+
+      /* ═══ READ KADWAR EMPLOYEES — عرض الموظفين المُزامَنين ═══ */
+      case 'kadwar-employees': {
+        var stored = await dbGet('kadwar_employees');
+        if (!stored) return res.json({ ok: false, msg: 'no sync yet — call ?action=sync-kadwar first' });
+        return res.json({ ok: true, count: stored.length, employees: stored, lastSync: stored[0] && stored[0].syncedAt });
+      }
+
       /* ═══ TEST KADWAR SYNC — اختبار الاتصال بكوادر ═══ */
       case 'test-kadwar-sync': {
         var url = 'https://hma.engineer/api/basma-sync?action=employees';
