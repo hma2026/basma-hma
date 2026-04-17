@@ -346,6 +346,17 @@ export default function AdminApp() {
   useEffect(() => {
     (async () => {
       try {
+        // Auto-sync from kadwar if last sync was more than 1 hour ago
+        try {
+          var lastSync = localStorage.getItem("basma_last_sync");
+          var shouldSync = !lastSync || (new Date() - new Date(lastSync)) > 60 * 60 * 1000;
+          if (shouldSync) {
+            var sr = await fetch("/api/data?action=sync-kadwar");
+            var sd = await sr.json();
+            if (sd && sd.ok) localStorage.setItem("basma_last_sync", new Date().toISOString());
+          }
+        } catch(e) { /* silent — continue with existing data */ }
+
         var [brData, empData, evData, lvData, stData] = await Promise.all([
           api('branches'), api('employees'), api('events'), api('leaves'), api('settings')
         ]);
@@ -535,6 +546,13 @@ export default function AdminApp() {
 
       {/* ═══ EMPLOYEES ═══ */}
       {tab === "employees" && !selEmp && <>
+        {/* Kadwar source banner */}
+        <div style={{ background: B.blue + "12", border: "1px solid " + B.blue + "40", borderRadius: 10, padding: "10px 14px", marginBottom: 12, display: "flex", justifyContent: "space-between", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
+          <div style={{ fontSize: 11, color: t.tx, lineHeight: 1.5 }}>
+            <span style={{ fontWeight: 800, color: B.blue }}>🔗 المصدر: كوادر</span> — الموظفون يُدارون في <a href="https://hma.engineer" target="_blank" style={{ color: B.blue, fontWeight: 700 }}>hma.engineer</a>. لإضافة/حذف/تعديل، استخدم كوادر.
+          </div>
+          <KadwarSyncButton t={t} B={B} />
+        </div>
         <div style={{ display: "flex", gap: 10, marginBottom: 14 }}>
           <input value={search} onChange={e => setSearch(e.target.value)} placeholder="🔍 بحث..." style={{ flex: 1, padding: "10px 14px", borderRadius: 10, border: "1px solid " + t.sep, fontSize: 13, outline: "none", background: t.card }} />
           <select value={brFilter} onChange={e => setBrFilter(e.target.value)} style={{ padding: "10px 14px", borderRadius: 10, border: "1px solid " + t.sep, fontSize: 12, background: t.card, fontWeight: 600, cursor: "pointer" }}><option value="all">كل الفروع</option>{BRANCHES.map(b => <option key={b.id} value={b.name}>{b.name}</option>)}</select>
@@ -563,7 +581,7 @@ export default function AdminApp() {
             <div style={{ marginTop: 10, fontSize: 11, color: selEmp.gps ? t.ok : t.bad, fontWeight: 600 }}>{selEmp.gps ? "📍 في النطاق" : "📍 خارج النطاق"}</div>
           </div>
           <div><div style={{ background: t.card, borderRadius: 14, padding: "16px", border: "1px solid " + t.sep, marginBottom: 12 }}><div style={{ fontSize: 13, fontWeight: 700, marginBottom: 10 }}>بصمات اليوم</div><div style={{ display: "flex", gap: 10 }}>{["☀️ حضور", "☕ استراحة", "🔄 عودة", "🌙 انصراف"].map((l, i) => <div key={i} style={{ flex: 1, textAlign: "center", padding: "10px 6px", borderRadius: 10, background: ((selEmp.checks||[0,0,0,0])[i]) ? t.okLt : t.badLt }}><div style={{ fontSize: 18 }}>{((selEmp.checks||[0,0,0,0])[i]) ? "✅" : "❌"}</div><div style={{ fontSize: 9, color: t.tx2, marginTop: 3 }}>{l}</div></div>)}</div></div>
-            <div style={{ background: t.card, borderRadius: 14, padding: "16px", border: "1px solid " + t.sep }}><div style={{ fontSize: 13, fontWeight: 700, marginBottom: 10 }}>إجراءات</div><div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}><button style={actBtn}>📊 تقرير</button><button style={{ ...actBtn, background: t.warnLt, color: t.warn }}>⚠️ إنذار</button>{role === "manager" && <button style={{ ...actBtn, background: t.badLt, color: t.bad }}>🗑 حذف</button>}<button style={{ ...actBtn, background: t.okLt, color: t.ok }}>📤 تصدير لكوادر</button></div><div style={{ marginTop: 10, padding: "10px", borderRadius: 8, background: B.blueLt, fontSize: 11, fontWeight: 600, color: B.blue }}>النسبة المُصدّرة لكوادر: <strong>{((selEmp.pct)||0)}%</strong></div></div></div>
+            <div style={{ background: t.card, borderRadius: 14, padding: "16px", border: "1px solid " + t.sep }}><div style={{ fontSize: 13, fontWeight: 700, marginBottom: 10 }}>إجراءات</div><div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}><button style={actBtn}>📊 تقرير</button><button style={{ ...actBtn, background: t.warnLt, color: t.warn }}>⚠️ إنذار</button><button style={{ ...actBtn, background: t.okLt, color: t.ok }}>📤 تصدير لكوادر</button></div><div style={{ marginTop: 10, padding: "8px", borderRadius: 8, background: B.blue + "10", border: "1px dashed " + B.blue + "40", fontSize: 10, color: B.blue, textAlign: "center" }}>🔗 لتعديل الاسم/المسمى/الفرع/كلمة المرور — استخدم <a href="https://hma.engineer" target="_blank" style={{ color: B.blue, fontWeight: 800 }}>كوادر</a></div><div style={{ marginTop: 8, padding: "10px", borderRadius: 8, background: B.blueLt, fontSize: 11, fontWeight: 600, color: B.blue }}>النسبة المُصدّرة لكوادر: <strong>{((selEmp.pct)||0)}%</strong></div></div></div>
         </div>
       </>}
 
@@ -1102,6 +1120,52 @@ const sinp = { width: 70, padding: "5px 8px", borderRadius: 6, border: "1px soli
 /* ═══════════════════════════════════════════════════════
    LAIHA PANEL — المدير العام يدير لائحة العمل
    ═══════════════════════════════════════════════════════ */
+/* ═══ KADWAR SYNC BUTTON — زر مزامنة يدوية ═══ */
+function KadwarSyncButton({ t, B }) {
+  var [syncing, setSyncing] = useState(false);
+  var [lastSync, setLastSync] = useState(function(){ return localStorage.getItem("basma_last_sync") || ""; });
+  var [msg, setMsg] = useState("");
+
+  async function doSync() {
+    setSyncing(true);
+    setMsg("");
+    try {
+      var r = await fetch("/api/data?action=sync-kadwar");
+      var d = await r.json();
+      if (d.ok) {
+        var now = new Date().toISOString();
+        localStorage.setItem("basma_last_sync", now);
+        setLastSync(now);
+        setMsg("✓ " + d.count + " موظف (+" + d.added + " جديد، " + d.updated + " محدث)");
+        setTimeout(function(){ window.location.reload(); }, 1500);
+      } else {
+        setMsg("✗ " + (d.error || "فشل المزامنة"));
+      }
+    } catch(e) {
+      setMsg("✗ " + e.message);
+    }
+    setSyncing(false);
+  }
+
+  var lastSyncText = "";
+  if (lastSync) {
+    var d = new Date(lastSync);
+    var h = String(d.getHours()).padStart(2, "0");
+    var m = String(d.getMinutes()).padStart(2, "0");
+    lastSyncText = h + ":" + m;
+  }
+
+  return (
+    <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+      {lastSyncText && <span style={{ fontSize: 10, color: t.txM }}>آخر مزامنة: {lastSyncText}</span>}
+      {msg && <span style={{ fontSize: 10, color: msg.startsWith("✓") ? "#10b981" : B.red, fontWeight: 700 }}>{msg}</span>}
+      <button onClick={doSync} disabled={syncing} style={{ padding: "6px 14px", borderRadius: 8, background: syncing ? t.sep : B.blue, color: "#fff", fontSize: 11, fontWeight: 700, border: "none", cursor: syncing ? "default" : "pointer" }}>
+        {syncing ? "⏳ جارِ..." : "🔄 مزامنة الآن"}
+      </button>
+    </div>
+  );
+}
+
 function LaihaPanel({ t, B }) {
   var [settings, setSettings] = useState({});
   var [loading, setLoading] = useState(true);

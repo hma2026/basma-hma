@@ -10,6 +10,10 @@
     {
       "path": "/api/data?action=auto_violations",
       "schedule": "0 15 * * *"
+    },
+    {
+      "path": "/api/data?action=sync-kadwar",
+      "schedule": "0 * * * *"
     }
   ]
 }
