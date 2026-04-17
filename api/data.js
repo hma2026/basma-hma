@@ -614,10 +614,11 @@ export default async function handler(req, res) {
       case 'test-kadwar-sync': {
         var url = 'https://hma.engineer/api/basma-sync?action=employees';
         try {
-          var r = await fetch(url, { headers: { 'Accept': 'application/json' }, signal: AbortSignal.timeout(10000) });
+          var r = await fetch(url, { headers: { 'Accept': 'application/json' } });
           var status = r.status;
+          var bodyText = await r.text();
           var body = null;
-          try { body = await r.json(); } catch(e) { body = await r.text().catch(function(){ return null; }); }
+          try { body = JSON.parse(bodyText); } catch(e) { body = bodyText.slice(0, 500); }
           return res.json({ ok: status >= 200 && status < 300, status: status, url: url, body: body, ts: new Date().toISOString() });
         } catch(e) {
           return res.json({ ok: false, error: e.message, url: url, ts: new Date().toISOString() });
