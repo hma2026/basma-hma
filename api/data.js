@@ -615,7 +615,7 @@ export default async function handler(req, res) {
         return res.json({ ok: true, msg: 'pong', ts: new Date().toISOString(), nodeVer: process.version, fetchAvailable: typeof fetch === 'function' });
       }
 
-      /* ═══ SYNC KADWAR — جلب الموظفين من كوادر وحفظهم ═══ */
+      /* ═══ SYNC KADWAR — جلب الموظفين من كوادر ومزامنتهم ═══ */
       case 'sync-kadwar': {
         var sourceUrl = 'https://hma.engineer/api/basma-sync?action=employees';
         var summary = { ok: false, url: sourceUrl, ts: new Date().toISOString() };
@@ -627,46 +627,104 @@ export default async function handler(req, res) {
           var data = await r.json();
           if (!data || !Array.isArray(data.employees)) { summary.error = 'invalid response shape'; summary.raw = data; return res.json(summary); }
 
-          // 2. Map kadwar → basma schema
-          var mapped = data.employees.map(function(e) {
+          // 2. Branch name mapping (kadwar → basma)
+          var branchMap = {
+            'المركز الرئيسي — جدة': 'jed',
+            'المركز الرئيسي': 'jed',
+            'جدة': 'jed',
+            'الرياض': 'riy',
+            'اسطنبول': 'ist',
+            'إسطنبول': 'ist',
+            'غازي عنتاب': 'gaz',
+          };
+          function mapBranch(kadBranch) {
+            if (!kadBranch) return 'jed';
+            if (branchMap[kadBranch]) return branchMap[kadBranch];
+            // Partial match
+            var lower = kadBranch.toLowerCase();
+            if (lower.indexOf('جدة') >= 0) return 'jed';
+            if (lower.indexOf('رياض') >= 0) return 'riy';
+            if (lower.indexOf('اسطنبول') >= 0 || lower.indexOf('istanbul') >= 0) return 'ist';
+            if (lower.indexOf('غازي') >= 0 || lower.indexOf('عنتاب') >= 0) return 'gaz';
+            return 'jed'; // default
+          }
+
+          // 3. Load existing basma employees to preserve basma-specific fields
+          var existing = await dbGet('employees') || [];
+          var existingById = {};
+          existing.forEach(function(e) { existingById[e.id] = e; });
+
+          // 4. Merge: kadwar data + basma-specific preserved
+          var merged = data.employees.map(function(kad) {
+            var id = kad.id || kad.uid || kad.idNumber;
+            var prev = existingById[id] || {};
+            // Auto-generate login code from last 6 digits of idNumber, or fallback
+            var idDigits = (kad.idNumber || '').replace(/\D/g, '');
+            var defaultCode = idDigits.length >= 6 ? idDigits.slice(-6) : ('10' + String(Date.now()).slice(-4));
             return {
-              id: e.id || e.uid || e.idNumber,
-              idNumber: e.idNumber || e.uid || e.id,
-              uid: e.uid || e.id,
-              name: e.name || '',
-              role: (e.role || '').trim(),
-              department: e.department || '',
-              branch: e.branch || '',
-              managerId: e.managerId || '',
-              supervisorId: e.supervisorId || '',
-              email: e.email || '',
-              phone: e.phone || '',
-              status: e.status || 'active',
+              // Kadwar (authoritative)
+              id: id,
+              idNumber: kad.idNumber || id,
+              uid: kad.uid || id,
+              name: kad.name || prev.name || '',
+              role: (kad.role || prev.role || '').trim(),
+              department: kad.department || prev.department || '',
+              branch: mapBranch(kad.branch),
+              branchName: kad.branch || '',
+              managerId: kad.managerId || '',
+              supervisorId: kad.supervisorId || '',
+              email: kad.email || prev.email || '',
+              phone: kad.phone || prev.phone || '',
+              status: kad.status || 'active',
+              // Basma-specific (preserved)
+              code: prev.code || defaultCode,
+              points: prev.points || 0,
+              type: prev.type || 'office',
+              flexBase: prev.flexBase || false,
+              flexOT: prev.flexOT || false,
+              flexOTMax: prev.flexOTMax || 0,
+              remote: prev.remote || false,
+              managers: prev.managers || [],
+              observed: prev.observed || false,
+              onLeave: prev.onLeave || false,
+              isManager: prev.isManager || (kad.role && kad.role.indexOf('مدير') >= 0),
+              isAssistant: prev.isAssistant || false,
+              salary: prev.salary || 0,
+              joinDate: prev.joinDate || '',
+              dob: prev.dob || '',
+              sceNumber: prev.sceNumber || '',
+              sceExpiry: prev.sceExpiry || '',
+              sceStatus: prev.sceStatus || '',
+              // Sync metadata
               source: 'kadwar',
               syncedAt: new Date().toISOString(),
-              // Preserve any additional fields
-              ...(e.extra || {}),
             };
           });
 
-          // 3. Save to separate store (does NOT touch INIT_EMP/employees)
-          await dbSet('kadwar_employees', mapped);
+          // 5. Save to BOTH:
+          //    - kadwar_employees (audit log — raw from kadwar)
+          //    - employees (the actual working store)
+          await dbSet('kadwar_employees', merged);
+          await dbSet('employees', merged);
 
-          // 4. Build summary
+          // 6. Build summary
+          var added = merged.filter(function(e) { return !existingById[e.id]; }).length;
+          var updated = merged.length - added;
+          var removed = existing.filter(function(e) { return !merged.find(function(m) { return m.id === e.id; }); });
+
           summary.ok = true;
-          summary.count = mapped.length;
-          summary.byBranch = mapped.reduce(function(acc, e) {
-            var k = e.branch || 'بدون فرع';
+          summary.count = merged.length;
+          summary.added = added;
+          summary.updated = updated;
+          summary.removedCount = removed.length;
+          summary.removed = removed.map(function(e) { return { id: e.id, name: e.name }; });
+          summary.byBranch = merged.reduce(function(acc, e) {
+            var k = e.branch || 'unknown';
             acc[k] = (acc[k] || 0) + 1;
             return acc;
           }, {});
-          summary.byDepartment = mapped.reduce(function(acc, e) {
-            var k = e.department || 'بدون قسم';
-            acc[k] = (acc[k] || 0) + 1;
-            return acc;
-          }, {});
-          summary.sample = mapped.slice(0, 3).map(function(e) {
-            return { id: e.id, name: e.name, role: e.role, branch: e.branch };
+          summary.sample = merged.slice(0, 3).map(function(e) {
+            return { id: e.id, name: e.name, role: e.role, branch: e.branch, code: e.code };
           });
           return res.json(summary);
         } catch (e) {
