@@ -109,8 +109,8 @@ export default async function handler(req, res) {
 
       case 'login': {
         var body = req.body || {};
-        var loginId = (body.empId || body.email || '').toLowerCase().trim();
-        var password = body.code || body.password || '';
+        var loginId = (body.username || body.empId || body.email || '').toLowerCase().trim();
+        var password = body.password || body.code || '';
         if (!loginId || !password) return res.status(400).json({ error: 'بيانات ناقصة' });
 
         // 1. Check general manager (admin) — stored in basma
@@ -126,15 +126,35 @@ export default async function handler(req, res) {
           }});
         }
 
-        // 2. Regular employee — local verification with synced password from kadwar
+        // 2. Regular employee — username + SHA256 password verification
         var emps = await dbGet('employees') || [];
         var emp = emps.find(function(x) {
           if (!x) return false;
-          return (x.email || '').toLowerCase() === loginId;
+          if ((x.username || '').toLowerCase() === loginId) return true;
+          if ((x.email || '').toLowerCase() === loginId) return true;
+          if (String(x.idNumber || '') === loginId) return true;
+          return false;
         });
-        if (!emp) return res.status(404).json({ error: 'الموظف غير موجود — اطلب من الإدارة مزامنة مع كوادر' });
-        if (emp.password !== password) return res.status(401).json({ error: 'كلمة المرور غير صحيحة' });
-        return res.json({ ok: true, employee: emp });
+        if (!emp) return res.status(404).json({ error: 'المستخدم غير موجود — راجع المشرف لإنشاء حسابك في كوادر' });
+        if (emp.hasAccount === false) return res.status(403).json({ error: 'راجع المشرف لإنشاء حسابك في كوادر' });
+
+        // Verify SHA256(password + salt) === passwordHash
+        var storedHash = emp.passwordHash || '';
+        var salt = emp.passwordSalt || 'hr_salt_2024';
+        if (!storedHash) return res.status(403).json({ error: 'لم تتم مزامنة كلمة المرور بعد — راجع المشرف' });
+
+        // Compute SHA256 using Node crypto
+        var crypto = await import('crypto');
+        var computed = crypto.createHash('sha256').update(password + salt).digest('hex');
+        if (computed.toLowerCase() !== String(storedHash).toLowerCase()) {
+          return res.status(401).json({ error: 'كلمة المرور غير صحيحة' });
+        }
+        // Don't return password hash back to client
+        var safeEmp = Object.assign({}, emp);
+        delete safeEmp.passwordHash;
+        delete safeEmp.password;
+        delete safeEmp.passwordSalt;
+        return res.json({ ok: true, employee: safeEmp });
       }
 
       case 'employees': {

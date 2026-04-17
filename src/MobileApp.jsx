@@ -625,10 +625,10 @@ function MobileAppInner() {
     } catch { /**/ }
   }
 
-  async function handleLogin(empId, code) {
+  async function handleLogin(username, password) {
     setLoading(true);
     try {
-      const r = await api("login", { method: "POST", body: { empId, code } });
+      const r = await api("login", { method: "POST", body: { username: username, password: password } });
       if (r.ok) {
         setUser(r.employee);
         localStorage.setItem("basma_user", JSON.stringify(r.employee));
@@ -878,16 +878,16 @@ function ConsentScreen({ onAccept }) {
 
 /* ═══════════ LOGIN ═══════════ */
 function LoginScreen({ onLogin, loading }) {
-  const [email, setEmail] = useState(function(){ return localStorage.getItem("basma_last_email") || ""; });
+  const [username, setUsername] = useState(function(){ return localStorage.getItem("basma_last_username") || ""; });
   const [password, setPassword] = useState("");
   const [err, setErr] = useState("");
 
   async function submit() {
     setErr("");
-    if (!email || !password) { setErr("أدخل البريد الإلكتروني وكلمة المرور"); return; }
-    var cleanEmail = email.toLowerCase().trim();
-    localStorage.setItem("basma_last_email", cleanEmail);
-    const e = await onLogin(cleanEmail, password);
+    if (!username || !password) { setErr("أدخل اسم المستخدم وكلمة المرور"); return; }
+    var cleanUser = username.toLowerCase().trim();
+    localStorage.setItem("basma_last_username", cleanUser);
+    const e = await onLogin(cleanUser, password);
     if (e) setErr(e);
   }
 
@@ -899,9 +899,9 @@ function LoginScreen({ onLogin, loading }) {
       <div className="basma-fadein-d1" style={{ color: "#fff", fontSize: 26, fontWeight: 900, fontFamily: "'Cairo',sans-serif", marginBottom: 4 }}>بصمة HMA</div>
       <div className="basma-fadein-d1" style={{ color: "rgba(255,255,255,.6)", fontSize: 12, fontWeight: 500, marginBottom: 32 }}>نظام الحضور والانصراف الذكي</div>
       <div className="basma-fadein-d2" style={{ width: "100%", maxWidth: 340, background: "rgba(255,255,255,.1)", borderRadius: 24, padding: 24, border: "1px solid rgba(255,255,255,.15)" }}>
-        <input value={email} onChange={e => setEmail(e.target.value)} placeholder="البريد الإلكتروني" type="email" autoCapitalize="none" style={S.loginInput} />
+        <input value={username} onChange={e => setUsername(e.target.value)} placeholder="اسم المستخدم" autoCapitalize="none" autoCorrect="off" style={S.loginInput} />
         <input value={password} onChange={e => setPassword(e.target.value)} placeholder="كلمة المرور" type="password" style={{ ...S.loginInput, marginTop: 10 }} onKeyDown={e => e.key === "Enter" && submit()} />
-        {err && <div style={{ color: "#FF6B6B", fontSize: 12, fontWeight: 700, marginTop: 10, textAlign: "center" }}>{err}</div>}
+        {err && <div style={{ color: "#FF6B6B", fontSize: 12, fontWeight: 700, marginTop: 10, textAlign: "center", lineHeight: 1.6 }}>{err}</div>}
         <button onClick={submit} disabled={loading} style={{ width: "100%", marginTop: 16, padding: "14px 0", borderRadius: 16, background: loading ? "rgba(255,255,255,.2)" : "#fff", color: loading ? "rgba(255,255,255,.5)" : C.hdr1, fontSize: 16, fontWeight: 800, fontFamily: "'Cairo',sans-serif", border: "none", cursor: "pointer" }}>
           {loading ? "جارِ الدخول..." : "تسجيل دخول"}
         </button>

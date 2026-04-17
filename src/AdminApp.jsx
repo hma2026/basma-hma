@@ -148,26 +148,114 @@ function MapPicker({ lat, lng, radius, name, onSave, onClose, t }) {
 function Login({ onLogin }) {
   var dk = localStorage.getItem("basma_theme") === "dark";
   var t = dk ? DK : LT;
-  const [role, setRole] = useState("manager");
-  const [pin, setPin] = useState("");
+  const [email, setEmail] = useState(function(){ return localStorage.getItem("basma_admin_email") || ""; });
+  const [password, setPassword] = useState("");
   const [err, setErr] = useState("");
-  const ADMIN_PIN = "1437"; // Default PIN — should be changed from settings
-  const doLogin = () => {
-    if (pin === ADMIN_PIN) { setErr(""); onLogin(role); }
-    else { setErr("الرقم السري غير صحيح"); setPin(""); }
-  };
-  return (<div style={{ minHeight: "100vh", background: t.bg, display: "flex", alignItems: "center", justifyContent: "center", fontFamily: Fn, direction: "rtl" }}>
-    <div style={{ background: t.card, borderRadius: 24, padding: "48px 40px", width: 380, textAlign: "center", boxShadow: "0 8px 40px rgba(0,0,0,.08)" }}>
-      <Logo s={60} /><div style={{ fontSize: 24, fontWeight: 800, color: B.blue, marginTop: 12 }}>{APP}</div><div style={{ fontSize: 13, color: t.txM, marginTop: 4 }}>لوحة إدارة الموارد البشرية</div><Stripe />
-      <div style={{ display: "flex", borderRadius: 12, overflow: "hidden", border: "1px solid " + t.sep, margin: "24px 0 16px" }}>
-        {[{ id: "manager", l: "مدير" }, { id: "assistant", l: "مساعد" }].map(r => <button key={r.id} onClick={() => setRole(r.id)} style={{ flex: 1, padding: "12px", border: "none", fontSize: 13, fontWeight: 700, cursor: "pointer", background: role === r.id ? B.blue : "#F8F9FC", color: role === r.id ? "#fff" : t.txM }}>{r.l}</button>)}
+  const [busy, setBusy] = useState(false);
+  const [setupMode, setSetupMode] = useState(false);
+  const [setupChecked, setSetupChecked] = useState(false);
+  const [setupName, setSetupName] = useState("");
+  const [setupEmail, setSetupEmail] = useState("");
+  const [setupPass, setSetupPass] = useState("");
+  const [setupPass2, setSetupPass2] = useState("");
+
+  // Check if admin is configured
+  useEffect(function() {
+    fetch("/api/data?action=admin-config").then(r => r.json()).then(function(d) {
+      if (d && !d.exists) setSetupMode(true);
+      setSetupChecked(true);
+    }).catch(function(){ setSetupChecked(true); });
+  }, []);
+
+  async function doLogin() {
+    setErr("");
+    if (!email || !password) { setErr("أدخل البريد وكلمة المرور"); return; }
+    setBusy(true);
+    try {
+      var r = await fetch("/api/data?action=login", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email: email.toLowerCase().trim(), password: password }),
+      });
+      var d = await r.json();
+      if (d.ok && d.employee && (d.employee.isGeneralManager || d.employee.isAdmin)) {
+        localStorage.setItem("basma_admin_email", email.toLowerCase().trim());
+        onLogin("manager");
+      } else if (d.ok) {
+        setErr("هذا الحساب ليس مدير عام");
+      } else {
+        setErr(d.error || "خطأ في الدخول");
+      }
+    } catch(e) { setErr("خطأ في الاتصال"); }
+    setBusy(false);
+  }
+
+  async function doSetup() {
+    setErr("");
+    if (!setupEmail || !setupPass || !setupName) { setErr("جميع الحقول مطلوبة"); return; }
+    if (setupPass !== setupPass2) { setErr("كلمتا المرور غير متطابقتين"); return; }
+    if (setupPass.length < 6) { setErr("كلمة المرور 6 أحرف على الأقل"); return; }
+    setBusy(true);
+    try {
+      var r = await fetch("/api/data?action=admin-config", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email: setupEmail.toLowerCase().trim(), password: setupPass, name: setupName }),
+      });
+      var d = await r.json();
+      if (d.ok) {
+        alert("✓ تم إنشاء حساب المدير العام بنجاح");
+        setSetupMode(false);
+        setEmail(setupEmail.toLowerCase().trim());
+      } else {
+        setErr(d.error || "فشل إنشاء الحساب");
+      }
+    } catch(e) { setErr("خطأ في الاتصال"); }
+    setBusy(false);
+  }
+
+  var inputStyle = { width: "100%", padding: "12px 14px", borderRadius: 10, border: "1px solid " + t.sep, fontSize: 14, fontFamily: Fn, outline: "none", background: t.inp, color: t.tx, marginBottom: 10 };
+
+  if (!setupChecked) {
+    return <div style={{ minHeight: "100vh", background: t.bg, display: "flex", alignItems: "center", justifyContent: "center", fontFamily: Fn, color: t.txM, fontSize: 14 }}>جارِ التحميل...</div>;
+  }
+
+  return (
+    <div style={{ minHeight: "100vh", background: t.bg, display: "flex", alignItems: "center", justifyContent: "center", fontFamily: Fn, direction: "rtl" }}>
+      <div style={{ background: t.card, borderRadius: 24, padding: "36px 28px", width: 400, textAlign: "center", boxShadow: "0 8px 40px rgba(0,0,0,.08)" }}>
+        <Logo s={56} />
+        <div style={{ fontSize: 20, fontWeight: 800, color: B.blue, marginTop: 10 }}>{APP}</div>
+        <div style={{ fontSize: 12, color: t.txM, marginTop: 4 }}>لوحة إدارة الموارد البشرية</div>
+        <Stripe />
+
+        {setupMode ? (
+          <div style={{ marginTop: 20, textAlign: "right" }}>
+            <div style={{ background: B.blue + "12", border: "1px solid " + B.blue + "40", borderRadius: 10, padding: 12, marginBottom: 14, fontSize: 11, color: t.tx, lineHeight: 1.7 }}>
+              🔐 <strong>إعداد أول استخدام</strong><br/>
+              أنشئ حساب المدير العام — يُستخدم للدخول للوحة الإدارة. يمكن تعديله لاحقاً.
+            </div>
+            <input value={setupName} onChange={e => setSetupName(e.target.value)} placeholder="الاسم الكامل" style={inputStyle} />
+            <input value={setupEmail} onChange={e => setSetupEmail(e.target.value)} placeholder="البريد الإلكتروني" type="email" style={inputStyle} />
+            <input value={setupPass} onChange={e => setSetupPass(e.target.value)} placeholder="كلمة المرور (6+ أحرف)" type="password" style={inputStyle} />
+            <input value={setupPass2} onChange={e => setSetupPass2(e.target.value)} placeholder="تأكيد كلمة المرور" type="password" style={inputStyle} />
+            {err && <div style={{ color: "#FF3B30", fontSize: 12, fontWeight: 600, marginBottom: 8, textAlign: "center" }}>{err}</div>}
+            <button onClick={doSetup} disabled={busy} style={{ width: "100%", padding: "12px", borderRadius: 12, background: busy ? t.sep : B.blue, border: "none", color: "#fff", fontSize: 14, fontWeight: 700, cursor: busy ? "default" : "pointer" }}>
+              {busy ? "جارِ الحفظ..." : "إنشاء الحساب"}
+            </button>
+          </div>
+        ) : (
+          <div style={{ marginTop: 20, textAlign: "right" }}>
+            <input value={email} onChange={e => setEmail(e.target.value)} placeholder="البريد الإلكتروني" type="email" style={inputStyle} />
+            <input value={password} onChange={e => setPassword(e.target.value)} placeholder="كلمة المرور" type="password" style={inputStyle} onKeyDown={e => e.key === "Enter" && doLogin()} />
+            {err && <div style={{ color: "#FF3B30", fontSize: 12, fontWeight: 600, marginBottom: 8, textAlign: "center" }}>{err}</div>}
+            <button onClick={doLogin} disabled={busy} style={{ width: "100%", padding: "12px", borderRadius: 12, background: busy ? t.sep : B.blue, border: "none", color: "#fff", fontSize: 14, fontWeight: 700, cursor: busy ? "default" : "pointer" }}>
+              {busy ? "جارِ الدخول..." : "دخول المدير العام"}
+            </button>
+          </div>
+        )}
       </div>
-      <div style={{ fontSize: 12, color: t.txM, marginBottom: 8 }}>🔑 الرقم السري</div>
-      <input type="password" value={pin} onChange={e => { setPin(e.target.value); setErr(""); }} placeholder="****" maxLength={6} onKeyDown={e => e.key === "Enter" && doLogin()} style={{ width: "100%", padding: "14px", borderRadius: 12, border: "1px solid " + (err ? "#FF3B30" : t.sep), fontSize: 22, textAlign: "center", letterSpacing: 8, fontFamily: Fn, outline: "none", background: t.inp, color: t.tx, marginBottom: err ? 4 : 16 }} />
-      {err && <div style={{ color: "#FF3B30", fontSize: 12, fontWeight: 600, marginBottom: 12 }}>{err}</div>}
-      <button onClick={doLogin} style={{ width: "100%", padding: "14px", borderRadius: 14, background: B.blue, border: "none", color: "#fff", fontSize: 16, fontWeight: 700, cursor: "pointer" }}>دخول</button>
     </div>
-  </div>);
+  );
 }
 
 // ═══════ MAIN DASHBOARD ═══════
