@@ -693,9 +693,11 @@ export default async function handler(req, res) {
           var existing = await dbGet('employees') || [];
           var existingByEmail = {};
           var existingByKadwarId = {};
+          var existingByIdNumber = {};
           existing.forEach(function(e) {
             if (e.email) existingByEmail[e.email.toLowerCase()] = e;
             if (e.kadwarId) existingByKadwarId[e.kadwarId] = e;
+            if (e.idNumber) existingByIdNumber[e.idNumber] = e;
           });
 
           // 4. Build kadwar-id → email mapping (for hierarchy)
@@ -710,16 +712,24 @@ export default async function handler(req, res) {
           var merged = data.employees.map(function(kad) {
             var email = (kad.email || '').toLowerCase();
             var kadId = kad.id || kad.uid || kad.idNumber;
-            var prev = existingByEmail[email] || existingByKadwarId[kadId] || {};
+            var prev = existingByIdNumber[kad.idNumber] || existingByEmail[email] || existingByKadwarId[kadId] || {};
             // Resolve manager email from managerId
             var managerEmail = kad.managerId && kadIdToEmail[kad.managerId] ? kadIdToEmail[kad.managerId] : '';
             var supervisorEmail = kad.supervisorId && kadIdToEmail[kad.supervisorId] ? kadIdToEmail[kad.supervisorId] : '';
             return {
-              // Identity
-              id: email || kadId,                  // Primary ID = email (login)
-              email: email,                         // Login
-              kadwarId: kadId,                      // Reference to kadwar
+              // Identity (idNumber is the unified ID)
+              id: kad.idNumber || kadId,
               idNumber: kad.idNumber || '',
+              kadwarId: kadId,
+              email: email,
+              // Account (from kadwar — managed there)
+              username: (kad.username || '').toLowerCase(),
+              hasAccount: kad.hasAccount !== undefined ? kad.hasAccount : !!(kad.username && kad.passwordHash),
+              accountRole: kad.accountRole || 'employee',
+              passwordHash: kad.passwordHash || '',
+              passwordAlgo: kad.passwordAlgo || 'sha256',
+              passwordSalt: kad.passwordSalt || 'hr_salt_2024',
+              passwordUpdatedAt: kad.passwordUpdatedAt || null,
               // Profile (from kadwar)
               name: kad.name || prev.name || '',
               role: (kad.role || prev.role || '').trim(),
@@ -733,10 +743,8 @@ export default async function handler(req, res) {
               managerEmail: managerEmail,
               supervisorKadwarId: kad.supervisorId || '',
               supervisorEmail: supervisorEmail,
-              isManager: (kad.role || '').indexOf('مدير') >= 0 || prev.isManager || false,
-              // Auth (password from kadwar — managed there, used here locally)
-              password: kad.password || prev.password || '',
-              passwordUpdatedAt: kad.passwordUpdatedAt || prev.passwordUpdatedAt || null,
+              isManager: kad.accountRole === 'manager' || kad.accountRole === 'admin' || (kad.role || '').indexOf('مدير') >= 0 || prev.isManager || false,
+              isAdmin: kad.accountRole === 'admin' || prev.isAdmin || false,
               // Basma-specific (preserved)
               points: prev.points || 0,
               type: prev.type || 'office',
@@ -758,11 +766,11 @@ export default async function handler(req, res) {
             };
           });
 
-          // 6. Build subordinates list (reverse lookup)
+          // 6. Build subordinates list (reverse lookup via kadwarId)
           merged.forEach(function(emp) {
             emp.subordinates = merged.filter(function(e) {
-              return e.managerEmail === emp.email && e.email !== emp.email;
-            }).map(function(e) { return e.email; });
+              return e.managerKadwarId && e.managerKadwarId === emp.kadwarId && e.id !== emp.id;
+            }).map(function(e) { return e.id; });
             emp.subordinatesCount = emp.subordinates.length;
           });
 
@@ -771,23 +779,29 @@ export default async function handler(req, res) {
           await dbSet('employees', merged);
 
           // 8. Summary
-          var existingEmails = Object.keys(existingByEmail);
-          var newEmails = merged.filter(function(e) { return !existingByEmail[e.email]; });
-          var removed = existing.filter(function(e) { return !merged.find(function(m) { return m.email === (e.email || '').toLowerCase(); }); });
+          var newItems = merged.filter(function(e) { return !existingByIdNumber[e.idNumber] && !existingByKadwarId[e.kadwarId]; });
+          var removed = existing.filter(function(e) {
+            return !merged.find(function(m) {
+              return m.idNumber === e.idNumber || m.kadwarId === e.kadwarId || (m.email && m.email === (e.email || '').toLowerCase());
+            });
+          });
 
           summary.ok = true;
           summary.count = merged.length;
-          summary.added = newEmails.length;
-          summary.updated = merged.length - newEmails.length;
+          summary.added = newItems.length;
+          summary.updated = merged.length - newItems.length;
           summary.removedCount = removed.length;
           summary.removed = removed.map(function(e) { return { id: e.id, name: e.name, email: e.email }; });
           summary.byBranch = merged.reduce(function(acc, e) {
             acc[e.branch] = (acc[e.branch] || 0) + 1;
             return acc;
           }, {});
+          summary.withAccount = merged.filter(function(e) { return e.hasAccount; }).length;
+          summary.withoutAccount = merged.filter(function(e) { return !e.hasAccount; }).length;
           summary.managers = merged.filter(function(e) { return e.isManager; }).length;
+          summary.admins = merged.filter(function(e) { return e.isAdmin; }).length;
           summary.sample = merged.slice(0, 3).map(function(e) {
-            return { email: e.email, name: e.name, role: e.role, branch: e.branch, code: e.code, manager: e.managerEmail, subordinatesCount: e.subordinatesCount };
+            return { idNumber: e.idNumber, username: e.username, name: e.name, role: e.role, branch: e.branch, hasAccount: e.hasAccount, accountRole: e.accountRole, subordinatesCount: e.subordinatesCount };
           });
           return res.json(summary);
         } catch (e) {
