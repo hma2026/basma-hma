@@ -343,6 +343,15 @@ function MobileAppInner() {
   const [streak, setStreak] = useState(0);
   const [toast, setToast] = useState(null);
   const [online, setOnline] = useState(navigator.onLine);
+  const [consentGiven, setConsentGiven] = useState(function(){
+    var saved = localStorage.getItem("basma_consent_date");
+    if (!saved) return false;
+    // Reset at beginning of each month
+    var now = new Date();
+    var savedDate = new Date(saved);
+    if (now.getFullYear() !== savedDate.getFullYear() || now.getMonth() !== savedDate.getMonth()) return false;
+    return true;
+  });
   const [confirmModal, setConfirmModal] = useState(null);
   const [faceModal, setFaceModal] = useState(null);
   const [challengeOpen, setChallengeOpen] = useState(false);
@@ -738,6 +747,7 @@ function MobileAppInner() {
 
   if (!initDone) return <SplashScreen />;
   if (!user) return <LoginScreen onLogin={handleLogin} loading={loading} />;
+  if (!consentGiven) return <ConsentScreen onAccept={function(){ localStorage.setItem("basma_consent_date", new Date().toISOString()); setConsentGiven(true); }} />;
 
   return (
     <div style={S.phone}>
@@ -787,6 +797,81 @@ function SplashScreen() {
       <span style={{ fontSize: 52 }} className="basma-pulse">🕐</span>
       <div style={{ color: "#fff", fontSize: 22, fontWeight: 900, fontFamily: "'Cairo',sans-serif", marginTop: 16 }}>بصمة HMA</div>
       <div style={{ color: "rgba(255,255,255,.4)", fontSize: 11, marginTop: 8 }}>جارِ التحميل...</div>
+    </div>
+  );
+}
+
+/* ═══════════ CONSENT SCREEN — تنبيه عند تسجيل الدخول ═══════════ */
+function ConsentScreen({ onAccept }) {
+  return (
+    <div style={{ minHeight: "100vh", background: "linear-gradient(180deg," + COLORS.bg1 + "," + COLORS.bg2 + "," + COLORS.bg3 + ")", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", direction: "rtl", fontFamily: TYPOGRAPHY.fontTajawal, padding: SPACING.lg }}>
+
+      <div style={{ maxWidth: 420, width: "100%" }}>
+        {/* Icon */}
+        <div style={{ textAlign: "center", marginBottom: SPACING.md }}>
+          <div style={{ width: 56, height: 56, borderRadius: RADIUS.xl, background: COLORS.metallic, border: "1px solid " + COLORS.goldLight, margin: "0 auto", display: "flex", alignItems: "center", justifyContent: "center", boxShadow: SHADOWS.gold }}>
+            <Icons.alert size={28} color={COLORS.goldLight} />
+          </div>
+        </div>
+
+        {/* Card */}
+        <div style={{ background: COLORS.metallic, border: "1px solid " + COLORS.metallicBorder, borderRadius: RADIUS.xl, padding: SPACING.lg, boxShadow: SHADOWS.button, marginBottom: SPACING.lg }}>
+
+          {/* Title */}
+          <div style={{ ...TYPOGRAPHY.h3, color: COLORS.textPrimary, fontFamily: TYPOGRAPHY.fontCairo, textAlign: "center", marginBottom: SPACING.md }}>تنبيه عند تسجيل الدخول</div>
+
+          {/* Intro */}
+          <div style={{ ...TYPOGRAPHY.caption, color: COLORS.textPrimary, lineHeight: 1.9, marginBottom: SPACING.md }}>
+            باستخدامك للنظام، فإنك تقر وتوافق على ما يلي:
+          </div>
+
+          {/* Terms */}
+          <div style={{ display: "flex", flexDirection: "column", gap: SPACING.sm, marginBottom: SPACING.lg }}>
+            {[
+              "يُستخدم النظام لأغراض العمل وخلال أوقات الدوام الرسمي فقط.",
+              "يتم تحويل بيانات التحقق إلى بيانات رقمية مشفرة دون تخزينها بصورتها الأصلية.",
+              "لا يتم مشاركة البيانات خارج نطاق الأنظمة المعتمدة.",
+              "تلتزم بالمحافظة على بيانات ومعلومات المكتب، وعدم نشرها أو استخدامها لأي جهة أخرى إلا بموجب موافقة خطية.",
+            ].map(function(text, i) {
+              return (
+                <div key={i} style={{ display: "flex", gap: SPACING.sm, alignItems: "flex-start" }}>
+                  <div style={{ width: 6, height: 6, borderRadius: 3, background: COLORS.goldLight, marginTop: 7, flexShrink: 0 }} />
+                  <div style={{ ...TYPOGRAPHY.caption, color: COLORS.textPrimary, lineHeight: 1.9 }}>{text}</div>
+                </div>
+              );
+            })}
+          </div>
+
+          {/* Important notice */}
+          <div style={{ padding: SPACING.md, background: COLORS.goldDark + "25", border: "1px solid " + COLORS.goldLight + "50", borderRadius: RADIUS.md }}>
+            <div style={{ ...TYPOGRAPHY.caption, fontWeight: 800, color: COLORS.goldLight, marginBottom: SPACING.sm }}>تنبيه هام:</div>
+            <div style={{ display: "flex", flexDirection: "column", gap: SPACING.sm }}>
+              {[
+                "عند أول تسجيل دخول، يعتبر استمرارك في استخدام النظام موافقة ضمنية على هذه الشروط.",
+                "في حال عدم رغبتك باستخدام خاصية بصمة الوجه، يمكنك التقدم بطلب جهاز بديل عن طريق الإدارة المختصة.",
+                "إلى حين توفير البديل، يتم التنسيق مع إدارة الموارد البشرية لتسجيل الحضور والانصراف عبر الوسائل المعتمدة لديهم (مثل التوقيع أو أي وسيلة أخرى وفق توجيهاتهم).",
+              ].map(function(text, i) {
+                return (
+                  <div key={i} style={{ display: "flex", gap: SPACING.sm, alignItems: "flex-start" }}>
+                    <div style={{ width: 5, height: 5, borderRadius: 3, background: COLORS.textMuted, marginTop: 7, flexShrink: 0 }} />
+                    <div style={{ ...TYPOGRAPHY.tiny, color: COLORS.textMuted, lineHeight: 1.9 }}>{text}</div>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+
+          {/* Footer text */}
+          <div style={{ ...TYPOGRAPHY.tiny, color: COLORS.goldLight, textAlign: "center", marginTop: SPACING.md, lineHeight: 1.8 }}>
+            نحرص على حماية حقوقك وخصوصيتك، وضمان الالتزام التام بالأنظمة المعمول بها.
+          </div>
+        </div>
+
+        {/* Accept button */}
+        <button onClick={onAccept} style={{ width: "100%", height: 54, borderRadius: RADIUS.xl, background: COLORS.goldGradient, border: "1px solid " + COLORS.goldLight, color: COLORS.textOnGold, fontSize: 16, fontWeight: 900, cursor: "pointer", fontFamily: TYPOGRAPHY.fontCairo, boxShadow: SHADOWS.gold }}>
+          موافق
+        </button>
+      </div>
     </div>
   );
 }
