@@ -613,15 +613,31 @@ export default async function handler(req, res) {
       /* ═══ TEST KADWAR SYNC — اختبار الاتصال بكوادر ═══ */
       case 'test-kadwar-sync': {
         var url = 'https://hma.engineer/api/basma-sync?action=employees';
+        var result = { ok: false, url: url, ts: new Date().toISOString() };
         try {
-          var r = await fetch(url, { headers: { 'Accept': 'application/json' } });
-          var status = r.status;
-          var bodyText = await r.text();
-          var body = null;
-          try { body = JSON.parse(bodyText); } catch(e) { body = bodyText.slice(0, 500); }
-          return res.json({ ok: status >= 200 && status < 300, status: status, url: url, body: body, ts: new Date().toISOString() });
-        } catch(e) {
-          return res.json({ ok: false, error: e.message, url: url, ts: new Date().toISOString() });
+          if (typeof fetch !== 'function') {
+            result.error = 'fetch not available in runtime';
+            return res.json(result);
+          }
+          var r;
+          try {
+            r = await fetch(url, { method: 'GET' });
+          } catch (fetchErr) {
+            result.error = 'fetch failed: ' + (fetchErr && fetchErr.message ? fetchErr.message : String(fetchErr));
+            return res.json(result);
+          }
+          result.status = r.status || 0;
+          try {
+            var txt = await r.text();
+            result.bodyPreview = (txt || '').slice(0, 300);
+          } catch (textErr) {
+            result.bodyError = 'text() failed: ' + (textErr && textErr.message ? textErr.message : String(textErr));
+          }
+          result.ok = result.status >= 200 && result.status < 300;
+          return res.json(result);
+        } catch (e) {
+          result.error = 'outer: ' + (e && e.message ? e.message : String(e));
+          try { return res.json(result); } catch(e2) { return res.status(200).send(JSON.stringify(result)); }
         }
       }
 
