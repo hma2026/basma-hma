@@ -234,21 +234,27 @@ function Login({ onLogin }) {
               🔐 <strong>إعداد أول استخدام</strong><br/>
               أنشئ حساب المدير العام — يُستخدم للدخول للوحة الإدارة. يمكن تعديله لاحقاً.
             </div>
-            <input value={setupName} onChange={e => setSetupName(e.target.value)} placeholder="الاسم الكامل" style={inputStyle} />
-            <input value={setupEmail} onChange={e => setSetupEmail(e.target.value)} placeholder="البريد الإلكتروني" type="email" style={inputStyle} />
-            <input value={setupPass} onChange={e => setSetupPass(e.target.value)} placeholder="كلمة المرور (6+ أحرف)" type="password" style={inputStyle} />
-            <input value={setupPass2} onChange={e => setSetupPass2(e.target.value)} placeholder="تأكيد كلمة المرور" type="password" style={inputStyle} />
+            <label style={{ fontSize: 11, color: t.tx2, marginBottom: 4, display: "block", fontWeight: 600 }}>الاسم الكامل</label>
+            <input value={setupName} onChange={e => setSetupName(e.target.value)} placeholder="مثال: هاني محمد عسيري" style={{...inputStyle, "::placeholder": { color: "#aaa" }}} />
+            <label style={{ fontSize: 11, color: t.tx2, marginBottom: 4, display: "block", fontWeight: 600 }}>البريد الإلكتروني</label>
+            <input value={setupEmail} onChange={e => setSetupEmail(e.target.value)} placeholder="admin@hma.sa" type="email" style={inputStyle} />
+            <label style={{ fontSize: 11, color: t.tx2, marginBottom: 4, display: "block", fontWeight: 600 }}>كلمة المرور (6 أحرف على الأقل)</label>
+            <input value={setupPass} onChange={e => setSetupPass(e.target.value)} placeholder="••••••••" type="password" style={inputStyle} />
+            <label style={{ fontSize: 11, color: t.tx2, marginBottom: 4, display: "block", fontWeight: 600 }}>تأكيد كلمة المرور</label>
+            <input value={setupPass2} onChange={e => setSetupPass2(e.target.value)} placeholder="••••••••" type="password" style={inputStyle} />
             {err && <div style={{ color: "#FF3B30", fontSize: 12, fontWeight: 600, marginBottom: 8, textAlign: "center" }}>{err}</div>}
-            <button onClick={doSetup} disabled={busy} style={{ width: "100%", padding: "12px", borderRadius: 12, background: busy ? t.sep : B.blue, border: "none", color: "#fff", fontSize: 14, fontWeight: 700, cursor: busy ? "default" : "pointer" }}>
+            <button onClick={doSetup} disabled={busy} style={{ width: "100%", padding: "12px", borderRadius: 12, background: busy ? t.sep : B.blue, border: "none", color: "#fff", fontSize: 14, fontWeight: 700, cursor: busy ? "default" : "pointer", marginTop: 8 }}>
               {busy ? "جارِ الحفظ..." : "إنشاء الحساب"}
             </button>
           </div>
         ) : (
           <div style={{ marginTop: 20, textAlign: "right" }}>
-            <input value={email} onChange={e => setEmail(e.target.value)} placeholder="البريد الإلكتروني" type="email" style={inputStyle} />
-            <input value={password} onChange={e => setPassword(e.target.value)} placeholder="كلمة المرور" type="password" style={inputStyle} onKeyDown={e => e.key === "Enter" && doLogin()} />
+            <label style={{ fontSize: 11, color: t.tx2, marginBottom: 4, display: "block", fontWeight: 600 }}>البريد الإلكتروني</label>
+            <input value={email} onChange={e => setEmail(e.target.value)} placeholder="admin@hma.sa" type="email" style={inputStyle} />
+            <label style={{ fontSize: 11, color: t.tx2, marginBottom: 4, display: "block", fontWeight: 600 }}>كلمة المرور</label>
+            <input value={password} onChange={e => setPassword(e.target.value)} placeholder="••••••••" type="password" style={inputStyle} onKeyDown={e => e.key === "Enter" && doLogin()} />
             {err && <div style={{ color: "#FF3B30", fontSize: 12, fontWeight: 600, marginBottom: 8, textAlign: "center" }}>{err}</div>}
-            <button onClick={doLogin} disabled={busy} style={{ width: "100%", padding: "12px", borderRadius: 12, background: busy ? t.sep : B.blue, border: "none", color: "#fff", fontSize: 14, fontWeight: 700, cursor: busy ? "default" : "pointer" }}>
+            <button onClick={doLogin} disabled={busy} style={{ width: "100%", padding: "12px", borderRadius: 12, background: busy ? t.sep : B.blue, border: "none", color: "#fff", fontSize: 14, fontWeight: 700, cursor: busy ? "default" : "pointer", marginTop: 8 }}>
               {busy ? "جارِ الدخول..." : "دخول المدير العام"}
             </button>
           </div>
@@ -576,12 +582,71 @@ export default function AdminApp() {
         <div style={{ display: "grid", gridTemplateColumns: "1fr 2fr", gap: 16 }}>
           <div style={{ background: t.card, borderRadius: 14, padding: "20px", border: "1px solid " + t.sep, textAlign: "center" }}>
             <div style={{ width: 64, height: 64, borderRadius: "50%", background: `${((selEmp.status||"—") === "حاضر" ? t.ok : (selEmp.status||"—") === "متأخر" ? t.warn : t.bad)}12`, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 32, margin: "0 auto 10px", border: `3px solid ${(selEmp.status||"—") === "حاضر" ? t.ok : (selEmp.status||"—") === "متأخر" ? t.warn : t.bad}` }}>👤</div>
-            <div style={{ fontSize: 16, fontWeight: 800 }}>{selEmp.name}</div><div style={{ fontSize: 11, color: t.txM }}>{selEmp.role} — {selEmp.id}</div>
-            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 6, marginTop: 14 }}>{[{ l: "التزام", v: `${((selEmp.pct)||0)}%`, c: ((selEmp.pct)||0) >= 85 ? t.ok : t.warn }, { l: "السلسلة", v: `🔥${(selEmp.streak||0)}`, c: "#FF6B35" }, { l: "النقاط", v: (selEmp.pts||0), c: B.gold }].map((x, i) => <div key={i} style={{ background: t.bg, borderRadius: 8, padding: "8px 4px" }}><div style={{ fontSize: 14, fontWeight: 800, color: x.c }}>{x.v}</div><div style={{ fontSize: 8, color: t.txM, marginTop: 2 }}>{x.l}</div></div>)}</div>
-            <div style={{ marginTop: 10, fontSize: 11, color: selEmp.gps ? t.ok : t.bad, fontWeight: 600 }}>{selEmp.gps ? "📍 في النطاق" : "📍 خارج النطاق"}</div>
+            <div style={{ fontSize: 16, fontWeight: 800 }}>{selEmp.name}</div>
+            <div style={{ fontSize: 11, color: t.txM }}>{selEmp.role}</div>
+            <div style={{ fontSize: 9, color: t.txM, marginTop: 2 }}>🆔 {selEmp.idNumber || selEmp.id}</div>
+            {/* Account status from kadwar */}
+            <div style={{ marginTop: 10, display: "flex", justifyContent: "center", gap: 4, flexWrap: "wrap" }}>
+              {selEmp.isAdmin && <span style={{ padding: "2px 8px", fontSize: 9, fontWeight: 700, background: B.red + "20", color: B.red, borderRadius: 5 }}>مدير عام</span>}
+              {selEmp.isManager && !selEmp.isAdmin && <span style={{ padding: "2px 8px", fontSize: 9, fontWeight: 700, background: B.blue + "20", color: B.blue, borderRadius: 5 }}>مدير</span>}
+              {selEmp.hasAccount && <span style={{ padding: "2px 8px", fontSize: 9, fontWeight: 700, background: "#10b98120", color: "#10b981", borderRadius: 5 }}>✓ حساب نشط</span>}
+              {!selEmp.hasAccount && <span style={{ padding: "2px 8px", fontSize: 9, fontWeight: 700, background: t.warnLt, color: t.warn, borderRadius: 5 }}>⚠ بدون حساب</span>}
+            </div>
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 6, marginTop: 14 }}>{[{ l: "التزام", v: `${((selEmp.pct)||0)}%`, c: ((selEmp.pct)||0) >= 85 ? t.ok : t.warn }, { l: "السلسلة", v: `🔥${(selEmp.streak||0)}`, c: "#FF6B35" }, { l: "النقاط", v: (selEmp.points||0), c: B.gold }].map((x, i) => <div key={i} style={{ background: t.bg, borderRadius: 8, padding: "8px 4px" }}><div style={{ fontSize: 14, fontWeight: 800, color: x.c }}>{x.v}</div><div style={{ fontSize: 8, color: t.txM, marginTop: 2 }}>{x.l}</div></div>)}</div>
           </div>
-          <div><div style={{ background: t.card, borderRadius: 14, padding: "16px", border: "1px solid " + t.sep, marginBottom: 12 }}><div style={{ fontSize: 13, fontWeight: 700, marginBottom: 10 }}>بصمات اليوم</div><div style={{ display: "flex", gap: 10 }}>{["☀️ حضور", "☕ استراحة", "🔄 عودة", "🌙 انصراف"].map((l, i) => <div key={i} style={{ flex: 1, textAlign: "center", padding: "10px 6px", borderRadius: 10, background: ((selEmp.checks||[0,0,0,0])[i]) ? t.okLt : t.badLt }}><div style={{ fontSize: 18 }}>{((selEmp.checks||[0,0,0,0])[i]) ? "✅" : "❌"}</div><div style={{ fontSize: 9, color: t.tx2, marginTop: 3 }}>{l}</div></div>)}</div></div>
-            <div style={{ background: t.card, borderRadius: 14, padding: "16px", border: "1px solid " + t.sep }}><div style={{ fontSize: 13, fontWeight: 700, marginBottom: 10 }}>إجراءات</div><div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}><button style={actBtn}>📊 تقرير</button><button style={{ ...actBtn, background: t.warnLt, color: t.warn }}>⚠️ إنذار</button><button style={{ ...actBtn, background: t.okLt, color: t.ok }}>📤 تصدير لكوادر</button></div><div style={{ marginTop: 10, padding: "8px", borderRadius: 8, background: B.blue + "10", border: "1px dashed " + B.blue + "40", fontSize: 10, color: B.blue, textAlign: "center" }}>🔗 لتعديل الاسم/المسمى/الفرع/كلمة المرور — استخدم <a href="https://hma.engineer" target="_blank" style={{ color: B.blue, fontWeight: 800 }}>كوادر</a></div><div style={{ marginTop: 8, padding: "10px", borderRadius: 8, background: B.blueLt, fontSize: 11, fontWeight: 600, color: B.blue }}>النسبة المُصدّرة لكوادر: <strong>{((selEmp.pct)||0)}%</strong></div></div></div>
+          <div>
+            {/* Contact info */}
+            <div style={{ background: t.card, borderRadius: 14, padding: "16px", border: "1px solid " + t.sep, marginBottom: 12 }}>
+              <div style={{ fontSize: 13, fontWeight: 700, marginBottom: 10 }}>📇 بيانات التواصل</div>
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8, fontSize: 11 }}>
+                <div><span style={{ color: t.txM }}>الإيميل:</span> <span style={{ fontWeight: 600 }}>{selEmp.email || "—"}</span></div>
+                <div><span style={{ color: t.txM }}>الجوال:</span> <span style={{ fontWeight: 600 }}>{selEmp.phone || "—"}</span></div>
+                <div><span style={{ color: t.txM }}>القسم:</span> <span style={{ fontWeight: 600 }}>{selEmp.department || "—"}</span></div>
+                <div><span style={{ color: t.txM }}>الفرع:</span> <span style={{ fontWeight: 600 }}>{selEmp.branchName || selEmp.branch || "—"}</span></div>
+              </div>
+            </div>
+            {/* Hierarchy */}
+            {(selEmp.managerEmail || selEmp.supervisorEmail || (selEmp.subordinatesCount > 0)) && (
+              <div style={{ background: t.card, borderRadius: 14, padding: "16px", border: "1px solid " + t.sep, marginBottom: 12 }}>
+                <div style={{ fontSize: 13, fontWeight: 700, marginBottom: 10 }}>🏢 الهيكل التنظيمي</div>
+                {selEmp.managerEmail && (() => {
+                  var mgr = safeEmps.find(function(e) { return e.email === selEmp.managerEmail; });
+                  return <div style={{ fontSize: 11, padding: "6px 0", borderBottom: "1px solid " + t.sep }}><span style={{ color: t.txM }}>المدير المباشر:</span> <span style={{ fontWeight: 700, color: B.blue }}>{mgr ? mgr.name : selEmp.managerEmail}</span></div>;
+                })()}
+                {selEmp.supervisorEmail && (() => {
+                  var sup = safeEmps.find(function(e) { return e.email === selEmp.supervisorEmail; });
+                  return <div style={{ fontSize: 11, padding: "6px 0", borderBottom: "1px solid " + t.sep }}><span style={{ color: t.txM }}>المشرف:</span> <span style={{ fontWeight: 700, color: B.blue }}>{sup ? sup.name : selEmp.supervisorEmail}</span></div>;
+                })()}
+                {selEmp.subordinatesCount > 0 && (
+                  <div style={{ fontSize: 11, padding: "6px 0" }}>
+                    <span style={{ color: t.txM }}>تحت إشرافه ({selEmp.subordinatesCount}):</span>
+                    <div style={{ marginTop: 4 }}>{(selEmp.subordinates || []).map(function(sid) {
+                      var sub = safeEmps.find(function(e) { return e.id === sid; });
+                      return <span key={sid} style={{ display: "inline-block", padding: "2px 8px", margin: "2px 3px 0 0", background: t.bg, borderRadius: 5, fontSize: 10, fontWeight: 600 }}>{sub ? sub.name : sid}</span>;
+                    })}</div>
+                  </div>
+                )}
+              </div>
+            )}
+            {/* Today checks */}
+            <div style={{ background: t.card, borderRadius: 14, padding: "16px", border: "1px solid " + t.sep, marginBottom: 12 }}>
+              <div style={{ fontSize: 13, fontWeight: 700, marginBottom: 10 }}>بصمات اليوم</div>
+              <div style={{ display: "flex", gap: 10 }}>{["☀️ حضور", "☕ استراحة", "🔄 عودة", "🌙 انصراف"].map((l, i) => <div key={i} style={{ flex: 1, textAlign: "center", padding: "10px 6px", borderRadius: 10, background: ((selEmp.checks||[0,0,0,0])[i]) ? t.okLt : t.badLt }}><div style={{ fontSize: 18 }}>{((selEmp.checks||[0,0,0,0])[i]) ? "✅" : "❌"}</div><div style={{ fontSize: 9, color: t.tx2, marginTop: 3 }}>{l}</div></div>)}</div>
+            </div>
+            {/* Actions */}
+            <div style={{ background: t.card, borderRadius: 14, padding: "16px", border: "1px solid " + t.sep }}>
+              <div style={{ fontSize: 13, fontWeight: 700, marginBottom: 10 }}>إجراءات</div>
+              <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+                <button style={actBtn}>📊 تقرير</button>
+                <button style={{ ...actBtn, background: t.warnLt, color: t.warn }}>⚠️ إنذار</button>
+                <button style={{ ...actBtn, background: t.okLt, color: t.ok }}>📤 تصدير لكوادر</button>
+              </div>
+              <div style={{ marginTop: 10, padding: "8px", borderRadius: 8, background: B.blue + "10", border: "1px dashed " + B.blue + "40", fontSize: 10, color: B.blue, textAlign: "center" }}>
+                🔗 لتعديل الاسم/المسمى/الفرع/كلمة المرور — استخدم <a href="https://hma.engineer" target="_blank" style={{ color: B.blue, fontWeight: 800 }}>كوادر</a>
+              </div>
+              <div style={{ marginTop: 8, padding: "10px", borderRadius: 8, background: B.blueLt, fontSize: 11, fontWeight: 600, color: B.blue }}>النسبة المُصدّرة لكوادر: <strong>{((selEmp.pct)||0)}%</strong></div>
+            </div>
+          </div>
         </div>
       </>}
 
