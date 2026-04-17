@@ -610,6 +610,20 @@ export default async function handler(req, res) {
         break;
       }
 
+      /* ═══ TEST KADWAR SYNC — اختبار الاتصال بكوادر ═══ */
+      case 'test-kadwar-sync': {
+        var url = 'https://hma.engineer/api/basma-sync?action=employees';
+        try {
+          var r = await fetch(url, { headers: { 'Accept': 'application/json' }, signal: AbortSignal.timeout(10000) });
+          var status = r.status;
+          var body = null;
+          try { body = await r.json(); } catch(e) { body = await r.text().catch(function(){ return null; }); }
+          return res.json({ ok: status >= 200 && status < 300, status: status, url: url, body: body, ts: new Date().toISOString() });
+        } catch(e) {
+          return res.json({ ok: false, error: e.message, url: url, ts: new Date().toISOString() });
+        }
+      }
+
       case 'kadwar-sync': {
         // ═══ API for kadwar (hma.engineer) to read basma data ═══
         // Called from: hma.engineer → GET b.hma.engineer/api/data?action=kadwar-sync
