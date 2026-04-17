@@ -198,18 +198,12 @@ export default function AdminApp() {
   const [events, setEvents] = useState(EVENTS);
   const eventsLoaded = useRef(false);
 
-  // Load events from DB
-  useEffect(function() {
-    fetch("/api/data?action=events").then(r => r.json()).then(function(data) {
-      if (data && Array.isArray(data) && data.length > 0) setEvents(data);
-      eventsLoaded.current = true;
-    }).catch(function(){ eventsLoaded.current = true; });
-  }, []);
-
-  // Auto-save events to DB
+  // Auto-save events to DB (only after initial load)
   useEffect(function() {
     if (!eventsLoaded.current) return;
-    fetch("/api/data?action=events", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(events) }).catch(function(){});
+    try {
+      fetch("/api/data?action=events", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(events) }).catch(function(){});
+    } catch(e) {}
   }, [events]);
   const [branches, setBranches] = useState(BRANCHES);
   const [emps, setEmps] = useState(EMPS);
@@ -264,43 +258,42 @@ export default function AdminApp() {
   useEffect(() => {
     (async () => {
       try {
-        var today = new Date().toISOString().split('T')[0];
-        var [brData, empData, evData, lvData, stData, todayAtt, allAtt] = await Promise.all([
-          api('branches'), api('employees'), api('events'), api('leaves'), api('settings'),
-          api('attendance', 'GET', null, '&date=' + today),
-          api('attendance'),
+        var [brData, empData, evData, lvData, stData] = await Promise.all([
+          api('branches'), api('employees'), api('events'), api('leaves'), api('settings')
         ]);
         if (Array.isArray(brData) && brData.length > 0) setBranches(brData);
-        // Enrich employees with live status from today's attendance
         if (Array.isArray(empData) && empData.length > 0) {
-          var attArr = Array.isArray(todayAtt) ? todayAtt : [];
-          var allAttArr = Array.isArray(allAtt) ? allAtt : [];
-          var enriched = empData.map(function(emp) {
-            var checkin = attArr.find(function(a){ return a.empId === emp.id && a.type === 'checkin'; });
-            var status = 'غائب';
-            if (checkin) {
-              status = 'حاضر';
-              var br = (Array.isArray(brData) ? brData : BRANCHES).find(function(b){ return b.id === emp.branch || b.name === emp.branch; });
-              if (br && br.start) {
-                var parts = br.start.split(':');
-                var startMin = parseInt(parts[0]) * 60 + parseInt(parts[1]);
-                var cTime = new Date(checkin.ts);
-                var cMin = cTime.getHours() * 60 + cTime.getMinutes();
-                if (cMin > startMin + 5) status = 'متأخر';
+          // Try to enrich with today's attendance
+          try {
+            var today = new Date().toISOString().split('T')[0];
+            var todayAtt = await api('attendance', 'GET', null, '&date=' + today);
+            var attArr = Array.isArray(todayAtt) ? todayAtt : [];
+            var enriched = empData.map(function(emp) {
+              var checkin = attArr.find(function(a){ return a.empId === emp.id && a.type === 'checkin'; });
+              var status = checkin ? 'حاضر' : 'غائب';
+              if (checkin) {
+                var br = (Array.isArray(brData) ? brData : BRANCHES).find(function(b){ return b.id === emp.branch || b.name === emp.branch; });
+                if (br && br.start) {
+                  try {
+                    var parts = br.start.split(':');
+                    var startMin = parseInt(parts[0]) * 60 + parseInt(parts[1]);
+                    var cMin = new Date(checkin.ts).getHours() * 60 + new Date(checkin.ts).getMinutes();
+                    if (cMin > startMin + 5) status = 'متأخر';
+                  } catch(e2) {}
+                }
               }
-            }
-            if (emp.onLeave || emp.terminated) status = emp.terminated ? 'منتهي' : 'إجازة';
-            // Calculate 30-day compliance
-            var d30 = new Date(); d30.setDate(d30.getDate() - 30);
-            var d30Str = d30.toISOString().split('T')[0];
-            var last30 = allAttArr.filter(function(a){ return a.empId === emp.id && a.type === 'checkin' && a.date >= d30Str; });
-            var workDays = 26; // ~30 days minus Fridays
-            var pct = Math.min(100, Math.round((last30.length / workDays) * 100));
-            return Object.assign({}, emp, { status: status, pct: pct, points: emp.points || 0 });
-          });
-          setEmps(enriched);
+              if (emp.onLeave) status = 'إجازة';
+              if (emp.terminated) status = 'منتهي';
+              return Object.assign({}, emp, { status: status, pct: emp.pct || 0, points: emp.points || 0 });
+            });
+            setEmps(enriched);
+          } catch(e) {
+            // Fallback: use employees without enrichment
+            setEmps(empData);
+          }
         }
         if (Array.isArray(evData) && evData.length > 0) setEvents(evData);
+        eventsLoaded.current = true;
         if (Array.isArray(lvData)) setLeaves(lvData);
         if (stData && typeof stData === 'object' && !stData.error) {
           if (stData.emailLists) setEmailLists(stData.emailLists);
