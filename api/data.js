@@ -691,8 +691,6 @@ export default async function handler(req, res) {
             var email = (kad.email || '').toLowerCase();
             var kadId = kad.id || kad.uid || kad.idNumber;
             var prev = existingByEmail[email] || existingByKadwarId[kadId] || {};
-            var idDigits = (kad.idNumber || '').replace(/\D/g, '');
-            var defaultCode = idDigits.length >= 6 ? idDigits.slice(-6) : '000000';
             // Resolve manager email from managerId
             var managerEmail = kad.managerId && kadIdToEmail[kad.managerId] ? kadIdToEmail[kad.managerId] : '';
             var supervisorEmail = kad.supervisorId && kadIdToEmail[kad.supervisorId] ? kadIdToEmail[kad.supervisorId] : '';

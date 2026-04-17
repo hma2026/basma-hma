@@ -878,15 +878,16 @@ function ConsentScreen({ onAccept }) {
 
 /* ═══════════ LOGIN ═══════════ */
 function LoginScreen({ onLogin, loading }) {
-  const [empId, setEmpId] = useState(function(){ return localStorage.getItem("basma_last_empid") || ""; });
-  const [code, setCode] = useState("");
+  const [email, setEmail] = useState(function(){ return localStorage.getItem("basma_last_email") || ""; });
+  const [password, setPassword] = useState("");
   const [err, setErr] = useState("");
 
   async function submit() {
     setErr("");
-    if (!empId || !code) { setErr("أدخل رقم الموظف والرمز"); return; }
-    localStorage.setItem("basma_last_empid", empId.toUpperCase());
-    const e = await onLogin(empId.toUpperCase(), code);
+    if (!email || !password) { setErr("أدخل البريد الإلكتروني وكلمة المرور"); return; }
+    var cleanEmail = email.toLowerCase().trim();
+    localStorage.setItem("basma_last_email", cleanEmail);
+    const e = await onLogin(cleanEmail, password);
     if (e) setErr(e);
   }
 
@@ -898,12 +899,15 @@ function LoginScreen({ onLogin, loading }) {
       <div className="basma-fadein-d1" style={{ color: "#fff", fontSize: 26, fontWeight: 900, fontFamily: "'Cairo',sans-serif", marginBottom: 4 }}>بصمة HMA</div>
       <div className="basma-fadein-d1" style={{ color: "rgba(255,255,255,.6)", fontSize: 12, fontWeight: 500, marginBottom: 32 }}>نظام الحضور والانصراف الذكي</div>
       <div className="basma-fadein-d2" style={{ width: "100%", maxWidth: 340, background: "rgba(255,255,255,.1)", borderRadius: 24, padding: 24, border: "1px solid rgba(255,255,255,.15)" }}>
-        <input value={empId} onChange={e => setEmpId(e.target.value)} placeholder="رقم الموظف (مثال: E001)" style={S.loginInput} />
-        <input value={code} onChange={e => setCode(e.target.value)} placeholder="رمز الدخول" type="password" style={{ ...S.loginInput, marginTop: 10 }} onKeyDown={e => e.key === "Enter" && submit()} />
+        <input value={email} onChange={e => setEmail(e.target.value)} placeholder="البريد الإلكتروني" type="email" autoCapitalize="none" style={S.loginInput} />
+        <input value={password} onChange={e => setPassword(e.target.value)} placeholder="كلمة المرور" type="password" style={{ ...S.loginInput, marginTop: 10 }} onKeyDown={e => e.key === "Enter" && submit()} />
         {err && <div style={{ color: "#FF6B6B", fontSize: 12, fontWeight: 700, marginTop: 10, textAlign: "center" }}>{err}</div>}
         <button onClick={submit} disabled={loading} style={{ width: "100%", marginTop: 16, padding: "14px 0", borderRadius: 16, background: loading ? "rgba(255,255,255,.2)" : "#fff", color: loading ? "rgba(255,255,255,.5)" : C.hdr1, fontSize: 16, fontWeight: 800, fontFamily: "'Cairo',sans-serif", border: "none", cursor: "pointer" }}>
           {loading ? "جارِ الدخول..." : "تسجيل دخول"}
         </button>
+        <div style={{ color: "rgba(255,255,255,.5)", fontSize: 10, marginTop: 12, textAlign: "center", lineHeight: 1.6 }}>
+          استخدم نفس بيانات الدخول الخاصة بنظام كوادر
+        </div>
       </div>
       <div className="basma-fadein-d3" style={{ color: "rgba(255,255,255,.3)", fontSize: 10, marginTop: 24 }}>{"v"+VER+" · b.hma.engineer"}</div>
     </div>
