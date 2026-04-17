@@ -12,33 +12,17 @@ const Fn = "'IBM Plex Sans Arabic',-apple-system,'Segoe UI',sans-serif";
 
 // ═══════ DATA ═══════
 const BRANCHES = [
-  { id: "jed", name: "جدة", count: 12, present: 10, pct: 88, radius: 150, lat: 21.5433, lng: 39.1728, start: "08:30", end: "17:00", breakStart: "12:30", breakEnd: "13:00", offDay: "الجمعة", tz: "Asia/Riyadh" },
-  { id: "riy", name: "الرياض", count: 8, present: 7, pct: 85, radius: 150, lat: 24.7136, lng: 46.6753, start: "08:30", end: "17:00", breakStart: "12:30", breakEnd: "13:00", offDay: "الجمعة", tz: "Asia/Riyadh" },
-  { id: "ist", name: "اسطنبول", count: 5, present: 4, pct: 82, radius: 200, lat: 41.0082, lng: 28.9784, start: "08:30", end: "17:00", breakStart: "12:30", breakEnd: "13:00", offDay: "الجمعة", tz: "Europe/Istanbul" },
-  { id: "gaz", name: "غازي عنتاب", count: 3, present: 3, pct: 95, radius: 120, lat: 37.0662, lng: 37.3833, start: "08:30", end: "17:00", breakStart: "12:30", breakEnd: "13:00", offDay: "الجمعة", tz: "Europe/Istanbul" },
+  { id: "jed", name: "جدة", count: 0, present: 0, pct: 0, radius: 150, lat: 21.5433, lng: 39.1728, start: "08:30", end: "17:00", breakStart: "12:30", breakEnd: "13:00", offDay: "الجمعة", tz: "Asia/Riyadh" },
+  { id: "riy", name: "الرياض", count: 0, present: 0, pct: 0, radius: 150, lat: 24.7136, lng: 46.6753, start: "08:30", end: "17:00", breakStart: "12:30", breakEnd: "13:00", offDay: "الجمعة", tz: "Asia/Riyadh" },
+  { id: "ist", name: "اسطنبول", count: 0, present: 0, pct: 0, radius: 200, lat: 41.0082, lng: 28.9784, start: "08:30", end: "17:00", breakStart: "12:30", breakEnd: "13:00", offDay: "الجمعة", tz: "Europe/Istanbul" },
+  { id: "gaz", name: "غازي عنتاب", count: 0, present: 0, pct: 0, radius: 120, lat: 37.0662, lng: 37.3833, start: "08:30", end: "17:00", breakStart: "12:30", breakEnd: "13:00", offDay: "الجمعة", tz: "Europe/Istanbul" },
 ];
-const EMPS = [
-  { id: "E001", name: "أحمد محمد عسيري", role: "مهندس معماري", branch: "جدة", pct: 92, streak: 15, pts: 980, level: "🥇", status: "حاضر", checks: [1, 1, 1, 0], gps: true, violations: 0, warnings: 0, deductions: 0, salary: 15000 },
-  { id: "E002", name: "خالد العتيبي", role: "مهندس مدني", branch: "الرياض", pct: 87, streak: 10, pts: 720, level: "🥇", status: "حاضر", checks: [1, 1, 0, 0], gps: true, violations: 2, warnings: 1, deductions: 200, salary: 13000 },
-  { id: "E003", name: "سارة الحربي", role: "مهندسة تصميم", branch: "جدة", pct: 98, streak: 22, pts: 1450, level: "💎", status: "حاضر", checks: [1, 1, 1, 1], gps: true, violations: 0, warnings: 0, deductions: 0, salary: 13000 },
-  { id: "E004", name: "فهد الدوسري", role: "مهندس إنشائي", branch: "جدة", pct: 65, streak: 0, pts: 210, level: "—", status: "غائب", checks: [0, 0, 0, 0], gps: false, violations: 5, warnings: 3, deductions: 1220, salary: 12000 },
-  { id: "E005", name: "نورة القحطاني", role: "مهندسة كهربائية", branch: "الرياض", pct: 78, streak: 5, pts: 450, level: "🔵", status: "متأخر", checks: [1, 0, 0, 0], gps: true, violations: 2, warnings: 1, deductions: 200, salary: 11000 },
-  { id: "E006", name: "عمر السبيعي", role: "مهندس ميكانيكي", branch: "اسطنبول", pct: 91, streak: 12, pts: 890, level: "🥇", status: "حاضر", checks: [1, 1, 1, 0], gps: true, violations: 0, warnings: 0, deductions: 0, salary: 10000 },
-  { id: "E007", name: "ريم العنزي", role: "مهندسة معمارية", branch: "غازي عنتاب", pct: 95, streak: 18, pts: 1100, level: "💎", status: "حاضر", checks: [1, 1, 1, 0], gps: true, violations: 0, warnings: 0, deductions: 0, salary: 10000 },
-  { id: "E008", name: "ماجد الحربي", role: "مهندس مساحة", branch: "جدة", pct: 45, streak: 0, pts: 90, level: "—", status: "غائب", checks: [0, 0, 0, 0], gps: false, violations: 3, warnings: 2, deductions: 800, salary: 9000 },
+const EMPS = [];
+const LEAVE_INIT = [];
+const ALERTS = [];
+const WEEKLY = [
+  { d: "الأحد", p: 0 }, { d: "الإثنين", p: 0 }, { d: "الثلاثاء", p: 0 }, { d: "الأربعاء", p: 0 }, { d: "الخميس", p: 0 }
 ];
-const LEAVE_INIT = [
-  { id: 1, emp: "خالد العتيبي", type: "سنوية", from: "10/4", to: "14/4", days: 5, reason: "إجازة عائلية", status: "معلّق" },
-  { id: 2, emp: "نورة القحطاني", type: "مرضية", from: "7/4", to: "8/4", days: 2, reason: "مراجعة طبية", status: "معلّق" },
-  { id: 3, emp: "أحمد محمد", type: "سنوية", from: "20/4", to: "25/4", days: 6, reason: "سفر", status: "معلّق" },
-];
-const ALERTS = [
-  { type: "danger", text: "فهد الدوسري — غائب بدون إذن (اليوم الثالث)", time: "08:35" },
-  { type: "danger", text: "ماجد الحربي — لم يسجل حضوره", time: "08:32" },
-  { type: "warn", text: "نورة القحطاني — تأخرت 25 دقيقة", time: "08:25" },
-  { type: "ok", text: "سارة الحربي — أكملت 22 يوم متتالي ✓", time: "16:02" },
-];
-const WEEKLY = [{ d: "الأحد", p: 92 }, { d: "الإثنين", p: 88 }, { d: "الثلاثاء", p: 95 }, { d: "الأربعاء", p: 85 }, { d: "الخميس", p: 78 }];
 const EVENTS = [
   { id: 1, name: "اليوم الوطني", emoji: "🇸🇦", date: "09-23", active: true, upgrade: true },
   { id: 2, name: "يوم التأسيس", emoji: "🏰", date: "02-22", active: true, upgrade: true },
@@ -491,6 +475,7 @@ export default function AdminApp() {
     { id: "events", icon: "🎉", label: "المناسبات" },
     { id: "questions", icon: "❓", label: "أسئلة الصباح" },
     { id: "settings", icon: "⚙️", label: "الإعدادات" },
+    { id: "admin_profile", icon: "🔐", label: "حساب المدير العام" },
   ];
 
   return (<div style={{ direction: "rtl", fontFamily: Fn, display: "flex", minHeight: "100vh", background: t.bg }}>
@@ -500,6 +485,7 @@ export default function AdminApp() {
     <div style={{ width: 220, background: t.card, borderLeft: "1px solid " + t.sep, display: "flex", flexDirection: "column", padding: "16px 0", flexShrink: 0 }}>
       <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "0 16px", marginBottom: 6 }}><Logo s={30} /><div><div style={{ fontSize: 14, fontWeight: 800, color: B.blue }}>{APP}</div><div style={{ fontSize: 8, color: t.txM }}>لوحة الإدارة</div></div></div>
       <Stripe />
+      <SyncStatus t={t} B={B} />
       <div style={{ flex: 1, padding: "10px 8px" }}>
         {sideItems.map(item => { const a = tab === item.id; return (<button key={item.id} onClick={() => { setTab(item.id); setSelEmp(null); }} style={{ width: "100%", padding: "10px 12px", borderRadius: 10, border: "none", marginBottom: 2, background: a ? B.blueLt : "transparent", cursor: "pointer", display: "flex", alignItems: "center", gap: 8 }}>
           <span style={{ fontSize: 16, filter: a ? "none" : "grayscale(.5) opacity(.6)" }}>{item.icon}</span>
@@ -521,6 +507,8 @@ export default function AdminApp() {
 
     {/* Main */}
     <div style={{ flex: 1, padding: "20px 24px", overflowY: "auto" }}>
+      {/* Top header: last sync + admin settings quick access */}
+      <AdminTopBar t={t} B={B} onOpenSettings={function(){ setTab("settings"); setSettingsTab("admin-account"); }} />
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16 }}>
         <div><div style={{ fontSize: 20, fontWeight: 800, color: t.tx }}>{sideItems.find(s => s.id === tab)?.icon} {sideItems.find(s => s.id === tab)?.label}</div><div style={{ fontSize: 11, color: t.txM }}>الأحد، 6 أبريل 2026</div></div>
         {role === "assistant" && <div style={{ padding: "5px 12px", borderRadius: 8, background: t.warnLt, fontSize: 11, fontWeight: 700, color: t.warn }}>⚠️ وضع المساعد</div>}
@@ -532,7 +520,7 @@ export default function AdminApp() {
           {[{ l: "حاضر", v: present, i: "✅", c: t.ok, s: `من ${safeEmps.length}` }, { l: "غائب", v: absent, i: "🚫", c: t.bad }, { l: "متأخر", v: late, i: "⏰", c: t.warn }, { l: "طلبات معلّقة", v: pending, i: "📋", c: B.blue }].map((s, i) => <div key={i} style={{ background: t.card, borderRadius: 14, padding: "16px", border: "1px solid " + t.sep }}><div style={{ display: "flex", justifyContent: "space-between" }}><div><div style={{ fontSize: 11, color: t.txM }}>{s.l}</div><div style={{ fontSize: 28, fontWeight: 800, color: s.c, marginTop: 4 }}>{s.v}</div>{s.s && <div style={{ fontSize: 10, color: t.txM }}>{s.s}</div>}</div><div style={{ width: 40, height: 40, borderRadius: 10, background: `${s.c}12`, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 20 }}>{s.i}</div></div></div>)}
         </div>
         <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
-          <div style={{ background: t.card, borderRadius: 14, padding: "16px", border: "1px solid " + t.sep }}><div style={{ fontSize: 14, fontWeight: 700, marginBottom: 12 }}>⚡ يحتاج إجراء</div>{ALERTS.map((a, i) => <div key={i} style={{ padding: "8px 10px", borderRadius: 10, marginBottom: 6, background: a.type === "danger" ? t.badLt : a.type === "warn" ? t.warnLt : t.okLt, display: "flex", alignItems: "center", gap: 8 }}><span style={{ fontSize: 14 }}>{a.type === "danger" ? "🚨" : a.type === "warn" ? "⚠️" : "🏆"}</span><span style={{ flex: 1, fontSize: 11, fontWeight: 600 }}>{a.text}</span><span style={{ fontSize: 9, color: t.txM }}>{a.time}</span></div>)}</div>
+          <div style={{ background: t.card, borderRadius: 14, padding: "16px", border: "1px solid " + t.sep }}><div style={{ fontSize: 14, fontWeight: 700, marginBottom: 12 }}>⚡ يحتاج إجراء</div>{ALERTS.length === 0 ? <div style={{ textAlign: "center", padding: 20, color: t.txM, fontSize: 11 }}>✓ لا توجد تنبيهات حالية</div> : ALERTS.map((a, i) => <div key={i} style={{ padding: "8px 10px", borderRadius: 10, marginBottom: 6, background: a.type === "danger" ? t.badLt : a.type === "warn" ? t.warnLt : t.okLt, display: "flex", alignItems: "center", gap: 8 }}><span style={{ fontSize: 14 }}>{a.type === "danger" ? "🚨" : a.type === "warn" ? "⚠️" : "🏆"}</span><span style={{ flex: 1, fontSize: 11, fontWeight: 600 }}>{a.text}</span><span style={{ fontSize: 9, color: t.txM }}>{a.time}</span></div>)}</div>
           <div style={{ background: t.card, borderRadius: 14, padding: "16px", border: "1px solid " + t.sep }}><div style={{ fontSize: 14, fontWeight: 700, marginBottom: 12 }}>📊 أداء الفروع</div>{BRANCHES.map((b, i) => { const pc = b.pct >= 90 ? t.ok : b.pct >= 75 ? t.warn : t.bad; return <div key={i} style={{ marginBottom: 12 }}><div style={{ display: "flex", justifyContent: "space-between", fontSize: 12, marginBottom: 4 }}><span style={{ fontWeight: 600 }}>{b.name}</span><span style={{ fontWeight: 800, color: pc }}>{b.pct}%</span></div><div style={{ height: 6, borderRadius: 3, background: "#F1F5F9", overflow: "hidden" }}><div style={{ height: "100%", width: `${b.pct}%`, borderRadius: 3, background: pc }} /></div></div>; })}<div style={{ marginTop: 16, fontSize: 13, fontWeight: 700, marginBottom: 8 }}>📈 الأسبوع</div><div style={{ display: "flex", alignItems: "flex-end", gap: 8, height: 80 }}>{WEEKLY.map((d, i) => { const pc = d.p >= 90 ? t.ok : d.p >= 80 ? B.blue : t.warn; return <div key={i} style={{ flex: 1, textAlign: "center" }}><div style={{ fontSize: 9, fontWeight: 700, color: pc }}>{d.p}%</div><div style={{ height: d.p * .7, borderRadius: 4, background: pc, minHeight: 6 }} /><div style={{ fontSize: 8, color: t.txM, marginTop: 3 }}>{d.d}</div></div>; })}</div></div>
         </div>
         <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12, marginTop: 12 }}>
@@ -594,7 +582,8 @@ export default function AdminApp() {
             </div>
             <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 6, marginTop: 14 }}>{[{ l: "التزام", v: `${((selEmp.pct)||0)}%`, c: ((selEmp.pct)||0) >= 85 ? t.ok : t.warn }, { l: "السلسلة", v: `🔥${(selEmp.streak||0)}`, c: "#FF6B35" }, { l: "النقاط", v: (selEmp.points||0), c: B.gold }].map((x, i) => <div key={i} style={{ background: t.bg, borderRadius: 8, padding: "8px 4px" }}><div style={{ fontSize: 14, fontWeight: 800, color: x.c }}>{x.v}</div><div style={{ fontSize: 8, color: t.txM, marginTop: 2 }}>{x.l}</div></div>)}</div>
           </div>
-          <div>
+          <div style={{ display: "flex", flexDirection: "column" }}>
+            <HierarchyCard emp={selEmp} emps={safeEmps} t={t} B={B} />
             {/* Contact info */}
             <div style={{ background: t.card, borderRadius: 14, padding: "16px", border: "1px solid " + t.sep, marginBottom: 12 }}>
               <div style={{ fontSize: 13, fontWeight: 700, marginBottom: 10 }}>📇 بيانات التواصل</div>
@@ -605,29 +594,6 @@ export default function AdminApp() {
                 <div><span style={{ color: t.txM }}>الفرع:</span> <span style={{ fontWeight: 600 }}>{selEmp.branchName || selEmp.branch || "—"}</span></div>
               </div>
             </div>
-            {/* Hierarchy */}
-            {(selEmp.managerEmail || selEmp.supervisorEmail || (selEmp.subordinatesCount > 0)) && (
-              <div style={{ background: t.card, borderRadius: 14, padding: "16px", border: "1px solid " + t.sep, marginBottom: 12 }}>
-                <div style={{ fontSize: 13, fontWeight: 700, marginBottom: 10 }}>🏢 الهيكل التنظيمي</div>
-                {selEmp.managerEmail && (() => {
-                  var mgr = safeEmps.find(function(e) { return e.email === selEmp.managerEmail; });
-                  return <div style={{ fontSize: 11, padding: "6px 0", borderBottom: "1px solid " + t.sep }}><span style={{ color: t.txM }}>المدير المباشر:</span> <span style={{ fontWeight: 700, color: B.blue }}>{mgr ? mgr.name : selEmp.managerEmail}</span></div>;
-                })()}
-                {selEmp.supervisorEmail && (() => {
-                  var sup = safeEmps.find(function(e) { return e.email === selEmp.supervisorEmail; });
-                  return <div style={{ fontSize: 11, padding: "6px 0", borderBottom: "1px solid " + t.sep }}><span style={{ color: t.txM }}>المشرف:</span> <span style={{ fontWeight: 700, color: B.blue }}>{sup ? sup.name : selEmp.supervisorEmail}</span></div>;
-                })()}
-                {selEmp.subordinatesCount > 0 && (
-                  <div style={{ fontSize: 11, padding: "6px 0" }}>
-                    <span style={{ color: t.txM }}>تحت إشرافه ({selEmp.subordinatesCount}):</span>
-                    <div style={{ marginTop: 4 }}>{(selEmp.subordinates || []).map(function(sid) {
-                      var sub = safeEmps.find(function(e) { return e.id === sid; });
-                      return <span key={sid} style={{ display: "inline-block", padding: "2px 8px", margin: "2px 3px 0 0", background: t.bg, borderRadius: 5, fontSize: 10, fontWeight: 600 }}>{sub ? sub.name : sid}</span>;
-                    })}</div>
-                  </div>
-                )}
-              </div>
-            )}
             {/* Today checks */}
             <div style={{ background: t.card, borderRadius: 14, padding: "16px", border: "1px solid " + t.sep, marginBottom: 12 }}>
               <div style={{ fontSize: 13, fontWeight: 700, marginBottom: 10 }}>بصمات اليوم</div>
@@ -980,7 +946,9 @@ export default function AdminApp() {
       {/* ═══ SETTINGS ═══ */}
       {tab === "settings" && <>
         {/* Sub-tabs for settings */}
-        <div style={{ display: "flex", gap: 6, marginBottom: 16, flexWrap: "wrap" }}>{[{ id: "general", l: "⚙️ عام" }, { id: "email", l: "📧 توجيه الإيميل" }, { id: "observation", l: "👁 تحت الملاحظة" }, { id: "attachments", l: "📎 أنواع المرفقات" }, { id: "faces", l: "📸 بصمات الوجه" }, { id: "cleanup", l: "🧹 تنظيف البيانات" }].map(st => <button key={st.id} onClick={() => setSettingsTab(st.id)} style={{ padding: "8px 18px", borderRadius: 10, border: settingsTab === st.id ? "none" : "1px solid " + t.sep, background: settingsTab === st.id ? B.blue : t.card, color: settingsTab === st.id ? "#fff" : t.tx2, fontSize: 12, fontWeight: 700, cursor: "pointer" }}>{st.l}</button>)}</div>
+        <div style={{ display: "flex", gap: 6, marginBottom: 16, flexWrap: "wrap" }}>{[{ id: "general", l: "⚙️ عام" }, { id: "admin-account", l: "👤 حساب المدير" }, { id: "email", l: "📧 توجيه الإيميل" }, { id: "observation", l: "👁 تحت الملاحظة" }, { id: "attachments", l: "📎 أنواع المرفقات" }, { id: "faces", l: "📸 بصمات الوجه" }, { id: "cleanup", l: "🧹 تنظيف البيانات" }].map(st => <button key={st.id} onClick={() => setSettingsTab(st.id)} style={{ padding: "8px 18px", borderRadius: 10, border: settingsTab === st.id ? "none" : "1px solid " + t.sep, background: settingsTab === st.id ? B.blue : t.card, color: settingsTab === st.id ? "#fff" : t.tx2, fontSize: 12, fontWeight: 700, cursor: "pointer" }}>{st.l}</button>)}</div>
+
+        {settingsTab === "admin-account" && <AdminAccountPanel t={t} B={B} />}
 
         {settingsTab === "attachments" && <AttachmentTypesManager t={t} B={B} />}
         {settingsTab === "faces" && <FacesManager t={t} B={B} emps={emps} />}
@@ -1174,8 +1142,135 @@ export default function AdminApp() {
           {role === "manager" && <button style={{ width: "100%", padding: "12px", borderRadius: 12, background: t.badLt, border: "2px dashed " + t.bad, color: t.bad, fontSize: 13, fontWeight: 700, cursor: "pointer", marginTop: 8 }}>👁 وضع موظف تحت الملاحظة</button>}
         </>}
       </>}
+
+      {/* ═══ ADMIN PROFILE — تعديل حساب المدير العام ═══ */}
+      {tab === "admin_profile" && <AdminProfile t={t} B={B} onLogout={function(){ localStorage.removeItem("basma_admin_email"); setLoggedIn(false); }} />}
     </div>
   </div>);
+}
+
+/* ═══ ADMIN TOP BAR — شريط علوي: آخر مزامنة + اختصارات ═══ */
+function AdminTopBar({ t, B, onOpenSettings }) {
+  var [lastSync, setLastSync] = useState(function(){ return localStorage.getItem("basma_last_sync") || ""; });
+  var fmt = "";
+  if (lastSync) {
+    var d = new Date(lastSync);
+    var diff = Math.floor((new Date() - d) / 60000);
+    if (diff < 1) fmt = "الآن";
+    else if (diff < 60) fmt = "قبل " + diff + " دقيقة";
+    else if (diff < 1440) fmt = "قبل " + Math.floor(diff / 60) + " ساعة";
+    else fmt = d.toLocaleDateString("ar-SA") + " " + String(d.getHours()).padStart(2, "0") + ":" + String(d.getMinutes()).padStart(2, "0");
+  }
+  return (
+    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "8px 14px", background: t.card, borderRadius: 10, marginBottom: 12, border: "1px solid " + t.sep, fontSize: 11, flexWrap: "wrap", gap: 8 }}>
+      <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 5 }}>
+          <span style={{ width: 6, height: 6, borderRadius: 3, background: "#10b981", animation: "pulse 2s infinite" }} />
+          <span style={{ color: t.tx2, fontWeight: 600 }}>متصل بكوادر</span>
+        </div>
+        {fmt && <span style={{ color: t.txM }}>آخر مزامنة: <strong style={{ color: t.tx }}>{fmt}</strong></span>}
+      </div>
+      <div style={{ display: "flex", gap: 6 }}>
+        <button onClick={async function(){
+          try {
+            var r = await fetch("/api/data?action=sync-kadwar");
+            var d = await r.json();
+            if (d.ok) { localStorage.setItem("basma_last_sync", new Date().toISOString()); setLastSync(new Date().toISOString()); window.location.reload(); }
+            else alert("فشل: " + (d.error || "غير معروف"));
+          } catch(e) { alert("فشل الاتصال"); }
+        }} style={{ padding: "5px 10px", borderRadius: 6, background: "transparent", border: "1px solid " + t.sep, color: t.tx2, fontSize: 10, fontWeight: 700, cursor: "pointer" }}>🔄 مزامنة</button>
+        <button onClick={onOpenSettings} style={{ padding: "5px 10px", borderRadius: 6, background: "transparent", border: "1px solid " + t.sep, color: t.tx2, fontSize: 10, fontWeight: 700, cursor: "pointer" }}>🔐 حسابي</button>
+      </div>
+    </div>
+  );
+}
+
+/* ═══ ADMIN PROFILE — حساب المدير العام ═══ */
+function AdminProfile({ t, B, onLogout }) {
+  var [profile, setProfile] = useState(null);
+  var [loading, setLoading] = useState(true);
+  var [form, setForm] = useState({ name: "", email: "", currentPassword: "", newPassword: "", newPassword2: "" });
+  var [msg, setMsg] = useState("");
+  var [busy, setBusy] = useState(false);
+
+  useEffect(function() {
+    fetch("/api/data?action=admin-config").then(r => r.json()).then(function(d) {
+      if (d && d.exists) {
+        setProfile(d);
+        setForm(function(prev) { return Object.assign({}, prev, { name: d.name || "", email: d.email || "" }); });
+      }
+      setLoading(false);
+    }).catch(function(){ setLoading(false); });
+  }, []);
+
+  async function save() {
+    setMsg("");
+    if (!form.currentPassword) { setMsg("⚠️ كلمة المرور الحالية مطلوبة للتأكيد"); return; }
+    if (form.newPassword && form.newPassword !== form.newPassword2) { setMsg("⚠️ كلمتا المرور الجديدتان غير متطابقتين"); return; }
+    if (form.newPassword && form.newPassword.length < 6) { setMsg("⚠️ كلمة المرور 6 أحرف على الأقل"); return; }
+    setBusy(true);
+    try {
+      var body = {
+        email: form.email.toLowerCase().trim(),
+        name: form.name,
+        currentPassword: form.currentPassword,
+        password: form.newPassword || form.currentPassword,
+      };
+      var r = await fetch("/api/data?action=admin-config", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
+      var d = await r.json();
+      if (d.ok) {
+        setMsg("✓ تم الحفظ بنجاح");
+        setForm(function(p){ return Object.assign({}, p, { currentPassword: "", newPassword: "", newPassword2: "" }); });
+        if (form.newPassword) setTimeout(function(){ onLogout(); }, 1500);
+      } else {
+        setMsg("✗ " + (d.error || "فشل الحفظ"));
+      }
+    } catch(e) { setMsg("✗ " + e.message); }
+    setBusy(false);
+  }
+
+  if (loading) return <div style={{ textAlign: "center", padding: 40, color: t.tx2 }}>جارِ التحميل...</div>;
+
+  var inp = { width: "100%", padding: "10px 12px", borderRadius: 8, border: "1px solid " + t.sep, fontSize: 13, fontFamily: Fn, outline: "none", background: t.inp, color: t.tx, marginBottom: 12 };
+  var lbl = { fontSize: 11, color: t.tx2, marginBottom: 4, display: "block", fontWeight: 600 };
+
+  return (
+    <div style={{ maxWidth: 560 }}>
+      <div style={{ background: B.blue + "12", border: "1px solid " + B.blue + "40", borderRadius: 10, padding: 12, marginBottom: 16, fontSize: 11, color: t.tx, lineHeight: 1.7 }}>
+        🔐 <strong>حساب المدير العام</strong> — هذا الحساب مستقل عن كوادر ويُستخدم للوصول للوحة الإدارة. غيّر كلمة المرور بشكل دوري.
+      </div>
+
+      <div style={{ background: t.card, borderRadius: 12, padding: 18, border: "1px solid " + t.sep }}>
+        <div style={{ fontSize: 14, fontWeight: 800, color: t.tx, marginBottom: 14 }}>📝 تعديل البيانات</div>
+
+        <label style={lbl}>الاسم الكامل</label>
+        <input value={form.name} onChange={e => setForm(Object.assign({}, form, { name: e.target.value }))} style={inp} />
+
+        <label style={lbl}>البريد الإلكتروني</label>
+        <input type="email" value={form.email} onChange={e => setForm(Object.assign({}, form, { email: e.target.value }))} style={inp} />
+
+        <div style={{ height: 1, background: t.sep, margin: "8px 0 16px" }} />
+
+        <label style={lbl}>كلمة المرور الحالية (مطلوبة لأي تعديل) *</label>
+        <input type="password" value={form.currentPassword} onChange={e => setForm(Object.assign({}, form, { currentPassword: e.target.value }))} placeholder="••••••••" style={inp} />
+
+        <div style={{ fontSize: 11, color: t.txM, marginBottom: 10 }}>⚙️ اتركهما فارغين لعدم تغيير كلمة المرور:</div>
+
+        <label style={lbl}>كلمة المرور الجديدة (اختياري)</label>
+        <input type="password" value={form.newPassword} onChange={e => setForm(Object.assign({}, form, { newPassword: e.target.value }))} placeholder="6 أحرف على الأقل" style={inp} />
+
+        <label style={lbl}>تأكيد كلمة المرور الجديدة</label>
+        <input type="password" value={form.newPassword2} onChange={e => setForm(Object.assign({}, form, { newPassword2: e.target.value }))} style={inp} />
+
+        {msg && <div style={{ color: msg.startsWith("✓") ? "#10b981" : "#FF3B30", fontSize: 12, fontWeight: 700, marginBottom: 10, textAlign: "center" }}>{msg}</div>}
+
+        <div style={{ display: "flex", gap: 8, marginTop: 8 }}>
+          <button onClick={save} disabled={busy} style={{ flex: 1, padding: "11px", borderRadius: 10, background: busy ? t.sep : B.blue, color: "#fff", fontSize: 13, fontWeight: 700, border: "none", cursor: busy ? "default" : "pointer" }}>{busy ? "جارِ الحفظ..." : "💾 حفظ التغييرات"}</button>
+          <button onClick={onLogout} style={{ padding: "11px 18px", borderRadius: 10, background: t.badLt, color: t.bad, fontSize: 13, fontWeight: 700, border: "none", cursor: "pointer" }}>🚪 خروج</button>
+        </div>
+      </div>
+    </div>
+  );
 }
 
 const td = { padding: "10px 12px", borderBottom: "1px solid #E5E5EA", fontSize: 12 };
@@ -1185,7 +1280,220 @@ const sinp = { width: 70, padding: "5px 8px", borderRadius: 6, border: "1px soli
 /* ═══════════════════════════════════════════════════════
    LAIHA PANEL — المدير العام يدير لائحة العمل
    ═══════════════════════════════════════════════════════ */
+/* ═══ SYNC STATUS — آخر مزامنة مع كوادر ═══ */
+function SyncStatus({ t, B }) {
+  var [lastSync, setLastSync] = useState(function(){ return localStorage.getItem("basma_last_sync") || ""; });
+  var [syncing, setSyncing] = useState(false);
+
+  useEffect(function() {
+    var i = setInterval(function() {
+      setLastSync(localStorage.getItem("basma_last_sync") || "");
+    }, 30000);
+    return function() { clearInterval(i); };
+  }, []);
+
+  async function sync() {
+    setSyncing(true);
+    try {
+      var r = await fetch("/api/data?action=sync-kadwar");
+      var d = await r.json();
+      if (d.ok) {
+        var now = new Date().toISOString();
+        localStorage.setItem("basma_last_sync", now);
+        setLastSync(now);
+        setTimeout(function(){ window.location.reload(); }, 800);
+      }
+    } catch(e) {}
+    setSyncing(false);
+  }
+
+  var text = "لم تتم مزامنة";
+  var ago = "";
+  if (lastSync) {
+    var d = new Date(lastSync);
+    var now = new Date();
+    var diffMin = Math.floor((now - d) / 60000);
+    if (diffMin < 1) ago = "الآن";
+    else if (diffMin < 60) ago = "منذ " + diffMin + " د";
+    else if (diffMin < 1440) ago = "منذ " + Math.floor(diffMin/60) + " س";
+    else ago = "منذ " + Math.floor(diffMin/1440) + " ي";
+    text = String(d.getHours()).padStart(2,"0") + ":" + String(d.getMinutes()).padStart(2,"0");
+  }
+
+  return (
+    <div style={{ padding: "8px 12px", margin: "8px 12px", borderRadius: 8, background: B.blue + "10", border: "1px solid " + B.blue + "30" }}>
+      <div style={{ fontSize: 9, color: t.txM, marginBottom: 2 }}>🔗 مزامنة كوادر</div>
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 6 }}>
+        <div>
+          <div style={{ fontSize: 11, fontWeight: 700, color: B.blue }}>{text}</div>
+          {ago && <div style={{ fontSize: 8, color: t.txM }}>{ago}</div>}
+        </div>
+        <button onClick={sync} disabled={syncing} title="مزامنة الآن" style={{ padding: "4px 8px", borderRadius: 6, background: syncing ? t.sep : B.blue, color: "#fff", fontSize: 10, border: "none", cursor: syncing ? "default" : "pointer" }}>{syncing ? "⏳" : "🔄"}</button>
+      </div>
+    </div>
+  );
+}
+
+/* ═══ ADMIN ACCOUNT PANEL — إعدادات المدير العام ═══ */
+function AdminAccountPanel({ t, B }) {
+  var [config, setConfig] = useState(null);
+  var [loading, setLoading] = useState(true);
+  var [form, setForm] = useState({ name: "", email: "", currentPassword: "", newPassword: "", confirmPassword: "" });
+  var [msg, setMsg] = useState("");
+  var [busy, setBusy] = useState(false);
+
+  useEffect(function() {
+    fetch("/api/data?action=admin-config").then(r => r.json()).then(function(d) {
+      if (d && d.exists) {
+        setConfig(d);
+        setForm(function(f){ return {...f, name: d.name || "", email: d.email || ""}; });
+      }
+      setLoading(false);
+    });
+  }, []);
+
+  async function save() {
+    setMsg("");
+    if (!form.email || !form.name) { setMsg("⚠️ الاسم والبريد مطلوبان"); return; }
+    if (!form.currentPassword) { setMsg("⚠️ أدخل كلمة المرور الحالية للتأكيد"); return; }
+    if (form.newPassword && form.newPassword !== form.confirmPassword) { setMsg("⚠️ كلمتا المرور غير متطابقتين"); return; }
+    if (form.newPassword && form.newPassword.length < 6) { setMsg("⚠️ كلمة المرور الجديدة 6 أحرف على الأقل"); return; }
+
+    setBusy(true);
+    try {
+      var body = {
+        email: form.email.toLowerCase().trim(),
+        name: form.name.trim(),
+        currentPassword: form.currentPassword,
+        password: form.newPassword || form.currentPassword,
+      };
+      var r = await fetch("/api/data?action=admin-config", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+      });
+      var d = await r.json();
+      if (d.ok) {
+        setMsg("✅ تم الحفظ بنجاح");
+        setForm(function(f){ return {...f, currentPassword: "", newPassword: "", confirmPassword: ""}; });
+        if (form.newPassword) {
+          setTimeout(function(){ alert("تم تغيير كلمة المرور — سيتم تسجيل خروجك"); localStorage.removeItem("basma_admin_email"); window.location.reload(); }, 1000);
+        }
+      } else {
+        setMsg("❌ " + (d.error || "فشل الحفظ"));
+      }
+    } catch(e) { setMsg("❌ " + e.message); }
+    setBusy(false);
+  }
+
+  var inputStyle = { width: "100%", padding: "10px 12px", borderRadius: 8, border: "1px solid " + t.sep, background: t.inp, color: t.tx, fontSize: 13, marginBottom: 10 };
+  var labelStyle = { fontSize: 11, color: t.tx2, marginBottom: 4, display: "block", fontWeight: 600 };
+
+  if (loading) return <div style={{ padding: 30, textAlign: "center", color: t.txM }}>جارِ التحميل...</div>;
+
+  return (
+    <div style={{ maxWidth: 500 }}>
+      <div style={{ background: B.blue + "12", border: "1px solid " + B.blue + "40", borderRadius: 10, padding: 14, marginBottom: 14, fontSize: 12, color: t.tx, lineHeight: 1.7 }}>
+        👤 <strong>حساب المدير العام</strong><br/>
+        تعديل بيانات حساب الدخول للوحة الإدارة. كلمة المرور الحالية مطلوبة لأي تغيير.
+      </div>
+
+      <div style={{ background: t.card, borderRadius: 12, padding: 18, border: "1px solid " + t.sep }}>
+        <div style={{ fontSize: 12, fontWeight: 700, marginBottom: 12, color: B.blue }}>البيانات الشخصية</div>
+        <label style={labelStyle}>الاسم الكامل</label>
+        <input value={form.name} onChange={e => setForm({...form, name: e.target.value})} style={inputStyle} />
+        <label style={labelStyle}>البريد الإلكتروني</label>
+        <input value={form.email} onChange={e => setForm({...form, email: e.target.value})} type="email" style={inputStyle} />
+
+        <div style={{ fontSize: 12, fontWeight: 700, marginTop: 16, marginBottom: 12, color: B.blue }}>كلمة المرور</div>
+        <label style={labelStyle}>كلمة المرور الحالية <span style={{color: B.red}}>*</span></label>
+        <input value={form.currentPassword} onChange={e => setForm({...form, currentPassword: e.target.value})} type="password" placeholder="مطلوبة للتأكيد" style={inputStyle} />
+        <label style={labelStyle}>كلمة المرور الجديدة (اختياري)</label>
+        <input value={form.newPassword} onChange={e => setForm({...form, newPassword: e.target.value})} type="password" placeholder="اتركها فارغة إذا لا تريد تغييرها" style={inputStyle} />
+        {form.newPassword && (
+          <>
+            <label style={labelStyle}>تأكيد كلمة المرور الجديدة</label>
+            <input value={form.confirmPassword} onChange={e => setForm({...form, confirmPassword: e.target.value})} type="password" style={inputStyle} />
+          </>
+        )}
+
+        {msg && <div style={{ fontSize: 12, fontWeight: 700, marginBottom: 10, padding: 8, borderRadius: 6, background: msg.startsWith("✅") ? "#10b98120" : "#ef444420", color: msg.startsWith("✅") ? "#10b981" : B.red }}>{msg}</div>}
+
+        <button onClick={save} disabled={busy} style={{ width: "100%", padding: 12, borderRadius: 10, background: busy ? t.sep : B.blue, color: "#fff", border: "none", fontSize: 13, fontWeight: 700, cursor: busy ? "default" : "pointer" }}>
+          {busy ? "جارِ الحفظ..." : "حفظ التغييرات"}
+        </button>
+      </div>
+    </div>
+  );
+}
+
+/* ═══ HIERARCHY CARD — كارت الهيكل التنظيمي ═══ */
+function HierarchyCard({ emp, emps, t, B }) {
+  if (!emp) return null;
+  var manager = emps.find(function(e){ return e.kadwarId === emp.managerKadwarId || e.idNumber === emp.managerKadwarId; });
+  var supervisor = emps.find(function(e){ return e.kadwarId === emp.supervisorKadwarId || e.idNumber === emp.supervisorKadwarId; });
+  var subs = emps.filter(function(e){
+    return e.managerKadwarId && (e.managerKadwarId === emp.kadwarId || e.managerKadwarId === emp.idNumber);
+  });
+
+  return (
+    <div style={{ background: t.card, borderRadius: 12, padding: 16, border: "1px solid " + t.sep, marginBottom: 12 }}>
+      <div style={{ fontSize: 13, fontWeight: 800, color: B.blue, marginBottom: 12 }}>🏢 الهيكل التنظيمي</div>
+
+      {manager && (
+        <div style={{ marginBottom: 10 }}>
+          <div style={{ fontSize: 9, color: t.txM, marginBottom: 3 }}>المدير المباشر</div>
+          <div style={{ display: "flex", alignItems: "center", gap: 8, padding: 8, background: B.blueLt, borderRadius: 8 }}>
+            <div style={{ width: 28, height: 28, borderRadius: "50%", background: B.blue + "30", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 14 }}>👤</div>
+            <div style={{ flex: 1 }}>
+              <div style={{ fontSize: 12, fontWeight: 700, color: t.tx }}>{manager.name}</div>
+              <div style={{ fontSize: 9, color: t.txM }}>{manager.role}</div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {supervisor && (
+        <div style={{ marginBottom: 10 }}>
+          <div style={{ fontSize: 9, color: t.txM, marginBottom: 3 }}>المشرف</div>
+          <div style={{ display: "flex", alignItems: "center", gap: 8, padding: 8, background: "#10b98118", borderRadius: 8 }}>
+            <div style={{ width: 28, height: 28, borderRadius: "50%", background: "#10b98130", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 14 }}>🎯</div>
+            <div style={{ flex: 1 }}>
+              <div style={{ fontSize: 12, fontWeight: 700, color: t.tx }}>{supervisor.name}</div>
+              <div style={{ fontSize: 9, color: t.txM }}>{supervisor.role}</div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      <div>
+        <div style={{ fontSize: 9, color: t.txM, marginBottom: 3 }}>المرؤوسون ({subs.length})</div>
+        {subs.length === 0 && <div style={{ fontSize: 10, color: t.txM, fontStyle: "italic", padding: 6 }}>لا يوجد مرؤوسون</div>}
+        {subs.map(function(s) {
+          return (
+            <div key={s.id} style={{ display: "flex", alignItems: "center", gap: 8, padding: 6, background: t.bg, borderRadius: 6, marginBottom: 3 }}>
+              <div style={{ width: 22, height: 22, borderRadius: "50%", background: t.sep, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 11 }}>👷</div>
+              <div style={{ flex: 1 }}>
+                <div style={{ fontSize: 11, fontWeight: 700, color: t.tx }}>{s.name}</div>
+                <div style={{ fontSize: 9, color: t.txM }}>{s.role}</div>
+              </div>
+            </div>
+          );
+        })}
+      </div>
+
+      {!manager && !supervisor && subs.length === 0 && (
+        <div style={{ fontSize: 11, color: t.txM, textAlign: "center", padding: 12, fontStyle: "italic" }}>
+          لم يتم ربط الهيكل التنظيمي لهذا الموظف في كوادر
+        </div>
+      )}
+    </div>
+  );
+}
+
 /* ═══ KADWAR SYNC BUTTON — زر مزامنة يدوية ═══ */
+/* ═══ ADMIN ACCOUNT PANEL — إدارة حساب المدير العام ═══ */
+
 function KadwarSyncButton({ t, B }) {
   var [syncing, setSyncing] = useState(false);
   var [lastSync, setLastSync] = useState(function(){ return localStorage.getItem("basma_last_sync") || ""; });

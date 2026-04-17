@@ -899,14 +899,17 @@ function LoginScreen({ onLogin, loading }) {
       <div className="basma-fadein-d1" style={{ color: "#fff", fontSize: 26, fontWeight: 900, fontFamily: "'Cairo',sans-serif", marginBottom: 4 }}>بصمة HMA</div>
       <div className="basma-fadein-d1" style={{ color: "rgba(255,255,255,.6)", fontSize: 12, fontWeight: 500, marginBottom: 32 }}>نظام الحضور والانصراف الذكي</div>
       <div className="basma-fadein-d2" style={{ width: "100%", maxWidth: 340, background: "rgba(255,255,255,.1)", borderRadius: 24, padding: 24, border: "1px solid rgba(255,255,255,.15)" }}>
-        <input value={username} onChange={e => setUsername(e.target.value)} placeholder="اسم المستخدم" autoCapitalize="none" autoCorrect="off" style={S.loginInput} />
-        <input value={password} onChange={e => setPassword(e.target.value)} placeholder="كلمة المرور" type="password" style={{ ...S.loginInput, marginTop: 10 }} onKeyDown={e => e.key === "Enter" && submit()} />
+        <label style={{ display: "block", fontSize: 11, fontWeight: 700, color: "rgba(255,255,255,.85)", marginBottom: 6, fontFamily: "'Cairo',sans-serif" }}>اسم المستخدم</label>
+        <input value={username} onChange={e => setUsername(e.target.value)} placeholder="admin أو البريد" autoCapitalize="none" autoCorrect="off" style={S.loginInput} />
+        <label style={{ display: "block", fontSize: 11, fontWeight: 700, color: "rgba(255,255,255,.85)", marginTop: 12, marginBottom: 6, fontFamily: "'Cairo',sans-serif" }}>كلمة المرور</label>
+        <input value={password} onChange={e => setPassword(e.target.value)} placeholder="••••••••" type="password" style={S.loginInput} onKeyDown={e => e.key === "Enter" && submit()} />
         {err && <div style={{ color: "#FF6B6B", fontSize: 12, fontWeight: 700, marginTop: 10, textAlign: "center", lineHeight: 1.6 }}>{err}</div>}
         <button onClick={submit} disabled={loading} style={{ width: "100%", marginTop: 16, padding: "14px 0", borderRadius: 16, background: loading ? "rgba(255,255,255,.2)" : "#fff", color: loading ? "rgba(255,255,255,.5)" : C.hdr1, fontSize: 16, fontWeight: 800, fontFamily: "'Cairo',sans-serif", border: "none", cursor: "pointer" }}>
           {loading ? "جارِ الدخول..." : "تسجيل دخول"}
         </button>
-        <div style={{ color: "rgba(255,255,255,.5)", fontSize: 10, marginTop: 12, textAlign: "center", lineHeight: 1.6 }}>
-          استخدم نفس بيانات الدخول الخاصة بنظام كوادر
+        <div style={{ color: "rgba(255,255,255,.5)", fontSize: 10, marginTop: 14, textAlign: "center", lineHeight: 1.6 }}>
+          استخدم نفس بيانات الدخول الخاصة بنظام كوادر<br/>
+          <a href="https://hma.engineer" target="_blank" style={{ color: "rgba(255,255,255,.75)", textDecoration: "underline" }}>↗ فتح كوادر</a>
         </div>
       </div>
       <div className="basma-fadein-d3" style={{ color: "rgba(255,255,255,.3)", fontSize: 10, marginTop: 24 }}>{"v"+VER+" · b.hma.engineer"}</div>
