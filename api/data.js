@@ -62,14 +62,6 @@ async function dbCleanup() {
   } catch(e) { return { ok: false, error: e.message }; }
 }
 
-const INIT_EMP = [
-  { id: "E001", name: "أحمد محمد عسيري", role: "مهندس معماري", branch: "jed", code: "901234", isManager: true, salary: 15000, joinDate: "2024-03-15", dob: "1990-05-15", points: 780, type: "office", flexBase: false, flexOT: false, flexOTMax: 0, remote: false, managers: [], observed: false, onLeave: false, sceNumber: "ENG-12345", sceExpiry: "2026-05-15", sceStatus: "active" },
-  { id: "E002", name: "خالد العتيبي", role: "مهندس مدني", branch: "riy", code: "887654", salary: 13000, joinDate: "2024-06-01", dob: "1992-11-20", points: 320, type: "mixed", flexBase: false, flexOT: false, flexOTMax: 0, remote: false, managers: ["E001"], observed: false, onLeave: false, sceNumber: "ENG-23456", sceExpiry: "2026-04-20", sceStatus: "active" },
-  { id: "E003", name: "سارة الحربي", role: "مهندسة تصميم", branch: "jed", code: "776543", isAssistant: true, salary: 13000, joinDate: "2024-01-10", dob: "1995-03-08", points: 1450, type: "office", flexBase: false, flexOT: false, flexOTMax: 0, remote: false, managers: ["E001"], observed: false, onLeave: false, sceNumber: "ENG-34567", sceExpiry: "2026-09-01", sceStatus: "active" },
-  { id: "E004", name: "فهد الدوسري", role: "مهندس إنشائي", branch: "jed", code: "443322", salary: 12000, joinDate: "2023-09-01", dob: "1988-07-22", points: 210, type: "field", flexBase: false, flexOT: false, flexOTMax: 0, remote: false, managers: ["E001"], observed: false, onLeave: false, sceNumber: "ENG-45678", sceExpiry: "2026-06-30", sceStatus: "active" },
-  { id: "E005", name: "نورة القحطاني", role: "مهندسة كهربائية", branch: "riy", code: "556677", salary: 11000, joinDate: "2024-08-15", dob: "1996-12-05", points: 450, type: "remote", flexBase: true, flexOT: false, flexOTMax: 0, remote: true, managers: ["E002"], observed: false, onLeave: false, sceNumber: "ENG-56789", sceExpiry: "2026-12-15", sceStatus: "active" },
-];
-
 const INIT_BRANCHES = [
   { id: "jed", name: "جدة", start: "08:30", end: "17:00", breakS: "12:30", breakE: "13:00", offDay: "friday", tz: "Asia/Riyadh", radius: 150, lat: 21.5433, lng: 39.1728 },
   { id: "riy", name: "الرياض", start: "08:30", end: "17:00", breakS: "12:30", breakE: "13:00", offDay: "friday", tz: "Asia/Riyadh", radius: 150, lat: 24.7136, lng: 46.6753 },
@@ -89,8 +81,9 @@ export default async function handler(req, res) {
 
       case 'init': {
         const ex = await dbGet('employees');
-        if (ex) return res.json({ ok: true, msg: 'exists', count: ex.length });
-        await dbSet('employees', INIT_EMP);
+        if (ex && ex.length > 0) return res.json({ ok: true, msg: 'exists', count: ex.length });
+        // NO LONGER seeds INIT_EMP — employees come from kadwar via sync-kadwar
+        await dbSet('employees', []);
         await dbSet('branches', INIT_BRANCHES);
         await dbSet('attendance', []);
         await dbSet('violations', []);
@@ -104,7 +97,17 @@ export default async function handler(req, res) {
         await dbSet('events', []);
         await dbSet('manual_attendance', []);
         await dbSet('settings', { breakRandomMin: 2, breakRandomMax: 7, autoCheckoutDelay: 5, callRetryDelay: 10 });
-        return res.json({ ok: true, msg: 'initialized' });
+        // Auto-trigger first sync from kadwar
+        try {
+          var syncR = await fetch('https://hma.engineer/api/basma-sync?action=employees');
+          if (syncR.ok) {
+            var syncData = await syncR.json();
+            if (syncData && Array.isArray(syncData.employees)) {
+              return res.json({ ok: true, msg: 'initialized + synced', employeesFromKadwar: syncData.employees.length, note: 'call action=sync-kadwar to complete' });
+            }
+          }
+        } catch(e) { /* silent */ }
+        return res.json({ ok: true, msg: 'initialized (employees empty — call action=sync-kadwar)' });
       }
 
       case 'login': {
@@ -158,7 +161,7 @@ export default async function handler(req, res) {
       }
 
       case 'employees': {
-        if (req.method === 'GET') return res.json(await dbGet('employees') || INIT_EMP);
+        if (req.method === 'GET') return res.json(await dbGet('employees') || []);
         if (req.method === 'PUT') {
           const emps = await dbGet('employees') || [];
           const { id, ...up } = req.body;
