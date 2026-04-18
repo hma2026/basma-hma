@@ -3,6 +3,7 @@ import { ALL_VIOLATIONS_DEFAULT, PENALTY_TYPES, LAIHA_INFO, COMPLAINT_STATUS, VI
 import { generateAttendanceReport, generateEmployeeReport, generateMonthlySummary, generateViolationsReport, generateEmployeesListReport, generateBenefitsReport, generateAnnouncementsReport } from "./pdfReports";
 
 const APP = "بصمة HMA";
+const VER = "4.81";
 const CO = "هاني محمد عسيري للإستشارات الهندسية";
 const B = { blue: "#2B5EA7", yellow: "#FDD800", red: "#E2192C", black: "#1A1A1A", blueDk: "#1E4478", blueLt: "#EDF3FB", gold: "#D4A017" };
 
@@ -206,7 +207,7 @@ function Login({ onLogin }) {
   }
 
   return (
-    <div style={{ minHeight: "100vh", background: t.bg, display: "flex", alignItems: "center", justifyContent: "center", fontFamily: Fn, direction: "rtl" }}>
+    <div style={{ minHeight: "100vh", background: t.bg, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", fontFamily: Fn, direction: "rtl" }}>
       <div style={{ background: t.card, borderRadius: 24, padding: "36px 28px", width: 400, textAlign: "center", boxShadow: "0 8px 40px rgba(0,0,0,.08)" }}>
         <Logo s={56} />
         <div style={{ fontSize: 20, fontWeight: 800, color: B.blue, marginTop: 10 }}>{APP}</div>
@@ -242,9 +243,23 @@ function Login({ onLogin }) {
             <button onClick={doLogin} disabled={busy} style={{ width: "100%", padding: "12px", borderRadius: 12, background: busy ? t.sep : B.blue, border: "none", color: "#fff", fontSize: 14, fontWeight: 700, cursor: busy ? "default" : "pointer", marginTop: 8 }}>
               {busy ? "جارِ الدخول..." : "دخول المدير العام"}
             </button>
+
+            {/* Switch to Employee Login */}
+            <div style={{ marginTop: 24, paddingTop: 18, borderTop: "1px solid " + t.sep, textAlign: "center" }}>
+              <div style={{ fontSize: 11, color: t.txM, marginBottom: 10 }}>هل أنت موظف؟</div>
+              <button onClick={function() {
+                window.location.hash = "";
+                window.location.reload();
+              }} style={{ width: "100%", padding: "11px 14px", borderRadius: 12, background: "none", border: "1.5px solid " + B.blue, color: B.blue, fontSize: 13, fontWeight: 700, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", gap: 8, transition: "all 0.2s" }} onMouseEnter={function(e){ e.currentTarget.style.background = B.blue; e.currentTarget.style.color = "#fff"; }} onMouseLeave={function(e){ e.currentTarget.style.background = "none"; e.currentTarget.style.color = B.blue; }}>
+                <span style={{ fontSize: 18 }}>📱</span>
+                <span>دخول تطبيق الموظفين</span>
+                <span style={{ fontSize: 14 }}>←</span>
+              </button>
+            </div>
           </div>
         )}
       </div>
+      <div style={{ color: t.txM, fontSize: 11, marginTop: 20, fontWeight: 600 }}>{"v" + VER + " · b.hma.engineer/#admin"}</div>
     </div>
   );
 }

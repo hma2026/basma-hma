@@ -10,7 +10,7 @@ import { ALL_VIOLATIONS_DEFAULT, PENALTY_TYPES, LAIHA_INFO, COMPLAINT_STATUS, VI
 
 /* ═══════════ APP CONFIG (إعدادات التطبيق) ═══════════ */
 const APP_CONFIG = {
-  VER: "4.80",
+  VER: "4.81",
   NAME: "بصمة HMA",
   FULL_NAME: "نظام الحضور والانصراف الذكي",
   COMPANY: "هاني محمد عسيري للاستشارات الهندسية",
@@ -1063,6 +1063,19 @@ function LoginScreen({ onLogin, loading }) {
         <div style={{ color: "rgba(255,255,255,.5)", fontSize: 10, marginTop: 14, textAlign: "center", lineHeight: 1.6 }}>
           استخدم نفس بيانات الدخول الخاصة بنظام كوادر<br/>
           <a href="https://hma.engineer" target="_blank" style={{ color: "rgba(255,255,255,.75)", textDecoration: "underline" }}>↗ فتح كوادر</a>
+        </div>
+
+        {/* Switch to Admin Login */}
+        <div style={{ marginTop: 18, paddingTop: 14, borderTop: "1px solid rgba(255,255,255,.15)", textAlign: "center" }}>
+          <div style={{ fontSize: 10, color: "rgba(255,255,255,.5)", marginBottom: 8 }}>هل أنت مدير النظام؟</div>
+          <button onClick={function(){
+            window.location.hash = "admin";
+            window.location.reload();
+          }} style={{ width: "100%", padding: "10px 14px", borderRadius: 12, background: "rgba(255,255,255,.1)", border: "1.5px solid rgba(255,255,255,.25)", color: "#fff", fontSize: 12, fontWeight: 700, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", gap: 8, fontFamily: "'Cairo',sans-serif" }}>
+            <span style={{ fontSize: 16 }}>🔐</span>
+            <span>دخول لوحة الإدارة</span>
+            <span style={{ fontSize: 13 }}>←</span>
+          </button>
         </div>
       </div>
       <div className="basma-fadein-d3" style={{ color: "rgba(255,255,255,.3)", fontSize: 10, marginTop: 24 }}>{"v"+VER+" · b.hma.engineer"}</div>
