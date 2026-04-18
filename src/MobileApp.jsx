@@ -3941,16 +3941,8 @@ function HelpGuideSection() {
   var [open, setOpen] = useState(false);
   var [activeQ, setActiveQ] = useState(null);
   var [pwaInstallPrompt, setPwaInstallPrompt] = useState(null);
-  var [isMobile, setIsMobile] = useState(false);
-  var [forceMobileViewport, setForceMobileViewport] = useState(false);
 
   useEffect(function() {
-    // Detect if we're on a mobile device
-    var ua = navigator.userAgent.toLowerCase();
-    var mobile = /iphone|ipad|ipod|android|blackberry|windows phone/.test(ua);
-    setIsMobile(mobile);
-
-    // Listen for PWA install prompt
     var handler = function(e) {
       e.preventDefault();
       setPwaInstallPrompt(e);
@@ -3979,7 +3971,6 @@ function HelpGuideSection() {
       setPwaInstallPrompt(null);
       return;
     }
-    // Fallback: show instructions
     var ua = navigator.userAgent.toLowerCase();
     var isIOS = /iphone|ipad|ipod/.test(ua);
     var isAndroid = /android/.test(ua);
@@ -3993,7 +3984,6 @@ function HelpGuideSection() {
   }
 
   function fixMobileView() {
-    // Update viewport to force mobile rendering
     var viewport = document.querySelector('meta[name="viewport"]');
     if (!viewport) {
       viewport = document.createElement('meta');
@@ -4001,9 +3991,6 @@ function HelpGuideSection() {
       document.head.appendChild(viewport);
     }
     viewport.content = "width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no";
-    setForceMobileViewport(true);
-
-    // Show user how to do it in browser settings
     var ua = navigator.userAgent.toLowerCase();
     var isIOS = /iphone|ipad|ipod/.test(ua);
     var isAndroid = /android/.test(ua);
@@ -4014,70 +4001,78 @@ function HelpGuideSection() {
     } else {
       alert("🔄 تم تصحيح العرض ✓\n\nأنت على كمبيوتر حالياً. التطبيق مصمم للجوال ويعمل بشكل أفضل هناك.");
     }
-    // Refresh page to apply viewport
     setTimeout(function(){ window.location.reload(); }, 1500);
   }
 
   return (
-    <div style={{ background: C.card, borderRadius: 16, marginBottom: 12, overflow: "hidden", border: "1px solid " + C.bg }}>
-      {/* Header — clickable */}
-      <button onClick={function(){ setOpen(!open); }} style={{ width: "100%", padding: "14px 16px", background: "none", border: "none", display: "flex", alignItems: "center", gap: 10, cursor: "pointer", fontFamily: "'Tajawal',sans-serif" }}>
-        <div style={{ width: 36, height: 36, borderRadius: 10, background: C.hdr1 + "15", display: "flex", alignItems: "center", justifyContent: "center" }}>
-          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke={C.hdr1} strokeWidth="2" strokeLinecap="round"><circle cx="12" cy="12" r="10"/><path d="M9.09 9a3 3 0 015.83 1c0 2-3 3-3 3"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
-        </div>
-        <div style={{ flex: 1, textAlign: "right" }}>
-          <div style={{ fontSize: 14, fontWeight: 800, color: C.text, fontFamily: "'Cairo',sans-serif" }}>دليل الاستخدام</div>
-          <div style={{ fontSize: 10, color: C.textM, marginTop: 2 }}>أسئلة شائعة + تثبيت التطبيق + تصحيح العرض</div>
-        </div>
-        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke={C.textM} strokeWidth="2" strokeLinecap="round" style={{ transform: open ? "rotate(180deg)" : "rotate(0deg)", transition: "transform .2s" }}>
-          <polyline points="6,9 12,15 18,9"/>
-        </svg>
-      </button>
+    <>
+      {/* Trigger button — same style as support ticket button (secondary variant) */}
+      <Button variant="secondary" size="md" icon={
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke={COLORS.goldLight} strokeWidth="2" strokeLinecap="round"><circle cx="12" cy="12" r="10"/><path d="M9.09 9a3 3 0 015.83 1c0 2-3 3-3 3"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
+      } onClick={function(){ setOpen(true); }}>
+        دليل الاستخدام
+      </Button>
 
-      {/* Expanded content */}
+      {/* Modal */}
       {open && (
-        <div style={{ padding: "0 12px 12px", borderTop: "1px solid " + C.bg }}>
-          {/* FAQ list */}
-          <div style={{ padding: "12px 0" }}>
-            {questions.map(function(item, i) {
-              var isActive = activeQ === i;
-              return (
-                <div key={i} style={{ marginBottom: 6, background: isActive ? C.hdr1 + "08" : "transparent", borderRadius: 10, overflow: "hidden" }}>
-                  <button onClick={function(){ setActiveQ(isActive ? null : i); }} style={{ width: "100%", padding: "10px 12px", background: "none", border: "none", display: "flex", alignItems: "center", gap: 8, cursor: "pointer", fontFamily: "'Tajawal',sans-serif", textAlign: "right" }}>
-                    <div style={{ width: 6, height: 6, borderRadius: 3, background: isActive ? C.hdr1 : C.textM, flexShrink: 0 }} />
-                    <div style={{ flex: 1, fontSize: 12, fontWeight: isActive ? 700 : 500, color: C.text, lineHeight: 1.5 }}>{item.q}</div>
-                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke={C.textM} strokeWidth="2" strokeLinecap="round" style={{ transform: isActive ? "rotate(180deg)" : "rotate(0deg)", transition: "transform .2s" }}>
-                      <polyline points="6,9 12,15 18,9"/>
-                    </svg>
-                  </button>
-                  {isActive && (
-                    <div style={{ padding: "4px 26px 12px", fontSize: 11, color: C.textM, lineHeight: 1.8 }}>
-                      {item.a}
-                    </div>
-                  )}
-                </div>
-              );
-            })}
-          </div>
+        <div onClick={function(){ setOpen(false); }} style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.7)", zIndex: 1000, display: "flex", alignItems: "flex-end", justifyContent: "center", fontFamily: TYPOGRAPHY.fontTajawal }}>
+          <div onClick={function(e){ e.stopPropagation(); }} style={{ background: COLORS.bg1, borderRadius: "20px 20px 0 0", width: "100%", maxWidth: 430, maxHeight: "85vh", display: "flex", flexDirection: "column", border: "1px solid " + COLORS.metallicBorder, borderBottom: "none" }}>
+            {/* Header */}
+            <div style={{ padding: SPACING.lg, borderBottom: "1px solid " + COLORS.metallicBorder, display: "flex", alignItems: "center", gap: SPACING.sm }}>
+              <div style={{ width: 36, height: 36, borderRadius: 10, background: COLORS.goldDark + "30", display: "flex", alignItems: "center", justifyContent: "center" }}>
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke={COLORS.goldLight} strokeWidth="2" strokeLinecap="round"><circle cx="12" cy="12" r="10"/><path d="M9.09 9a3 3 0 015.83 1c0 2-3 3-3 3"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
+              </div>
+              <div style={{ flex: 1 }}>
+                <div style={{ ...TYPOGRAPHY.h3, color: COLORS.textPrimary, fontFamily: TYPOGRAPHY.fontCairo }}>دليل الاستخدام</div>
+                <div style={{ ...TYPOGRAPHY.tiny, color: COLORS.textMuted, marginTop: 2 }}>أسئلة شائعة + أدوات مساعدة</div>
+              </div>
+              <button onClick={function(){ setOpen(false); }} style={{ width: 32, height: 32, borderRadius: 10, background: COLORS.metallic, border: "1px solid " + COLORS.metallicBorder, color: COLORS.textPrimary, cursor: "pointer", fontSize: 16, display: "flex", alignItems: "center", justifyContent: "center" }}>✕</button>
+            </div>
 
-          {/* Action buttons */}
-          <div style={{ display: "flex", gap: 8, marginTop: 8 }}>
-            <button onClick={installApp} style={{ flex: 1, padding: "12px", borderRadius: 12, background: "linear-gradient(135deg,#1a3a6e,#2b5ea7)", color: "#fff", border: "none", fontSize: 12, fontWeight: 800, cursor: "pointer", fontFamily: "'Cairo',sans-serif", display: "flex", alignItems: "center", justifyContent: "center", gap: 6 }}>
-              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2" strokeLinecap="round"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4M7 10l5 5 5-5M12 15V3"/></svg>
-              تثبيت التطبيق
-            </button>
-            <button onClick={fixMobileView} style={{ flex: 1, padding: "12px", borderRadius: 12, background: "linear-gradient(135deg,#F59E0B,#FCD34D)", color: "#1a3a6e", border: "none", fontSize: 12, fontWeight: 800, cursor: "pointer", fontFamily: "'Cairo',sans-serif", display: "flex", alignItems: "center", justifyContent: "center", gap: 6 }}>
-              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#1a3a6e" strokeWidth="2" strokeLinecap="round"><path d="M23 4v6h-6M1 20v-6h6"/><path d="M3.51 9a9 9 0 0114.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0020.49 15"/></svg>
-              تصحيح العرض
-            </button>
-          </div>
-          <div style={{ fontSize: 9, color: C.textM, textAlign: "center", marginTop: 8, lineHeight: 1.5 }}>
-            <strong>تثبيت التطبيق:</strong> أضف التطبيق للشاشة الرئيسية<br/>
-            <strong>تصحيح العرض:</strong> إذا ظهر التطبيق بشكل كبير على الجوال
+            {/* Content */}
+            <div style={{ flex: 1, overflowY: "auto", padding: SPACING.lg }}>
+              {/* FAQ */}
+              {questions.map(function(item, i) {
+                var isActive = activeQ === i;
+                return (
+                  <div key={i} style={{ marginBottom: SPACING.sm, background: isActive ? COLORS.goldDark + "20" : COLORS.metallic, borderRadius: RADIUS.md, overflow: "hidden", border: "1px solid " + (isActive ? COLORS.goldLight + "50" : COLORS.metallicBorder) }}>
+                    <button onClick={function(){ setActiveQ(isActive ? null : i); }} style={{ width: "100%", padding: "12px 14px", background: "none", border: "none", display: "flex", alignItems: "center", gap: 8, cursor: "pointer", fontFamily: TYPOGRAPHY.fontTajawal, textAlign: "right" }}>
+                      <div style={{ width: 6, height: 6, borderRadius: 3, background: isActive ? COLORS.goldLight : COLORS.textMuted, flexShrink: 0 }} />
+                      <div style={{ flex: 1, ...TYPOGRAPHY.caption, fontWeight: isActive ? 800 : 600, color: COLORS.textPrimary, lineHeight: 1.5 }}>{item.q}</div>
+                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke={COLORS.textMuted} strokeWidth="2" strokeLinecap="round" style={{ transform: isActive ? "rotate(180deg)" : "rotate(0deg)", transition: "transform .2s" }}>
+                        <polyline points="6,9 12,15 18,9"/>
+                      </svg>
+                    </button>
+                    {isActive && (
+                      <div style={{ padding: "4px 28px 14px", ...TYPOGRAPHY.tiny, color: COLORS.textMuted, lineHeight: 1.9 }}>
+                        {item.a}
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
+
+              {/* Action buttons */}
+              <div style={{ display: "flex", gap: SPACING.sm, marginTop: SPACING.lg }}>
+                <button onClick={installApp} style={{ flex: 1, padding: "14px 10px", borderRadius: RADIUS.lg, background: COLORS.goldGradient, color: COLORS.textOnGold, border: "1px solid " + COLORS.goldLight, fontSize: 12, fontWeight: 800, cursor: "pointer", fontFamily: TYPOGRAPHY.fontCairo, display: "flex", alignItems: "center", justifyContent: "center", gap: 6, boxShadow: SHADOWS.gold }}>
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke={COLORS.textOnGold} strokeWidth="2" strokeLinecap="round"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4M7 10l5 5 5-5M12 15V3"/></svg>
+                  تثبيت التطبيق
+                </button>
+                <button onClick={fixMobileView} style={{ flex: 1, padding: "14px 10px", borderRadius: RADIUS.lg, background: COLORS.metallic, color: COLORS.goldLight, border: "1px solid " + COLORS.metallicBorder, fontSize: 12, fontWeight: 800, cursor: "pointer", fontFamily: TYPOGRAPHY.fontCairo, display: "flex", alignItems: "center", justifyContent: "center", gap: 6, boxShadow: SHADOWS.button }}>
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke={COLORS.goldLight} strokeWidth="2" strokeLinecap="round"><path d="M23 4v6h-6M1 20v-6h6"/><path d="M3.51 9a9 9 0 0114.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0020.49 15"/></svg>
+                  تصحيح العرض
+                </button>
+              </div>
+              <div style={{ ...TYPOGRAPHY.tiny, color: COLORS.textMuted, textAlign: "center", marginTop: SPACING.sm, lineHeight: 1.7 }}>
+                <strong style={{ color: COLORS.goldLight }}>تثبيت:</strong> أضف التطبيق للشاشة الرئيسية
+                <span style={{ margin: "0 8px", opacity: 0.5 }}>·</span>
+                <strong style={{ color: COLORS.goldLight }}>تصحيح:</strong> إذا ظهر بحجم كبير على الجوال
+              </div>
+            </div>
           </div>
         </div>
       )}
-    </div>
+    </>
   );
 }
 
