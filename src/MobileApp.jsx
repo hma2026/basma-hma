@@ -445,10 +445,38 @@ function MobileAppInner() {
 
   useEffect(() => {
     if (!user || !navigator.geolocation) return;
+    var lastAccuracy = 9999;
+    var gpsHistory = []; // for smoothing
     const wid = navigator.geolocation.watchPosition(
-      pos => setGps({ lat: pos.coords.latitude, lng: pos.coords.longitude }),
+      function(pos) {
+        var acc = pos.coords.accuracy || 9999;
+        // Reject inaccurate readings unless they're significantly better than last
+        if (acc > 100 && acc > lastAccuracy) return; // skip bad reading
+        lastAccuracy = acc;
+
+        // Add to smoothing buffer (keep last 3)
+        gpsHistory.push({ lat: pos.coords.latitude, lng: pos.coords.longitude, acc: acc, ts: Date.now() });
+        if (gpsHistory.length > 3) gpsHistory.shift();
+
+        // Filter out old readings (>30s)
+        var now = Date.now();
+        gpsHistory = gpsHistory.filter(function(g) { return now - g.ts < 30000; });
+
+        // Weighted average (more weight to more accurate readings)
+        var totalWeight = 0, sumLat = 0, sumLng = 0;
+        gpsHistory.forEach(function(g) {
+          var w = 1 / (g.acc || 1);
+          totalWeight += w;
+          sumLat += g.lat * w;
+          sumLng += g.lng * w;
+        });
+        var avgLat = sumLat / totalWeight;
+        var avgLng = sumLng / totalWeight;
+
+        setGps({ lat: avgLat, lng: avgLng, accuracy: acc });
+      },
       () => {},
-      { enableHighAccuracy: true, maximumAge: 10000 }
+      { enableHighAccuracy: true, maximumAge: 5000, timeout: 20000 }
     );
     return () => navigator.geolocation.clearWatch(wid);
   }, [user]);
@@ -469,18 +497,18 @@ function MobileAppInner() {
     if (!user || !navigator.geolocation) return;
     function trackGps() {
       navigator.geolocation.getCurrentPosition(function(pos) {
-        var record = { empId: user.id, lat: pos.coords.latitude, lng: pos.coords.longitude, ts: new Date().toISOString(), accuracy: pos.coords.accuracy };
+        var acc = pos.coords.accuracy || 9999;
+        // Skip if accuracy > 200m (too imprecise to be useful)
+        if (acc > 200) return;
+        var record = { empId: user.id, lat: pos.coords.latitude, lng: pos.coords.longitude, ts: new Date().toISOString(), accuracy: acc };
         if (navigator.onLine) {
-          // Send directly
           api("gps_log", { method: "POST", body: record }).catch(function(){
-            // If send fails, queue locally
             queueGpsOffline(record);
           });
         } else {
-          // Store locally for later upload
           queueGpsOffline(record);
         }
-      }, function(){}, { enableHighAccuracy: true, timeout: 15000 });
+      }, function(){}, { enableHighAccuracy: true, timeout: 20000, maximumAge: 5000 });
     }
     // Track immediately + every 5 minutes
     trackGps();
@@ -2075,23 +2103,23 @@ function DaySummaryModal({ todayAtt, branch, user, onClose }) {
         <div style={{ textAlign: "center", marginBottom: 16 }}>
           <div style={{ fontSize: 48, marginBottom: 8 }}>🎉</div>
           <div style={{ fontSize: 18, fontWeight: 900, fontFamily: "'Cairo',sans-serif", color: C.green }}>اكتمل الدوام!</div>
-          <div style={{ fontSize: 11, color: C.sub, marginTop: 4 }}>{formatArabicDate(new Date())}</div>
+          <div style={{ fontSize: 11, color: C.text, marginTop: 4, opacity: 0.7 }}>{formatArabicDate(new Date())}</div>
         </div>
 
         <div style={{ display: "flex", gap: 8, marginBottom: 14 }}>
           <div style={{ flex: 1, background: C.green + "12", borderRadius: 14, padding: "12px 8px", textAlign: "center" }}>
             <div style={{ fontSize: 22, fontWeight: 900, fontFamily: "'Cairo',sans-serif", color: C.green }}>{hrs + ":" + String(mins).padStart(2, "0")}</div>
-            <div style={{ fontSize: 9, color: C.sub, marginTop: 2 }}>ساعات العمل</div>
+            <div style={{ fontSize: 9, color: C.text, marginTop: 2, opacity: 0.7 }}>ساعات العمل</div>
           </div>
           {overtime > 0 && (
             <div style={{ flex: 1, background: C.blue + "12", borderRadius: 14, padding: "12px 8px", textAlign: "center" }}>
               <div style={{ fontSize: 22, fontWeight: 900, fontFamily: "'Cairo',sans-serif", color: C.blue }}>{otHrs + ":" + String(otMin).padStart(2, "0")}</div>
-              <div style={{ fontSize: 9, color: C.sub, marginTop: 2 }}>إضافي</div>
+              <div style={{ fontSize: 9, color: C.text, marginTop: 2, opacity: 0.7 }}>إضافي</div>
             </div>
           )}
           <div style={{ flex: 1, background: (isLate ? C.orange : C.green) + "12", borderRadius: 14, padding: "12px 8px", textAlign: "center" }}>
             <div style={{ fontSize: 22, fontWeight: 900, fontFamily: "'Cairo',sans-serif", color: isLate ? C.orange : C.green }}>{isLate ? "متأخر" : "منضبط"}</div>
-            <div style={{ fontSize: 9, color: C.sub, marginTop: 2 }}>الحضور</div>
+            <div style={{ fontSize: 9, color: C.text, marginTop: 2, opacity: 0.7 }}>الحضور</div>
           </div>
         </div>
 
@@ -2103,15 +2131,15 @@ function DaySummaryModal({ todayAtt, branch, user, onClose }) {
             ["انصراف", checkoutRec ? formatTimeStr(checkoutRec.ts) : "—", "🌙"],
           ].map(function(row, i) {
             return (
-              <div key={i} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "6px 0", borderBottom: i < 3 ? "1px solid rgba(0,0,0,.05)" : "none" }}>
-                <span style={{ fontSize: 12, fontWeight: 600 }}>{row[2] + " " + row[0]}</span>
+              <div key={i} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "6px 0", borderBottom: i < 3 ? "1px solid " + (C.bg === "#111827" ? "rgba(255,255,255,.08)" : "rgba(0,0,0,.05)") : "none" }}>
+                <span style={{ fontSize: 12, fontWeight: 600, color: C.text }}>{row[2] + " " + row[0]}</span>
                 <span style={{ fontSize: 13, fontWeight: 700, color: C.text }}>{row[1]}</span>
               </div>
             );
           })}
         </div>
 
-        <div style={{ textAlign: "center", fontSize: 11, color: C.sub, marginBottom: 12 }}>{"⭐ النقاط: " + (user.points || 0) + " نقطة"}</div>
+        <div style={{ textAlign: "center", fontSize: 11, color: C.text, marginBottom: 12, opacity: 0.7 }}>{"⭐ النقاط: " + (user.points || 0) + " نقطة"}</div>
 
         <button onClick={onClose} style={{ width: "100%", padding: 14, borderRadius: 16, background: "linear-gradient(135deg," + C.green + "," + C.greenDark + ")", color: "#fff", fontSize: 15, fontWeight: 800, border: "none", cursor: "pointer", fontFamily: "'Cairo',sans-serif" }}>
           إلى اللقاء 👋

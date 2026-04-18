@@ -1302,16 +1302,16 @@ function WorkTypesPanel({ t, B, emps }) {
           var ov = overrides[e.id] || "full_time";
           var currentLabel = workTypes[ov] ? workTypes[ov].label : "دوام كامل";
           return (
-            <div key={e.id} style={{ display: "flex", alignItems: "center", gap: 10, padding: "10px 12px", borderRadius: 8, background: t.bg, marginBottom: 6, border: "1px solid " + t.sep }}>
+            <div key={e.id} style={{ display: "flex", alignItems: "center", gap: 10, padding: "10px 12px", borderRadius: 8, background: t.bg === "#000000" ? "#1C1C1E" : "#F2F2F7", marginBottom: 6, border: "1px solid " + t.sep }}>
               <div style={{ flex: 1, minWidth: 0 }}>
-                <div style={{ fontSize: 13, fontWeight: 700, color: t.tx, marginBottom: 2, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{e.name}</div>
-                <div style={{ fontSize: 10, color: t.txM }}>الحالي: <span style={{ color: B.blue, fontWeight: 700 }}>{currentLabel}</span></div>
+                <div style={{ fontSize: 13, fontWeight: 700, color: t.tx, marginBottom: 2, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{e.name || "موظف بدون اسم"}</div>
+                <div style={{ fontSize: 10, color: t.tx2 }}>الحالي: <span style={{ color: B.blue, fontWeight: 700 }}>{currentLabel}</span></div>
               </div>
               <select value={ov} onChange={async function(ev) {
                 var n = { ...overrides, [e.id]: ev.target.value };
                 await saveTypes(null, n);
-              }} style={{ minWidth: 180, padding: "8px 12px", borderRadius: 8, border: "1px solid " + t.sep, background: t.inp, color: t.tx, fontSize: 12, fontWeight: 600, cursor: "pointer", fontFamily: "inherit" }}>
-                {Object.keys(workTypes).map(function(k){ return <option key={k} value={k}>{workTypes[k].label}</option>; })}
+              }} style={{ minWidth: 180, padding: "8px 12px", borderRadius: 8, border: "1px solid " + t.sep, background: "#fff", color: "#000", fontSize: 12, fontWeight: 600, cursor: "pointer", fontFamily: "inherit" }}>
+                {Object.keys(workTypes).map(function(k){ return <option key={k} value={k} style={{ background: "#fff", color: "#000" }}>{workTypes[k].label}</option>; })}
               </select>
             </div>
           );
@@ -1567,6 +1567,29 @@ function StoragePanel({ t, B }) {
     setDeletingBlob(false);
   }
 
+  async function deleteBlobAll() {
+    if (!confirm("🔥 تحذير شديد: سيتم حذف كل محتوى Vercel Blob!\n\nيشمل:\n• ملفات بصمة الحالية (محفوظة في Redis)\n• ملفات كوادر القديمة\n• أي ملفات أخرى في Blob\n\nهل أنت متأكد؟")) return;
+    if (!confirm("⚠️ تأكيد ثاني: هذا يحذف كل شي ولا يمكن التراجع!\n\nالنسخة الحية من بياناتك في Redis — لكن لا يوجد backup في Blob بعد هذا.\n\nمتأكد تماماً؟")) return;
+    setDeletingBlob(true);
+    try {
+      var r = await fetch("/api/data?action=blob-delete-all", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ confirm: "DELETE_ALL_BLOB" }),
+      });
+      var d = await r.json();
+      if (d.ok) {
+        alert("✅ تم حذف " + d.deleted + " ملف من Vercel Blob بنجاح");
+        loadBlobList();
+      } else {
+        alert("❌ فشل: " + (d.error || "خطأ غير معروف"));
+      }
+    } catch(e) {
+      alert("❌ خطأ: " + e.message);
+    }
+    setDeletingBlob(false);
+  }
+
   if (loading) return <div style={{ padding: 30, textAlign: "center", color: t.txM }}>جارِ تحميل حالة التخزين...</div>;
 
   var redisOk = status && status.redis && status.redis.enabled && status.redis.test === "ok";
@@ -1759,12 +1782,17 @@ function StoragePanel({ t, B }) {
                 <div style={{ marginTop: 14, padding: 12, background: "#ef444410", border: "1px solid #ef444440", borderRadius: 8 }}>
                   <div style={{ fontSize: 12, fontWeight: 800, color: "#ef4444", marginBottom: 8 }}>⚠️ منطقة الخطر</div>
                   <div style={{ fontSize: 10, color: t.txM, marginBottom: 10, lineHeight: 1.6 }}>
-                    هذا الزر سيحذف فقط ملفات البيانات ({blobList.basmaData.length} ملف JSON).<br/>
-                    المرفقات ({blobList.basmaFiles.length}) والملفات الأخرى ستبقى.
+                    <div style={{ marginBottom: 6 }}><strong>الخيار 1:</strong> حذف ملفات بيانات بصمة فقط ({blobList.basmaData.length})</div>
+                    <div><strong>الخيار 2:</strong> حذف كل شي ({blobList.totalFiles} ملف — {blobList.totalSizeMB} MB)</div>
                   </div>
-                  <button onClick={deleteBlobBasma} disabled={deletingBlob} style={{ padding: "8px 16px", borderRadius: 8, background: deletingBlob ? t.sep : "#ef4444", color: "#fff", border: "none", fontSize: 11, fontWeight: 800, cursor: deletingBlob ? "default" : "pointer" }}>
-                    {deletingBlob ? "⏳ جارِ الحذف..." : "🗑️ حذف ملفات بيانات بصمة من Blob"}
-                  </button>
+                  <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+                    <button onClick={deleteBlobBasma} disabled={deletingBlob} style={{ padding: "8px 14px", borderRadius: 8, background: deletingBlob ? t.sep : "#f59e0b", color: "#fff", border: "none", fontSize: 11, fontWeight: 800, cursor: deletingBlob ? "default" : "pointer" }}>
+                      {deletingBlob ? "⏳..." : "🗑️ حذف بيانات بصمة فقط"}
+                    </button>
+                    <button onClick={deleteBlobAll} disabled={deletingBlob} style={{ padding: "8px 14px", borderRadius: 8, background: deletingBlob ? t.sep : "#dc2626", color: "#fff", border: "none", fontSize: 11, fontWeight: 800, cursor: deletingBlob ? "default" : "pointer" }}>
+                      {deletingBlob ? "⏳..." : "🔥 حذف كل شي ({blobList.totalFiles} ملف)".replace("{blobList.totalFiles}", blobList.totalFiles)}
+                    </button>
+                  </div>
                 </div>
               )}
             </div>

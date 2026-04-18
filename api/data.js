@@ -1120,6 +1120,39 @@ export default async function handler(req, res) {
         }
       }
 
+      /* ═══ BLOB DELETE ALL — حذف كل الملفات من Blob (خطير) ═══ */
+      case 'blob-delete-all': {
+        if (req.method !== 'POST') return res.status(400).json({ ok: false, error: 'POST required' });
+        var body = req.body || {};
+        if (body.confirm !== 'DELETE_ALL_BLOB') {
+          return res.status(400).json({ ok: false, error: 'Missing confirm field' });
+        }
+        try {
+          var allBlobs = [];
+          var cursor = undefined;
+          do {
+            var result = await list({ cursor, limit: 1000 });
+            allBlobs = allBlobs.concat(result.blobs);
+            cursor = result.cursor;
+          } while (cursor && allBlobs.length < 5000);
+
+          var deleted = 0;
+          var failed = [];
+          // Delete in batches
+          for (var i = 0; i < allBlobs.length; i++) {
+            try {
+              await del(allBlobs[i].url);
+              deleted++;
+            } catch(e) {
+              failed.push({ name: allBlobs[i].pathname, error: e.message });
+            }
+          }
+          return res.json({ ok: true, deleted: deleted, failed: failed, total: allBlobs.length });
+        } catch(e) {
+          return res.status(500).json({ ok: false, error: e.message });
+        }
+      }
+
       /* ═══ BLOB DELETE ALL BASMA DATA — حذف كل بيانات بصمة من Blob ═══ */
       case 'blob-delete-basma-data': {
         if (req.method !== 'POST') return res.status(400).json({ ok: false, error: 'POST required' });
