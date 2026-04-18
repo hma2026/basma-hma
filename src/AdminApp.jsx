@@ -3,7 +3,7 @@ import { ALL_VIOLATIONS_DEFAULT, PENALTY_TYPES, LAIHA_INFO, COMPLAINT_STATUS, VI
 import { generateAttendanceReport, generateEmployeeReport, generateMonthlySummary, generateViolationsReport, generateEmployeesListReport, generateBenefitsReport, generateAnnouncementsReport } from "./pdfReports";
 
 const APP = "بصمة HMA";
-const VER = "4.87";
+const VER = "4.88";
 const CO = "هاني محمد عسيري للإستشارات الهندسية";
 const B = { blue: "#2B5EA7", yellow: "#FDD800", red: "#E2192C", black: "#1A1A1A", blueDk: "#1E4478", blueLt: "#EDF3FB", gold: "#D4A017" };
 
@@ -519,6 +519,7 @@ export default function AdminApp() {
     { id: "work_types", icon: "⏰", label: "أنواع الدوام" },
     { id: "benefits", icon: "🏅", label: "الامتيازات" },
     { id: "announcements", icon: "📢", label: "التعاميم" },
+    { id: "banners", icon: "🎨", label: "إدارة البنر" },
     { id: "test_panel", icon: "🧪", label: "اختبار النظام" },
     { id: "storage", icon: "💾", label: "التخزين" },
     { id: "admin_profile", icon: "🔐", label: "حساب المدير العام" },
@@ -1326,6 +1327,7 @@ export default function AdminApp() {
       {tab === "work_types" && <WorkTypesPanel t={t} B={B} emps={safeEmps} />}
       {tab === "benefits" && <BenefitsPanel t={t} B={B} />}
       {tab === "announcements" && <AnnouncementsPanel t={t} B={B} emps={safeEmps} branches={branches} />}
+      {tab === "banners" && <BannersPanel t={t} B={B} />}
       {tab === "test_panel" && <TestPanel t={t} B={B} emps={safeEmps} />}
       {tab === "storage" && <StoragePanel t={t} B={B} />}
 
@@ -1662,6 +1664,297 @@ function WorkTypePickerModal({ t, B, emp, workTypes, currentKey, onClose, onSele
           <button onClick={onClose} style={{ flex: 1, padding: 12, borderRadius: 10, background: t.bg, color: t.tx, border: "1px solid " + t.sep, fontSize: 13, fontWeight: 700, cursor: "pointer", fontFamily: "inherit" }}>إلغاء</button>
           <button onClick={handleSave} disabled={saving} style={{ flex: 2, padding: 12, borderRadius: 10, background: saving ? t.sep : B.blue, color: "#fff", border: "none", fontSize: 13, fontWeight: 800, cursor: saving ? "default" : "pointer", fontFamily: "inherit" }}>
             {saving ? "جارِ الحفظ..." : "✓ حفظ"}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/* ═══ BANNERS PANEL — إدارة بنر الصفحة الرئيسية ═══ */
+var BANNER_PRIORITY = {
+  urgent:    { label: "عاجل", icon: "🔴", color: "#EF4444" },
+  important: { label: "هام",  icon: "⚠️", color: "#F59E0B" },
+  normal:    { label: "عادي", icon: "📢", color: "#D4A017" },
+};
+function BannersPanel({ t, B }) {
+  var [banners, setBanners] = useState(null);
+  var [loading, setLoading] = useState(true);
+  var [editing, setEditing] = useState(null); // null | "new" | {bannerObj}
+  var [err, setErr] = useState("");
+
+  async function load() {
+    setLoading(true);
+    setErr("");
+    try {
+      var r = await fetch("/api/data?action=banners&admin=1");
+      var d = await r.json();
+      setBanners(d.banners || []);
+    } catch (e) {
+      setErr("تعذر التحميل");
+      setBanners([]);
+    }
+    setLoading(false);
+  }
+
+  useEffect(function(){ load(); }, []);
+
+  async function toggleActive(banner) {
+    try {
+      await fetch("/api/data?action=banners", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ id: banner.id, active: !banner.active }),
+      });
+      await load();
+    } catch (e) { alert("فشل التحديث"); }
+  }
+
+  async function deleteBanner(banner) {
+    if (!confirm("حذف هذا البنر؟\n\n" + (banner.title || ""))) return;
+    try {
+      await fetch("/api/data?action=banners", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ delete: banner.id }),
+      });
+      await load();
+    } catch (e) { alert("فشل الحذف"); }
+  }
+
+  async function move(banner, direction) {
+    if (!banners) return;
+    var idx = banners.findIndex(function(b){ return b.id === banner.id; });
+    var newIdx = idx + direction;
+    if (newIdx < 0 || newIdx >= banners.length) return;
+    var reordered = banners.slice();
+    var tmp = reordered[idx]; reordered[idx] = reordered[newIdx]; reordered[newIdx] = tmp;
+    try {
+      await fetch("/api/data?action=banners", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ reorder: reordered.map(function(b){ return b.id; }) }),
+      });
+      await load();
+    } catch (e) { alert("فشل إعادة الترتيب"); }
+  }
+
+  if (loading) return <div style={{ padding: 30, textAlign: "center", color: t.txM }}>جارِ التحميل...</div>;
+
+  var activeCount = (banners || []).filter(function(b){ return b.active; }).length;
+
+  return (
+    <div style={{ maxWidth: 1000 }}>
+      {/* Header */}
+      <div style={{ background: "linear-gradient(135deg, " + B.blue + " 0%, " + B.blueDk + " 100%)", borderRadius: 16, padding: "18px 22px", marginBottom: 16, color: "#fff", display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 12 }}>
+        <div>
+          <div style={{ fontSize: 20, fontWeight: 800, marginBottom: 4 }}>🎨 إدارة البنر</div>
+          <div style={{ fontSize: 11, opacity: 0.85 }}>{(banners || []).length} بنر · {activeCount} نشط</div>
+        </div>
+        <button onClick={function(){ setEditing("new"); }} style={{ background: "#fff", color: B.blue, border: "none", borderRadius: 10, padding: "10px 18px", fontSize: 13, fontWeight: 800, cursor: "pointer", fontFamily: "inherit" }}>+ إضافة بنر</button>
+      </div>
+
+      {/* Info */}
+      <div style={{ background: B.blue + "10", border: "1px solid " + B.blue + "30", borderRadius: 10, padding: "10px 14px", marginBottom: 14, fontSize: 11, color: t.tx, lineHeight: 1.6 }}>
+        💡 البنرات تظهر في الصفحة الرئيسية للتطبيق وتتبدّل تلقائياً. يمكن إضافة نص، صورة، رابط، وجدولة فترة العرض.
+      </div>
+
+      {err && <div style={{ color: "#EF4444", fontSize: 12, marginBottom: 10, padding: 10, background: "rgba(239,68,68,0.1)", borderRadius: 8 }}>{err}</div>}
+
+      {/* Banners list */}
+      {(!banners || banners.length === 0) ? (
+        <div style={{ background: t.card, borderRadius: 14, padding: 40, textAlign: "center", border: "1px dashed " + t.sep }}>
+          <div style={{ fontSize: 44, marginBottom: 12 }}>🎨</div>
+          <div style={{ fontSize: 14, fontWeight: 700, color: t.tx, marginBottom: 4 }}>لا توجد بنرات بعد</div>
+          <div style={{ fontSize: 11, color: t.txM, marginBottom: 16 }}>ابدأ بإضافة بنر جديد ليظهر في الصفحة الرئيسية</div>
+          <button onClick={function(){ setEditing("new"); }} style={{ background: B.blue, color: "#fff", border: "none", borderRadius: 10, padding: "10px 22px", fontSize: 13, fontWeight: 800, cursor: "pointer", fontFamily: "inherit" }}>+ إضافة أول بنر</button>
+        </div>
+      ) : (
+        <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+          {banners.map(function(b, idx) {
+            var p = BANNER_PRIORITY[b.priority] || BANNER_PRIORITY.normal;
+            return (
+              <div key={b.id} style={{ background: t.card, borderRadius: 14, padding: 14, border: "1px solid " + t.sep, borderRight: "4px solid " + (b.active ? p.color : t.sep), opacity: b.active ? 1 : 0.55 }}>
+                <div style={{ display: "flex", alignItems: "start", gap: 12 }}>
+                  {/* Image preview */}
+                  {b.imageUrl && (
+                    <img src={b.imageUrl} alt="" style={{ width: 64, height: 64, borderRadius: 10, objectFit: "cover", flexShrink: 0, background: t.bg }} onError={function(e){ e.target.style.display = "none"; }} />
+                  )}
+
+                  {/* Content */}
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 5, flexWrap: "wrap" }}>
+                      <span style={{ padding: "2px 8px", borderRadius: 6, background: p.color + "22", color: p.color, fontSize: 10, fontWeight: 800 }}>{p.icon} {p.label}</span>
+                      {!b.active && <span style={{ padding: "2px 8px", borderRadius: 6, background: t.sep, color: t.txM, fontSize: 10, fontWeight: 700 }}>⏸ متوقف</span>}
+                      {b.linkUrl && <span style={{ padding: "2px 8px", borderRadius: 6, background: B.blue + "22", color: B.blue, fontSize: 10, fontWeight: 700 }}>🔗 رابط</span>}
+                      {b.imageUrl && <span style={{ padding: "2px 8px", borderRadius: 6, background: "#10B98122", color: "#10B981", fontSize: 10, fontWeight: 700 }}>🖼 صورة</span>}
+                    </div>
+                    <div style={{ fontSize: 14, fontWeight: 800, color: t.tx, marginBottom: 3, wordBreak: "break-word" }}>{b.title || "(بدون عنوان)"}</div>
+                    {b.content && <div style={{ fontSize: 11, color: t.txM, marginBottom: 4, lineHeight: 1.5, maxHeight: 32, overflow: "hidden", display: "-webkit-box", WebkitLineClamp: 2, WebkitBoxOrient: "vertical" }}>{b.content}</div>}
+                    {(b.startDate || b.endDate) && (
+                      <div style={{ fontSize: 10, color: t.txM, marginTop: 4 }}>
+                        📅 {b.startDate ? new Date(b.startDate).toLocaleDateString("ar-SA") : "—"} → {b.endDate ? new Date(b.endDate).toLocaleDateString("ar-SA") : "—"}
+                      </div>
+                    )}
+                  </div>
+                </div>
+
+                {/* Actions */}
+                <div style={{ display: "flex", gap: 6, marginTop: 12, flexWrap: "wrap" }}>
+                  <button onClick={function(){ toggleActive(b); }} style={{ padding: "6px 12px", borderRadius: 8, background: b.active ? "#10B98122" : t.bg, border: "1px solid " + (b.active ? "#10B981" : t.sep), color: b.active ? "#10B981" : t.tx, fontSize: 11, fontWeight: 700, cursor: "pointer", fontFamily: "inherit" }}>
+                    {b.active ? "✓ نشط" : "⏸ متوقف"}
+                  </button>
+                  <button onClick={function(){ setEditing(b); }} style={{ padding: "6px 12px", borderRadius: 8, background: B.blue, border: "none", color: "#fff", fontSize: 11, fontWeight: 700, cursor: "pointer", fontFamily: "inherit" }}>✎ تعديل</button>
+                  <button onClick={function(){ move(b, -1); }} disabled={idx === 0} style={{ padding: "6px 10px", borderRadius: 8, background: t.bg, border: "1px solid " + t.sep, color: t.tx, fontSize: 11, fontWeight: 700, cursor: idx === 0 ? "default" : "pointer", fontFamily: "inherit", opacity: idx === 0 ? 0.4 : 1 }}>↑</button>
+                  <button onClick={function(){ move(b, 1); }} disabled={idx === banners.length - 1} style={{ padding: "6px 10px", borderRadius: 8, background: t.bg, border: "1px solid " + t.sep, color: t.tx, fontSize: 11, fontWeight: 700, cursor: idx === banners.length - 1 ? "default" : "pointer", fontFamily: "inherit", opacity: idx === banners.length - 1 ? 0.4 : 1 }}>↓</button>
+                  <div style={{ flex: 1 }} />
+                  <button onClick={function(){ deleteBanner(b); }} style={{ padding: "6px 12px", borderRadius: 8, background: "rgba(239,68,68,0.1)", border: "1px solid rgba(239,68,68,0.3)", color: "#EF4444", fontSize: 11, fontWeight: 700, cursor: "pointer", fontFamily: "inherit" }}>🗑 حذف</button>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      )}
+
+      {/* Edit modal */}
+      {editing && <BannerEditModal t={t} B={B} banner={editing === "new" ? null : editing} onClose={function(){ setEditing(null); }} onSaved={function(){ setEditing(null); load(); }} />}
+    </div>
+  );
+}
+
+/* ═══ BANNER EDIT MODAL ═══ */
+function BannerEditModal({ t, B, banner, onClose, onSaved }) {
+  var isNew = !banner;
+  var [title, setTitle] = useState(banner ? banner.title || "" : "");
+  var [content, setContent] = useState(banner ? banner.content || "" : "");
+  var [imageUrl, setImageUrl] = useState(banner ? banner.imageUrl || "" : "");
+  var [linkUrl, setLinkUrl] = useState(banner ? banner.linkUrl || "" : "");
+  var [priority, setPriority] = useState(banner ? banner.priority || "normal" : "normal");
+  var [active, setActive] = useState(banner ? banner.active !== false : true);
+  var [startDate, setStartDate] = useState(banner && banner.startDate ? banner.startDate.slice(0, 10) : "");
+  var [endDate, setEndDate] = useState(banner && banner.endDate ? banner.endDate.slice(0, 10) : "");
+  var [saving, setSaving] = useState(false);
+  var [err, setErr] = useState("");
+
+  async function save() {
+    if (!title.trim()) { setErr("العنوان مطلوب"); return; }
+    setSaving(true);
+    setErr("");
+    try {
+      var payload = {
+        title: title.trim(),
+        content: content.trim(),
+        imageUrl: imageUrl.trim(),
+        linkUrl: linkUrl.trim(),
+        priority: priority,
+        active: active,
+        startDate: startDate ? new Date(startDate).toISOString() : null,
+        endDate: endDate ? new Date(endDate + "T23:59:59").toISOString() : null,
+      };
+      if (banner && banner.id) payload.id = banner.id;
+
+      var r = await fetch("/api/data?action=banners", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      });
+      var d = await r.json();
+      if (!r.ok || !d.ok) { setErr(d.error || "فشل الحفظ"); setSaving(false); return; }
+      onSaved();
+    } catch (e) {
+      setErr("خطأ اتصال");
+      setSaving(false);
+    }
+  }
+
+  var inputStyle = { width: "100%", padding: "11px 14px", borderRadius: 10, border: "1px solid " + t.sep, background: t.inp, color: t.tx, fontSize: 13, fontFamily: "inherit", outline: "none", boxSizing: "border-box" };
+  var labelStyle = { fontSize: 11, fontWeight: 700, color: t.tx2, marginBottom: 6 };
+
+  return (
+    <div onClick={onClose} style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.55)", zIndex: 999, display: "flex", alignItems: "center", justifyContent: "center", padding: 12, fontFamily: Fn }}>
+      <div onClick={function(e){ e.stopPropagation(); }} style={{ background: t.card, borderRadius: 18, maxWidth: 560, width: "100%", maxHeight: "92vh", overflowY: "auto", boxShadow: "0 10px 40px rgba(0,0,0,0.3)", direction: "rtl" }}>
+        {/* Header */}
+        <div style={{ padding: "18px 20px", borderBottom: "1px solid " + t.sep, display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+          <div style={{ fontSize: 16, fontWeight: 800, color: t.tx }}>🎨 {isNew ? "إضافة بنر جديد" : "تعديل البنر"}</div>
+          <button onClick={onClose} style={{ background: "none", border: "none", fontSize: 22, color: t.txM, cursor: "pointer", padding: 0, lineHeight: 1 }}>×</button>
+        </div>
+
+        {/* Body */}
+        <div style={{ padding: 20 }}>
+          {/* Priority */}
+          <div style={{ marginBottom: 14 }}>
+            <div style={labelStyle}>الأولوية</div>
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 8 }}>
+              {Object.keys(BANNER_PRIORITY).map(function(key){
+                var p = BANNER_PRIORITY[key];
+                var active = priority === key;
+                return (
+                  <button key={key} onClick={function(){ setPriority(key); }} style={{ padding: "10px 8px", borderRadius: 10, background: active ? p.color : t.bg, color: active ? "#fff" : t.tx, border: "2px solid " + (active ? p.color : t.sep), fontSize: 12, fontWeight: 800, cursor: "pointer", fontFamily: "inherit" }}>
+                    {p.icon} {p.label}
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+
+          {/* Title */}
+          <div style={{ marginBottom: 14 }}>
+            <div style={labelStyle}>📝 العنوان <span style={{ color: "#EF4444" }}>*</span></div>
+            <input type="text" value={title} onChange={function(e){ setTitle(e.target.value); }} placeholder="عنوان البنر" style={inputStyle} />
+          </div>
+
+          {/* Content */}
+          <div style={{ marginBottom: 14 }}>
+            <div style={labelStyle}>📄 النص (اختياري)</div>
+            <textarea value={content} onChange={function(e){ setContent(e.target.value); }} placeholder="نص البنر التفصيلي..." rows={3} style={Object.assign({}, inputStyle, { resize: "vertical", minHeight: 70 })} />
+          </div>
+
+          {/* Image URL */}
+          <div style={{ marginBottom: 14 }}>
+            <div style={labelStyle}>🖼 رابط الصورة (اختياري)</div>
+            <input type="url" value={imageUrl} onChange={function(e){ setImageUrl(e.target.value); }} placeholder="https://..." style={inputStyle} />
+            {imageUrl && (
+              <div style={{ marginTop: 8, padding: 8, background: t.bg, borderRadius: 8, border: "1px solid " + t.sep }}>
+                <img src={imageUrl} alt="معاينة" style={{ maxWidth: "100%", maxHeight: 120, borderRadius: 6, display: "block" }} onError={function(e){ e.target.style.display = "none"; }} />
+              </div>
+            )}
+          </div>
+
+          {/* Link URL */}
+          <div style={{ marginBottom: 14 }}>
+            <div style={labelStyle}>🔗 الرابط عند النقر (اختياري)</div>
+            <input type="url" value={linkUrl} onChange={function(e){ setLinkUrl(e.target.value); }} placeholder="https://..." style={inputStyle} />
+            <div style={{ fontSize: 10, color: t.txM, marginTop: 4 }}>عند نقر الموظف على البنر، يُفتح هذا الرابط في نافذة جديدة</div>
+          </div>
+
+          {/* Dates */}
+          <div style={{ marginBottom: 14, display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
+            <div>
+              <div style={labelStyle}>📅 تاريخ البدء (اختياري)</div>
+              <input type="date" value={startDate} onChange={function(e){ setStartDate(e.target.value); }} style={inputStyle} />
+            </div>
+            <div>
+              <div style={labelStyle}>📅 تاريخ الانتهاء (اختياري)</div>
+              <input type="date" value={endDate} onChange={function(e){ setEndDate(e.target.value); }} style={inputStyle} />
+            </div>
+          </div>
+
+          {/* Active toggle */}
+          <div onClick={function(){ setActive(!active); }} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "12px 14px", borderRadius: 10, cursor: "pointer", background: active ? "rgba(16,185,129,0.1)" : t.bg, border: "1px solid " + (active ? "#10B981" : t.sep), fontSize: 12, fontWeight: 700, color: active ? "#10B981" : t.tx }}>
+            <span>{active ? "✓ البنر نشط (يظهر للموظفين)" : "⏸ البنر متوقف"}</span>
+            <div style={{ width: 36, height: 20, borderRadius: 10, background: active ? "#10B981" : t.sep, position: "relative", transition: "all 0.15s", flexShrink: 0 }}>
+              <div style={{ width: 16, height: 16, borderRadius: 8, background: "#fff", position: "absolute", top: 2, right: active ? 2 : 18, transition: "all 0.15s", boxShadow: "0 1px 3px rgba(0,0,0,0.2)" }} />
+            </div>
+          </div>
+
+          {err && <div style={{ color: "#EF4444", fontSize: 12, marginTop: 10, padding: 10, background: "rgba(239,68,68,0.1)", borderRadius: 8, fontWeight: 600 }}>{err}</div>}
+        </div>
+
+        {/* Footer */}
+        <div style={{ padding: "14px 20px", borderTop: "1px solid " + t.sep, display: "flex", gap: 10 }}>
+          <button onClick={onClose} style={{ flex: 1, padding: 12, borderRadius: 10, background: t.bg, color: t.tx, border: "1px solid " + t.sep, fontSize: 13, fontWeight: 700, cursor: "pointer", fontFamily: "inherit" }}>إلغاء</button>
+          <button onClick={save} disabled={saving} style={{ flex: 2, padding: 12, borderRadius: 10, background: saving ? t.sep : B.blue, color: "#fff", border: "none", fontSize: 13, fontWeight: 800, cursor: saving ? "default" : "pointer", fontFamily: "inherit" }}>
+            {saving ? "جارِ الحفظ..." : (isNew ? "✓ إضافة" : "✓ حفظ التعديلات")}
           </button>
         </div>
       </div>

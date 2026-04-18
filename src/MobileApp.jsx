@@ -10,7 +10,7 @@ import { ALL_VIOLATIONS_DEFAULT, PENALTY_TYPES, LAIHA_INFO, COMPLAINT_STATUS, VI
 
 /* ═══════════ APP CONFIG (إعدادات التطبيق) ═══════════ */
 const APP_CONFIG = {
-  VER: "4.87",
+  VER: "4.88",
   NAME: "بصمة HMA",
   FULL_NAME: "نظام الحضور والانصراف الذكي",
   COMPANY: "هاني محمد عسيري للاستشارات الهندسية",
@@ -368,6 +368,7 @@ function MobileAppInner() {
   const [allEmps, setAllEmps] = useState([]);
   const [kadwarNotifs, setKadwarNotifs] = useState({ tasks: 0, exams: 0, alerts: 0 });
   const [announcements, setAnnouncements] = useState([]);
+  const [banners, setBanners] = useState([]);
   const [showAnnModal, setShowAnnModal] = useState(false);
   const [legalAlerts, setLegalAlerts] = useState(0);
   const [notifications, setNotifications] = useState([]);
@@ -763,6 +764,12 @@ function MobileAppInner() {
           setAnnouncements(filtered);
         }
       } catch(e) { /**/ }
+      // Fetch banners
+      try {
+        var bnrR = await fetch("/api/data?action=banners");
+        var bnrD = await bnrR.json();
+        if (bnrD && Array.isArray(bnrD.banners)) setBanners(bnrD.banners);
+      } catch(e) { /**/ }
       // Fetch notifications
       try {
         var allNotifs = await api("notifications", { params: { empId: emp.id } });
@@ -901,7 +908,7 @@ function MobileAppInner() {
       {!online && <div style={{ background: C.red, color: "#fff", textAlign: "center", padding: "6px 0", fontSize: 11, fontWeight: 700 }}>⚠️ لا يوجد اتصال بالإنترنت</div>}
 
       <div key={page} style={{ flex: 1, display: "flex", flexDirection: "column", animation: "pageIn .3s ease" }}>
-        {page === "home" && <HomePage user={user} branch={branch} now={now} todayAtt={todayAtt} allAtt={allAtt} gps={gps} gpsDist={gpsDist} streak={streak} loading={loading} refreshing={refreshing} dayState={getDayState()} checkpoints={getCheckpoints()} isOffDay={isOffDay()} pendingCount={myLeaves.filter(function(l){ return l.status === "pending"; }).length + myTickets.filter(function(t){ return t.status === "pending"; }).length} teamToday={teamToday} pwaPrompt={pwaPrompt} onPwaInstall={async function(){ if(pwaPrompt){pwaPrompt.prompt();await pwaPrompt.userChoice;setPwaPrompt(null);} }} onCheckin={requestCheckin} onChallenge={function(pts) { var u = { ...user, points: (user.points||0)+pts }; setUser(u); localStorage.setItem("basma_user", JSON.stringify(u)); showToast("🎉 +" + pts + " نقطة!"); }} onLeave={() => setLeaveModal(true)} onRefresh={refresh} onPreAbsence={function(){ setPreAbsModal(true); }} onManualAtt={function(){ setManualAttModal(true); }} onPermission={function(){ setPermModal(true); }} kadwarNotifs={kadwarNotifs} darkMode={darkMode} announcements={announcements} onShowAnnouncements={function(){ setShowAnnModal(true); }} />}
+        {page === "home" && <HomePage user={user} branch={branch} now={now} todayAtt={todayAtt} allAtt={allAtt} gps={gps} gpsDist={gpsDist} streak={streak} loading={loading} refreshing={refreshing} dayState={getDayState()} checkpoints={getCheckpoints()} isOffDay={isOffDay()} pendingCount={myLeaves.filter(function(l){ return l.status === "pending"; }).length + myTickets.filter(function(t){ return t.status === "pending"; }).length} teamToday={teamToday} pwaPrompt={pwaPrompt} onPwaInstall={async function(){ if(pwaPrompt){pwaPrompt.prompt();await pwaPrompt.userChoice;setPwaPrompt(null);} }} onCheckin={requestCheckin} onChallenge={function(pts) { var u = { ...user, points: (user.points||0)+pts }; setUser(u); localStorage.setItem("basma_user", JSON.stringify(u)); showToast("🎉 +" + pts + " نقطة!"); }} onLeave={() => setLeaveModal(true)} onRefresh={refresh} onPreAbsence={function(){ setPreAbsModal(true); }} onManualAtt={function(){ setManualAttModal(true); }} onPermission={function(){ setPermModal(true); }} kadwarNotifs={kadwarNotifs} darkMode={darkMode} announcements={announcements} banners={banners} onShowAnnouncements={function(){ setShowAnnModal(true); }} />}
         {page === "report" && <ReportPage user={user} allAtt={allAtt} todayAtt={todayAtt} branch={branch} isOffDay={isOffDay()} myLeaves={myLeaves} allEmps={allEmps} />}
         {page === "benefits" && <BenefitsPage user={user} />}
         {page === "tawasul" && <TawasulPage user={user} allEmps={allEmps} />}
@@ -1072,7 +1079,7 @@ function LoginScreen({ onLogin, loading }) {
 }
 
 /* ═══════════ HOME ═══════════ */
-function HomePage({ user, branch, now, todayAtt, allAtt, gps, gpsDist, streak, loading, refreshing, dayState, checkpoints, isOffDay, pendingCount, teamToday, pwaPrompt, onPwaInstall, onCheckin, onChallenge, onLeave, onRefresh, onPreAbsence, onManualAtt, onPermission, kadwarNotifs, darkMode, announcements, onShowAnnouncements }) {
+function HomePage({ user, branch, now, todayAtt, allAtt, gps, gpsDist, streak, loading, refreshing, dayState, checkpoints, isOffDay, pendingCount, teamToday, pwaPrompt, onPwaInstall, onCheckin, onChallenge, onLeave, onRefresh, onPreAbsence, onManualAtt, onPermission, kadwarNotifs, darkMode, announcements, banners, onShowAnnouncements }) {
   const { time, sec, ampm } = formatTime(now);
   const badge = memberBadge(user.points || 0);
   const inRange = branch && gpsDist !== null && gpsDist <= (branch.radius || 150);
@@ -1298,8 +1305,8 @@ function HomePage({ user, branch, now, todayAtt, allAtt, gps, gpsDist, streak, l
           {streak > 0 && <span style={{ fontSize: 13, fontWeight: 800, color: COLORS.goldLight, marginRight: 4 }}>{"🔥 " + streak}</span>}
         </div>
 
-        {/* Announcements Banner — rotating with fade */}
-        <AnnouncementsBanner announcements={announcements} user={user} onShow={onShowAnnouncements} />
+        {/* Home Banner — admin-managed rotating banners with image/link support */}
+        <HomeBanner banners={banners} user={user} onShowAnnouncements={onShowAnnouncements} announcements={announcements} />
 
         {/* إجازة + إذن (secondary) */}
         <div style={{ display: "flex", gap: SPACING.sm }}>
@@ -2271,44 +2278,79 @@ function TawasulDetailModal({ request, user, allEmps, onClose, nameOf }) {
   );
 }
 
-/* ═══════════ ANNOUNCEMENTS BANNER — rotating with fade/pulse ═══════════ */
-function AnnouncementsBanner({ announcements, user, onShow }) {
-  var unread = (announcements || []).filter(function(a){ return !(a.readBy || []).includes(user && user.id); });
+/* ═══════════ HOME BANNER — admin-managed rotating with image/link support ═══════════ */
+function HomeBanner({ banners, user, onShowAnnouncements, announcements }) {
+  // Use admin banners if any, else fall back to unread announcements
+  var hasAdminBanners = banners && banners.length > 0;
+  var unreadAnn = (announcements || []).filter(function(a){ return !(a.readBy || []).includes(user && user.id); });
+
+  // Build the rotation queue
+  var items = hasAdminBanners ? banners.map(function(b){
+    return {
+      source: "banner",
+      id: b.id,
+      title: b.title,
+      content: b.content,
+      imageUrl: b.imageUrl,
+      linkUrl: b.linkUrl,
+      priority: b.priority || "normal",
+    };
+  }) : unreadAnn.map(function(a){
+    return {
+      source: "announcement",
+      id: a.id,
+      title: a.title || a.content,
+      content: a.content,
+      imageUrl: null,
+      linkUrl: null,
+      priority: a.priority || "normal",
+    };
+  });
+
   var [idx, setIdx] = useState(0);
   var [fade, setFade] = useState(true);
 
   useEffect(function() {
-    if (unread.length <= 1) return;
+    if (items.length <= 1) return;
     var interval = setInterval(function() {
       setFade(false);
       setTimeout(function() {
-        setIdx(function(i) { return (i + 1) % unread.length; });
+        setIdx(function(i) { return (i + 1) % items.length; });
         setFade(true);
       }, 400);
     }, 5000);
     return function() { clearInterval(interval); };
-  }, [unread.length]);
+  }, [items.length]);
 
-  // Reset index if array shrunk
   useEffect(function() {
-    if (idx >= unread.length && unread.length > 0) setIdx(0);
-  }, [unread.length, idx]);
+    if (idx >= items.length && items.length > 0) setIdx(0);
+  }, [items.length, idx]);
 
-  if (unread.length === 0) return null;
-
-  var current = unread[idx] || unread[0];
+  if (items.length === 0) return null;
+  var current = items[idx] || items[0];
   if (!current) return null;
+
   var isUrgent = current.priority === "urgent";
   var isImportant = current.priority === "important";
-
-  var label = isUrgent ? "عاجل" : isImportant ? "هام" : "تعميم";
+  var labelText = isUrgent ? "عاجل" : isImportant ? "هام" : (current.source === "banner" ? "إعلان" : "تعميم");
   var mainIcon = isUrgent ? "🔴" : isImportant ? "⚠️" : "📢";
 
+  function handleClick() {
+    if (current.linkUrl) {
+      window.open(current.linkUrl, "_blank", "noopener,noreferrer");
+    } else {
+      if (typeof onShowAnnouncements === "function") onShowAnnouncements();
+    }
+  }
+
+  // Image-first layout
+  var hasImage = !!current.imageUrl;
+
   return (
-    <div onClick={onShow} style={{
+    <div onClick={handleClick} style={{
       cursor: "pointer",
       borderRadius: 16,
-      padding: "12px 16px",
+      padding: hasImage ? 0 : "12px 16px",
       background: isUrgent
         ? "linear-gradient(135deg, rgba(239,68,68,0.22), rgba(220,38,38,0.14))"
         : isImportant
@@ -2316,13 +2358,14 @@ function AnnouncementsBanner({ announcements, user, onShow }) {
           : "linear-gradient(135deg, rgba(201,168,76,0.18), rgba(139,105,20,0.1))",
       border: "1.5px solid " + (isUrgent ? "rgba(239,68,68,0.55)" : isImportant ? "rgba(245,158,11,0.5)" : "rgba(201,168,76,0.45)"),
       display: "flex",
-      alignItems: "center",
-      gap: 12,
+      alignItems: "stretch",
+      gap: hasImage ? 0 : 12,
       opacity: fade ? 1 : 0,
       transition: "opacity 0.4s ease",
       animation: isUrgent ? "basmaBnrUrgent 1.8s ease-in-out infinite" : "basmaBnrGentle 3s ease-in-out infinite",
       position: "relative",
       overflow: "hidden",
+      minHeight: hasImage ? 70 : "auto",
     }}>
       <style>{`
         @keyframes basmaBnrGentle {
@@ -2334,19 +2377,42 @@ function AnnouncementsBanner({ announcements, user, onShow }) {
           50% { box-shadow: 0 0 0 9px rgba(239,68,68,0); }
         }
       `}</style>
-      <div style={{ fontSize: 22, flexShrink: 0 }}>{mainIcon}</div>
-      <div style={{ flex: 1, minWidth: 0 }}>
-        <div style={{ fontSize: 10, fontWeight: 800, color: isUrgent ? "#EF4444" : isImportant ? "#F59E0B" : COLORS.goldLight, marginBottom: 2, opacity: 0.95, fontFamily: "'Tajawal',sans-serif" }}>
-          {label}
-          {unread.length > 1 && <span style={{ marginRight: 6, opacity: 0.7, fontWeight: 600 }}>· {idx + 1}/{unread.length}</span>}
+
+      {hasImage && (
+        <div style={{ width: 80, minHeight: 70, background: "rgba(0,0,0,0.2)", flexShrink: 0, overflow: "hidden" }}>
+          <img src={current.imageUrl} alt="" style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }} onError={function(e){ e.target.parentNode.style.display = "none"; }} />
+        </div>
+      )}
+
+      <div style={{ flex: 1, minWidth: 0, padding: hasImage ? "12px 14px" : 0, display: "flex", flexDirection: "column", justifyContent: "center" }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 3 }}>
+          <span style={{ fontSize: 14, flexShrink: 0 }}>{mainIcon}</span>
+          <span style={{ fontSize: 10, fontWeight: 800, color: isUrgent ? "#EF4444" : isImportant ? "#F59E0B" : COLORS.goldLight, fontFamily: "'Tajawal',sans-serif", opacity: 0.95 }}>
+            {labelText}
+            {items.length > 1 && <span style={{ marginRight: 6, opacity: 0.7, fontWeight: 600 }}>· {idx + 1}/{items.length}</span>}
+          </span>
+          {current.linkUrl && <span style={{ fontSize: 10, color: COLORS.textMuted, marginRight: "auto" }}>🔗</span>}
         </div>
         <div style={{ fontSize: 13, fontWeight: 700, color: COLORS.textPrimary, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", fontFamily: "'Tajawal',sans-serif" }}>
           {current.title || current.content || ""}
         </div>
+        {current.content && current.content !== current.title && (
+          <div style={{ fontSize: 11, color: COLORS.textMuted, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", fontFamily: "'Tajawal',sans-serif", marginTop: 2 }}>
+            {current.content}
+          </div>
+        )}
       </div>
-      <div style={{ fontSize: 18, color: COLORS.textMuted, flexShrink: 0 }}>‹</div>
+
+      {!hasImage && (
+        <div style={{ fontSize: 18, color: COLORS.textMuted, flexShrink: 0, alignSelf: "center" }}>‹</div>
+      )}
     </div>
   );
+}
+
+/* ═══════════ ANNOUNCEMENTS BANNER (legacy — kept for compatibility) ═══════════ */
+function AnnouncementsBanner({ announcements, user, onShow }) {
+  return <HomeBanner banners={null} announcements={announcements} user={user} onShowAnnouncements={onShow} />;
 }
 
 /* ═══════════ ANNOUNCEMENTS MODAL ═══════════ */

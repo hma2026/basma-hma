@@ -1401,6 +1401,72 @@ export default async function handler(req, res) {
         }
       }
 
+      /* ═══ BANNERS — بنر الصفحة الرئيسية ═══ */
+      case 'banners': {
+        if (req.method === 'POST') {
+          var body = req.body || {};
+          var list = (await dbGet('banners')) || [];
+
+          if (body.delete) {
+            list = list.filter(function(b){ return b.id !== body.delete; });
+            await dbSet('banners', list);
+            return res.json({ ok: true, deleted: body.delete });
+          }
+
+          if (body.reorder && Array.isArray(body.reorder)) {
+            var reordered = body.reorder.map(function(id, idx){
+              var found = list.find(function(b){ return b.id === id; });
+              return found ? Object.assign({}, found, { order: idx }) : null;
+            }).filter(Boolean);
+            await dbSet('banners', reordered);
+            return res.json({ ok: true });
+          }
+
+          if (body.id) {
+            var idx = list.findIndex(function(b){ return b.id === body.id; });
+            if (idx >= 0) {
+              list[idx] = Object.assign({}, list[idx], body, { updatedAt: new Date().toISOString() });
+            } else {
+              list.push(Object.assign({}, body, { createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() }));
+            }
+            await dbSet('banners', list);
+            return res.json({ ok: true, banner: list[idx >= 0 ? idx : list.length - 1] });
+          }
+
+          // Create new
+          var newBanner = {
+            id: "bnr_" + Date.now(),
+            title: body.title || "",
+            content: body.content || "",
+            imageUrl: body.imageUrl || "",
+            linkUrl: body.linkUrl || "",
+            priority: body.priority || "normal",
+            active: body.active !== false,
+            startDate: body.startDate || null,
+            endDate: body.endDate || null,
+            order: list.length,
+            createdAt: new Date().toISOString(),
+            updatedAt: new Date().toISOString(),
+          };
+          list.push(newBanner);
+          await dbSet('banners', list);
+          return res.json({ ok: true, banner: newBanner });
+        }
+
+        // GET
+        var list = (await dbGet('banners')) || [];
+        var now = new Date();
+        var adminView = req.query && req.query.admin === '1';
+        var filtered = adminView ? list : list.filter(function(b){
+          if (!b.active) return false;
+          if (b.startDate && new Date(b.startDate) > now) return false;
+          if (b.endDate && new Date(b.endDate) < now) return false;
+          return true;
+        });
+        filtered.sort(function(a,b){ return (a.order || 0) - (b.order || 0); });
+        return res.json({ ok: true, banners: filtered });
+      }
+
       /* ═══ ANNOUNCEMENTS — التعاميم ═══ */
       case 'announcements': {
         if (req.method === 'POST') {
