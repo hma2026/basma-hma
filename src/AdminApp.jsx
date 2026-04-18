@@ -480,6 +480,7 @@ export default function AdminApp() {
     { id: "settings", icon: "⚙️", label: "الإعدادات" },
     { id: "work_types", icon: "⏰", label: "أنواع الدوام" },
     { id: "test_panel", icon: "🧪", label: "اختبار النظام" },
+    { id: "storage", icon: "💾", label: "التخزين" },
     { id: "admin_profile", icon: "🔐", label: "حساب المدير العام" },
   ];
 
@@ -1151,6 +1152,7 @@ export default function AdminApp() {
       {/* ═══ ADMIN PROFILE — تعديل حساب المدير العام ═══ */}
       {tab === "work_types" && <WorkTypesPanel t={t} B={B} emps={safeEmps} />}
       {tab === "test_panel" && <TestPanel t={t} B={B} emps={safeEmps} />}
+      {tab === "storage" && <StoragePanel t={t} B={B} />}
 
       {tab === "admin_profile" && <AdminProfile t={t} B={B} onLogout={function(){ localStorage.removeItem("basma_admin_email"); localStorage.removeItem("basma_last_mode"); setLoggedIn(false); }} />}
     </div>
@@ -1298,13 +1300,17 @@ function WorkTypesPanel({ t, B, emps }) {
         {emps.length === 0 && <div style={{ color: t.txM, fontSize: 12, padding: 14, textAlign: "center" }}>لا يوجد موظفون — زامن مع كوادر أولاً</div>}
         {emps.map(function(e) {
           var ov = overrides[e.id] || "full_time";
+          var currentLabel = workTypes[ov] ? workTypes[ov].label : "دوام كامل";
           return (
-            <div key={e.id} style={{ display: "flex", alignItems: "center", gap: 10, padding: "8px 10px", borderRadius: 8, background: t.bg, marginBottom: 4 }}>
-              <div style={{ flex: 1, fontSize: 12, fontWeight: 600 }}>{e.name}</div>
+            <div key={e.id} style={{ display: "flex", alignItems: "center", gap: 10, padding: "10px 12px", borderRadius: 8, background: t.bg, marginBottom: 6, border: "1px solid " + t.sep }}>
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <div style={{ fontSize: 13, fontWeight: 700, color: t.tx, marginBottom: 2, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{e.name}</div>
+                <div style={{ fontSize: 10, color: t.txM }}>الحالي: <span style={{ color: B.blue, fontWeight: 700 }}>{currentLabel}</span></div>
+              </div>
               <select value={ov} onChange={async function(ev) {
                 var n = { ...overrides, [e.id]: ev.target.value };
                 await saveTypes(null, n);
-              }} style={{ padding: "6px 10px", borderRadius: 6, border: "1px solid " + t.sep, background: t.inp, color: t.tx, fontSize: 11 }}>
+              }} style={{ minWidth: 180, padding: "8px 12px", borderRadius: 8, border: "1px solid " + t.sep, background: t.inp, color: t.tx, fontSize: 12, fontWeight: 600, cursor: "pointer", fontFamily: "inherit" }}>
                 {Object.keys(workTypes).map(function(k){ return <option key={k} value={k}>{workTypes[k].label}</option>; })}
               </select>
             </div>
@@ -1483,6 +1489,138 @@ function TestPanel({ t, B, emps }) {
           </div>;
         })}
       </div>
+    </div>
+  );
+}
+
+/* ═══ STORAGE PANEL — مراقبة وإدارة التخزين ═══ */
+function StoragePanel({ t, B }) {
+  var [status, setStatus] = useState(null);
+  var [loading, setLoading] = useState(true);
+  var [migrating, setMigrating] = useState(false);
+  var [migrateResult, setMigrateResult] = useState(null);
+
+  useEffect(function() { refresh(); }, []);
+
+  async function refresh() {
+    setLoading(true);
+    try {
+      var r = await fetch("/api/data?action=storage-status");
+      var d = await r.json();
+      setStatus(d);
+    } catch(e) {
+      setStatus({ error: e.message });
+    }
+    setLoading(false);
+  }
+
+  async function doMigrate() {
+    if (!confirm("هل تريد نقل البيانات من Vercel Blob إلى Redis؟\n\nهذه العملية آمنة — البيانات تُنسخ ولا تُحذف.")) return;
+    setMigrating(true);
+    setMigrateResult(null);
+    try {
+      var r = await fetch("/api/data?action=migrate-to-redis");
+      var d = await r.json();
+      setMigrateResult(d);
+      refresh();
+    } catch(e) {
+      setMigrateResult({ ok: false, error: e.message });
+    }
+    setMigrating(false);
+  }
+
+  if (loading) return <div style={{ padding: 30, textAlign: "center", color: t.txM }}>جارِ تحميل حالة التخزين...</div>;
+
+  var redisOk = status && status.redis && status.redis.enabled && status.redis.test === "ok";
+  var r2Ok = status && status.r2 && status.r2.enabled && (status.r2.test || "").startsWith("ok");
+
+  return (
+    <div style={{ maxWidth: 800 }}>
+      <div style={{ background: B.blue + "12", border: "1px solid " + B.blue + "40", borderRadius: 10, padding: 12, marginBottom: 14, fontSize: 11, color: t.tx, lineHeight: 1.7 }}>
+        💾 <strong>إدارة التخزين</strong><br/>
+        مراقبة حالة قواعد البيانات (Redis + R2) ونقل البيانات من Vercel Blob.
+      </div>
+
+      {/* Primary Storage Status */}
+      <div style={{ background: t.card, borderRadius: 12, padding: 16, border: "1px solid " + t.sep, marginBottom: 14 }}>
+        <div style={{ fontSize: 14, fontWeight: 800, color: B.blue, marginBottom: 12, display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+          <span>📊 حالة التخزين الحالية</span>
+          <button onClick={refresh} style={{ padding: "6px 12px", borderRadius: 6, background: "none", border: "1px solid " + t.sep, color: t.tx, fontSize: 11, cursor: "pointer" }}>🔄 تحديث</button>
+        </div>
+
+        <div style={{ marginBottom: 10, padding: 10, borderRadius: 8, background: t.bg, fontSize: 11 }}>
+          <div style={{ fontWeight: 700, color: t.tx, marginBottom: 6 }}>التخزين النشط:</div>
+          <div style={{ fontSize: 13, fontWeight: 800, color: redisOk ? "#10b981" : "#f59e0b" }}>
+            {status && status.primary === "upstash-redis" ? "⚡ Upstash Redis" : "📦 Vercel Blob (الافتراضي)"}
+          </div>
+          <div style={{ fontSize: 10, color: t.txM, marginTop: 3 }}>System: {status.system}</div>
+        </div>
+
+        {/* Redis status */}
+        <div style={{ padding: 12, borderRadius: 8, background: redisOk ? "#10b98110" : "#f59e0b10", border: "1px solid " + (redisOk ? "#10b981" : "#f59e0b") + "40", marginBottom: 10 }}>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 4 }}>
+            <div style={{ fontSize: 13, fontWeight: 800 }}>⚡ Upstash Redis</div>
+            <span style={{ fontSize: 11, fontWeight: 700, padding: "3px 10px", borderRadius: 6, background: redisOk ? "#10b981" : "#f59e0b", color: "#fff" }}>
+              {redisOk ? "✓ يعمل" : status.redis && status.redis.enabled ? "⚠ خطأ" : "❌ غير مفعّل"}
+            </span>
+          </div>
+          {status.redis && status.redis.url && <div style={{ fontSize: 10, color: t.txM, fontFamily: "monospace", direction: "ltr" }}>{status.redis.url}</div>}
+          {status.redis && status.redis.test && status.redis.test !== "ok" && <div style={{ fontSize: 10, color: "#ef4444", marginTop: 4 }}>{status.redis.test}</div>}
+        </div>
+
+        {/* R2 status */}
+        <div style={{ padding: 12, borderRadius: 8, background: r2Ok ? "#10b98110" : "#f59e0b10", border: "1px solid " + (r2Ok ? "#10b981" : "#f59e0b") + "40", marginBottom: 10 }}>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 4 }}>
+            <div style={{ fontSize: 13, fontWeight: 800 }}>☁️ Cloudflare R2</div>
+            <span style={{ fontSize: 11, fontWeight: 700, padding: "3px 10px", borderRadius: 6, background: r2Ok ? "#10b981" : "#f59e0b", color: "#fff" }}>
+              {r2Ok ? "✓ يعمل" : status.r2 && status.r2.enabled ? "⚠ خطأ" : "❌ غير مفعّل"}
+            </span>
+          </div>
+          {status.r2 && status.r2.bucket && <div style={{ fontSize: 10, color: t.txM, marginTop: 2 }}>Bucket: {status.r2.bucket}</div>}
+          {status.r2 && status.r2.publicUrl && <div style={{ fontSize: 10, color: t.txM, fontFamily: "monospace", direction: "ltr" }}>{status.r2.publicUrl}</div>}
+          {status.r2 && status.r2.test && !status.r2.test.startsWith("ok") && <div style={{ fontSize: 10, color: "#ef4444", marginTop: 4 }}>{status.r2.test}</div>}
+        </div>
+
+        {/* Blob fallback */}
+        <div style={{ padding: 10, borderRadius: 8, background: t.bg, fontSize: 11, color: t.txM }}>
+          📦 <strong>Vercel Blob:</strong> نشط كـ backup تلقائي (كل بيانات الكتابة تُحفظ في Redis + Blob)
+        </div>
+      </div>
+
+      {/* Migration */}
+      {redisOk && (
+        <div style={{ background: t.card, borderRadius: 12, padding: 16, border: "1px solid " + t.sep, marginBottom: 14 }}>
+          <div style={{ fontSize: 14, fontWeight: 800, color: B.blue, marginBottom: 8 }}>🔄 نقل البيانات إلى Redis</div>
+          <div style={{ fontSize: 11, color: t.txM, marginBottom: 12, lineHeight: 1.7 }}>
+            هذه العملية تنسخ كل البيانات من Vercel Blob إلى Upstash Redis.<br/>
+            <strong>آمنة:</strong> البيانات في Blob تبقى كما هي. يمكن تكرار العملية في أي وقت.
+          </div>
+          <button onClick={doMigrate} disabled={migrating} style={{ padding: "10px 18px", borderRadius: 10, background: migrating ? t.sep : B.blue, color: "#fff", border: "none", fontSize: 12, fontWeight: 800, cursor: migrating ? "default" : "pointer" }}>
+            {migrating ? "⏳ جارِ النقل..." : "🚀 نقل البيانات الآن"}
+          </button>
+
+          {migrateResult && (
+            <div style={{ marginTop: 12, padding: 12, borderRadius: 8, background: migrateResult.ok ? "#10b98110" : "#ef444410", border: "1px solid " + (migrateResult.ok ? "#10b981" : "#ef4444") + "40" }}>
+              {migrateResult.ok ? (
+                <>
+                  <div style={{ fontSize: 12, fontWeight: 800, color: "#10b981", marginBottom: 8 }}>✅ تم النقل بنجاح</div>
+                  <div style={{ fontSize: 10, color: t.txM, marginBottom: 8 }}>تم نقل {migrateResult.total || 0} جدول</div>
+                  <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 6, fontSize: 10 }}>
+                    {Object.keys(migrateResult.migrated || {}).map(function(k) {
+                      var v = migrateResult.migrated[k];
+                      return <div key={k} style={{ padding: "4px 8px", borderRadius: 4, background: t.bg }}>
+                        <span style={{ color: t.tx, fontWeight: 700 }}>{k}:</span> <span style={{ color: v === "empty" ? t.txM : "#10b981" }}>{v === "empty" ? "فارغ" : v}</span>
+                      </div>;
+                    })}
+                  </div>
+                </>
+              ) : (
+                <div style={{ fontSize: 12, fontWeight: 800, color: "#ef4444" }}>❌ {migrateResult.error || "فشل النقل"}</div>
+              )}
+            </div>
+          )}
+        </div>
+      )}
     </div>
   );
 }

@@ -1,22 +1,198 @@
 import { put, list, del } from '@vercel/blob';
 import webpush from 'web-push';
+import crypto from 'crypto';
 
-const PFX = 'basma_';
+/* ═══════════════════════════════════════════════════════════════
+   STORAGE LAYER — Hybrid (Upstash Redis + Cloudflare R2 + Blob)
+   ═══════════════════════════════════════════════════════════════ */
+
+const SYSTEM = (process.env.STORAGE_PREFIX || 'basma').trim();
+const PFX_REDIS = SYSTEM + ':';      // basma:employees
+const PFX = SYSTEM + '_';             // basma_employees.json (Blob/backward-compat)
+
+// Upstash Redis
+const REDIS_URL = (process.env.UPSTASH_REDIS_REST_URL || '').trim();
+const REDIS_TOKEN = (process.env.UPSTASH_REDIS_REST_TOKEN || '').trim();
+const USE_REDIS = !!(REDIS_URL && REDIS_TOKEN);
+
+// Cloudflare R2
+const R2_ACCOUNT_ID = (process.env.R2_ACCOUNT_ID || '').trim();
+const R2_ACCESS_KEY = (process.env.R2_ACCESS_KEY_ID || '').trim();
+const R2_SECRET_KEY = (process.env.R2_SECRET_ACCESS_KEY || '').trim();
+const R2_BUCKET = (process.env.R2_BUCKET || 'hma-storage').trim();
+const R2_PUBLIC_URL = (process.env.R2_PUBLIC_URL || '').trim();
+const USE_R2 = !!(R2_ACCOUNT_ID && R2_ACCESS_KEY && R2_SECRET_KEY);
+
+/* ────── Upstash Redis Wrappers ────── */
+async function redisRequest(command, ...args) {
+  var body = JSON.stringify([command, ...args]);
+  var r = await fetch(REDIS_URL, {
+    method: 'POST',
+    headers: { 'Authorization': 'Bearer ' + REDIS_TOKEN, 'Content-Type': 'application/json' },
+    body: body,
+  });
+  if (!r.ok) throw new Error('Redis ' + command + ' failed: ' + r.status);
+  var data = await r.json();
+  return data.result;
+}
+
+async function redisGet(key) {
+  var val = await redisRequest('GET', PFX_REDIS + key);
+  if (!val) return null;
+  try { return JSON.parse(val); } catch(e) { return val; }
+}
+
+async function redisSet(key, data) {
+  var payload = typeof data === 'string' ? data : JSON.stringify(data);
+  await redisRequest('SET', PFX_REDIS + key, payload);
+  return true;
+}
+
+async function redisDel(key) {
+  await redisRequest('DEL', PFX_REDIS + key);
+  return true;
+}
+
+/* ────── Vercel Blob Wrappers (Fallback) ────── */
+async function blobGet(t) {
+  try {
+    const { blobs } = await list({ prefix: PFX + t + '.json' });
+    if (!blobs.length) return null;
+    blobs.sort((a, b) => new Date(b.uploadedAt) - new Date(a.uploadedAt));
+    const res = await fetch(blobs[0].url);
+    return await res.json();
+  } catch(e) { console.error('[BLOB GET] ' + t + ':', e.message); return null; }
+}
+
+async function blobSet(t, d) {
+  try {
+    await put(PFX + t + '.json', JSON.stringify(d), {
+      access: 'public', contentType: 'application/json', addRandomSuffix: false,
+    });
+    return true;
+  } catch(e) { console.error('[BLOB SET] ' + t + ':', e.message); return false; }
+}
+
+/* ────── Unified DB interface (Redis primary, Blob fallback) ────── */
+async function dbGet(t) {
+  if (USE_REDIS) {
+    try {
+      var v = await redisGet(t);
+      if (v !== null) return v;
+      // Fallback: try blob for migration support
+      var blobVal = await blobGet(t);
+      if (blobVal !== null) {
+        // Auto-migrate to Redis
+        redisSet(t, blobVal).catch(function(){});
+        return blobVal;
+      }
+      return null;
+    } catch(e) {
+      console.error('[DB GET Redis] ' + t + ':', e.message);
+      return await blobGet(t);
+    }
+  }
+  return await blobGet(t);
+}
+
+async function dbSet(t, d) {
+  if (USE_REDIS) {
+    try {
+      await redisSet(t, d);
+      // Also write to Blob as backup (for now, first 2 weeks)
+      blobSet(t, d).catch(function(){});
+      return true;
+    } catch(e) {
+      console.error('[DB SET Redis] ' + t + ':', e.message);
+      return await blobSet(t, d);
+    }
+  }
+  return await blobSet(t, d);
+}
+
+/* ────── Cloudflare R2 via AWS SigV4 ────── */
+async function r2Sign(method, path, body, contentType) {
+  var host = R2_ACCOUNT_ID + '.r2.cloudflarestorage.com';
+  var url = 'https://' + host + '/' + R2_BUCKET + path;
+  var date = new Date();
+  var amzDate = date.toISOString().replace(/[:\-]|\.\d{3}/g, '');
+  var dateStamp = amzDate.slice(0, 8);
+
+  var encoder = new TextEncoder();
+  var bodyBytes = body instanceof Uint8Array ? body : typeof body === 'string' ? encoder.encode(body) : new Uint8Array(body || []);
+  var payloadHash = crypto.createHash('sha256').update(bodyBytes).digest('hex');
+
+  var canonicalHeaders = 'host:' + host + '\n' +
+                         'x-amz-content-sha256:' + payloadHash + '\n' +
+                         'x-amz-date:' + amzDate + '\n';
+  if (contentType) canonicalHeaders = 'content-type:' + contentType + '\n' + canonicalHeaders;
+  var signedHeaders = contentType ? 'content-type;host;x-amz-content-sha256;x-amz-date' : 'host;x-amz-content-sha256;x-amz-date';
+  var canonicalRequest = method + '\n/' + R2_BUCKET + path + '\n\n' + canonicalHeaders + '\n' + signedHeaders + '\n' + payloadHash;
+
+  var region = 'auto';
+  var service = 's3';
+  var credentialScope = dateStamp + '/' + region + '/' + service + '/aws4_request';
+  var stringToSign = 'AWS4-HMAC-SHA256\n' + amzDate + '\n' + credentialScope + '\n' +
+                     crypto.createHash('sha256').update(canonicalRequest).digest('hex');
+
+  var kDate = crypto.createHmac('sha256', 'AWS4' + R2_SECRET_KEY).update(dateStamp).digest();
+  var kRegion = crypto.createHmac('sha256', kDate).update(region).digest();
+  var kService = crypto.createHmac('sha256', kRegion).update(service).digest();
+  var kSigning = crypto.createHmac('sha256', kService).update('aws4_request').digest();
+  var signature = crypto.createHmac('sha256', kSigning).update(stringToSign).digest('hex');
+
+  var authorization = 'AWS4-HMAC-SHA256 Credential=' + R2_ACCESS_KEY + '/' + credentialScope +
+                      ', SignedHeaders=' + signedHeaders + ', Signature=' + signature;
+
+  var headers = {
+    'Authorization': authorization,
+    'x-amz-content-sha256': payloadHash,
+    'x-amz-date': amzDate,
+  };
+  if (contentType) headers['Content-Type'] = contentType;
+  return { url: url, headers: headers, body: bodyBytes };
+}
+
+async function r2Upload(key, data, contentType) {
+  if (!USE_R2) return null;
+  contentType = contentType || 'application/octet-stream';
+  var signed = await r2Sign('PUT', '/' + key, data, contentType);
+  var r = await fetch(signed.url, { method: 'PUT', headers: signed.headers, body: signed.body });
+  if (!r.ok) {
+    var text = await r.text().catch(function(){ return ''; });
+    throw new Error('R2 upload failed: ' + r.status + ' ' + text);
+  }
+  var publicUrl = R2_PUBLIC_URL ? R2_PUBLIC_URL + '/' + key : signed.url;
+  return { key: key, url: publicUrl };
+}
+
+async function r2Delete(key) {
+  if (!USE_R2) return false;
+  var signed = await r2Sign('DELETE', '/' + key, '');
+  var r = await fetch(signed.url, { method: 'DELETE', headers: signed.headers });
+  return r.ok;
+}
+
 
 // ═══ Web Push helper ═══
 var vapidConfigured = false;
 function configureVapid() {
   if (vapidConfigured) return true;
-  if (!process.env.VAPID_PUBLIC_KEY || !process.env.VAPID_PRIVATE_KEY) return false;
+  var pubKey = (process.env.VAPID_PUBLIC_KEY || '').trim();
+  var privKey = (process.env.VAPID_PRIVATE_KEY || '').trim();
+  if (!pubKey || !privKey) return false;
   try {
     webpush.setVapidDetails(
-      'mailto:' + (process.env.VAPID_CONTACT_EMAIL || 'admin@hma.engineer'),
-      process.env.VAPID_PUBLIC_KEY,
-      process.env.VAPID_PRIVATE_KEY
+      'mailto:' + ((process.env.VAPID_CONTACT_EMAIL || 'admin@hma.engineer').trim()),
+      pubKey,
+      privKey
     );
     vapidConfigured = true;
     return true;
-  } catch(e) { return false; }
+  } catch(e) {
+    console.error('[VAPID CONFIG ERROR]', e.message);
+    return false;
+  }
 }
 
 async function sendWebPush(subscription, payload) {
@@ -27,27 +203,6 @@ async function sendWebPush(subscription, payload) {
   } catch (err) {
     return { sent: false, reason: 'push error: ' + (err.statusCode || err.message || String(err)) };
   }
-}
-
-async function dbGet(t) {
-  try {
-    const { blobs } = await list({ prefix: PFX + t + '.json' });
-    if (!blobs.length) return null;
-    blobs.sort((a, b) => new Date(b.uploadedAt) - new Date(a.uploadedAt));
-    const res = await fetch(blobs[0].url);
-    return await res.json();
-  } catch(e) { console.error('[DB GET ERROR] ' + t + ':', e.message); return null; }
-}
-
-async function dbSet(t, d) {
-  try {
-    await put(PFX + t + '.json', JSON.stringify(d), {
-      access: 'public',
-      contentType: 'application/json',
-      addRandomSuffix: false
-    });
-    return true;
-  } catch(e) { console.error('[DB SET ERROR] ' + t + ':', e.message); return false; }
 }
 
 
@@ -759,7 +914,7 @@ export default async function handler(req, res) {
 
       /* ═══ WEB PUSH — VAPID public key (client subscribes with it) ═══ */
       case 'vapid-public-key': {
-        return res.json({ publicKey: process.env.VAPID_PUBLIC_KEY || '' });
+        return res.json({ publicKey: (process.env.VAPID_PUBLIC_KEY || '').trim() });
       }
 
       /* ═══ WEB PUSH — subscribe employee to push ═══ */
@@ -836,6 +991,71 @@ export default async function handler(req, res) {
           push: pushResult,
           hint: pushResult.sent ? null : 'الإشعار محفوظ في DB — التطبيق سيكتشفه خلال 15 ثانية (polling)',
         });
+      }
+
+      /* ═══ STORAGE STATUS — تحقق من تفعيل Redis + R2 ═══ */
+      case 'storage-status': {
+        var redisTest = null;
+        if (USE_REDIS) {
+          try {
+            await redisRequest('PING');
+            redisTest = 'ok';
+          } catch(e) {
+            redisTest = 'error: ' + e.message;
+          }
+        }
+        var r2Test = null;
+        if (USE_R2) {
+          try {
+            var testKey = 'test/' + Date.now() + '.txt';
+            var upResult = await r2Upload(testKey, 'test', 'text/plain');
+            r2Test = upResult ? 'ok (' + upResult.url + ')' : 'upload returned null';
+            // Clean up test file
+            r2Delete(testKey).catch(function(){});
+          } catch(e) {
+            r2Test = 'error: ' + e.message;
+          }
+        }
+        return res.json({
+          system: SYSTEM,
+          redis: {
+            enabled: USE_REDIS,
+            url: USE_REDIS ? REDIS_URL.slice(0, 40) + '...' : null,
+            test: redisTest,
+          },
+          r2: {
+            enabled: USE_R2,
+            bucket: USE_R2 ? R2_BUCKET : null,
+            publicUrl: R2_PUBLIC_URL || null,
+            test: r2Test,
+          },
+          blobFallback: true,
+          primary: USE_REDIS ? 'upstash-redis' : 'vercel-blob',
+          ts: new Date().toISOString(),
+        });
+      }
+
+      /* ═══ MIGRATE — نقل البيانات من Blob إلى Redis ═══ */
+      case 'migrate-to-redis': {
+        if (!USE_REDIS) return res.json({ ok: false, error: 'Redis غير مفعّل — أضف UPSTASH_REDIS_REST_URL و TOKEN في Vercel' });
+        var tables = ['employees', 'branches', 'attendance', 'violations', 'violations_v2', 'warnings', 'leaves', 'dependents', 'tickets', 'projects', 'delegations', 'exceptions', 'events', 'manual_attendance', 'settings', 'laiha_settings', 'complaints', 'investigations', 'appeals', 'notifications', 'permissions', 'gps_log', 'pre_absences', 'custody', 'custody_maintenance', 'attachments', 'attachment_types', 'health_disclosure', 'emp_records', 'kadwar_data', 'kadwar_notifs', 'kadwar_employees', 'admin_config', 'faces', 'work_types', 'push_subscriptions', 'hr_questions', 'delegations'];
+        var migrated = {};
+        var failed = [];
+        for (var i = 0; i < tables.length; i++) {
+          var t = tables[i];
+          try {
+            var data = await blobGet(t);
+            if (data !== null) {
+              await redisSet(t, data);
+              migrated[t] = Array.isArray(data) ? data.length : (typeof data === 'object' ? Object.keys(data).length : 1);
+            } else {
+              migrated[t] = 'empty';
+            }
+          } catch (e) {
+            failed.push({ table: t, error: e.message });
+          }
+        }
+        return res.json({ ok: true, migrated: migrated, failed: failed, total: Object.keys(migrated).length, ts: new Date().toISOString() });
       }
 
       /* ═══ PING — اختبار بسيط بدون fetch ═══ */
