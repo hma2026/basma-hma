@@ -1,0 +1,85 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+    <!-- PWA -->
+    <link rel="manifest" href="/manifest.json" />
+    <meta name="theme-color" content="#c9a84c" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+    <meta name="apple-mobile-web-app-title" content="كوادر" />
+    <link rel="apple-touch-icon" href="/icon-192x192.png" />
+    <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate" />
+    <meta http-equiv="Pragma" content="no-cache" />
+    <meta http-equiv="Expires" content="0" />
+    <script>
+      // 🔄 Auto-update: force reload when new version detected
+      (function(){
+        var VER = "v37.101";
+        var old = localStorage.getItem("hma_app_ver");
+        if (old && old !== VER) {
+          localStorage.setItem("hma_app_ver", VER);
+          // Clear all caches and force reload
+          if ('caches' in window) {
+            caches.keys().then(function(names) {
+              names.forEach(function(name) { caches.delete(name); });
+            });
+          }
+          location.reload(true);
+          return;
+        }
+        localStorage.setItem("hma_app_ver", VER);
+      })();
+    </script>
+    <title>نظام كوادر — بوابة التوظيف الإلكترونية الخاصة بمكتب هاني محمد عسيري للاستشارات الهندسية</title>
+    <link rel="icon" type="image/png" href="data:image/png;base64,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" />
+    <!-- Google Translate (for visitors page only) -->
+    <script type="text/javascript">
+      function googleTranslateElementInit() {
+        new google.translate.TranslateElement({
+          pageLanguage: 'auto',
+          includedLanguages: 'ar,en,ur,hi,fr,tl',
+          layout: google.translate.TranslateElement.InlineLayout.SIMPLE,
+          autoDisplay: false,
+        }, 'google_translate_element');
+      }
+    </script>
+    <script type="text/javascript" src="//translate.google.com/translate_a/element.js?cb=googleTranslateElementInit"></script>
+    <style>
+      /* Hide Google Translate top bar */
+      .goog-te-banner-frame { display:none !important; }
+      body { top: 0 !important; }
+      .goog-te-gadget { font-size: 0 !important; }
+      .goog-te-gadget .goog-te-combo {
+        font-family: inherit !important;
+        font-size: 12px !important;
+        background: rgba(201,168,76,.1);
+        border: 1px solid rgba(201,168,76,.3);
+        color: #c9a84c;
+        border-radius: 8px;
+        padding: 4px 8px;
+        cursor: pointer;
+        outline: none;
+      }
+      @keyframes pulse { 0%,100%{opacity:1;transform:scale(1)} 50%{opacity:.7;transform:scale(1.05)} }
+    </style>
+</head>
+  <body>
+    <!-- Google Translate — شريط ثابت أعلى الصفحة يترجم كل شيء -->
+    <div id="hma-translate-bar" style="position:fixed;top:0;left:0;right:0;z-index:99999;background:rgba(15,15,20,.95);backdrop-filter:blur(12px);border-bottom:1px solid rgba(201,168,76,.2);padding:6px 16px;display:none;align-items:center;justify-content:space-between;direction:rtl;font-family:system-ui,-apple-system,sans-serif">
+      <span style="font-size:11px;color:rgba(201,168,76,.7);font-weight:600">🌐 ترجمة</span>
+      <div id="google_translate_element" style="display:inline-block"></div>
+    </div>
+    <div id="root"></div>
+    <script type="module" src="/src/main.jsx"></script>
+    <script>
+      // PWA Service Worker
+      if ('serviceWorker' in navigator) {
+        window.addEventListener('load', function() {
+          navigator.serviceWorker.register('/sw.js').catch(function() {});
+        });
+      }
+    </script>
+  </body>
+</html>
