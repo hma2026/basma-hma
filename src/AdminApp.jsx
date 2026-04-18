@@ -1499,6 +1499,9 @@ function StoragePanel({ t, B }) {
   var [loading, setLoading] = useState(true);
   var [migrating, setMigrating] = useState(false);
   var [migrateResult, setMigrateResult] = useState(null);
+  var [blobList, setBlobList] = useState(null);
+  var [loadingBlob, setLoadingBlob] = useState(false);
+  var [deletingBlob, setDeletingBlob] = useState(false);
 
   useEffect(function() { refresh(); }, []);
 
@@ -1514,6 +1517,18 @@ function StoragePanel({ t, B }) {
     setLoading(false);
   }
 
+  async function loadBlobList() {
+    setLoadingBlob(true);
+    try {
+      var r = await fetch("/api/data?action=blob-list");
+      var d = await r.json();
+      setBlobList(d);
+    } catch(e) {
+      setBlobList({ ok: false, error: e.message });
+    }
+    setLoadingBlob(false);
+  }
+
   async function doMigrate() {
     if (!confirm("هل تريد نقل البيانات من Vercel Blob إلى Redis؟\n\nهذه العملية آمنة — البيانات تُنسخ ولا تُحذف.")) return;
     setMigrating(true);
@@ -1527,6 +1542,29 @@ function StoragePanel({ t, B }) {
       setMigrateResult({ ok: false, error: e.message });
     }
     setMigrating(false);
+  }
+
+  async function deleteBlobBasma() {
+    if (!confirm("⚠️ تحذير: سيتم حذف كل بيانات بصمة من Vercel Blob نهائياً!\n\nقبل الحذف:\n✓ تأكد أن Redis يعمل\n✓ تأكد أن النقل تم بنجاح\n\nهل أنت متأكد؟")) return;
+    if (!confirm("⚠️ تأكيد ثاني: هذه العملية لا يمكن التراجع عنها!\n\nهل أنت متأكد تماماً؟")) return;
+    setDeletingBlob(true);
+    try {
+      var r = await fetch("/api/data?action=blob-delete-basma-data", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ confirm: "DELETE_BLOB_BASMA" }),
+      });
+      var d = await r.json();
+      if (d.ok) {
+        alert("✅ تم حذف " + d.deleted + " ملف من Vercel Blob");
+        loadBlobList();
+      } else {
+        alert("❌ فشل: " + (d.error || "خطأ غير معروف"));
+      }
+    } catch(e) {
+      alert("❌ خطأ: " + e.message);
+    }
+    setDeletingBlob(false);
   }
 
   if (loading) return <div style={{ padding: 30, textAlign: "center", color: t.txM }}>جارِ تحميل حالة التخزين...</div>;
@@ -1583,7 +1621,7 @@ function StoragePanel({ t, B }) {
 
         {/* Blob fallback */}
         <div style={{ padding: 10, borderRadius: 8, background: t.bg, fontSize: 11, color: t.txM }}>
-          📦 <strong>Vercel Blob:</strong> نشط كـ backup تلقائي (كل بيانات الكتابة تُحفظ في Redis + Blob)
+          📦 <strong>Vercel Blob:</strong> نشط كـ backup تلقائي
         </div>
       </div>
 
@@ -1617,6 +1655,124 @@ function StoragePanel({ t, B }) {
               ) : (
                 <div style={{ fontSize: 12, fontWeight: 800, color: "#ef4444" }}>❌ {migrateResult.error || "فشل النقل"}</div>
               )}
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Blob Management */}
+      {redisOk && (
+        <div style={{ background: t.card, borderRadius: 12, padding: 16, border: "1px solid " + t.sep, marginBottom: 14 }}>
+          <div style={{ fontSize: 14, fontWeight: 800, color: B.blue, marginBottom: 8 }}>📦 إدارة Vercel Blob (الـ Backup)</div>
+          <div style={{ fontSize: 11, color: t.txM, marginBottom: 12, lineHeight: 1.7 }}>
+            عرض محتويات Vercel Blob وحذفها بعد التأكد من نجاح النقل.<br/>
+            <strong style={{ color: "#f59e0b" }}>⚠️ تحذير:</strong> لا تحذف إلا بعد التأكد من استقرار Redis لمدة أسبوعين.
+          </div>
+          <button onClick={loadBlobList} disabled={loadingBlob} style={{ padding: "10px 18px", borderRadius: 10, background: loadingBlob ? t.sep : B.blue, color: "#fff", border: "none", fontSize: 12, fontWeight: 800, cursor: loadingBlob ? "default" : "pointer", marginLeft: 8 }}>
+            {loadingBlob ? "⏳..." : "📋 عرض محتوى Blob"}
+          </button>
+
+          {blobList && blobList.ok && (
+            <div style={{ marginTop: 14 }}>
+              {/* Summary */}
+              <div style={{ background: t.bg, borderRadius: 8, padding: 12, marginBottom: 10 }}>
+                <div style={{ fontSize: 12, fontWeight: 800, color: t.tx, marginBottom: 8 }}>📊 ملخص</div>
+                <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 8, fontSize: 10 }}>
+                  <div><span style={{ color: t.txM }}>إجمالي الملفات:</span> <strong style={{ color: t.tx }}>{blobList.totalFiles}</strong></div>
+                  <div><span style={{ color: t.txM }}>الحجم:</span> <strong style={{ color: t.tx }}>{blobList.totalSizeMB} MB</strong></div>
+                  <div><span style={{ color: t.txM }}>بيانات بصمة:</span> <strong style={{ color: "#10b981" }}>{blobList.summary.basmaDataFiles}</strong></div>
+                  <div><span style={{ color: t.txM }}>مرفقات:</span> <strong style={{ color: "#f59e0b" }}>{blobList.summary.basmaAttachments}</strong></div>
+                </div>
+              </div>
+
+              {/* Basma Data Files (safe to delete) */}
+              {blobList.basmaData.length > 0 && (
+                <details style={{ marginBottom: 8 }}>
+                  <summary style={{ cursor: "pointer", padding: 10, background: "#10b98110", borderRadius: 8, fontSize: 12, fontWeight: 700, color: "#10b981" }}>
+                    📄 ملفات بيانات بصمة ({blobList.basmaData.length}) — آمنة للحذف ✓
+                  </summary>
+                  <div style={{ maxHeight: 200, overflowY: "auto", padding: 8 }}>
+                    {blobList.basmaData.map(function(f, i) {
+                      return <div key={i} style={{ fontSize: 10, padding: "4px 8px", borderBottom: "1px solid " + t.sep, display: "flex", justifyContent: "space-between" }}>
+                        <span style={{ fontFamily: "monospace", color: t.tx }}>{f.name}</span>
+                        <span style={{ color: t.txM }}>{f.sizeKB} KB</span>
+                      </div>;
+                    })}
+                  </div>
+                </details>
+              )}
+
+              {/* Attachments (keep!) */}
+              {blobList.basmaFiles.length > 0 && (
+                <details style={{ marginBottom: 8 }}>
+                  <summary style={{ cursor: "pointer", padding: 10, background: "#f59e0b10", borderRadius: 8, fontSize: 12, fontWeight: 700, color: "#f59e0b" }}>
+                    📎 مرفقات بصمة ({blobList.basmaFiles.length}) — لا تُحذف ⚠️
+                  </summary>
+                  <div style={{ maxHeight: 200, overflowY: "auto", padding: 8 }}>
+                    {blobList.basmaFiles.slice(0, 50).map(function(f, i) {
+                      return <div key={i} style={{ fontSize: 10, padding: "4px 8px", borderBottom: "1px solid " + t.sep, display: "flex", justifyContent: "space-between" }}>
+                        <span style={{ fontFamily: "monospace", color: t.tx }}>{f.name}</span>
+                        <span style={{ color: t.txM }}>{f.sizeKB} KB</span>
+                      </div>;
+                    })}
+                    {blobList.basmaFiles.length > 50 && <div style={{ textAlign: "center", fontSize: 10, color: t.txM, padding: 6 }}>... و {blobList.basmaFiles.length - 50} ملف آخر</div>}
+                  </div>
+                </details>
+              )}
+
+              {/* Other basma */}
+              {blobList.basmaOther.length > 0 && (
+                <details style={{ marginBottom: 8 }}>
+                  <summary style={{ cursor: "pointer", padding: 10, background: t.bg, borderRadius: 8, fontSize: 12, fontWeight: 700, color: t.tx }}>
+                    📁 ملفات بصمة أخرى ({blobList.basmaOther.length})
+                  </summary>
+                  <div style={{ maxHeight: 200, overflowY: "auto", padding: 8 }}>
+                    {blobList.basmaOther.map(function(f, i) {
+                      return <div key={i} style={{ fontSize: 10, padding: "4px 8px", borderBottom: "1px solid " + t.sep, display: "flex", justifyContent: "space-between" }}>
+                        <span style={{ fontFamily: "monospace", color: t.tx }}>{f.name}</span>
+                        <span style={{ color: t.txM }}>{f.sizeKB} KB</span>
+                      </div>;
+                    })}
+                  </div>
+                </details>
+              )}
+
+              {/* Other (not basma) */}
+              {blobList.other.length > 0 && (
+                <details style={{ marginBottom: 8 }}>
+                  <summary style={{ cursor: "pointer", padding: 10, background: t.bg, borderRadius: 8, fontSize: 12, fontWeight: 700, color: t.tx }}>
+                    🗂️ ملفات أخرى (ليست بصمة) — {blobList.other.length}
+                  </summary>
+                  <div style={{ maxHeight: 200, overflowY: "auto", padding: 8 }}>
+                    {blobList.other.map(function(f, i) {
+                      return <div key={i} style={{ fontSize: 10, padding: "4px 8px", borderBottom: "1px solid " + t.sep, display: "flex", justifyContent: "space-between" }}>
+                        <span style={{ fontFamily: "monospace", color: t.tx }}>{f.name}</span>
+                        <span style={{ color: t.txM }}>{f.sizeKB} KB</span>
+                      </div>;
+                    })}
+                  </div>
+                </details>
+              )}
+
+              {/* Delete button */}
+              {blobList.basmaData.length > 0 && (
+                <div style={{ marginTop: 14, padding: 12, background: "#ef444410", border: "1px solid #ef444440", borderRadius: 8 }}>
+                  <div style={{ fontSize: 12, fontWeight: 800, color: "#ef4444", marginBottom: 8 }}>⚠️ منطقة الخطر</div>
+                  <div style={{ fontSize: 10, color: t.txM, marginBottom: 10, lineHeight: 1.6 }}>
+                    هذا الزر سيحذف فقط ملفات البيانات ({blobList.basmaData.length} ملف JSON).<br/>
+                    المرفقات ({blobList.basmaFiles.length}) والملفات الأخرى ستبقى.
+                  </div>
+                  <button onClick={deleteBlobBasma} disabled={deletingBlob} style={{ padding: "8px 16px", borderRadius: 8, background: deletingBlob ? t.sep : "#ef4444", color: "#fff", border: "none", fontSize: 11, fontWeight: 800, cursor: deletingBlob ? "default" : "pointer" }}>
+                    {deletingBlob ? "⏳ جارِ الحذف..." : "🗑️ حذف ملفات بيانات بصمة من Blob"}
+                  </button>
+                </div>
+              )}
+            </div>
+          )}
+
+          {blobList && !blobList.ok && (
+            <div style={{ marginTop: 10, padding: 10, background: "#ef444410", borderRadius: 8, fontSize: 11, color: "#ef4444" }}>
+              خطأ: {blobList.error}
             </div>
           )}
         </div>

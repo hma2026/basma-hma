@@ -99,8 +99,11 @@ async function dbSet(t, d) {
   if (USE_REDIS) {
     try {
       await redisSet(t, d);
-      // Also write to Blob as backup (for now, first 2 weeks)
-      blobSet(t, d).catch(function(){});
+      // Write to Blob as backup unless disabled
+      var disableBlobBackup = (process.env.DISABLE_BLOB_BACKUP || '').trim() === 'true';
+      if (!disableBlobBackup) {
+        blobSet(t, d).catch(function(){});
+      }
       return true;
     } catch(e) {
       console.error('[DB SET Redis] ' + t + ':', e.message);
@@ -1056,6 +1059,101 @@ export default async function handler(req, res) {
           }
         }
         return res.json({ ok: true, migrated: migrated, failed: failed, total: Object.keys(migrated).length, ts: new Date().toISOString() });
+      }
+
+      /* ═══ BLOB LIST — عرض كل الملفات في Vercel Blob ═══ */
+      case 'blob-list': {
+        try {
+          var allBlobs = [];
+          var cursor = undefined;
+          do {
+            var result = await list({ cursor, limit: 1000 });
+            allBlobs = allBlobs.concat(result.blobs);
+            cursor = result.cursor;
+          } while (cursor && allBlobs.length < 5000);
+
+          // Group by prefix
+          var basmaData = [];
+          var basmaFiles = [];
+          var basmaOther = [];
+          var other = [];
+          var totalSize = 0;
+
+          allBlobs.forEach(function(b) {
+            totalSize += b.size || 0;
+            var info = {
+              name: b.pathname,
+              size: b.size,
+              sizeKB: ((b.size || 0) / 1024).toFixed(1),
+              uploaded: b.uploadedAt,
+              url: b.url,
+            };
+            if (b.pathname.match(/^basma_[^/]+\.json$/)) {
+              basmaData.push(info);
+            } else if (b.pathname.startsWith('basma_files/')) {
+              basmaFiles.push(info);
+            } else if (b.pathname.startsWith('basma_')) {
+              basmaOther.push(info);
+            } else {
+              other.push(info);
+            }
+          });
+
+          return res.json({
+            ok: true,
+            totalFiles: allBlobs.length,
+            totalSizeKB: (totalSize / 1024).toFixed(1),
+            totalSizeMB: (totalSize / 1024 / 1024).toFixed(2),
+            summary: {
+              basmaDataFiles: basmaData.length,    // basma_*.json
+              basmaAttachments: basmaFiles.length, // basma_files/*
+              basmaOther: basmaOther.length,       // basma_* other
+              other: other.length,                 // not basma
+            },
+            basmaData: basmaData,
+            basmaFiles: basmaFiles,
+            basmaOther: basmaOther,
+            other: other,
+          });
+        } catch(e) {
+          return res.status(500).json({ ok: false, error: e.message });
+        }
+      }
+
+      /* ═══ BLOB DELETE ALL BASMA DATA — حذف كل بيانات بصمة من Blob ═══ */
+      case 'blob-delete-basma-data': {
+        if (req.method !== 'POST') return res.status(400).json({ ok: false, error: 'POST required' });
+        var body = req.body || {};
+        if (body.confirm !== 'DELETE_BLOB_BASMA') {
+          return res.status(400).json({ ok: false, error: 'Missing confirm field (must be "DELETE_BLOB_BASMA")' });
+        }
+        try {
+          var allBlobs = [];
+          var cursor = undefined;
+          do {
+            var result = await list({ cursor, limit: 1000 });
+            allBlobs = allBlobs.concat(result.blobs);
+            cursor = result.cursor;
+          } while (cursor && allBlobs.length < 5000);
+
+          var toDelete = allBlobs.filter(function(b){
+            return b.pathname.match(/^basma_[^/]+\.json$/);
+          });
+
+          var deleted = 0;
+          var failed = [];
+          for (var i = 0; i < toDelete.length; i++) {
+            try {
+              await del(toDelete[i].url);
+              deleted++;
+            } catch(e) {
+              failed.push({ name: toDelete[i].pathname, error: e.message });
+            }
+          }
+          return res.json({ ok: true, deleted: deleted, failed: failed, total: toDelete.length });
+        } catch(e) {
+          return res.status(500).json({ ok: false, error: e.message });
+        }
       }
 
       /* ═══ PING — اختبار بسيط بدون fetch ═══ */
