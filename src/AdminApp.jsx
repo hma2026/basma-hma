@@ -263,7 +263,17 @@ export default function AdminApp() {
   const [dk, setDk] = useState(() => localStorage.getItem("basma_theme") === "dark");
   const t = dk ? DK : LT;
   const toggleTheme = () => { setDk(v => { const n = !v; localStorage.setItem("basma_theme", n ? "dark" : "light"); return n; }); };
-  const [loggedIn, setLoggedIn] = useState(false);
+  const [loggedIn, setLoggedIn] = useState(function() {
+    // Auto-login if SSO'd admin session exists
+    try {
+      var savedEmail = localStorage.getItem("basma_admin_email");
+      var savedUser = JSON.parse(localStorage.getItem("basma_user") || "null");
+      if (savedEmail && savedUser && (savedUser.isAdmin || savedUser.isGeneralManager)) {
+        return true;
+      }
+    } catch(e) {}
+    return false;
+  });
   const [role, setRole] = useState("manager");
   const [tab, setTab] = useState("dashboard");
   const [loading, setLoading] = useState(true);

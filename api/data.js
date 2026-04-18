@@ -4,11 +4,8 @@ const PFX = 'basma_';
 
 async function dbGet(t) {
   try {
-    const r = await fetch(process.env.BLOB_READ_WRITE_TOKEN ? undefined : '', { method: 'HEAD' }).catch(() => null);
-    // Use list to find the blob, take the LATEST one
     const { blobs } = await list({ prefix: PFX + t + '.json' });
     if (!blobs.length) return null;
-    // Sort by uploadedAt descending to get latest
     blobs.sort((a, b) => new Date(b.uploadedAt) - new Date(a.uploadedAt));
     const res = await fetch(blobs[0].url);
     return await res.json();
@@ -17,15 +14,15 @@ async function dbGet(t) {
 
 async function dbSet(t, d) {
   try {
-    // Use addRandomSuffix: false to OVERWRITE instead of creating duplicates
-    await put(PFX + t + '.json', JSON.stringify(d), { 
-      access: 'public', 
+    await put(PFX + t + '.json', JSON.stringify(d), {
+      access: 'public',
       contentType: 'application/json',
-      addRandomSuffix: false 
+      addRandomSuffix: false
     });
     return true;
   } catch(e) { console.error('[DB SET ERROR] ' + t + ':', e.message); return false; }
 }
+
 
 // Cleanup function — delete all duplicate blobs, keep only latest of each
 async function dbCleanup() {
@@ -652,6 +649,48 @@ export default async function handler(req, res) {
         if (req.method === 'GET') return res.json(await dbGet('settings') || {});
         if (req.method === 'PUT') { await dbSet('settings', req.body); return res.json({ ok: true }); }
         break;
+      }
+
+      /* ═══ SSO VERIFY — التحقق من token SSO من كوادر ═══ */
+      case 'sso-verify': {
+        var body = req.body || {};
+        var token = body.token;
+        if (!token) return res.status(400).json({ ok: false, error: 'token مطلوب' });
+        try {
+          // Ask kadwar to validate the token
+          var r = await fetch('https://hma.engineer/api/basma-sync?action=sso-validate', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ token: token }),
+          });
+          if (!r.ok) {
+            return res.status(401).json({ ok: false, error: 'الجلسة منتهية أو غير صالحة' });
+          }
+          var d = await r.json();
+          if (!d.ok || !d.employee) {
+            return res.status(401).json({ ok: false, error: d.error || 'جلسة غير صالحة' });
+          }
+          // Find the matching employee in basma
+          var emps = await dbGet('employees') || [];
+          var emp = emps.find(function(x) {
+            if (!x) return false;
+            if (d.employee.idNumber && x.idNumber === d.employee.idNumber) return true;
+            if (d.employee.username && (x.username || '').toLowerCase() === (d.employee.username || '').toLowerCase()) return true;
+            if (d.employee.email && (x.email || '').toLowerCase() === (d.employee.email || '').toLowerCase()) return true;
+            return false;
+          });
+          if (!emp) {
+            return res.status(404).json({ ok: false, error: 'الموظف غير موجود في بصمة — اطلب من الإدارة مزامنة' });
+          }
+          // Return safe employee object (no password hash)
+          var safeEmp = Object.assign({}, emp);
+          delete safeEmp.passwordHash;
+          delete safeEmp.password;
+          delete safeEmp.passwordSalt;
+          return res.json({ ok: true, employee: safeEmp, ts: new Date().toISOString() });
+        } catch (e) {
+          return res.status(500).json({ ok: false, error: 'فشل الاتصال بكوادر: ' + (e && e.message ? e.message : String(e)) });
+        }
       }
 
       /* ═══ PING — اختبار بسيط بدون fetch ═══ */

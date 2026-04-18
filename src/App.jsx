@@ -3,10 +3,59 @@ import MobileApp from "./MobileApp.jsx";
 import AdminApp from "./AdminApp.jsx";
 export default function App() {
   const [mode, setMode] = useState("app");
+  const [ssoProcessing, setSsoProcessing] = useState(false);
+  const [ssoError, setSsoError] = useState("");
+
   useEffect(() => {
-    const check = () => {
+    const check = async () => {
       const h = window.location.hash;
       const s = new URLSearchParams(window.location.search);
+
+      // ═══ SSO handling (from kadwar) ═══
+      const ssoToken = s.get("sso");
+      const viewMode = s.get("view"); // "admin" or null
+      if (ssoToken) {
+        setSsoProcessing(true);
+        setSsoError("");
+        try {
+          const r = await fetch("/api/data?action=sso-verify", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ token: ssoToken }),
+          });
+          const d = await r.json();
+          if (d.ok && d.employee) {
+            // Save to localStorage so MobileApp/AdminApp pick it up
+            localStorage.setItem("basma_user", JSON.stringify(d.employee));
+            localStorage.setItem("basma_last_username", d.employee.username || d.employee.email || "");
+            if (d.employee.isAdmin || d.employee.isGeneralManager) {
+              localStorage.setItem("basma_admin_email", d.employee.email || "");
+            }
+            // Decide target view
+            const isAdminUser = d.employee.isAdmin || d.employee.isGeneralManager || d.employee.accountRole === "admin";
+            if (viewMode === "admin" && isAdminUser) {
+              // Clean URL and open admin
+              window.history.replaceState({}, document.title, "/#admin");
+              setMode("admin");
+            } else {
+              window.history.replaceState({}, document.title, "/");
+              setMode("app");
+            }
+            setSsoProcessing(false);
+            return;
+          } else {
+            setSsoError(d.error || "فشل التحقق من الجلسة");
+            setSsoProcessing(false);
+            return;
+          }
+        } catch (e) {
+          setSsoError("خطأ في الاتصال: " + e.message);
+          setSsoProcessing(false);
+          return;
+        }
+      }
+
+      // ═══ Normal routing ═══
       if (h === "#admin") return setMode("admin");
       if (h === "#update" || s.get("sec") === "sys_update") return setMode("update");
       setMode("app");
@@ -15,6 +64,34 @@ export default function App() {
     window.addEventListener("hashchange", check);
     return () => window.removeEventListener("hashchange", check);
   }, []);
+
+  // SSO loading screen
+  if (ssoProcessing) {
+    return (
+      <div style={{ direction: "rtl", fontFamily: "'Tajawal','Cairo',sans-serif", minHeight: "100vh", background: "linear-gradient(180deg,#0f1e3c,#1a3a6e,#2b5ea7)", display: "flex", alignItems: "center", justifyContent: "center", color: "#fff" }}>
+        <div style={{ textAlign: "center" }}>
+          <div style={{ width: 72, height: 72, borderRadius: 20, background: "rgba(252,211,77,0.15)", border: "1px solid rgba(252,211,77,0.4)", display: "flex", alignItems: "center", justifyContent: "center", margin: "0 auto 20px" }}>
+            <div style={{ width: 36, height: 36, border: "3px solid rgba(252,211,77,0.3)", borderTopColor: "#FCD34D", borderRadius: "50%", animation: "spin 0.8s linear infinite" }} />
+          </div>
+          <div style={{ fontSize: 18, fontWeight: 800, marginBottom: 8 }}>جارِ تسجيل الدخول من كوادر</div>
+          <div style={{ fontSize: 12, color: "rgba(255,255,255,.7)" }}>يرجى الانتظار...</div>
+          <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
+        </div>
+      </div>
+    );
+  }
+  if (ssoError) {
+    return (
+      <div style={{ direction: "rtl", fontFamily: "'Tajawal','Cairo',sans-serif", minHeight: "100vh", background: "#f8fafc", display: "flex", alignItems: "center", justifyContent: "center", padding: 20 }}>
+        <div style={{ background: "#fff", borderRadius: 16, padding: 32, maxWidth: 400, textAlign: "center", boxShadow: "0 4px 20px rgba(0,0,0,0.08)" }}>
+          <div style={{ fontSize: 48, marginBottom: 12 }}>⚠️</div>
+          <div style={{ fontSize: 18, fontWeight: 800, color: "#DC2626", marginBottom: 8 }}>فشل تسجيل الدخول</div>
+          <div style={{ fontSize: 13, color: "#64748b", marginBottom: 20 }}>{ssoError}</div>
+          <button onClick={() => { window.location.href = "/"; }} style={{ padding: "12px 24px", borderRadius: 10, background: "#1a3a6e", color: "#fff", border: "none", fontSize: 14, fontWeight: 700, cursor: "pointer" }}>تسجيل دخول يدوي</button>
+        </div>
+      </div>
+    );
+  }
 
   // Emergency update screen
   if (mode === "update") return <UpdateScreen />;
