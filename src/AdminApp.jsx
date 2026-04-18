@@ -1154,7 +1154,7 @@ export default function AdminApp() {
       </>}
 
       {/* ═══ ADMIN PROFILE — تعديل حساب المدير العام ═══ */}
-      {tab === "admin_profile" && <AdminProfile t={t} B={B} onLogout={function(){ localStorage.removeItem("basma_admin_email"); setLoggedIn(false); }} />}
+      {tab === "admin_profile" && <AdminProfile t={t} B={B} onLogout={function(){ localStorage.removeItem("basma_admin_email"); localStorage.removeItem("basma_last_mode"); setLoggedIn(false); }} />}
     </div>
   </div>);
 }
@@ -1387,7 +1387,7 @@ function AdminAccountPanel({ t, B }) {
         setMsg("✅ تم الحفظ بنجاح");
         setForm(function(f){ return {...f, currentPassword: "", newPassword: "", confirmPassword: ""}; });
         if (form.newPassword) {
-          setTimeout(function(){ alert("تم تغيير كلمة المرور — سيتم تسجيل خروجك"); localStorage.removeItem("basma_admin_email"); window.location.reload(); }, 1000);
+          setTimeout(function(){ alert("تم تغيير كلمة المرور — سيتم تسجيل خروجك"); localStorage.removeItem("basma_admin_email"); localStorage.removeItem("basma_last_mode"); window.location.reload(); }, 1000);
         }
       } else {
         setMsg("❌ " + (d.error || "فشل الحفظ"));

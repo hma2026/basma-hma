@@ -56,8 +56,26 @@ export default function App() {
       }
 
       // ═══ Normal routing ═══
-      if (h === "#admin") return setMode("admin");
+      // Persist admin mode across refreshes if admin is logged in
+      var savedAdminEmail = localStorage.getItem("basma_admin_email");
+      var savedUser = null;
+      try { savedUser = JSON.parse(localStorage.getItem("basma_user") || "null"); } catch(e) {}
+      var isAdminUser = savedUser && (savedUser.isAdmin || savedUser.isGeneralManager);
+
+      if (h === "#admin") {
+        localStorage.setItem("basma_last_mode", "admin");
+        return setMode("admin");
+      }
       if (h === "#update" || s.get("sec") === "sys_update") return setMode("update");
+
+      // If admin session exists and last mode was admin → stay in admin
+      var lastMode = localStorage.getItem("basma_last_mode");
+      if (lastMode === "admin" && savedAdminEmail && isAdminUser && !h) {
+        window.history.replaceState({}, document.title, "/#admin");
+        return setMode("admin");
+      }
+
+      localStorage.setItem("basma_last_mode", "app");
       setMode("app");
     };
     check();

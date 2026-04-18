@@ -1521,6 +1521,8 @@ function ProfilePage({ user, branch, onLogout, onTicket, myTickets, darkMode, to
               </Card>
             )}
 
+            <HelpGuideSection />
+
             <Button variant="secondary" size="md" icon={<Icons.alert size={20} />} onClick={onTicket}>
               تذكرة دعم جديدة
             </Button>
@@ -3932,6 +3934,151 @@ function OccasionBanner({ user }) {
   }
 
   return null;
+}
+
+/* ═══════════ HELP GUIDE SECTION — دليل الاستخدام ═══════════ */
+function HelpGuideSection() {
+  var [open, setOpen] = useState(false);
+  var [activeQ, setActiveQ] = useState(null);
+  var [pwaInstallPrompt, setPwaInstallPrompt] = useState(null);
+  var [isMobile, setIsMobile] = useState(false);
+  var [forceMobileViewport, setForceMobileViewport] = useState(false);
+
+  useEffect(function() {
+    // Detect if we're on a mobile device
+    var ua = navigator.userAgent.toLowerCase();
+    var mobile = /iphone|ipad|ipod|android|blackberry|windows phone/.test(ua);
+    setIsMobile(mobile);
+
+    // Listen for PWA install prompt
+    var handler = function(e) {
+      e.preventDefault();
+      setPwaInstallPrompt(e);
+    };
+    window.addEventListener("beforeinstallprompt", handler);
+    return function() { window.removeEventListener("beforeinstallprompt", handler); };
+  }, []);
+
+  var questions = [
+    { q: "كيف أسجل حضوري وانصرافي؟", a: "من الصفحة الرئيسية، اضغط على زر 'تسجيل الحضور' وتأكد أنك داخل نطاق الفرع. النظام سيسجل وقتك وموقعك تلقائياً." },
+    { q: "لماذا يطلب الموقع الجغرافي؟", a: "يتحقق النظام من وجودك في نطاق الفرع المسموح عند تسجيل الحضور. هذا شرط أساسي لصحة التسجيل." },
+    { q: "كيف أسجّل بصمة الوجه لأول مرة؟", a: "عند أول تسجيل حضور، سيطلب منك النظام التقاط صورة وجه. قف في إضاءة جيدة وابتعد قليلاً عن الكاميرا." },
+    { q: "ماذا لو تأخرت عن الدوام؟", a: "سجّل حضورك فور وصولك. سيتم تسجيل التأخير تلقائياً وفق لائحة العمل. تكرار التأخير يؤدي لمخالفة." },
+    { q: "كيف أقدم طلب إجازة؟", a: "من القائمة الجانبية، اختر 'إجازة' ثم حدد النوع والتواريخ. سيصل الطلب لمديرك المباشر للاعتماد." },
+    { q: "كيف أرى مخالفاتي؟", a: "من تبويب 'السجل الوظيفي' تجد قائمة المخالفات. يمكنك التظلم على أي مخالفة خلال 5 أيام من صدورها." },
+    { q: "ماذا لو ظهرت مخالفة لا أوافق عليها؟", a: "اذهب لتفاصيل المخالفة واضغط 'تقديم تظلم'، اكتب أسبابك وأرفق ما يدعمها. المدة: 5 أيام من تاريخ المخالفة." },
+    { q: "كيف أحصل على نقاط أكثر؟", a: "الحضور اليومي، الإجابة على التحدي الصباحي، عدم التأخر، وإكمال البصمات الأربع كاملة تعطيك نقاط." },
+    { q: "نسيت كلمة المرور — ماذا أفعل؟", a: "كلمات المرور تُدار من نظام كوادر (hma.engineer). راجع مديرك أو إدارة الموارد البشرية لإعادة تعيينها." },
+    { q: "هل يمكنني استخدام التطبيق خارج الدوام؟", a: "نعم، لكن زر تسجيل الحضور متاح فقط خلال ساعات الدوام الرسمية." },
+  ];
+
+  async function installApp() {
+    if (pwaInstallPrompt) {
+      pwaInstallPrompt.prompt();
+      await pwaInstallPrompt.userChoice;
+      setPwaInstallPrompt(null);
+      return;
+    }
+    // Fallback: show instructions
+    var ua = navigator.userAgent.toLowerCase();
+    var isIOS = /iphone|ipad|ipod/.test(ua);
+    var isAndroid = /android/.test(ua);
+    if (isIOS) {
+      alert("📱 لتثبيت التطبيق على iPhone:\n\n1. اضغط على زر المشاركة ⬆️ أسفل المتصفح\n2. اختر 'إضافة إلى الشاشة الرئيسية'\n3. اضغط 'إضافة'");
+    } else if (isAndroid) {
+      alert("📱 لتثبيت التطبيق على Android:\n\n1. اضغط على القائمة (⋮) أعلى المتصفح\n2. اختر 'إضافة إلى الشاشة الرئيسية' أو 'تثبيت التطبيق'\n3. اضغط 'تثبيت'");
+    } else {
+      alert("📱 التطبيق يعمل بشكل أفضل على الجوال.\n\nعلى Chrome في الكمبيوتر: اضغط على أيقونة التثبيت في شريط العنوان.");
+    }
+  }
+
+  function fixMobileView() {
+    // Update viewport to force mobile rendering
+    var viewport = document.querySelector('meta[name="viewport"]');
+    if (!viewport) {
+      viewport = document.createElement('meta');
+      viewport.name = 'viewport';
+      document.head.appendChild(viewport);
+    }
+    viewport.content = "width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no";
+    setForceMobileViewport(true);
+
+    // Show user how to do it in browser settings
+    var ua = navigator.userAgent.toLowerCase();
+    var isIOS = /iphone|ipad|ipod/.test(ua);
+    var isAndroid = /android/.test(ua);
+    if (isIOS) {
+      alert("🔄 تم تصحيح العرض ✓\n\nإذا ما زال العرض كمبيوتر، اتبع:\n\n1. اضغط على 'ﺃﺃ' أعلى يسار Safari\n2. اختر 'عرض موقع الجوال'\nأو\n'Request Mobile Website'");
+    } else if (isAndroid) {
+      alert("🔄 تم تصحيح العرض ✓\n\nإذا ما زال العرض كمبيوتر، اتبع:\n\n1. اضغط على (⋮) أعلى يمين Chrome\n2. ألغِ ✓ بجانب 'موقع سطح المكتب'\nأو\n'Desktop site'");
+    } else {
+      alert("🔄 تم تصحيح العرض ✓\n\nأنت على كمبيوتر حالياً. التطبيق مصمم للجوال ويعمل بشكل أفضل هناك.");
+    }
+    // Refresh page to apply viewport
+    setTimeout(function(){ window.location.reload(); }, 1500);
+  }
+
+  return (
+    <div style={{ background: C.card, borderRadius: 16, marginBottom: 12, overflow: "hidden", border: "1px solid " + C.bg }}>
+      {/* Header — clickable */}
+      <button onClick={function(){ setOpen(!open); }} style={{ width: "100%", padding: "14px 16px", background: "none", border: "none", display: "flex", alignItems: "center", gap: 10, cursor: "pointer", fontFamily: "'Tajawal',sans-serif" }}>
+        <div style={{ width: 36, height: 36, borderRadius: 10, background: C.hdr1 + "15", display: "flex", alignItems: "center", justifyContent: "center" }}>
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke={C.hdr1} strokeWidth="2" strokeLinecap="round"><circle cx="12" cy="12" r="10"/><path d="M9.09 9a3 3 0 015.83 1c0 2-3 3-3 3"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
+        </div>
+        <div style={{ flex: 1, textAlign: "right" }}>
+          <div style={{ fontSize: 14, fontWeight: 800, color: C.text, fontFamily: "'Cairo',sans-serif" }}>دليل الاستخدام</div>
+          <div style={{ fontSize: 10, color: C.textM, marginTop: 2 }}>أسئلة شائعة + تثبيت التطبيق + تصحيح العرض</div>
+        </div>
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke={C.textM} strokeWidth="2" strokeLinecap="round" style={{ transform: open ? "rotate(180deg)" : "rotate(0deg)", transition: "transform .2s" }}>
+          <polyline points="6,9 12,15 18,9"/>
+        </svg>
+      </button>
+
+      {/* Expanded content */}
+      {open && (
+        <div style={{ padding: "0 12px 12px", borderTop: "1px solid " + C.bg }}>
+          {/* FAQ list */}
+          <div style={{ padding: "12px 0" }}>
+            {questions.map(function(item, i) {
+              var isActive = activeQ === i;
+              return (
+                <div key={i} style={{ marginBottom: 6, background: isActive ? C.hdr1 + "08" : "transparent", borderRadius: 10, overflow: "hidden" }}>
+                  <button onClick={function(){ setActiveQ(isActive ? null : i); }} style={{ width: "100%", padding: "10px 12px", background: "none", border: "none", display: "flex", alignItems: "center", gap: 8, cursor: "pointer", fontFamily: "'Tajawal',sans-serif", textAlign: "right" }}>
+                    <div style={{ width: 6, height: 6, borderRadius: 3, background: isActive ? C.hdr1 : C.textM, flexShrink: 0 }} />
+                    <div style={{ flex: 1, fontSize: 12, fontWeight: isActive ? 700 : 500, color: C.text, lineHeight: 1.5 }}>{item.q}</div>
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke={C.textM} strokeWidth="2" strokeLinecap="round" style={{ transform: isActive ? "rotate(180deg)" : "rotate(0deg)", transition: "transform .2s" }}>
+                      <polyline points="6,9 12,15 18,9"/>
+                    </svg>
+                  </button>
+                  {isActive && (
+                    <div style={{ padding: "4px 26px 12px", fontSize: 11, color: C.textM, lineHeight: 1.8 }}>
+                      {item.a}
+                    </div>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+
+          {/* Action buttons */}
+          <div style={{ display: "flex", gap: 8, marginTop: 8 }}>
+            <button onClick={installApp} style={{ flex: 1, padding: "12px", borderRadius: 12, background: "linear-gradient(135deg,#1a3a6e,#2b5ea7)", color: "#fff", border: "none", fontSize: 12, fontWeight: 800, cursor: "pointer", fontFamily: "'Cairo',sans-serif", display: "flex", alignItems: "center", justifyContent: "center", gap: 6 }}>
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2" strokeLinecap="round"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4M7 10l5 5 5-5M12 15V3"/></svg>
+              تثبيت التطبيق
+            </button>
+            <button onClick={fixMobileView} style={{ flex: 1, padding: "12px", borderRadius: 12, background: "linear-gradient(135deg,#F59E0B,#FCD34D)", color: "#1a3a6e", border: "none", fontSize: 12, fontWeight: 800, cursor: "pointer", fontFamily: "'Cairo',sans-serif", display: "flex", alignItems: "center", justifyContent: "center", gap: 6 }}>
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#1a3a6e" strokeWidth="2" strokeLinecap="round"><path d="M23 4v6h-6M1 20v-6h6"/><path d="M3.51 9a9 9 0 0114.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0020.49 15"/></svg>
+              تصحيح العرض
+            </button>
+          </div>
+          <div style={{ fontSize: 9, color: C.textM, textAlign: "center", marginTop: 8, lineHeight: 1.5 }}>
+            <strong>تثبيت التطبيق:</strong> أضف التطبيق للشاشة الرئيسية<br/>
+            <strong>تصحيح العرض:</strong> إذا ظهر التطبيق بشكل كبير على الجوال
+          </div>
+        </div>
+      )}
+    </div>
+  );
 }
 
 function buildS() { return {
