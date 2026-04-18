@@ -577,14 +577,95 @@ function MobileAppInner() {
     if (navigator.serviceWorker) {
       navigator.serviceWorker.addEventListener('message', handleSwMsg);
     }
-    // Request notification permission on first login
-    if (typeof Notification !== 'undefined' && Notification.permission === 'default') {
-      try { Notification.requestPermission().catch(function(){}); } catch(e) {}
+
+    // ═══ Subscribe to Web Push ═══
+    async function subscribeToPush() {
+      if (!('serviceWorker' in navigator) || !('PushManager' in window)) return;
+      if (typeof Notification === 'undefined') return;
+
+      try {
+        // Request permission if needed
+        if (Notification.permission === 'default') {
+          var perm = await Notification.requestPermission();
+          if (perm !== 'granted') return;
+        }
+        if (Notification.permission !== 'granted') return;
+
+        // Get VAPID public key from server
+        var keyR = await fetch('/api/data?action=vapid-public-key');
+        var keyD = await keyR.json();
+        if (!keyD.publicKey) {
+          console.log('[PUSH] VAPID public key not configured on server');
+          return;
+        }
+
+        // Convert base64 public key to Uint8Array
+        function urlBase64ToUint8Array(base64String) {
+          var padding = '='.repeat((4 - base64String.length % 4) % 4);
+          var base64 = (base64String + padding).replace(/-/g, '+').replace(/_/g, '/');
+          var raw = window.atob(base64);
+          var arr = new Uint8Array(raw.length);
+          for (var i = 0; i < raw.length; i++) arr[i] = raw.charCodeAt(i);
+          return arr;
+        }
+
+        // Register SW and subscribe
+        var reg = await navigator.serviceWorker.ready;
+        var existingSub = await reg.pushManager.getSubscription();
+        var subscription = existingSub;
+        if (!existingSub) {
+          subscription = await reg.pushManager.subscribe({
+            userVisibleOnly: true,
+            applicationServerKey: urlBase64ToUint8Array(keyD.publicKey),
+          });
+        }
+
+        // Send subscription to server
+        await fetch('/api/data?action=subscribe-push', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ empId: user.id, subscription: subscription }),
+        });
+        console.log('[PUSH] Subscribed successfully');
+      } catch(e) {
+        console.log('[PUSH] Subscribe failed:', e.message);
+      }
     }
+    subscribeToPush();
+
+    // ═══ Polling fallback — check for new notifications every 15 seconds ═══
+    var lastCheckedId = null;
+    async function pollNotifications() {
+      try {
+        var r = await fetch('/api/data?action=notifications&empId=' + user.id);
+        var notifs = await r.json();
+        if (!Array.isArray(notifs) || notifs.length === 0) return;
+        // Find most recent unread notification
+        var unread = notifs.filter(function(n){ return !n.read; });
+        if (unread.length === 0) return;
+        var latest = unread[0];
+        if (latest.id === lastCheckedId) return;
+        lastCheckedId = latest.id;
+
+        // Trigger fake call if it's a fake_call type
+        if (latest.fakeCall || latest.type === 'fake_call') {
+          var ct = latest.callType || 'checkin';
+          var label = ct === 'checkin' ? 'تسجيل الحضور' : ct === 'break_end' ? 'العودة من الاستراحة' : 'التسجيل';
+          setFakeCall({ type: ct, label: label });
+        } else if (latest.type === 'test') {
+          // Show in-app toast for regular notifications
+          setToast({ msg: '📢 ' + latest.title + ': ' + latest.message, type: 'info' });
+        }
+      } catch(e) { /**/ }
+    }
+    var pollInterval = setInterval(pollNotifications, 15000);
+    pollNotifications(); // immediate first check
+
     return function() {
       if (navigator.serviceWorker) {
         navigator.serviceWorker.removeEventListener('message', handleSwMsg);
       }
+      clearInterval(pollInterval);
     };
   }, [user]);
 

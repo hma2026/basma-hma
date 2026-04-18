@@ -1320,32 +1320,50 @@ function TestPanel({ t, B, emps }) {
   var [selected, setSelected] = useState(emps[0] ? emps[0].id : "");
   var [log, setLog] = useState([]);
   var [busy, setBusy] = useState(false);
+  var [vapidKeys, setVapidKeys] = useState(null);
+  var [pushStatus, setPushStatus] = useState(null);
 
-  function addLog(msg, type) {
-    setLog(function(prev){ return [{ msg: msg, type: type || "info", ts: new Date().toLocaleTimeString("ar-SA") }, ...prev].slice(0, 30); });
+  useEffect(function() {
+    // Check if VAPID is configured on server
+    fetch("/api/data?action=vapid-public-key").then(r => r.json()).then(function(d){
+      setPushStatus(d.publicKey ? "configured" : "missing");
+    }).catch(function(){ setPushStatus("error"); });
+  }, []);
+
+  function addLog(msg, type, details) {
+    setLog(function(prev){ return [{ msg: msg, type: type || "info", details: details, ts: new Date().toLocaleTimeString("ar-SA") }, ...prev].slice(0, 30); });
   }
 
   async function runTest(action) {
     if (!selected) { alert("اختر موظف أولاً"); return; }
     setBusy(true);
     try {
-      if (action === "notif") {
+      if (action === "notif" || action === "call") {
+        var isCall = action === "call";
         var r = await fetch("/api/data?action=test-notify", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ empId: selected, type: "test", title: "اختبار إشعار", message: "هذا إشعار تجريبي من المدير" }),
+          body: JSON.stringify({
+            empId: selected,
+            type: isCall ? "fake_call" : "test",
+            callType: isCall ? "checkin" : undefined,
+            title: isCall ? "اتصال تجريبي" : "اختبار إشعار",
+            message: isCall ? "المدير يطلب منك تأكيد الحضور" : "هذا إشعار تجريبي من المدير",
+          }),
         });
         var d = await r.json();
-        addLog("📢 إشعار: " + (d.ok ? "✓ تم الإرسال" : "❌ " + (d.error || "فشل")), d.ok ? "ok" : "error");
-      }
-      else if (action === "call") {
-        var r2 = await fetch("/api/data?action=test-notify", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ empId: selected, type: "fake_call", title: "اتصال تجريبي", message: "المدير يطلب منك تأكيد الحضور" }),
-        });
-        var d2 = await r2.json();
-        addLog("📞 اتصال وهمي: " + (d2.ok ? "✓ تم الإرسال" : "❌ " + (d2.error || "فشل")), d2.ok ? "ok" : "error");
+        var icon = isCall ? "📞" : "📢";
+        var label = isCall ? "اتصال وهمي" : "إشعار";
+        if (d.ok) {
+          if (d.push && d.push.sent) {
+            addLog(icon + " " + label + ": ✓ تم الإرسال عبر Push (فوري)", "ok");
+          } else {
+            var reason = (d.push && d.push.reason) || "غير معروف";
+            addLog(icon + " " + label + ": ⚠️ حُفظ في DB فقط (بدون push)", "warn", "السبب: " + reason + ". " + (d.hint || ""));
+          }
+        } else {
+          addLog(icon + " " + label + ": ❌ فشل — " + (d.error || "خطأ"), "error");
+        }
       }
       else if (action === "checkin") {
         var r3 = await fetch("/api/data?action=checkin", {
@@ -1366,7 +1384,7 @@ function TestPanel({ t, B, emps }) {
         addLog("🔴 تسجيل انصراف: " + (d4.ok ? "✓ نجح" : "❌ فشل"), d4.ok ? "ok" : "error");
       }
       else if (action === "face") {
-        addLog("📸 اختبار بصمة الوجه: قم بتسجيل الدخول كهذا الموظف واختبر من التطبيق", "info");
+        addLog("📸 بصمة الوجه: يجب اختبارها من التطبيق مباشرة بتسجيل دخول كهذا الموظف", "info");
       }
       else if (action === "gps") {
         var r5 = await fetch("/api/data?action=gps_log&empId=" + selected + "&date=" + new Date().toISOString().split("T")[0]);
@@ -1379,12 +1397,53 @@ function TestPanel({ t, B, emps }) {
     setBusy(false);
   }
 
+  async function generateVapid() {
+    try {
+      var r = await fetch("/api/data?action=vapid-generate");
+      var d = await r.json();
+      if (d.ok) setVapidKeys(d);
+    } catch(e) { alert("خطأ: " + e.message); }
+  }
+
   return (
-    <div style={{ maxWidth: 700 }}>
+    <div style={{ maxWidth: 800 }}>
       <div style={{ background: B.red + "15", border: "1px solid " + B.red + "40", borderRadius: 10, padding: 12, marginBottom: 14, fontSize: 11, color: t.tx, lineHeight: 1.7 }}>
         🧪 <strong>صفحة اختبار النظام</strong><br/>
         اختبر كل الإمكانيات (إشعار، اتصال، حضور، انصراف). التغييرات فعلية — استخدم بحذر.
       </div>
+
+      {/* Push Status */}
+      <div style={{ background: pushStatus === "configured" ? "#10b98115" : pushStatus === "missing" ? "#f59e0b15" : "#ef444415", border: "1px solid " + (pushStatus === "configured" ? "#10b981" : pushStatus === "missing" ? "#f59e0b" : "#ef4444") + "40", borderRadius: 10, padding: 12, marginBottom: 14, fontSize: 11, color: t.tx, lineHeight: 1.7 }}>
+        {pushStatus === "configured" && <span>✅ <strong>Web Push مفعّل</strong> — الإشعارات ستصل فوراً لأجهزة الموظفين</span>}
+        {pushStatus === "missing" && (
+          <>
+            <div>⚠️ <strong>Web Push غير مفعّل</strong> — الإشعارات تعتمد على Polling كل 15 ثانية</div>
+            <button onClick={generateVapid} style={{ marginTop: 8, padding: "8px 14px", borderRadius: 8, background: B.blue, color: "#fff", border: "none", fontSize: 11, fontWeight: 700, cursor: "pointer" }}>
+              🔑 إنشاء مفاتيح VAPID (مرة واحدة)
+            </button>
+          </>
+        )}
+        {pushStatus === "error" && <span>❌ فشل التحقق من إعدادات Push</span>}
+      </div>
+
+      {/* VAPID keys display */}
+      {vapidKeys && (
+        <div style={{ background: "#fbbf2420", border: "2px solid #f59e0b", borderRadius: 10, padding: 14, marginBottom: 14 }}>
+          <div style={{ fontSize: 13, fontWeight: 800, color: "#b45309", marginBottom: 10 }}>🔑 مفاتيح VAPID تم إنشاؤها — اتبع التعليمات:</div>
+          <ol style={{ fontSize: 11, color: t.tx, lineHeight: 1.8, paddingRight: 18, marginBottom: 12 }}>
+            {vapidKeys.instructions.map(function(line, i){ return <li key={i}>{line}</li>; })}
+          </ol>
+          <div style={{ padding: 10, borderRadius: 8, background: t.bg, fontFamily: "monospace", fontSize: 10, direction: "ltr", wordBreak: "break-all", marginBottom: 6 }}>
+            <div style={{ color: "#10b981", fontWeight: 700 }}>VAPID_PUBLIC_KEY:</div>
+            <div>{vapidKeys.publicKey}</div>
+          </div>
+          <div style={{ padding: 10, borderRadius: 8, background: t.bg, fontFamily: "monospace", fontSize: 10, direction: "ltr", wordBreak: "break-all" }}>
+            <div style={{ color: "#ef4444", fontWeight: 700 }}>VAPID_PRIVATE_KEY:</div>
+            <div>{vapidKeys.privateKey}</div>
+          </div>
+          <button onClick={function(){ setVapidKeys(null); }} style={{ marginTop: 10, padding: "6px 12px", borderRadius: 6, background: "none", border: "1px solid " + t.sep, color: t.txM, fontSize: 10, cursor: "pointer" }}>إخفاء</button>
+        </div>
+      )}
 
       <div style={{ background: t.card, borderRadius: 12, padding: 16, border: "1px solid " + t.sep, marginBottom: 14 }}>
         <div style={{ fontSize: 12, fontWeight: 700, color: t.tx, marginBottom: 8 }}>اختر موظف:</div>
@@ -1416,9 +1475,10 @@ function TestPanel({ t, B, emps }) {
         </div>
         {log.length === 0 && <div style={{ color: t.txM, fontSize: 11, padding: 14, textAlign: "center", fontStyle: "italic" }}>لم تبدأ اختبارات بعد</div>}
         {log.map(function(item, i) {
-          var color = item.type === "ok" ? "#10b981" : item.type === "error" ? B.red : B.blue;
+          var color = item.type === "ok" ? "#10b981" : item.type === "error" ? B.red : item.type === "warn" ? "#f59e0b" : B.blue;
           return <div key={i} style={{ padding: "8px 10px", borderRadius: 6, marginBottom: 4, background: color + "10", borderRight: "3px solid " + color, fontSize: 11 }}>
             <div style={{ fontWeight: 700, color: t.tx }}>{item.msg}</div>
+            {item.details && <div style={{ fontSize: 10, color: t.txM, marginTop: 3, lineHeight: 1.6 }}>{item.details}</div>}
             <div style={{ fontSize: 9, color: t.txM, marginTop: 2 }}>{item.ts}</div>
           </div>;
         })}

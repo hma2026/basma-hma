@@ -1,6 +1,33 @@
 import { put, list, del } from '@vercel/blob';
+import webpush from 'web-push';
 
 const PFX = 'basma_';
+
+// ═══ Web Push helper ═══
+var vapidConfigured = false;
+function configureVapid() {
+  if (vapidConfigured) return true;
+  if (!process.env.VAPID_PUBLIC_KEY || !process.env.VAPID_PRIVATE_KEY) return false;
+  try {
+    webpush.setVapidDetails(
+      'mailto:' + (process.env.VAPID_CONTACT_EMAIL || 'admin@hma.engineer'),
+      process.env.VAPID_PUBLIC_KEY,
+      process.env.VAPID_PRIVATE_KEY
+    );
+    vapidConfigured = true;
+    return true;
+  } catch(e) { return false; }
+}
+
+async function sendWebPush(subscription, payload) {
+  if (!configureVapid()) return { sent: false, reason: 'VAPID not configured' };
+  try {
+    await webpush.sendNotification(subscription, JSON.stringify(payload));
+    return { sent: true, reason: 'delivered' };
+  } catch (err) {
+    return { sent: false, reason: 'push error: ' + (err.statusCode || err.message || String(err)) };
+  }
+}
 
 async function dbGet(t) {
   try {
@@ -707,11 +734,64 @@ export default async function handler(req, res) {
         return res.json(wt);
       }
 
-      /* ═══ TEST NOTIFY — إرسال إشعار/اتصال وهمي اختباري من المدير ═══ */
+      /* ═══ WEB PUSH — generate VAPID keys (ONE-TIME SETUP) ═══ */
+      case 'vapid-generate': {
+        try {
+          var keys = webpush.generateVAPIDKeys();
+          return res.json({
+            ok: true,
+            publicKey: keys.publicKey,
+            privateKey: keys.privateKey,
+            instructions: [
+              '1. انسخ المفتاحين',
+              '2. اذهب لـ Vercel → basma-hma → Settings → Environment Variables',
+              '3. أضف: VAPID_PUBLIC_KEY = ' + keys.publicKey,
+              '4. أضف: VAPID_PRIVATE_KEY = ' + keys.privateKey,
+              '5. أضف (اختياري): VAPID_CONTACT_EMAIL = admin@hma.engineer',
+              '6. اضغط Save ثم Redeploy من Deployments',
+              '7. افتح التطبيق على جوالك، اقبل الإشعارات، ثم جرّب الاختبار من لوحة المدير',
+            ],
+          });
+        } catch(e) {
+          return res.status(500).json({ ok: false, error: e.message });
+        }
+      }
+
+      /* ═══ WEB PUSH — VAPID public key (client subscribes with it) ═══ */
+      case 'vapid-public-key': {
+        return res.json({ publicKey: process.env.VAPID_PUBLIC_KEY || '' });
+      }
+
+      /* ═══ WEB PUSH — subscribe employee to push ═══ */
+      case 'subscribe-push': {
+        var body = req.body || {};
+        var empId = body.empId;
+        var subscription = body.subscription;
+        if (!empId || !subscription) return res.status(400).json({ ok: false, error: 'empId + subscription required' });
+        var subs = (await dbGet('push_subscriptions')) || {};
+        subs[empId] = { subscription: subscription, ts: new Date().toISOString() };
+        await dbSet('push_subscriptions', subs);
+        return res.json({ ok: true });
+      }
+
+      /* ═══ WEB PUSH — unsubscribe ═══ */
+      case 'unsubscribe-push': {
+        var body = req.body || {};
+        var empId = body.empId;
+        if (!empId) return res.status(400).json({ ok: false, error: 'empId required' });
+        var subs = (await dbGet('push_subscriptions')) || {};
+        delete subs[empId];
+        await dbSet('push_subscriptions', subs);
+        return res.json({ ok: true });
+      }
+
+      /* ═══ TEST NOTIFY — إرسال إشعار/اتصال وهمي (مع push حقيقي) ═══ */
       case 'test-notify': {
         var body = req.body || {};
         var empId = body.empId;
         if (!empId) return res.status(400).json({ ok: false, error: 'empId مطلوب' });
+
+        // 1. Save to DB (polling fallback picks this up)
         var notifs = (await dbGet('notifications')) || [];
         var newNotif = {
           id: 'N' + Date.now(),
@@ -720,12 +800,42 @@ export default async function handler(req, res) {
           title: body.title || 'إشعار اختبار',
           message: body.message || 'إشعار من المدير',
           fakeCall: body.type === 'fake_call',
+          callType: body.callType || 'checkin',
           read: false,
           ts: new Date().toISOString(),
         };
         notifs.unshift(newNotif);
         await dbSet('notifications', notifs.slice(0, 500));
-        return res.json({ ok: true, notification: newNotif });
+
+        // 2. Try sending real Web Push
+        var pushResult = { sent: false, reason: '' };
+        try {
+          var subs = (await dbGet('push_subscriptions')) || {};
+          var sub = subs[empId];
+          if (!sub) {
+            pushResult.reason = 'الموظف لم يفعّل الإشعارات بعد (يجب أن يفتح التطبيق على جواله ويوافق على الإذن)';
+          } else if (!process.env.VAPID_PUBLIC_KEY || !process.env.VAPID_PRIVATE_KEY) {
+            pushResult.reason = 'VAPID_PUBLIC_KEY و VAPID_PRIVATE_KEY غير معرّفين في Vercel env — استخدم polling fallback';
+          } else {
+            // Try Web Push using native crypto (simple implementation)
+            pushResult = await sendWebPush(sub.subscription, {
+              title: newNotif.title,
+              body: newNotif.message,
+              fakeCall: newNotif.fakeCall,
+              callType: newNotif.callType,
+              tag: 'basma-' + newNotif.id,
+            });
+          }
+        } catch (e) {
+          pushResult.reason = 'خطأ: ' + (e.message || String(e));
+        }
+
+        return res.json({
+          ok: true,
+          notification: newNotif,
+          push: pushResult,
+          hint: pushResult.sent ? null : 'الإشعار محفوظ في DB — التطبيق سيكتشفه خلال 15 ثانية (polling)',
+        });
       }
 
       /* ═══ PING — اختبار بسيط بدون fetch ═══ */
