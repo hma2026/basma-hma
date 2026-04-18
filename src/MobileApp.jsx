@@ -10,7 +10,7 @@ import { ALL_VIOLATIONS_DEFAULT, PENALTY_TYPES, LAIHA_INFO, COMPLAINT_STATUS, VI
 
 /* ═══════════ APP CONFIG (إعدادات التطبيق) ═══════════ */
 const APP_CONFIG = {
-  VER: "4.81",
+  VER: "4.87",
   NAME: "بصمة HMA",
   FULL_NAME: "نظام الحضور والانصراف الذكي",
   COMPANY: "هاني محمد عسيري للاستشارات الهندسية",
@@ -904,6 +904,7 @@ function MobileAppInner() {
         {page === "home" && <HomePage user={user} branch={branch} now={now} todayAtt={todayAtt} allAtt={allAtt} gps={gps} gpsDist={gpsDist} streak={streak} loading={loading} refreshing={refreshing} dayState={getDayState()} checkpoints={getCheckpoints()} isOffDay={isOffDay()} pendingCount={myLeaves.filter(function(l){ return l.status === "pending"; }).length + myTickets.filter(function(t){ return t.status === "pending"; }).length} teamToday={teamToday} pwaPrompt={pwaPrompt} onPwaInstall={async function(){ if(pwaPrompt){pwaPrompt.prompt();await pwaPrompt.userChoice;setPwaPrompt(null);} }} onCheckin={requestCheckin} onChallenge={function(pts) { var u = { ...user, points: (user.points||0)+pts }; setUser(u); localStorage.setItem("basma_user", JSON.stringify(u)); showToast("🎉 +" + pts + " نقطة!"); }} onLeave={() => setLeaveModal(true)} onRefresh={refresh} onPreAbsence={function(){ setPreAbsModal(true); }} onManualAtt={function(){ setManualAttModal(true); }} onPermission={function(){ setPermModal(true); }} kadwarNotifs={kadwarNotifs} darkMode={darkMode} announcements={announcements} onShowAnnouncements={function(){ setShowAnnModal(true); }} />}
         {page === "report" && <ReportPage user={user} allAtt={allAtt} todayAtt={todayAtt} branch={branch} isOffDay={isOffDay()} myLeaves={myLeaves} allEmps={allEmps} />}
         {page === "benefits" && <BenefitsPage user={user} />}
+        {page === "tawasul" && <TawasulPage user={user} allEmps={allEmps} />}
         {page === "profile" && <ProfilePage user={user} branch={branch} onLogout={logout} onTicket={() => setTicketModal(true)} myTickets={myTickets} darkMode={darkMode} toggleDark={toggleDark} />}
       </div>
 
@@ -1063,19 +1064,6 @@ function LoginScreen({ onLogin, loading }) {
         <div style={{ color: "rgba(255,255,255,.5)", fontSize: 10, marginTop: 14, textAlign: "center", lineHeight: 1.6 }}>
           استخدم نفس بيانات الدخول الخاصة بنظام كوادر<br/>
           <a href="https://hma.engineer" target="_blank" style={{ color: "rgba(255,255,255,.75)", textDecoration: "underline" }}>↗ فتح كوادر</a>
-        </div>
-
-        {/* Switch to Admin Login */}
-        <div style={{ marginTop: 18, paddingTop: 14, borderTop: "1px solid rgba(255,255,255,.15)", textAlign: "center" }}>
-          <div style={{ fontSize: 10, color: "rgba(255,255,255,.5)", marginBottom: 8 }}>هل أنت مدير النظام؟</div>
-          <button onClick={function(){
-            window.location.hash = "admin";
-            window.location.reload();
-          }} style={{ width: "100%", padding: "10px 14px", borderRadius: 12, background: "rgba(255,255,255,.1)", border: "1.5px solid rgba(255,255,255,.25)", color: "#fff", fontSize: 12, fontWeight: 700, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", gap: 8, fontFamily: "'Cairo',sans-serif" }}>
-            <span style={{ fontSize: 16 }}>🔐</span>
-            <span>دخول لوحة الإدارة</span>
-            <span style={{ fontSize: 13 }}>←</span>
-          </button>
         </div>
       </div>
       <div className="basma-fadein-d3" style={{ color: "rgba(255,255,255,.3)", fontSize: 10, marginTop: 24 }}>{"v"+VER+" · b.hma.engineer"}</div>
@@ -1284,19 +1272,6 @@ function HomePage({ user, branch, now, todayAtt, allAtt, gps, gpsDist, streak, l
           </div>
           {/* Digital time — below clock, not absolute */}
           <div style={{ textAlign: "center", marginTop: SPACING.md }}>
-            {outsideNoCheckin && (
-              <div style={{ background: "linear-gradient(135deg, #dc2626, #991b1b)", border: "2px solid #ef4444", borderRadius: 12, padding: "10px 14px", marginBottom: 8, animation: "basmaRedPulse 1.5s ease-in-out infinite" }}>
-                <div style={{ fontSize: 14, fontWeight: 900, color: "#fff", fontFamily: TYPOGRAPHY.fontCairo, display: "flex", alignItems: "center", justifyContent: "center", gap: 6 }}>
-                  <span style={{ fontSize: 18 }}>⚠️</span> خارج نطاق العمل
-                </div>
-                {gpsDist !== null && (
-                  <div style={{ fontSize: 11, fontWeight: 700, color: "#fecaca", marginTop: 4 }}>
-                    تبعد {gpsDist} م • يجب الاقتراب من المكتب لتسجيل الحضور
-                  </div>
-                )}
-                <style>{`@keyframes basmaRedPulse { 0%,100% { box-shadow: 0 0 0 0 rgba(239,68,68,0.7); } 50% { box-shadow: 0 0 0 8px rgba(239,68,68,0); } }`}</style>
-              </div>
-            )}
             <div style={{ fontSize: 20, fontWeight: 800, color: COLORS.goldDark, fontFamily: TYPOGRAPHY.fontSerif, letterSpacing: 3, marginTop: 4, textShadow: darkMode ? "0 0 10px rgba(201,168,76,.3)" : "none" }}>{time}<span style={{ fontSize: 12, opacity: .4 }}>:{sec}</span> <span style={{ fontSize: 11, opacity: .4 }}>{ampm}</span></div>
           </div>
           </>
@@ -1316,12 +1291,15 @@ function HomePage({ user, branch, now, todayAtt, allAtt, gps, gpsDist, streak, l
           </Button>
         )}
 
-        {/* GPS indicator */}
-        <div style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: SPACING.sm }}>
-          <div style={{ width: 7, height: 7, borderRadius: RADIUS.pill, background: gps ? (inRange ? COLORS.goldLight : COLORS.textDanger) : COLORS.textMuted }} />
-          <span style={{ ...TYPOGRAPHY.caption, color: COLORS.textMuted }}>{gps ? (inRange ? "في النطاق" : "خارج النطاق") + (branch ? " — " + branch.name : "") : "تحديد الموقع..."}</span>
-          {streak > 0 && <span style={{ ...TYPOGRAPHY.caption, fontWeight: 800, color: COLORS.goldLight }}>{"🔥 " + streak}</span>}
+        {/* GPS indicator — enlarged pill */}
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 8, padding: "8px 18px", borderRadius: 22, background: gps ? (inRange ? "rgba(48,209,88,0.12)" : "rgba(239,68,68,0.15)") : "rgba(150,150,150,0.1)", border: "1.5px solid " + (gps ? (inRange ? "rgba(48,209,88,0.45)" : "rgba(239,68,68,0.5)") : "rgba(150,150,150,0.25)"), margin: "2px auto", width: "fit-content", maxWidth: "90%" }}>
+          <div style={{ width: 9, height: 9, borderRadius: RADIUS.pill, background: gps ? (inRange ? "#30D158" : "#EF4444") : COLORS.textMuted, boxShadow: gps ? "0 0 8px " + (inRange ? "rgba(48,209,88,0.6)" : "rgba(239,68,68,0.6)") : "none" }} />
+          <span style={{ fontSize: 13, fontWeight: 700, color: gps ? (inRange ? "#30D158" : "#EF4444") : COLORS.textMuted, fontFamily: "'Tajawal',sans-serif" }}>{gps ? (inRange ? "في النطاق" : "خارج النطاق") + (branch ? " — " + branch.name : "") : "تحديد الموقع..."}</span>
+          {streak > 0 && <span style={{ fontSize: 13, fontWeight: 800, color: COLORS.goldLight, marginRight: 4 }}>{"🔥 " + streak}</span>}
         </div>
+
+        {/* Announcements Banner — rotating with fade */}
+        <AnnouncementsBanner announcements={announcements} user={user} onShow={onShowAnnouncements} />
 
         {/* إجازة + إذن (secondary) */}
         <div style={{ display: "flex", gap: SPACING.sm }}>
@@ -1919,6 +1897,454 @@ function BenefitsPage({ user }) {
           </Card>
         )}
       </div>
+    </div>
+  );
+}
+
+/* ═══════════ TAWASUL — تبادل المهام الإدارية (Phase 1: Read-only) ═══════════ */
+var TAWASUL_STATUS = {
+  draft:       { icon: "📝", label: "مسودة",       color: "#6B7280" },
+  sent:        { icon: "📨", label: "مُرسَل",       color: "#3B82F6" },
+  accepted:    { icon: "✅", label: "مقبول",        color: "#10B981" },
+  objected:    { icon: "⚠️", label: "معترض",        color: "#F59E0B" },
+  rescheduled: { icon: "🔄", label: "إعادة جدولة",  color: "#EAB308" },
+  inprogress:  { icon: "🔨", label: "قيد التنفيذ",  color: "#8B5CF6" },
+  delivered:   { icon: "📦", label: "تم التسليم",   color: "#06B6D4" },
+  closed:      { icon: "✅", label: "مغلق",         color: "#4B5563" },
+  returned:    { icon: "↩️", label: "مُرجَع",       color: "#EF4444" },
+  cancelled:   { icon: "🚫", label: "ملغي",         color: "#991B1B" },
+};
+function getTawasulStatusMeta(s) {
+  return TAWASUL_STATUS[s] || { icon: "❓", label: s || "غير محدد", color: "#6B7280" };
+}
+function tawasulTimeAgo(iso) {
+  if (!iso) return "";
+  try {
+    var d = new Date(iso);
+    var diff = (Date.now() - d.getTime()) / 1000;
+    if (diff < 60) return "الآن";
+    if (diff < 3600) return "منذ " + Math.floor(diff/60) + " د";
+    if (diff < 86400) return "منذ " + Math.floor(diff/3600) + " س";
+    if (diff < 604800) return "منذ " + Math.floor(diff/86400) + " يوم";
+    return d.toLocaleDateString("ar-SA");
+  } catch(e) { return ""; }
+}
+
+function TawasulPage({ user, allEmps }) {
+  var [tab, setTab] = useState("inbox"); // inbox | sent | done
+  var [requests, setRequests] = useState(null);
+  var [categories, setCategories] = useState([]);
+  var [loading, setLoading] = useState(true);
+  var [err, setErr] = useState(null);
+  var [search, setSearch] = useState("");
+  var [filterStatus, setFilterStatus] = useState("all");
+  var [filterUrgency, setFilterUrgency] = useState("all");
+  var [selectedReq, setSelectedReq] = useState(null);
+  var [refreshing, setRefreshing] = useState(false);
+
+  var isAdmin = user && (user.role === "admin" || user.role === "hr_manager" || user.isAdmin);
+  var myId = user && (user.id || user.username);
+
+  async function loadData(isRefresh) {
+    if (isRefresh) setRefreshing(true); else setLoading(true);
+    setErr(null);
+    try {
+      var r = await fetch("/api/data?action=tawasul-list");
+      var d = await r.json();
+      if (!r.ok || d.error) {
+        setErr(d.error || ("خطأ " + r.status));
+        setRequests([]);
+      } else {
+        setRequests(d.requests || []);
+        setCategories(d.categories || []);
+      }
+    } catch (e) {
+      setErr("تعذر تحميل البيانات: " + (e.message || "اتصال"));
+      setRequests([]);
+    }
+    setLoading(false);
+    setRefreshing(false);
+  }
+
+  useEffect(function(){ loadData(false); }, []);
+
+  // Helper: resolve name from id
+  function nameOf(id) {
+    if (!id) return "—";
+    if (String(id) === String(myId)) return "أنت";
+    var found = (allEmps || []).find(function(e){ return String(e.id) === String(id) || e.username === id; });
+    return found ? (found.name || found.username || id) : id;
+  }
+
+  // Filter requests based on tab + user role
+  function matchesTab(r) {
+    var isRequester = String(r.requesterId) === String(myId) || r.requesterId === (user && user.username);
+    var isAssignee = (r.assignees || []).some(function(a){ return String(a.id) === String(myId) || a.id === (user && user.username); });
+    var isDone = r.status === "closed" || r.status === "delivered" || r.status === "cancelled";
+
+    if (tab === "inbox") return isAdmin ? !isDone : (isAssignee && !isDone);
+    if (tab === "sent") return isAdmin ? (!isDone && isRequester) || !isDone : (isRequester && !isDone);
+    if (tab === "done") return isAdmin ? isDone : (isDone && (isRequester || isAssignee));
+    return true;
+  }
+
+  // Apply filters
+  var filtered = (requests || []).filter(function(r){
+    if (!matchesTab(r)) return false;
+    if (filterStatus !== "all" && r.status !== filterStatus) return false;
+    if (filterUrgency !== "all" && r.urgency !== filterUrgency) return false;
+    if (search.trim()) {
+      var q = search.trim().toLowerCase();
+      var text = ((r.title || "") + " " + (r.description || "") + " " + (r.category || "")).toLowerCase();
+      if (text.indexOf(q) === -1) return false;
+    }
+    return true;
+  }).sort(function(a,b){
+    // urgent first, then newest
+    if ((a.urgency === "urgent") !== (b.urgency === "urgent")) return a.urgency === "urgent" ? -1 : 1;
+    return new Date(b.updatedAt || b.createdAt || 0).getTime() - new Date(a.updatedAt || a.createdAt || 0).getTime();
+  });
+
+  // Count per tab (for badges)
+  var counts = {
+    inbox: (requests || []).filter(function(r){ var isA = (r.assignees||[]).some(function(a){ return String(a.id)===String(myId); }); var nd = r.status !== "closed" && r.status !== "delivered" && r.status !== "cancelled"; return isAdmin ? nd : (isA && nd); }).length,
+    sent:  (requests || []).filter(function(r){ var isR = String(r.requesterId)===String(myId); var nd = r.status !== "closed" && r.status !== "delivered" && r.status !== "cancelled"; return isAdmin ? nd : (isR && nd); }).length,
+    done:  (requests || []).filter(function(r){ var isD = r.status==="closed"||r.status==="delivered"||r.status==="cancelled"; var mine = String(r.requesterId)===String(myId) || (r.assignees||[]).some(function(a){ return String(a.id)===String(myId); }); return isAdmin ? isD : (isD && mine); }).length,
+  };
+
+  var pageBg = C.bg;
+
+  if (loading) {
+    return (
+      <div style={{ minHeight: "100vh", background: pageBg, color: C.text, paddingBottom: 80, display: "flex", alignItems: "center", justifyContent: "center", fontFamily: "'Tajawal',sans-serif" }}>
+        <div style={{ textAlign: "center" }}>
+          <div style={{ fontSize: 40, marginBottom: 10 }}>🤝</div>
+          <div style={{ fontSize: 14, color: C.sub }}>جارِ تحميل الطلبات...</div>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div style={{ minHeight: "100vh", background: pageBg, color: C.text, paddingBottom: 80, fontFamily: "'Tajawal',sans-serif", direction: "rtl" }}>
+      {/* Gradient header */}
+      <div style={{ background: "linear-gradient(135deg, " + C.hdr1 + " 0%, " + C.hdr2 + " 100%)", padding: "16px 16px 18px", color: "#fff" }}>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 4 }}>
+          <div style={{ fontSize: 22, fontWeight: 900, fontFamily: "'Cairo',sans-serif" }}>🤝 تواصل</div>
+          <button onClick={function(){ loadData(true); }} disabled={refreshing} style={{ background: "rgba(255,255,255,.15)", border: "1px solid rgba(255,255,255,.25)", borderRadius: 10, padding: "6px 12px", color: "#fff", fontSize: 11, fontWeight: 700, cursor: "pointer", fontFamily: "inherit" }}>
+            {refreshing ? "⟳..." : "⟳ تحديث"}
+          </button>
+        </div>
+        <div style={{ fontSize: 11, opacity: 0.85 }}>تبادل المهام الإدارية بين الأقسام</div>
+      </div>
+
+      {/* Tabs */}
+      <div style={{ display: "flex", padding: "12px", gap: 8, background: C.bg }}>
+        {[
+          { id: "inbox", icon: "📥", label: "الوارد" },
+          { id: "sent",  icon: "📤", label: "المُرسَل" },
+          { id: "done",  icon: "✅", label: "المُنجَز" },
+        ].map(function(x){
+          var active = tab === x.id;
+          return (
+            <button key={x.id} onClick={function(){ setTab(x.id); }} style={{ flex: 1, padding: "10px 8px", borderRadius: 12, background: active ? C.hdr2 : C.card, border: "1px solid " + (active ? C.hdr2 : C.cardBorder), color: active ? "#fff" : C.text, fontSize: 12, fontWeight: 800, cursor: "pointer", fontFamily: "inherit", position: "relative", display: "flex", alignItems: "center", justifyContent: "center", gap: 4 }}>
+              <span>{x.icon}</span><span>{x.label}</span>
+              {counts[x.id] > 0 && (
+                <span style={{ minWidth: 18, height: 18, padding: "0 5px", borderRadius: 9, background: active ? "#fff" : C.hdr2, color: active ? C.hdr2 : "#fff", fontSize: 10, fontWeight: 900, display: "flex", alignItems: "center", justifyContent: "center", marginRight: 3 }}>{counts[x.id]}</span>
+              )}
+            </button>
+          );
+        })}
+      </div>
+
+      {/* Search + filters */}
+      <div style={{ padding: "0 12px 10px", display: "flex", flexDirection: "column", gap: 8 }}>
+        <input type="text" value={search} onChange={function(e){ setSearch(e.target.value); }} placeholder="🔍 بحث..." style={{ width: "100%", padding: "11px 14px", borderRadius: 12, border: "1px solid " + C.cardBorder, background: C.card, color: C.text, fontSize: 13, fontFamily: "inherit", outline: "none", boxSizing: "border-box" }} />
+        <div style={{ display: "flex", gap: 6, overflowX: "auto", paddingBottom: 4 }}>
+          {[
+            { id: "all", label: "الكل", color: C.hdr2 },
+            { id: "urgent", label: "🔴 عاجل", color: "#EF4444" },
+            { id: "normal", label: "🟡 عادي", color: "#F59E0B" },
+          ].map(function(f){
+            var active = filterUrgency === f.id;
+            return (
+              <button key={f.id} onClick={function(){ setFilterUrgency(f.id); }} style={{ padding: "6px 12px", borderRadius: 10, background: active ? f.color : C.card, border: "1px solid " + (active ? f.color : C.cardBorder), color: active ? "#fff" : C.text, fontSize: 11, fontWeight: 700, cursor: "pointer", fontFamily: "inherit", whiteSpace: "nowrap", flexShrink: 0 }}>{f.label}</button>
+            );
+          })}
+        </div>
+      </div>
+
+      {/* Error state */}
+      {err && (
+        <div style={{ margin: "0 12px 12px", padding: "12px 14px", borderRadius: 12, background: "rgba(239,68,68,0.1)", border: "1px solid #EF4444", color: "#EF4444", fontSize: 12, fontWeight: 600, display: "flex", alignItems: "center", gap: 8 }}>
+          <span style={{ fontSize: 18 }}>⚠️</span>
+          <div style={{ flex: 1 }}>{err}</div>
+          <button onClick={function(){ loadData(true); }} style={{ background: "#EF4444", border: "none", borderRadius: 8, padding: "6px 12px", color: "#fff", fontSize: 11, fontWeight: 700, cursor: "pointer", fontFamily: "inherit" }}>إعادة</button>
+        </div>
+      )}
+
+      {/* List */}
+      <div style={{ padding: "0 12px" }}>
+        {filtered.length === 0 && !err && (
+          <div style={{ textAlign: "center", padding: "60px 20px", color: C.sub }}>
+            <div style={{ fontSize: 48, marginBottom: 12 }}>📭</div>
+            <div style={{ fontSize: 14, fontWeight: 700, marginBottom: 4 }}>لا توجد طلبات</div>
+            <div style={{ fontSize: 11 }}>{search || filterUrgency !== "all" ? "جرّب تغيير البحث أو الفلتر" : (tab === "inbox" ? "لا طلبات واصلة لك" : tab === "sent" ? "لم ترسل أي طلبات بعد" : "لا يوجد طلبات منجزة")}</div>
+          </div>
+        )}
+        {filtered.map(function(r){
+          var m = getTawasulStatusMeta(r.status);
+          var isUrgent = r.urgency === "urgent";
+          var assigneeNames = (r.assignees || []).map(function(a){ return nameOf(a.id); }).join("، ") || "—";
+          var requesterName = nameOf(r.requesterId);
+          return (
+            <div key={r.id} onClick={function(){ setSelectedReq(r); }} style={{ background: C.card, borderRadius: 14, padding: 14, marginBottom: 10, border: "1px solid " + C.cardBorder, borderRight: "4px solid " + m.color, cursor: "pointer", boxShadow: C === DARK ? "none" : "0 1px 3px rgba(0,0,0,0.06)", transition: "transform 0.1s" }}>
+              <div style={{ display: "flex", alignItems: "start", gap: 10, marginBottom: 8 }}>
+                <div style={{ display: "inline-flex", alignItems: "center", gap: 5, padding: "3px 9px", borderRadius: 10, background: m.color + "22", color: m.color, fontSize: 10, fontWeight: 800, flexShrink: 0 }}>
+                  <span>{m.icon}</span><span>{m.label}</span>
+                </div>
+                {isUrgent && (
+                  <div style={{ padding: "3px 9px", borderRadius: 10, background: "rgba(239,68,68,0.15)", color: "#EF4444", fontSize: 10, fontWeight: 800, display: "flex", alignItems: "center", gap: 4, flexShrink: 0 }}>
+                    🔴 عاجل
+                  </div>
+                )}
+                <div style={{ flex: 1 }} />
+                <div style={{ fontSize: 10, color: C.sub, flexShrink: 0 }}>{tawasulTimeAgo(r.updatedAt || r.createdAt)}</div>
+              </div>
+              {r.category && (
+                <div style={{ fontSize: 10, color: C.sub, marginBottom: 4, fontWeight: 600 }}>{r.category}{r.project ? " • " + r.project : ""}</div>
+              )}
+              <div style={{ fontSize: 14, fontWeight: 800, color: C.text, marginBottom: 6, lineHeight: 1.4 }}>{r.title || "(بدون عنوان)"}</div>
+              {r.description && (
+                <div style={{ fontSize: 11, color: C.sub, marginBottom: 8, lineHeight: 1.5, overflow: "hidden", display: "-webkit-box", WebkitLineClamp: 2, WebkitBoxOrient: "vertical" }}>{r.description}</div>
+              )}
+              <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", fontSize: 10, color: C.sub, borderTop: "1px solid " + C.cardBorder, paddingTop: 8 }}>
+                <div>
+                  <span style={{ fontWeight: 600 }}>من:</span> {requesterName} <span style={{ margin: "0 4px" }}>•</span> <span style={{ fontWeight: 600 }}>إلى:</span> {assigneeNames}
+                </div>
+                {(r.comments && r.comments.length > 0) && (
+                  <span style={{ fontWeight: 700, color: C.gold }}>💬 {r.comments.length}</span>
+                )}
+              </div>
+            </div>
+          );
+        })}
+      </div>
+
+      {/* Footer info — phase 1 note */}
+      {!err && filtered.length > 0 && (
+        <div style={{ padding: "20px 16px 24px", textAlign: "center", fontSize: 10, color: C.sub }}>
+          📖 وضع القراءة فقط — الإنشاء والتعديل قريباً
+        </div>
+      )}
+
+      {/* Detail modal */}
+      {selectedReq && <TawasulDetailModal request={selectedReq} user={user} allEmps={allEmps} onClose={function(){ setSelectedReq(null); }} nameOf={nameOf} />}
+    </div>
+  );
+}
+
+/* ═══════════ TAWASUL DETAIL MODAL (read-only phase 1) ═══════════ */
+function TawasulDetailModal({ request, user, allEmps, onClose, nameOf }) {
+  var r = request;
+  var m = getTawasulStatusMeta(r.status);
+  var isUrgent = r.urgency === "urgent";
+  var requesterName = nameOf(r.requesterId);
+
+  // Sort comments chronologically
+  var comments = (r.comments || []).slice().sort(function(a,b){ return new Date(a.at || 0) - new Date(b.at || 0); });
+  var history = (r.history || []).slice().sort(function(a,b){ return new Date(a.at || 0) - new Date(b.at || 0); });
+
+  return (
+    <div onClick={onClose} style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.6)", zIndex: 1000, display: "flex", alignItems: "flex-end", justifyContent: "center", padding: 0, fontFamily: "'Tajawal',sans-serif" }}>
+      <div onClick={function(e){ e.stopPropagation(); }} style={{ background: C.bg, borderRadius: "20px 20px 0 0", maxWidth: 430, width: "100%", maxHeight: "92vh", overflowY: "auto", direction: "rtl", color: C.text, paddingBottom: 20 }}>
+        {/* Drag handle */}
+        <div style={{ display: "flex", justifyContent: "center", padding: "10px 0 4px" }}>
+          <div style={{ width: 40, height: 4, borderRadius: 2, background: C.cardBorder }} />
+        </div>
+
+        {/* Header */}
+        <div style={{ padding: "12px 18px 18px", borderBottom: "1px solid " + C.cardBorder }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 10, flexWrap: "wrap" }}>
+            <div style={{ display: "inline-flex", alignItems: "center", gap: 5, padding: "4px 10px", borderRadius: 10, background: m.color + "22", color: m.color, fontSize: 11, fontWeight: 800 }}>
+              <span>{m.icon}</span><span>{m.label}</span>
+            </div>
+            {isUrgent && (
+              <div style={{ padding: "4px 10px", borderRadius: 10, background: "rgba(239,68,68,0.15)", color: "#EF4444", fontSize: 11, fontWeight: 800 }}>
+                🔴 عاجل
+              </div>
+            )}
+            <div style={{ flex: 1 }} />
+            <button onClick={onClose} style={{ background: "none", border: "none", fontSize: 22, color: C.sub, cursor: "pointer", padding: 0, lineHeight: 1 }}>×</button>
+          </div>
+          {r.category && (
+            <div style={{ fontSize: 11, color: C.sub, marginBottom: 4, fontWeight: 600 }}>{r.category}{r.project ? " • " + r.project : ""}</div>
+          )}
+          <div style={{ fontSize: 17, fontWeight: 900, color: C.text, lineHeight: 1.4, fontFamily: "'Cairo',sans-serif" }}>{r.title || "(بدون عنوان)"}</div>
+        </div>
+
+        {/* Meta rows */}
+        <div style={{ padding: 16 }}>
+          <div style={{ background: C.card, borderRadius: 12, padding: 14, border: "1px solid " + C.cardBorder, marginBottom: 12 }}>
+            {[
+              { label: "من", value: requesterName, icon: "👤" },
+              { label: "إلى", value: (r.assignees || []).map(function(a){ return nameOf(a.id); }).join("، ") || "—", icon: "📬" },
+              { label: "تاريخ الإنشاء", value: r.createdAt ? new Date(r.createdAt).toLocaleString("ar-SA") : "—", icon: "📅" },
+              r.dueDate ? { label: "الاستحقاق", value: new Date(r.dueDate).toLocaleDateString("ar-SA"), icon: "⏰" } : null,
+              { label: "آخر تحديث", value: tawasulTimeAgo(r.updatedAt || r.createdAt), icon: "🔄" },
+            ].filter(Boolean).map(function(row, idx, arr){
+              return (
+                <div key={idx} style={{ display: "flex", justifyContent: "space-between", padding: "8px 0", borderBottom: idx < arr.length - 1 ? "1px solid " + C.cardBorder : "none", fontSize: 12 }}>
+                  <div style={{ color: C.sub, fontWeight: 600 }}><span style={{ marginLeft: 5 }}>{row.icon}</span>{row.label}</div>
+                  <div style={{ color: C.text, fontWeight: 700, textAlign: "left", maxWidth: "60%", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{row.value}</div>
+                </div>
+              );
+            })}
+          </div>
+
+          {/* Description */}
+          {r.description && (
+            <div style={{ background: C.card, borderRadius: 12, padding: 14, border: "1px solid " + C.cardBorder, marginBottom: 12 }}>
+              <div style={{ fontSize: 11, fontWeight: 800, color: C.sub, marginBottom: 8, display: "flex", alignItems: "center", gap: 5 }}>📝 الوصف</div>
+              <div style={{ fontSize: 13, color: C.text, lineHeight: 1.7, whiteSpace: "pre-wrap" }}>{r.description}</div>
+            </div>
+          )}
+
+          {/* Attachments */}
+          {r.attachments && r.attachments.length > 0 && (
+            <div style={{ background: C.card, borderRadius: 12, padding: 14, border: "1px solid " + C.cardBorder, marginBottom: 12 }}>
+              <div style={{ fontSize: 11, fontWeight: 800, color: C.sub, marginBottom: 8 }}>📎 المرفقات ({r.attachments.length})</div>
+              {r.attachments.map(function(a, idx){
+                return (
+                  <div key={idx} style={{ display: "flex", alignItems: "center", gap: 8, padding: "6px 0", fontSize: 12 }}>
+                    <span>📄</span>
+                    <a href={a.url || a.href || "#"} target="_blank" rel="noopener" style={{ color: C.gold, textDecoration: "none", fontWeight: 700, flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{a.name || a.filename || "ملف " + (idx+1)}</a>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+
+          {/* Comments */}
+          <div style={{ background: C.card, borderRadius: 12, padding: 14, border: "1px solid " + C.cardBorder, marginBottom: 12 }}>
+            <div style={{ fontSize: 11, fontWeight: 800, color: C.sub, marginBottom: 12 }}>💬 التعليقات ({comments.length})</div>
+            {comments.length === 0 ? (
+              <div style={{ fontSize: 11, color: C.sub, textAlign: "center", padding: 10 }}>لا توجد تعليقات بعد</div>
+            ) : comments.map(function(c, idx){
+              var isMine = String(c.by) === String(user && (user.id || user.username));
+              return (
+                <div key={idx} style={{ marginBottom: 10, display: "flex", flexDirection: "column", alignItems: isMine ? "flex-start" : "flex-end" }}>
+                  <div style={{ maxWidth: "85%", padding: "8px 12px", borderRadius: 12, background: isMine ? C.hdr2 + "22" : C.bg, border: "1px solid " + C.cardBorder }}>
+                    <div style={{ fontSize: 10, color: C.sub, marginBottom: 3, fontWeight: 600 }}>{nameOf(c.by)} • {tawasulTimeAgo(c.at)}</div>
+                    <div style={{ fontSize: 12, color: C.text, lineHeight: 1.5, whiteSpace: "pre-wrap" }}>{c.text || ""}</div>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+
+          {/* History */}
+          {history.length > 0 && (
+            <div style={{ background: C.card, borderRadius: 12, padding: 14, border: "1px solid " + C.cardBorder, marginBottom: 12 }}>
+              <div style={{ fontSize: 11, fontWeight: 800, color: C.sub, marginBottom: 10 }}>📜 السجل ({history.length})</div>
+              {history.map(function(h, idx){
+                return (
+                  <div key={idx} style={{ display: "flex", gap: 8, padding: "6px 0", fontSize: 11, alignItems: "flex-start" }}>
+                    <div style={{ width: 6, height: 6, borderRadius: 3, background: C.gold, marginTop: 5, flexShrink: 0 }} />
+                    <div style={{ flex: 1 }}>
+                      <div style={{ color: C.text, fontWeight: 600 }}>{h.action || "تغيير"}{h.from && h.to ? ": " + (getTawasulStatusMeta(h.from).label) + " ← " + (getTawasulStatusMeta(h.to).label) : ""}</div>
+                      <div style={{ fontSize: 10, color: C.sub }}>{nameOf(h.by)} • {tawasulTimeAgo(h.at)}</div>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+
+          {/* Phase 1 note */}
+          <div style={{ textAlign: "center", padding: 12, fontSize: 11, color: C.sub, background: C.card, borderRadius: 12, border: "1px dashed " + C.cardBorder }}>
+            📖 وضع القراءة فقط — إضافة التعليقات وتغيير الحالة قادم في المرحلة 2
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/* ═══════════ ANNOUNCEMENTS BANNER — rotating with fade/pulse ═══════════ */
+function AnnouncementsBanner({ announcements, user, onShow }) {
+  var unread = (announcements || []).filter(function(a){ return !(a.readBy || []).includes(user && user.id); });
+  var [idx, setIdx] = useState(0);
+  var [fade, setFade] = useState(true);
+
+  useEffect(function() {
+    if (unread.length <= 1) return;
+    var interval = setInterval(function() {
+      setFade(false);
+      setTimeout(function() {
+        setIdx(function(i) { return (i + 1) % unread.length; });
+        setFade(true);
+      }, 400);
+    }, 5000);
+    return function() { clearInterval(interval); };
+  }, [unread.length]);
+
+  // Reset index if array shrunk
+  useEffect(function() {
+    if (idx >= unread.length && unread.length > 0) setIdx(0);
+  }, [unread.length, idx]);
+
+  if (unread.length === 0) return null;
+
+  var current = unread[idx] || unread[0];
+  if (!current) return null;
+  var isUrgent = current.priority === "urgent";
+  var isImportant = current.priority === "important";
+
+  var label = isUrgent ? "عاجل" : isImportant ? "هام" : "تعميم";
+  var mainIcon = isUrgent ? "🔴" : isImportant ? "⚠️" : "📢";
+
+  return (
+    <div onClick={onShow} style={{
+      cursor: "pointer",
+      borderRadius: 16,
+      padding: "12px 16px",
+      background: isUrgent
+        ? "linear-gradient(135deg, rgba(239,68,68,0.22), rgba(220,38,38,0.14))"
+        : isImportant
+          ? "linear-gradient(135deg, rgba(245,158,11,0.2), rgba(217,119,6,0.12))"
+          : "linear-gradient(135deg, rgba(201,168,76,0.18), rgba(139,105,20,0.1))",
+      border: "1.5px solid " + (isUrgent ? "rgba(239,68,68,0.55)" : isImportant ? "rgba(245,158,11,0.5)" : "rgba(201,168,76,0.45)"),
+      display: "flex",
+      alignItems: "center",
+      gap: 12,
+      opacity: fade ? 1 : 0,
+      transition: "opacity 0.4s ease",
+      animation: isUrgent ? "basmaBnrUrgent 1.8s ease-in-out infinite" : "basmaBnrGentle 3s ease-in-out infinite",
+      position: "relative",
+      overflow: "hidden",
+    }}>
+      <style>{`
+        @keyframes basmaBnrGentle {
+          0%, 100% { box-shadow: 0 0 0 0 rgba(201,168,76,0.35); }
+          50% { box-shadow: 0 0 0 6px rgba(201,168,76,0); }
+        }
+        @keyframes basmaBnrUrgent {
+          0%, 100% { box-shadow: 0 0 0 0 rgba(239,68,68,0.55); }
+          50% { box-shadow: 0 0 0 9px rgba(239,68,68,0); }
+        }
+      `}</style>
+      <div style={{ fontSize: 22, flexShrink: 0 }}>{mainIcon}</div>
+      <div style={{ flex: 1, minWidth: 0 }}>
+        <div style={{ fontSize: 10, fontWeight: 800, color: isUrgent ? "#EF4444" : isImportant ? "#F59E0B" : COLORS.goldLight, marginBottom: 2, opacity: 0.95, fontFamily: "'Tajawal',sans-serif" }}>
+          {label}
+          {unread.length > 1 && <span style={{ marginRight: 6, opacity: 0.7, fontWeight: 600 }}>· {idx + 1}/{unread.length}</span>}
+        </div>
+        <div style={{ fontSize: 13, fontWeight: 700, color: COLORS.textPrimary, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", fontFamily: "'Tajawal',sans-serif" }}>
+          {current.title || current.content || ""}
+        </div>
+      </div>
+      <div style={{ fontSize: 18, color: COLORS.textMuted, flexShrink: 0 }}>‹</div>
     </div>
   );
 }
@@ -2903,9 +3329,10 @@ function NotificationPanel({ notifications, onClose, onMarkRead, onGoToLegal }) 
   );
 }
 
-function BottomNav({ page, setPage, legalAlerts }) {
+function BottomNav({ page, setPage, legalAlerts, tawasulUnread }) {
   var items = [
     { id: "home", icon: Icons.home, label: "الرئيسية" },
+    { id: "tawasul", icon: Icons.message, label: "تواصل", badge: tawasulUnread || 0 },
     { id: "benefits", icon: Icons.medal, label: "الامتيازات" },
     { id: "report", icon: Icons.chart, label: "تقريري" },
     { id: "profile", icon: Icons.user, label: "حسابي", badge: legalAlerts || 0 },

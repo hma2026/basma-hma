@@ -3,7 +3,7 @@ import { ALL_VIOLATIONS_DEFAULT, PENALTY_TYPES, LAIHA_INFO, COMPLAINT_STATUS, VI
 import { generateAttendanceReport, generateEmployeeReport, generateMonthlySummary, generateViolationsReport, generateEmployeesListReport, generateBenefitsReport, generateAnnouncementsReport } from "./pdfReports";
 
 const APP = "بصمة HMA";
-const VER = "4.81";
+const VER = "4.87";
 const CO = "هاني محمد عسيري للإستشارات الهندسية";
 const B = { blue: "#2B5EA7", yellow: "#FDD800", red: "#E2192C", black: "#1A1A1A", blueDk: "#1E4478", blueLt: "#EDF3FB", gold: "#D4A017" };
 
@@ -1371,12 +1371,24 @@ function AdminTopBar({ t, B, onOpenSettings }) {
 }
 
 /* ═══ ADMIN PROFILE — حساب المدير العام ═══ */
-/* ═══ WORK TYPES PANEL — أنواع الدوام + إعدادات الموظفين ═══ */
+/* ═══ WORK TYPES PANEL — أنواع الدوام + إعدادات الموظفين (redesigned) ═══ */
+var WORK_TYPE_META = {
+  full_time: { icon: "💼", color: "#2B5EA7", light: "rgba(43,94,167,0.1)" },
+  full_time_flex: { icon: "🔄", color: "#7C3AED", light: "rgba(124,58,237,0.1)" },
+  flex_contract: { icon: "📄", color: "#EA580C", light: "rgba(234,88,12,0.1)" },
+  trainee: { icon: "🎓", color: "#059669", light: "rgba(5,150,105,0.1)" },
+};
+function getTypeMeta(key) {
+  return WORK_TYPE_META[key] || { icon: "⏰", color: "#6E6E73", light: "rgba(110,110,115,0.1)" };
+}
+
 function WorkTypesPanel({ t, B, emps }) {
   var [workTypes, setWorkTypes] = useState(null);
-  var [editing, setEditing] = useState(null);
-  var [overrides, setOverrides] = useState({}); // per-employee overrides
+  var [overrides, setOverrides] = useState({});
   var [loading, setLoading] = useState(true);
+  var [editingKey, setEditingKey] = useState(null);
+  var [pickerEmp, setPickerEmp] = useState(null);
+  var [search, setSearch] = useState("");
 
   var defaults = {
     full_time: { label: "موظف دوام كامل", workHours: 8, flexible: false, requireCheckin: true, allowRemote: false, breakMinutes: 30, lateAfterMin: 15, callOnLate: true },
@@ -1408,89 +1420,250 @@ function WorkTypesPanel({ t, B, emps }) {
   if (loading) return <div style={{ padding: 30, textAlign: "center", color: t.txM }}>جارِ التحميل...</div>;
   if (!workTypes) return null;
 
+  // Count employees per type
+  var typeCounts = {};
+  Object.keys(workTypes).forEach(function(k){ typeCounts[k] = 0; });
+  emps.forEach(function(e) {
+    var wtKey = overrides[e.id] || "full_time";
+    if (typeCounts[wtKey] !== undefined) typeCounts[wtKey]++;
+  });
+
+  var filteredEmps = search.trim()
+    ? emps.filter(function(e){ return (e.name || "").toLowerCase().includes(search.toLowerCase()); })
+    : emps;
+
   return (
-    <div style={{ maxWidth: 900 }}>
-      <div style={{ background: B.blue + "12", border: "1px solid " + B.blue + "40", borderRadius: 10, padding: 12, marginBottom: 14, fontSize: 11, color: t.tx, lineHeight: 1.7 }}>
-        ⏰ <strong>أنواع الدوام</strong><br/>
-        عدّل إعدادات كل نوع من أنواع الدوام. يمكن أيضاً تخصيص إعدادات لموظف معيّن (تجاوز الافتراضي).
+    <div style={{ maxWidth: 1000 }}>
+      {/* Gradient Header */}
+      <div style={{ background: "linear-gradient(135deg, " + B.blue + " 0%, " + B.blueDk + " 100%)", borderRadius: 16, padding: "20px 22px", marginBottom: 16, color: "#fff", boxShadow: "0 4px 20px rgba(43,94,167,0.25)" }}>
+        <div style={{ fontSize: 20, fontWeight: 800, marginBottom: 4, fontFamily: "inherit" }}>⏰ أنواع الدوام</div>
+        <div style={{ fontSize: 11, opacity: 0.9 }}>{Object.keys(workTypes).length} أنواع معرّفة · {emps.length} موظف مربوط بالنظام</div>
       </div>
 
-      <div style={{ background: t.card, borderRadius: 12, padding: 16, border: "1px solid " + t.sep, marginBottom: 14 }}>
-        <div style={{ fontSize: 14, fontWeight: 800, color: B.blue, marginBottom: 12 }}>📋 الأنواع الافتراضية</div>
+      {/* Types Grid */}
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(240px, 1fr))", gap: 12, marginBottom: 20 }}>
         {Object.keys(workTypes).map(function(key) {
           var wt = workTypes[key];
-          var isEditing = editing === key;
+          var m = getTypeMeta(key);
           return (
-            <div key={key} style={{ padding: 12, borderRadius: 10, background: t.bg, marginBottom: 8, border: "1px solid " + t.sep }}>
-              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: isEditing ? 10 : 0 }}>
-                <div>
-                  <div style={{ fontSize: 13, fontWeight: 800, color: t.tx }}>{wt.label}</div>
-                  <div style={{ fontSize: 10, color: t.txM, marginTop: 3 }}>
-                    {wt.workHours} ساعة • {wt.flexible ? "مرن" : "ثابت"} • تأخير بعد {wt.lateAfterMin} د
-                    {wt.callOnLate && " • اتصال عند التأخر"}
-                    {wt.allowRemote && " • يسمح بالعمل عن بُعد"}
-                  </div>
+            <div key={key} style={{ background: t.card, borderRadius: 14, padding: 16, border: "1px solid " + t.sep, borderTop: "4px solid " + m.color, boxShadow: t.bg === "#000000" ? "none" : "0 1px 3px rgba(0,0,0,0.06)", transition: "transform 0.15s" }}>
+              <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 12 }}>
+                <div style={{ fontSize: 26, width: 48, height: 48, borderRadius: 12, background: m.light, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>{m.icon}</div>
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div style={{ fontSize: 14, fontWeight: 800, color: t.tx, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{wt.label}</div>
+                  <div style={{ fontSize: 10, color: m.color, fontWeight: 700, marginTop: 2 }}>👥 {typeCounts[key]} موظف</div>
                 </div>
-                <button onClick={function(){ setEditing(isEditing ? null : key); }} style={{ padding: "6px 12px", borderRadius: 8, background: isEditing ? t.sep : B.blue, color: "#fff", border: "none", fontSize: 11, fontWeight: 700, cursor: "pointer" }}>
-                  {isEditing ? "إلغاء" : "تعديل"}
-                </button>
               </div>
-              {isEditing && (
-                <div style={{ marginTop: 12, display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10, fontSize: 11 }}>
-                  <label style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                    ساعات العمل:
-                    <input type="number" defaultValue={wt.workHours} onChange={function(e){ wt.workHours = parseFloat(e.target.value); }} style={{ width: 60, padding: 6, borderRadius: 6, border: "1px solid " + t.sep, background: t.inp, color: t.tx }} />
-                  </label>
-                  <label style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                    دقيقة استراحة:
-                    <input type="number" defaultValue={wt.breakMinutes} onChange={function(e){ wt.breakMinutes = parseInt(e.target.value); }} style={{ width: 60, padding: 6, borderRadius: 6, border: "1px solid " + t.sep, background: t.inp, color: t.tx }} />
-                  </label>
-                  <label style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                    تأخير بعد (د):
-                    <input type="number" defaultValue={wt.lateAfterMin} onChange={function(e){ wt.lateAfterMin = parseInt(e.target.value); }} style={{ width: 60, padding: 6, borderRadius: 6, border: "1px solid " + t.sep, background: t.inp, color: t.tx }} />
-                  </label>
-                  <label style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                    <input type="checkbox" defaultChecked={wt.flexible} onChange={function(e){ wt.flexible = e.target.checked; }} /> دوام مرن
-                  </label>
-                  <label style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                    <input type="checkbox" defaultChecked={wt.requireCheckin} onChange={function(e){ wt.requireCheckin = e.target.checked; }} /> يتطلب بصمة حضور
-                  </label>
-                  <label style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                    <input type="checkbox" defaultChecked={wt.allowRemote} onChange={function(e){ wt.allowRemote = e.target.checked; }} /> يسمح بالعمل عن بُعد
-                  </label>
-                  <label style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                    <input type="checkbox" defaultChecked={wt.callOnLate} onChange={function(e){ wt.callOnLate = e.target.checked; }} /> اتصال تذكير عند التأخر
-                  </label>
-                  <button onClick={async function(){ await saveTypes({ ...workTypes, [key]: wt }); setEditing(null); alert("✅ تم الحفظ"); }} style={{ gridColumn: "1 / -1", padding: 10, borderRadius: 8, background: B.blue, color: "#fff", border: "none", fontSize: 12, fontWeight: 800, cursor: "pointer" }}>حفظ</button>
-                </div>
-              )}
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 6, fontSize: 10, marginBottom: 12 }}>
+                <div style={{ padding: "6px 10px", borderRadius: 8, background: t.bg, color: t.tx2, fontWeight: 600 }}>⏱ {wt.workHours} ساعات</div>
+                <div style={{ padding: "6px 10px", borderRadius: 8, background: t.bg, color: t.tx2, fontWeight: 600 }}>{wt.flexible ? "🌐 مرن" : "📍 ثابت"}</div>
+                <div style={{ padding: "6px 10px", borderRadius: 8, background: t.bg, color: t.tx2, fontWeight: 600 }}>⚠️ +{wt.lateAfterMin}د</div>
+                <div style={{ padding: "6px 10px", borderRadius: 8, background: t.bg, color: t.tx2, fontWeight: 600 }}>☕ {wt.breakMinutes}د</div>
+              </div>
+              <button onClick={function(){ setEditingKey(key); }} style={{ width: "100%", padding: "10px", borderRadius: 10, background: m.color, color: "#fff", border: "none", fontSize: 12, fontWeight: 700, cursor: "pointer", fontFamily: "inherit" }}>
+                ✎ تعديل الإعدادات
+              </button>
             </div>
           );
         })}
       </div>
 
-      <div style={{ background: t.card, borderRadius: 12, padding: 16, border: "1px solid " + t.sep }}>
-        <div style={{ fontSize: 14, fontWeight: 800, color: B.blue, marginBottom: 12 }}>👤 إعدادات مخصصة للموظفين</div>
-        <div style={{ fontSize: 11, color: t.txM, marginBottom: 12 }}>تعيين نوع دوام لكل موظف. الافتراضي: دوام كامل.</div>
-        {emps.length === 0 && <div style={{ color: t.txM, fontSize: 12, padding: 14, textAlign: "center" }}>لا يوجد موظفون — زامن مع كوادر أولاً</div>}
-        {emps.map(function(e) {
+      {/* Employees Section */}
+      <div style={{ background: t.card, borderRadius: 14, padding: 16, border: "1px solid " + t.sep }}>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 14 }}>
+          <div style={{ fontSize: 15, fontWeight: 800, color: t.tx }}>👥 تعيين نوع الدوام للموظفين</div>
+          <div style={{ fontSize: 10, color: t.txM, padding: "3px 10px", borderRadius: 10, background: t.bg, fontWeight: 700 }}>{emps.length}</div>
+        </div>
+
+        {emps.length > 10 && (
+          <input type="text" value={search} onChange={function(e){ setSearch(e.target.value); }} placeholder="🔍 بحث عن موظف..." style={{ width: "100%", padding: "11px 14px", borderRadius: 10, border: "1px solid " + t.sep, background: t.inp, color: t.tx, fontSize: 12, fontFamily: "inherit", outline: "none", marginBottom: 10, boxSizing: "border-box" }} />
+        )}
+
+        {emps.length === 0 && <div style={{ color: t.txM, fontSize: 12, padding: 30, textAlign: "center" }}>لا يوجد موظفون — زامن مع كوادر أولاً</div>}
+
+        {filteredEmps.map(function(e) {
           var ov = overrides[e.id] || "full_time";
-          var currentLabel = workTypes[ov] ? workTypes[ov].label : "دوام كامل";
+          var wt = workTypes[ov];
+          var m = getTypeMeta(ov);
+          var label = wt ? wt.label : "دوام كامل";
+          var initial = (e.name || "؟").trim().charAt(0);
           return (
-            <div key={e.id} style={{ display: "flex", alignItems: "center", gap: 10, padding: "10px 12px", borderRadius: 8, background: t.bg === "#000000" ? "#1C1C1E" : "#F2F2F7", marginBottom: 6, border: "1px solid " + t.sep }}>
+            <div key={e.id} onClick={function(){ setPickerEmp(e); }} style={{ display: "flex", alignItems: "center", gap: 12, padding: "12px 14px", borderRadius: 10, background: t.bg, marginBottom: 6, border: "1px solid " + t.sep, cursor: "pointer", transition: "transform 0.1s" }}
+              onMouseEnter={function(ev){ ev.currentTarget.style.transform = "translateX(-3px)"; }}
+              onMouseLeave={function(ev){ ev.currentTarget.style.transform = "translateX(0)"; }}>
+              <div style={{ width: 38, height: 38, borderRadius: 19, background: m.light, color: m.color, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 15, fontWeight: 800, flexShrink: 0 }}>{initial}</div>
               <div style={{ flex: 1, minWidth: 0 }}>
-                <div style={{ fontSize: 13, fontWeight: 700, color: t.tx, marginBottom: 2, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{e.name || "موظف بدون اسم"}</div>
-                <div style={{ fontSize: 10, color: t.tx2 }}>الحالي: <span style={{ color: B.blue, fontWeight: 700 }}>{currentLabel}</span></div>
+                <div style={{ fontSize: 13, fontWeight: 700, color: t.tx, marginBottom: 4, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{e.name || "موظف بدون اسم"}</div>
+                <div style={{ display: "inline-flex", alignItems: "center", gap: 5, padding: "3px 9px", borderRadius: 10, background: m.light, color: m.color, fontSize: 10, fontWeight: 700 }}>
+                  <span>{m.icon}</span><span>{label}</span>
+                </div>
               </div>
-              <select value={ov} onChange={async function(ev) {
-                var n = { ...overrides, [e.id]: ev.target.value };
-                await saveTypes(null, n);
-              }} style={{ minWidth: 180, padding: "8px 12px", borderRadius: 8, border: "1px solid " + t.sep, background: "#fff", color: "#000", fontSize: 12, fontWeight: 600, cursor: "pointer", fontFamily: "inherit" }}>
-                {Object.keys(workTypes).map(function(k){ return <option key={k} value={k} style={{ background: "#fff", color: "#000" }}>{workTypes[k].label}</option>; })}
-              </select>
+              <div style={{ fontSize: 20, color: t.txM, fontWeight: 800 }}>‹</div>
             </div>
           );
         })}
+
+        {filteredEmps.length === 0 && emps.length > 0 && (
+          <div style={{ color: t.txM, fontSize: 12, padding: 20, textAlign: "center" }}>لا يوجد نتائج للبحث</div>
+        )}
+      </div>
+
+      {/* Edit Modal */}
+      {editingKey && <WorkTypeEditModal t={t} B={B} typeKey={editingKey} workType={workTypes[editingKey]} onClose={function(){ setEditingKey(null); }} onSave={async function(updated){
+        var newTypes = Object.assign({}, workTypes, {});
+        newTypes[editingKey] = updated;
+        await saveTypes(newTypes);
+        setEditingKey(null);
+      }} />}
+
+      {/* Picker Modal */}
+      {pickerEmp && <WorkTypePickerModal t={t} B={B} emp={pickerEmp} workTypes={workTypes} currentKey={overrides[pickerEmp.id] || "full_time"} onClose={function(){ setPickerEmp(null); }} onSelect={async function(newKey){
+        var n = Object.assign({}, overrides);
+        n[pickerEmp.id] = newKey;
+        await saveTypes(null, n);
+        setPickerEmp(null);
+      }} />}
+    </div>
+  );
+}
+
+/* ═══ WORK TYPE EDIT MODAL — controlled inputs fix save bug ═══ */
+function WorkTypeEditModal({ t, B, typeKey, workType, onClose, onSave }) {
+  var m = getTypeMeta(typeKey);
+  var [label, setLabel] = useState(workType.label);
+  var [workHours, setWorkHours] = useState(workType.workHours);
+  var [breakMinutes, setBreakMinutes] = useState(workType.breakMinutes);
+  var [lateAfterMin, setLateAfterMin] = useState(workType.lateAfterMin);
+  var [flexible, setFlexible] = useState(workType.flexible);
+  var [requireCheckin, setRequireCheckin] = useState(workType.requireCheckin);
+  var [allowRemote, setAllowRemote] = useState(workType.allowRemote);
+  var [callOnLate, setCallOnLate] = useState(workType.callOnLate);
+  var [saving, setSaving] = useState(false);
+
+  async function handleSave() {
+    setSaving(true);
+    await onSave({
+      label: label.trim() || workType.label,
+      workHours: parseFloat(workHours) || 8,
+      breakMinutes: parseInt(breakMinutes) || 0,
+      lateAfterMin: parseInt(lateAfterMin) || 15,
+      flexible: flexible,
+      requireCheckin: requireCheckin,
+      allowRemote: allowRemote,
+      callOnLate: callOnLate,
+    });
+    setSaving(false);
+  }
+
+  var inputStyle = { width: "100%", padding: "10px 12px", borderRadius: 10, border: "1px solid " + t.sep, background: t.inp, color: t.tx, fontSize: 13, fontFamily: "inherit", outline: "none", boxSizing: "border-box" };
+
+  function Toggle(props) {
+    return (
+      <div onClick={function(){ props.setter(!props.value); }} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "12px 14px", borderRadius: 10, cursor: "pointer", marginBottom: 8, fontSize: 12, fontWeight: 600, transition: "all 0.15s", background: props.value ? m.light : t.bg, border: "1px solid " + (props.value ? m.color : t.sep), color: props.value ? m.color : t.tx }}>
+        <span>{props.icon} {props.label}</span>
+        <div style={{ width: 36, height: 20, borderRadius: 10, background: props.value ? m.color : (t.bg === "#000000" ? "#3A3A3C" : "#D1D1D6"), position: "relative", transition: "all 0.15s", flexShrink: 0 }}>
+          <div style={{ width: 16, height: 16, borderRadius: 8, background: "#fff", position: "absolute", top: 2, right: props.value ? 2 : 18, transition: "all 0.15s", boxShadow: "0 1px 3px rgba(0,0,0,0.2)" }} />
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div onClick={onClose} style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.55)", zIndex: 999, display: "flex", alignItems: "center", justifyContent: "center", padding: 12 }}>
+      <div onClick={function(e){ e.stopPropagation(); }} style={{ background: t.card, borderRadius: 18, maxWidth: 500, width: "100%", maxHeight: "92vh", overflowY: "auto", boxShadow: "0 10px 40px rgba(0,0,0,0.3)" }}>
+        <div style={{ padding: "18px 20px", borderBottom: "1px solid " + t.sep, display: "flex", alignItems: "center", gap: 12 }}>
+          <div style={{ fontSize: 26, width: 46, height: 46, borderRadius: 12, background: m.light, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>{m.icon}</div>
+          <div style={{ flex: 1, minWidth: 0 }}>
+            <div style={{ fontSize: 15, fontWeight: 800, color: t.tx }}>تعديل نوع الدوام</div>
+            <div style={{ fontSize: 11, color: t.txM, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{label}</div>
+          </div>
+          <button onClick={onClose} style={{ background: "none", border: "none", fontSize: 22, color: t.txM, cursor: "pointer", padding: 4, lineHeight: 1 }}>×</button>
+        </div>
+
+        <div style={{ padding: 20 }}>
+          <div style={{ marginBottom: 14 }}>
+            <div style={{ fontSize: 11, fontWeight: 700, color: t.tx2, marginBottom: 6 }}>الاسم</div>
+            <input type="text" value={label} onChange={function(e){ setLabel(e.target.value); }} style={inputStyle} />
+          </div>
+
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 10, marginBottom: 16 }}>
+            <div>
+              <div style={{ fontSize: 11, fontWeight: 700, color: t.tx2, marginBottom: 6 }}>⏱ ساعات</div>
+              <input type="number" value={workHours} onChange={function(e){ setWorkHours(e.target.value); }} style={inputStyle} />
+            </div>
+            <div>
+              <div style={{ fontSize: 11, fontWeight: 700, color: t.tx2, marginBottom: 6 }}>☕ استراحة</div>
+              <input type="number" value={breakMinutes} onChange={function(e){ setBreakMinutes(e.target.value); }} style={inputStyle} />
+            </div>
+            <div>
+              <div style={{ fontSize: 11, fontWeight: 700, color: t.tx2, marginBottom: 6 }}>⚠️ تأخير</div>
+              <input type="number" value={lateAfterMin} onChange={function(e){ setLateAfterMin(e.target.value); }} style={inputStyle} />
+            </div>
+          </div>
+
+          <div style={{ fontSize: 11, fontWeight: 700, color: t.tx2, marginBottom: 8 }}>⚙️ الخيارات</div>
+          <Toggle icon="🌐" label="دوام مرن" value={flexible} setter={setFlexible} />
+          <Toggle icon="👆" label="يتطلب بصمة حضور" value={requireCheckin} setter={setRequireCheckin} />
+          <Toggle icon="🏠" label="يسمح بالعمل عن بُعد" value={allowRemote} setter={setAllowRemote} />
+          <Toggle icon="📞" label="اتصال تذكير عند التأخر" value={callOnLate} setter={setCallOnLate} />
+        </div>
+
+        <div style={{ padding: "14px 20px", borderTop: "1px solid " + t.sep, display: "flex", gap: 10 }}>
+          <button onClick={onClose} style={{ flex: 1, padding: 12, borderRadius: 10, background: t.bg, color: t.tx, border: "1px solid " + t.sep, fontSize: 13, fontWeight: 700, cursor: "pointer", fontFamily: "inherit" }}>إلغاء</button>
+          <button onClick={handleSave} disabled={saving} style={{ flex: 2, padding: 12, borderRadius: 10, background: saving ? t.sep : m.color, color: "#fff", border: "none", fontSize: 13, fontWeight: 800, cursor: saving ? "default" : "pointer", fontFamily: "inherit" }}>
+            {saving ? "جارِ الحفظ..." : "✓ حفظ التعديلات"}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/* ═══ WORK TYPE PICKER MODAL — replaces native select (fix dropdown display) ═══ */
+function WorkTypePickerModal({ t, B, emp, workTypes, currentKey, onClose, onSelect }) {
+  var [selected, setSelected] = useState(currentKey);
+  var [saving, setSaving] = useState(false);
+
+  async function handleSave() {
+    if (selected === currentKey) { onClose(); return; }
+    setSaving(true);
+    await onSelect(selected);
+  }
+
+  return (
+    <div onClick={onClose} style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.55)", zIndex: 999, display: "flex", alignItems: "center", justifyContent: "center", padding: 12 }}>
+      <div onClick={function(e){ e.stopPropagation(); }} style={{ background: t.card, borderRadius: 18, maxWidth: 440, width: "100%", maxHeight: "92vh", overflowY: "auto", boxShadow: "0 10px 40px rgba(0,0,0,0.3)" }}>
+        <div style={{ padding: "18px 20px", borderBottom: "1px solid " + t.sep }}>
+          <div style={{ fontSize: 15, fontWeight: 800, color: t.tx }}>اختر نوع الدوام</div>
+          <div style={{ fontSize: 11, color: t.txM, marginTop: 3, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{emp.name || "موظف"}</div>
+        </div>
+
+        <div style={{ padding: 16 }}>
+          {Object.keys(workTypes).map(function(key) {
+            var wt = workTypes[key];
+            var m = getTypeMeta(key);
+            var isSelected = selected === key;
+            return (
+              <div key={key} onClick={function(){ setSelected(key); }} style={{ display: "flex", alignItems: "center", gap: 12, padding: 14, borderRadius: 12, marginBottom: 8, cursor: "pointer", background: isSelected ? m.light : t.bg, border: "2px solid " + (isSelected ? m.color : "transparent"), transition: "all 0.15s" }}>
+                <div style={{ fontSize: 26, width: 46, height: 46, borderRadius: 12, background: isSelected ? "#fff" : m.light, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0, boxShadow: isSelected ? "0 2px 8px rgba(0,0,0,0.1)" : "none" }}>{m.icon}</div>
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div style={{ fontSize: 13, fontWeight: 800, color: isSelected ? m.color : t.tx, marginBottom: 3 }}>{wt.label}</div>
+                  <div style={{ fontSize: 10, color: t.tx2 }}>{wt.workHours} ساعة · {wt.flexible ? "مرن" : "ثابت"} · تأخير {wt.lateAfterMin}د</div>
+                </div>
+                <div style={{ width: 22, height: 22, borderRadius: 11, border: "2px solid " + (isSelected ? m.color : t.sep), background: isSelected ? m.color : "transparent", display: "flex", alignItems: "center", justifyContent: "center", color: "#fff", fontSize: 12, fontWeight: 800, flexShrink: 0 }}>
+                  {isSelected ? "✓" : ""}
+                </div>
+              </div>
+            );
+          })}
+        </div>
+
+        <div style={{ padding: "14px 20px", borderTop: "1px solid " + t.sep, display: "flex", gap: 10 }}>
+          <button onClick={onClose} style={{ flex: 1, padding: 12, borderRadius: 10, background: t.bg, color: t.tx, border: "1px solid " + t.sep, fontSize: 13, fontWeight: 700, cursor: "pointer", fontFamily: "inherit" }}>إلغاء</button>
+          <button onClick={handleSave} disabled={saving} style={{ flex: 2, padding: 12, borderRadius: 10, background: saving ? t.sep : B.blue, color: "#fff", border: "none", fontSize: 13, fontWeight: 800, cursor: saving ? "default" : "pointer", fontFamily: "inherit" }}>
+            {saving ? "جارِ الحفظ..." : "✓ حفظ"}
+          </button>
+        </div>
       </div>
     </div>
   );

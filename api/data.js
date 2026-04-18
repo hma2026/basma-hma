@@ -1382,6 +1382,25 @@ export default async function handler(req, res) {
         return res.json(redemps);
       }
 
+      /* ═══ TAWASUL — نظام تبادل المهام الإدارية (proxy to kadwar) ═══ */
+      case 'tawasul-list': {
+        try {
+          var kr = await fetch('https://hma.engineer/api/basma-sync?action=tawasul');
+          if (!kr.ok) return res.status(kr.status).json({ error: 'kadwar returned ' + kr.status, requests: [], categories: [], projects: [] });
+          var kd = await kr.json();
+          return res.json({
+            ok: true,
+            requests: kd.requests || [],
+            categories: kd.categories || [],
+            projects: kd.projects || [],
+            total: kd.total || (kd.requests || []).length,
+            syncDate: kd.syncDate || new Date().toISOString(),
+          });
+        } catch (e) {
+          return res.status(502).json({ error: 'تعذر الاتصال بنظام كوادر: ' + (e.message || 'unknown'), requests: [], categories: [], projects: [] });
+        }
+      }
+
       /* ═══ ANNOUNCEMENTS — التعاميم ═══ */
       case 'announcements': {
         if (req.method === 'POST') {
@@ -1437,6 +1456,170 @@ export default async function handler(req, res) {
           await dbSet('announcements', list);
         }
         return res.json({ ok: true });
+      }
+
+      /* ═══ TAWASUL — نظام الطلبات الداخلية ═══ */
+      case 'tawasul': {
+        // GET: return all requests + categories + projects
+        var requests = (await dbGet('tawasul_requests')) || [];
+        var categories = (await dbGet('tawasul_categories')) || [
+          { id: 'leave', name: 'طلب إجازة', icon: '🌴', color: '#059669' },
+          { id: 'maintenance', name: 'طلب صيانة', icon: '🔧', color: '#EA580C' },
+          { id: 'clarification', name: 'طلب توضيح', icon: '❓', color: '#0EA5E9' },
+          { id: 'info', name: 'طلب معلومات', icon: '📊', color: '#7C3AED' },
+          { id: 'work', name: 'طلب عمل', icon: '💼', color: '#2B5EA7' },
+          { id: 'legal', name: 'طلب قانوني', icon: '⚖️', color: '#DC2626' },
+          { id: 'other', name: 'أخرى', icon: '📝', color: '#6B7280' },
+        ];
+        var projects = (await dbGet('tawasul_projects')) || [];
+        return res.json({
+          requests: requests,
+          categories: categories,
+          projects: projects,
+          total: requests.length,
+          syncDate: new Date().toISOString(),
+        });
+      }
+
+      case 'tawasul-save': {
+        if (req.method !== 'POST') return res.status(400).json({ ok: false, error: 'POST required' });
+        var body = req.body || {};
+        var incoming = body.request;
+        if (!incoming || !incoming.title) return res.status(400).json({ ok: false, error: 'title required' });
+
+        var list = (await dbGet('tawasul_requests')) || [];
+        var nowIso = new Date().toISOString();
+
+        if (incoming.id) {
+          // Update existing
+          var idx = list.findIndex(function(x){ return x.id === incoming.id; });
+          if (idx >= 0) {
+            var prev = list[idx];
+            // Append history entry if status changed
+            if (prev.status !== incoming.status) {
+              if (!incoming.history) incoming.history = prev.history || [];
+              incoming.history.push({
+                action: 'status_changed',
+                by: incoming.updatedBy || 'system',
+                at: nowIso,
+                from: prev.status,
+                to: incoming.status,
+              });
+            }
+            incoming.updatedAt = nowIso;
+            // Preserve createdAt
+            incoming.createdAt = prev.createdAt || incoming.createdAt || nowIso;
+            list[idx] = incoming;
+          } else {
+            // ID provided but not found — treat as new
+            incoming.createdAt = incoming.createdAt || nowIso;
+            incoming.updatedAt = nowIso;
+            list.unshift(incoming);
+          }
+        } else {
+          // New request
+          incoming.id = 'twsl_' + Date.now() + '_' + Math.floor(Math.random() * 1000);
+          incoming.createdAt = nowIso;
+          incoming.updatedAt = nowIso;
+          if (!incoming.history) incoming.history = [];
+          incoming.history.push({
+            action: 'created',
+            by: incoming.requesterId || 'system',
+            at: nowIso,
+          });
+          list.unshift(incoming);
+        }
+
+        await dbSet('tawasul_requests', list.slice(0, 5000));
+        return res.json({ ok: true, id: incoming.id, request: incoming });
+      }
+
+      case 'tawasul-delete': {
+        if (req.method !== 'POST') return res.status(400).json({ ok: false, error: 'POST required' });
+        var body = req.body || {};
+        if (!body.id) return res.status(400).json({ ok: false, error: 'id required' });
+        var list = (await dbGet('tawasul_requests')) || [];
+        var filtered = list.filter(function(x){ return x.id !== body.id; });
+        await dbSet('tawasul_requests', filtered);
+        return res.json({ ok: true });
+      }
+
+      case 'tawasul-comment': {
+        if (req.method !== 'POST') return res.status(400).json({ ok: false, error: 'POST required' });
+        var body = req.body || {};
+        if (!body.id || !body.comment) return res.status(400).json({ ok: false, error: 'id + comment required' });
+        var list = (await dbGet('tawasul_requests')) || [];
+        var idx = list.findIndex(function(x){ return x.id === body.id; });
+        if (idx < 0) return res.status(404).json({ ok: false, error: 'request not found' });
+        if (!list[idx].comments) list[idx].comments = [];
+        var nowIso = new Date().toISOString();
+        list[idx].comments.push({
+          by: body.by || 'anonymous',
+          byName: body.byName || '',
+          text: body.comment,
+          at: nowIso,
+        });
+        list[idx].updatedAt = nowIso;
+        await dbSet('tawasul_requests', list);
+        return res.json({ ok: true });
+      }
+
+      case 'tawasul-categories': {
+        if (req.method === 'POST') {
+          var body = req.body || {};
+          await dbSet('tawasul_categories', body.categories || []);
+          return res.json({ ok: true });
+        }
+        var cats = (await dbGet('tawasul_categories')) || [];
+        return res.json({ categories: cats });
+      }
+
+      case 'tawasul-ai': {
+        // AI helper: analyzes description and suggests category + urgency + title
+        if (req.method !== 'POST') return res.status(400).json({ ok: false, error: 'POST required' });
+        var body = req.body || {};
+        var text = (body.text || '').trim();
+        if (!text) return res.json({ ok: false, error: 'text required' });
+
+        // Keyword-based heuristic (fast, no API cost, works offline)
+        var lower = text.toLowerCase();
+        var suggestedCategory = 'other';
+        var suggestedUrgency = 'normal';
+
+        // Category detection
+        var catPatterns = {
+          leave: ['إجاز', 'عطل', 'اجاز', 'إجازة', 'سنوية', 'مرضية', 'طارئة', 'عيد', 'سفر'],
+          maintenance: ['صيان', 'عطل ', 'تصليح', 'كسر', 'مكسور', 'خرب', 'كهرباء', 'تكييف', 'سباك', 'ماء', 'انترنت'],
+          clarification: ['توضيح', 'استفسار', 'شرح', 'كيف', 'لماذا', 'متى', 'وين', 'ما هو'],
+          info: ['معلوم', 'بيانات', 'تقرير', 'إحصائ', 'سجل', 'عدد'],
+          work: ['مهم', 'تسليم', 'مشروع', 'تنفيذ', 'عمل', 'طلب منك', 'نحتاج', 'مطلوب'],
+          legal: ['قانون', 'عقد', 'نظامي', 'محكم', 'مخالف', 'إنذار', 'محامي', 'قضية'],
+        };
+        var bestScore = 0;
+        Object.keys(catPatterns).forEach(function(catKey){
+          var score = 0;
+          catPatterns[catKey].forEach(function(kw){
+            if (lower.indexOf(kw) >= 0) score++;
+          });
+          if (score > bestScore) { bestScore = score; suggestedCategory = catKey; }
+        });
+
+        // Urgency detection
+        var urgentKw = ['عاجل', 'طارئ', 'فور', 'الآن', 'سريع', 'ضروري جداً', 'اليوم', 'مستعجل', 'خطير'];
+        for (var i = 0; i < urgentKw.length; i++) {
+          if (lower.indexOf(urgentKw[i]) >= 0) { suggestedUrgency = 'urgent'; break; }
+        }
+
+        // Title suggestion: first meaningful sentence, truncated
+        var suggestedTitle = text.split(/[.\n،]/)[0].trim();
+        if (suggestedTitle.length > 60) suggestedTitle = suggestedTitle.substring(0, 57) + '...';
+
+        return res.json({
+          ok: true,
+          category: suggestedCategory,
+          urgency: suggestedUrgency,
+          title: suggestedTitle,
+        });
       }
 
       /* ═══ PING — اختبار بسيط بدون fetch ═══ */
