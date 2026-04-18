@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef } from "react";
 import { ALL_VIOLATIONS_DEFAULT, PENALTY_TYPES, LAIHA_INFO, COMPLAINT_STATUS, VIOLATION_STATUS, PROCEDURE_RULES } from "./laiha";
+import { generateAttendanceReport, generateEmployeeReport, generateMonthlySummary, generateViolationsReport, generateEmployeesListReport, generateBenefitsReport, generateAnnouncementsReport } from "./pdfReports";
 
 const APP = "بصمة HMA";
 const CO = "هاني محمد عسيري للإستشارات الهندسية";
@@ -273,6 +274,8 @@ export default function AdminApp() {
   const [leaves, setLeaves] = useState(LEAVE_INIT);
   const [search, setSearch] = useState("");
   const [brFilter, setBrFilter] = useState("all");
+  const [statusFilter, setStatusFilter] = useState("all");
+  const [accountFilter, setAccountFilter] = useState("all");
   const [hrQuestions, setHrQuestions] = useState([]);
   const [newQ, setNewQ] = useState({ type: "ذكر", q: "", correct: "", wrong1: "", wrong2: "" });
   const [selEmp, setSelEmp] = useState(null);
@@ -291,6 +294,15 @@ export default function AdminApp() {
   const [mapTarget, setMapTarget] = useState(null);
   const [settingsTab, setSettingsTab] = useState("general");
   const [badgeCounts, setBadgeCounts] = useState({ complaints: 0, investigations: 0, appeals: 0, violations: 0 });
+  const [newAnnouncementsCount, setNewAnnouncementsCount] = useState(0);
+  useEffect(function(){
+    // Count announcements created today
+    fetch("/api/data?action=announcements").then(r => r.json()).then(function(list){
+      if (!Array.isArray(list)) return;
+      var today = new Date().toDateString();
+      setNewAnnouncementsCount(list.filter(function(a){ return new Date(a.ts).toDateString() === today; }).length);
+    }).catch(function(){});
+  }, []);
 
   // Load badge counts
   useEffect(function() {
@@ -456,7 +468,18 @@ export default function AdminApp() {
 
   const filteredEmps = safeEmps.filter(e => {
     if (brFilter !== "all" && e.branch !== brFilter) return false;
-    if (search && !e.name.includes(search) && !e.id.includes(search.toUpperCase())) return false;
+    if (search) {
+      var s = search.toLowerCase();
+      var nameMatch = (e.name || "").toLowerCase().includes(s);
+      var idMatch = String(e.id || "").includes(search);
+      var idNumMatch = String(e.idNumber || "").includes(search);
+      var emailMatch = (e.email || "").toLowerCase().includes(s);
+      var phoneMatch = String(e.phone || "").includes(search);
+      if (!nameMatch && !idMatch && !idNumMatch && !emailMatch && !phoneMatch) return false;
+    }
+    if (statusFilter !== "all" && e.status !== statusFilter) return false;
+    if (accountFilter === "active" && !e.hasAccount) return false;
+    if (accountFilter === "inactive" && e.hasAccount) return false;
     return true;
   });
 
@@ -479,6 +502,8 @@ export default function AdminApp() {
     { id: "questions", icon: "❓", label: "أسئلة الصباح" },
     { id: "settings", icon: "⚙️", label: "الإعدادات" },
     { id: "work_types", icon: "⏰", label: "أنواع الدوام" },
+    { id: "benefits", icon: "🏅", label: "الامتيازات" },
+    { id: "announcements", icon: "📢", label: "التعاميم" },
     { id: "test_panel", icon: "🧪", label: "اختبار النظام" },
     { id: "storage", icon: "💾", label: "التخزين" },
     { id: "admin_profile", icon: "🔐", label: "حساب المدير العام" },
@@ -522,6 +547,49 @@ export default function AdminApp() {
 
       {/* ═══ DASHBOARD ═══ */}
       {tab === "dashboard" && <>
+        {/* Smart welcome header */}
+        {(function(){
+          var hr = new Date().getHours();
+          var greet = hr < 12 ? "☀️ صباح الخير" : hr < 18 ? "🌤️ نهارك سعيد" : "🌙 مساء الخير";
+          var dateStr = new Date().toLocaleDateString("ar-SA", { weekday: "long", year: "numeric", month: "long", day: "numeric" });
+          return (
+            <div style={{ background: "linear-gradient(135deg, " + B.blue + "15, " + B.gold + "10)", borderRadius: 14, padding: "16px 20px", marginBottom: 14, border: "1px solid " + t.sep, display: "flex", justifyContent: "space-between", alignItems: "center", gap: 14, flexWrap: "wrap" }}>
+              <div>
+                <div style={{ fontSize: 18, fontWeight: 800, color: t.tx, marginBottom: 2 }}>{greet} 👋</div>
+                <div style={{ fontSize: 11, color: t.txM }}>{dateStr}</div>
+              </div>
+              <div style={{ display: "flex", gap: 10, fontSize: 11 }}>
+                <div style={{ padding: "8px 12px", borderRadius: 8, background: t.card }}>
+                  <span style={{ color: t.txM }}>الموظفون: </span>
+                  <strong style={{ color: B.blue }}>{safeEmps.length}</strong>
+                </div>
+                <div style={{ padding: "8px 12px", borderRadius: 8, background: t.card }}>
+                  <span style={{ color: t.txM }}>الحضور اليوم: </span>
+                  <strong style={{ color: t.ok }}>{present}/{safeEmps.length}</strong>
+                  <span style={{ color: t.txM, marginRight: 4 }}>({safeEmps.length > 0 ? Math.round((present / safeEmps.length) * 100) : 0}%)</span>
+                </div>
+              </div>
+            </div>
+          );
+        })()}
+
+        {/* Quick Actions */}
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(6, 1fr)", gap: 10, marginBottom: 14 }}>
+          {[
+            { id: "announcements", label: "تعميم جديد", icon: "📢", color: "#8b5cf6" },
+            { id: "benefits", label: "كوبون جديد", icon: "🏅", color: B.gold },
+            { id: "employees", label: "الموظفين", icon: "👥", color: B.blue },
+            { id: "test_panel", label: "اختبار", icon: "🧪", color: "#ef4444" },
+            { id: "storage", label: "التخزين", icon: "💾", color: "#10b981" },
+            { id: "reports", label: "تقارير", icon: "📊", color: "#f59e0b" },
+          ].map(function(qa) {
+            return <button key={qa.id} onClick={function(){ setTab(qa.id); }} style={{ padding: "14px 10px", borderRadius: 12, background: t.card, border: "1px solid " + t.sep, cursor: "pointer", display: "flex", flexDirection: "column", alignItems: "center", gap: 6, fontFamily: "inherit" }}>
+              <div style={{ width: 36, height: 36, borderRadius: 10, background: qa.color + "20", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 18 }}>{qa.icon}</div>
+              <div style={{ fontSize: 10, fontWeight: 700, color: t.tx }}>{qa.label}</div>
+            </button>;
+          })}
+        </div>
+
         <div style={{ display: "grid", gridTemplateColumns: "repeat(4,1fr)", gap: 12, marginBottom: 16 }}>
           {[{ l: "حاضر", v: present, i: "✅", c: t.ok, s: `من ${safeEmps.length}` }, { l: "غائب", v: absent, i: "🚫", c: t.bad }, { l: "متأخر", v: late, i: "⏰", c: t.warn }, { l: "طلبات معلّقة", v: pending, i: "📋", c: B.blue }].map((s, i) => <div key={i} style={{ background: t.card, borderRadius: 14, padding: "16px", border: "1px solid " + t.sep }}><div style={{ display: "flex", justifyContent: "space-between" }}><div><div style={{ fontSize: 11, color: t.txM }}>{s.l}</div><div style={{ fontSize: 28, fontWeight: 800, color: s.c, marginTop: 4 }}>{s.v}</div>{s.s && <div style={{ fontSize: 10, color: t.txM }}>{s.s}</div>}</div><div style={{ width: 40, height: 40, borderRadius: 10, background: `${s.c}12`, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 20 }}>{s.i}</div></div></div>)}
         </div>
@@ -553,13 +621,28 @@ export default function AdminApp() {
           </div>
           <KadwarSyncButton t={t} B={B} />
         </div>
-        <div style={{ display: "flex", gap: 10, marginBottom: 14 }}>
-          <input value={search} onChange={e => setSearch(e.target.value)} placeholder="🔍 بحث..." style={{ flex: 1, padding: "10px 14px", borderRadius: 10, border: "1px solid " + t.sep, fontSize: 13, outline: "none", background: t.card }} />
-          <select value={brFilter} onChange={e => setBrFilter(e.target.value)} style={{ padding: "10px 14px", borderRadius: 10, border: "1px solid " + t.sep, fontSize: 12, background: t.card, fontWeight: 600, cursor: "pointer" }}><option value="all">كل الفروع</option>{BRANCHES.map(b => <option key={b.id} value={b.name}>{b.name}</option>)}</select>
+        <div style={{ display: "flex", gap: 10, marginBottom: 14, flexWrap: "wrap" }}>
+          <input value={search} onChange={e => setSearch(e.target.value)} placeholder="🔍 بحث باسم أو رقم هوية..." style={{ flex: 1, minWidth: 200, padding: "10px 14px", borderRadius: 10, border: "1px solid " + t.sep, fontSize: 13, outline: "none", background: t.card, color: t.tx }} />
+          <select value={brFilter} onChange={e => setBrFilter(e.target.value)} style={{ padding: "10px 14px", borderRadius: 10, border: "1px solid " + t.sep, fontSize: 12, background: "#fff", color: "#000", fontWeight: 600, cursor: "pointer" }}><option value="all" style={{background:"#fff",color:"#000"}}>كل الفروع</option>{BRANCHES.map(b => <option key={b.id} value={b.name} style={{background:"#fff",color:"#000"}}>{b.name}</option>)}</select>
+          <select value={statusFilter || "all"} onChange={e => setStatusFilter(e.target.value)} style={{ padding: "10px 14px", borderRadius: 10, border: "1px solid " + t.sep, fontSize: 12, background: "#fff", color: "#000", fontWeight: 600, cursor: "pointer" }}>
+            <option value="all" style={{background:"#fff",color:"#000"}}>كل الحالات</option>
+            <option value="حاضر" style={{background:"#fff",color:"#000"}}>✅ حاضر</option>
+            <option value="متأخر" style={{background:"#fff",color:"#000"}}>⏰ متأخر</option>
+            <option value="غائب" style={{background:"#fff",color:"#000"}}>❌ غائب</option>
+          </select>
+          <select value={accountFilter || "all"} onChange={e => setAccountFilter(e.target.value)} style={{ padding: "10px 14px", borderRadius: 10, border: "1px solid " + t.sep, fontSize: 12, background: "#fff", color: "#000", fontWeight: 600, cursor: "pointer" }}>
+            <option value="all" style={{background:"#fff",color:"#000"}}>كل الحسابات</option>
+            <option value="active" style={{background:"#fff",color:"#000"}}>✓ نشط</option>
+            <option value="inactive" style={{background:"#fff",color:"#000"}}>⚠ بدون حساب</option>
+          </select>
+          <button onClick={function(){ setSearch(""); setBrFilter("all"); setStatusFilter("all"); setAccountFilter("all"); }} style={{ padding: "10px 14px", borderRadius: 10, border: "1px solid " + t.sep, fontSize: 12, background: t.card, color: t.tx, fontWeight: 600, cursor: "pointer" }}>🔄</button>
+        </div>
+        <div style={{ fontSize: 11, color: t.txM, marginBottom: 10 }}>
+          عدد النتائج: <strong style={{ color: B.blue }}>{filteredEmps.length}</strong> من <strong>{safeEmps.length}</strong>
         </div>
         <div style={{ background: t.card, borderRadius: 14, border: "1px solid " + t.sep, overflow: "hidden" }}>
-          <table style={{ width: "100%", borderCollapse: "collapse" }}><thead><tr style={{ background: "#F8FAFC" }}>{["الموظف", "الفرع", "الحالة", "الالتزام", "السلسلة", "المستوى", "المخالفات", "البصمات"].map((h, i) => <th key={i} style={{ padding: "10px 12px", fontSize: 10, fontWeight: 700, color: t.txM, textAlign: "right", borderBottom: "1px solid " + t.sep }}>{h}</th>)}</tr></thead>
-          <tbody>{filteredEmps.map(e => { const sc = e.status === "حاضر" ? t.ok : e.status === "متأخر" ? t.warn : t.bad; const pc = e.pct >= 85 ? t.ok : e.pct >= 70 ? t.warn : t.bad; return (<tr key={e.id} onClick={() => setSelEmp(e)} style={{ cursor: "pointer" }} onMouseEnter={ev => ev.currentTarget.style.background = "#F8FAFC"} onMouseLeave={ev => ev.currentTarget.style.background = "transparent"}>
+          <table style={{ width: "100%", borderCollapse: "collapse" }}><thead><tr style={{ background: t.bg }}>{["الموظف", "الفرع", "الحالة", "الالتزام", "السلسلة", "المستوى", "المخالفات", "البصمات"].map((h, i) => <th key={i} style={{ padding: "10px 12px", fontSize: 10, fontWeight: 700, color: t.txM, textAlign: "right", borderBottom: "1px solid " + t.sep }}>{h}</th>)}</tr></thead>
+          <tbody>{filteredEmps.map(e => { const sc = e.status === "حاضر" ? t.ok : e.status === "متأخر" ? t.warn : t.bad; const pc = e.pct >= 85 ? t.ok : e.pct >= 70 ? t.warn : t.bad; return (<tr key={e.id} onClick={() => setSelEmp(e)} style={{ cursor: "pointer" }} onMouseEnter={ev => ev.currentTarget.style.background = t.bg} onMouseLeave={ev => ev.currentTarget.style.background = "transparent"}>
             <td style={td}><div style={{ display: "flex", alignItems: "center", gap: 8 }}><div style={{ width: 32, height: 32, borderRadius: "50%", background: `${sc}12`, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 14 }}>👤</div><div><div style={{ fontSize: 12, fontWeight: 700 }}>{e.name}</div><div style={{ fontSize: 9, color: t.txM }}>{e.role} · {e.id}</div></div></div></td>
             <td style={td}><span style={{ fontSize: 11 }}>{e.branch}</span></td>
             <td style={td}><span style={{ padding: "3px 8px", borderRadius: 6, fontSize: 10, fontWeight: 700, background: `${sc}15`, color: sc }}>{e.status}</span></td>
@@ -786,62 +869,137 @@ export default function AdminApp() {
       {tab === "tracking" && <TrackingPanel t={t} B={B} emps={safeEmps} branches={branches} />}
 
       {/* ═══ CUSTODY ADMIN ═══ */}
-      {tab === "custody_admin" && <>
-        <div style={{ background: t.card, borderRadius: 14, padding: "18px", border: "1px solid " + t.sep, marginBottom: 14 }}>
-          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 14 }}>
-            <div style={{ fontSize: 14, fontWeight: 700 }}>📦 إدارة العهد</div>
-            <button onClick={async function() {
-              var items = await api("custody") || [];
-              if (!Array.isArray(items)) items = [];
-              var el = document.getElementById("custody-admin-list");
-              if (items.length === 0) { el.innerHTML = "<div style='text-align:center;padding:20px;color:#8E8E93'>لا توجد عهد مسجّلة</div>"; return; }
-              var html = items.map(function(item) {
-                var statusColor = item.status === "active" ? "#30D158" : item.status === "returned" ? "#8E8E93" : "#FF9F0A";
-                var statusText = item.status === "active" ? "مُستلمة" : item.status === "returned" ? "مُعادة" : "صيانة";
-                return "<div style='padding:10px;border-radius:8px;background:#F8F9FA;margin-bottom:6px;display:flex;justify-content:space-between;align-items:center'>" +
-                  "<div><div style='font-size:12px;font-weight:700'>" + item.name + "</div>" +
-                  "<div style='font-size:10px;color:#6E6E73'>" + (item.empName || "—") + " · " + (item.category || "") + (item.serialNumber ? " · S/N: " + item.serialNumber : "") + "</div>" +
-                  (item.value ? "<div style='font-size:9px;color:#2B5EA7'>💰 " + item.value + " ريال</div>" : "") +
-                  "</div><span style='padding:3px 8px;border-radius:6px;font-size:9px;font-weight:700;background:" + statusColor + "15;color:" + statusColor + "'>" + statusText + "</span></div>";
-              }).join("");
-              el.innerHTML = html;
-            }} style={{ padding: "8px 16px", borderRadius: 8, background: B.blue, color: "#fff", fontSize: 11, fontWeight: 700, border: "none", cursor: "pointer" }}>🔄 تحديث</button>
-          </div>
-          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 8, marginBottom: 14 }}>
-            {[{ l: "إلكترونيات", i: "💻" }, { l: "مركبات", i: "🚗" }, { l: "معدات", i: "🔧" }, { l: "أثاث", i: "🪑" }, { l: "نقدية", i: "💰" }, { l: "أخرى", i: "📦" }].map(function(c, i) { return <div key={i} style={{ textAlign: "center", padding: "10px 4px", borderRadius: 10, background: t.bg, border: "1px solid " + t.sep }}><div style={{ fontSize: 18 }}>{c.i}</div><div style={{ fontSize: 9, color: t.txM, marginTop: 4 }}>{c.l}</div></div>; })}
-          </div>
-          <div id="custody-admin-list" style={{ minHeight: 40 }}><div style={{ textAlign: "center", padding: 12, color: t.txM, fontSize: 11 }}>اضغط "تحديث" لعرض العهد</div></div>
-        </div>
-      </>}
+      {tab === "custody_admin" && <CustodyPanel t={t} B={B} emps={safeEmps} />}
 
       {/* ═══ REPORTS ═══ */}
       {tab === "reports" && <>
-        {/* Report generation */}
+        {/* PDF Reports Section */}
         <div style={{ background: t.card, borderRadius: 14, padding: "18px", border: "1px solid " + t.sep, marginBottom: 14 }}>
-          <div style={{ fontSize: 14, fontWeight: 700, marginBottom: 12 }}>📊 إنشاء تقرير</div>
+          <div style={{ fontSize: 15, fontWeight: 800, color: B.blue, marginBottom: 12 }}>📄 تقارير PDF جاهزة للطباعة</div>
+          <div style={{ fontSize: 11, color: t.txM, marginBottom: 16, lineHeight: 1.7 }}>
+            تقارير منسقة باللغة العربية مع شعار المكتب. يمكن طباعتها أو حفظها PDF.
+          </div>
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(220px, 1fr))", gap: 10 }}>
+            <button onClick={async function() {
+              try {
+                var attR = await fetch("/api/data?action=attendance"); var att = await attR.json();
+                generateAttendanceReport({ period: "الفترة الكاملة", attendance: Array.isArray(att) ? att : [], employees: safeEmps, branches: branches });
+              } catch(e) { alert("خطأ: " + e.message); }
+            }} style={{ padding: 14, borderRadius: 10, background: B.blue, color: "#fff", border: "none", fontSize: 12, fontWeight: 700, cursor: "pointer", textAlign: "right" }}>
+              <div style={{ fontSize: 18, marginBottom: 4 }}>🕐</div>
+              <div>تقرير الحضور والانصراف</div>
+              <div style={{ fontSize: 9, opacity: 0.8, marginTop: 3 }}>كل سجلات الحضور مع التفاصيل</div>
+            </button>
+
+            <button onClick={async function() {
+              try {
+                var now = new Date();
+                var attR = await fetch("/api/data?action=attendance"); var att = await attR.json();
+                var vioR = await fetch("/api/data?action=violations"); var vio = await vioR.json();
+                generateMonthlySummary({ month: now.getMonth() + 1, year: now.getFullYear(), attendance: Array.isArray(att) ? att : [], employees: safeEmps, violations: Array.isArray(vio) ? vio : [], leaves: leaves });
+              } catch(e) { alert("خطأ: " + e.message); }
+            }} style={{ padding: 14, borderRadius: 10, background: "#10b981", color: "#fff", border: "none", fontSize: 12, fontWeight: 700, cursor: "pointer", textAlign: "right" }}>
+              <div style={{ fontSize: 18, marginBottom: 4 }}>📊</div>
+              <div>التقرير الشهري الشامل</div>
+              <div style={{ fontSize: 9, opacity: 0.8, marginTop: 3 }}>ترتيب + إحصائيات + مقارنات</div>
+            </button>
+
+            <button onClick={function() {
+              generateEmployeesListReport({ employees: safeEmps, branches: branches });
+            }} style={{ padding: 14, borderRadius: 10, background: "#8b5cf6", color: "#fff", border: "none", fontSize: 12, fontWeight: 700, cursor: "pointer", textAlign: "right" }}>
+              <div style={{ fontSize: 18, marginBottom: 4 }}>👥</div>
+              <div>قائمة الموظفين</div>
+              <div style={{ fontSize: 9, opacity: 0.8, marginTop: 3 }}>مصنفة حسب الفرع</div>
+            </button>
+
+            <button onClick={async function() {
+              try {
+                var vioR = await fetch("/api/data?action=violations"); var vio = await vioR.json();
+                generateViolationsReport({ violations: Array.isArray(vio) ? vio : [], employees: safeEmps });
+              } catch(e) { alert("خطأ: " + e.message); }
+            }} style={{ padding: 14, borderRadius: 10, background: "#ef4444", color: "#fff", border: "none", fontSize: 12, fontWeight: 700, cursor: "pointer", textAlign: "right" }}>
+              <div style={{ fontSize: 18, marginBottom: 4 }}>⚠️</div>
+              <div>تقرير المخالفات</div>
+              <div style={{ fontSize: 9, opacity: 0.8, marginTop: 3 }}>تحليل حسب النوع والفترة</div>
+            </button>
+
+            <button onClick={async function() {
+              try {
+                var r1 = await fetch("/api/data?action=benefits");
+                var d1 = await r1.json();
+                var r2 = await fetch("/api/data?action=redemptions");
+                var d2 = await r2.json();
+                generateBenefitsReport({ coupons: (d1 && d1.coupons) || [], redemptions: Array.isArray(d2) ? d2 : [], employees: safeEmps });
+              } catch(e) { alert("خطأ: " + e.message); }
+            }} style={{ padding: 14, borderRadius: 10, background: B.gold, color: "#fff", border: "none", fontSize: 12, fontWeight: 700, cursor: "pointer", textAlign: "right" }}>
+              <div style={{ fontSize: 18, marginBottom: 4 }}>🏅</div>
+              <div>تقرير الامتيازات</div>
+              <div style={{ fontSize: 9, opacity: 0.8, marginTop: 3 }}>الكوبونات + سجل الصرف</div>
+            </button>
+
+            <button onClick={async function() {
+              try {
+                var r = await fetch("/api/data?action=announcements");
+                var d = await r.json();
+                generateAnnouncementsReport({ announcements: Array.isArray(d) ? d : [], employees: safeEmps });
+              } catch(e) { alert("خطأ: " + e.message); }
+            }} style={{ padding: 14, borderRadius: 10, background: "#06b6d4", color: "#fff", border: "none", fontSize: 12, fontWeight: 700, cursor: "pointer", textAlign: "right" }}>
+              <div style={{ fontSize: 18, marginBottom: 4 }}>📢</div>
+              <div>تقرير التعاميم</div>
+              <div style={{ fontSize: 9, opacity: 0.8, marginTop: 3 }}>معدلات القراءة والنشر</div>
+            </button>
+
+            <button onClick={async function() {
+              if (safeEmps.length === 0) { alert("لا يوجد موظفين"); return; }
+              var empId = prompt("أدخل رقم هوية الموظف (أو اسمه):");
+              if (!empId) return;
+              var emp = safeEmps.find(function(e){
+                return e.id === empId || e.idNumber === empId || e.email === empId ||
+                       (e.name && e.name.indexOf(empId) >= 0);
+              });
+              if (!emp) { alert("الموظف غير موجود"); return; }
+              try {
+                var attR = await fetch("/api/data?action=attendance&empId=" + emp.id); var att = await attR.json();
+                var vioR = await fetch("/api/data?action=violations&empId=" + emp.id); var vio = await vioR.json();
+                generateEmployeeReport({ employee: emp, attendance: Array.isArray(att) ? att : [], violations: Array.isArray(vio) ? vio : [], leaves: leaves, tickets: [], branches: branches });
+              } catch(e) { alert("خطأ: " + e.message); }
+            }} style={{ padding: 14, borderRadius: 10, background: "#0891b2", color: "#fff", border: "none", fontSize: 12, fontWeight: 700, cursor: "pointer", textAlign: "right" }}>
+              <div style={{ fontSize: 18, marginBottom: 4 }}>👤</div>
+              <div>ملف موظف فردي</div>
+              <div style={{ fontSize: 9, opacity: 0.8, marginTop: 3 }}>كل البيانات + السجلات</div>
+            </button>
+          </div>
+        </div>
+
+        {/* Quick JSON report (existing) */}
+        <div style={{ background: t.card, borderRadius: 14, padding: "18px", border: "1px solid " + t.sep, marginBottom: 14 }}>
+          <div style={{ fontSize: 14, fontWeight: 700, marginBottom: 12 }}>📋 تقرير JSON سريع</div>
           <div style={{ display: "flex", gap: 8, marginBottom: 12 }}>
             <button onClick={async function() {
               var r = await api("report", "GET", null, "&period=weekly");
               if (r) document.getElementById("report-data").innerHTML = formatReport(r, "أسبوعي");
-            }} style={{ flex: 1, padding: "12px", borderRadius: 10, background: B.blue, color: "#fff", fontSize: 13, fontWeight: 700, border: "none", cursor: "pointer" }}>📊 تقرير أسبوعي</button>
+            }} style={{ flex: 1, padding: "12px", borderRadius: 10, background: B.blue, color: "#fff", fontSize: 13, fontWeight: 700, border: "none", cursor: "pointer" }}>📊 أسبوعي</button>
             <button onClick={async function() {
               var r = await api("report", "GET", null, "&period=monthly");
               if (r) document.getElementById("report-data").innerHTML = formatReport(r, "شهري");
-            }} style={{ flex: 1, padding: "12px", borderRadius: 10, background: B.blueDk, color: "#fff", fontSize: 13, fontWeight: 700, border: "none", cursor: "pointer" }}>📋 تقرير شهري</button>
+            }} style={{ flex: 1, padding: "12px", borderRadius: 10, background: B.blueDk, color: "#fff", fontSize: 13, fontWeight: 700, border: "none", cursor: "pointer" }}>📋 شهري</button>
           </div>
           <div id="report-data" style={{ minHeight: 20 }}></div>
         </div>
 
-        {/* Export buttons */}
-        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 12 }}>{[
-          { t: "تصدير الحضور CSV", d: "بيانات الحضور", i: "📊", c: B.blue, action: function() { window.open("/api/data?action=export&type=attendance"); } },
-          { t: "مسير الرواتب CSV", d: "جاهز للبنك", i: "🏦", c: B.blueDk, action: function() { window.open("/api/data?action=export&type=payroll"); } },
-          { t: "تصدير لكوادر", d: "نسب الالتزام", i: "📤", c: t.ok, action: async function() { var r = await api("kadwar-sync"); alert("✅ تم إرسال البيانات لكوادر"); } },
-        ].map((r, i) => <div key={i} style={{ background: t.card, borderRadius: 14, padding: "20px", border: "1px solid " + t.sep, cursor: "pointer" }}>
-          <div style={{ width: 44, height: 44, borderRadius: 12, background: r.c + "12", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 22, marginBottom: 10 }}>{r.i}</div>
-          <div style={{ fontSize: 13, fontWeight: 700 }}>{r.t}</div><div style={{ fontSize: 11, color: t.txM, marginTop: 4 }}>{r.d}</div>
-          <button onClick={r.action} style={{ marginTop: 10, padding: "7px 14px", borderRadius: 8, background: r.c, color: "#fff", fontSize: 11, fontWeight: 700, border: "none", cursor: "pointer" }}>تحميل</button>
+        {/* CSV Export buttons */}
+        <div style={{ background: t.card, borderRadius: 14, padding: "18px", border: "1px solid " + t.sep, marginBottom: 14 }}>
+          <div style={{ fontSize: 14, fontWeight: 700, marginBottom: 12 }}>📊 تصدير CSV (لبرامج أخرى)</div>
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 12 }}>{[
+          { t: "تصدير الحضور", d: "بيانات كاملة", i: "📊", c: B.blue, action: function() { window.open("/api/data?action=export&type=attendance"); } },
+          { t: "مسير الرواتب", d: "جاهز للبنك", i: "🏦", c: B.blueDk, action: function() { window.open("/api/data?action=export&type=payroll"); } },
+          { t: "قائمة الموظفين", d: "كل البيانات", i: "👥", c: "#10b981", action: function() { window.open("/api/data?action=export&type=employees_list"); } },
+        ].map((r, i) => <div key={i} style={{ background: t.bg, borderRadius: 10, padding: "14px", border: "1px solid " + t.sep, cursor: "pointer" }}>
+          <div style={{ width: 36, height: 36, borderRadius: 8, background: r.c + "12", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 18, marginBottom: 8 }}>{r.i}</div>
+          <div style={{ fontSize: 12, fontWeight: 700, color: t.tx }}>{r.t}</div><div style={{ fontSize: 10, color: t.txM, marginTop: 2 }}>{r.d}</div>
+          <button onClick={r.action} style={{ marginTop: 8, padding: "6px 12px", borderRadius: 6, background: r.c, color: "#fff", fontSize: 10, fontWeight: 700, border: "none", cursor: "pointer" }}>تحميل CSV</button>
         </div>)}</div>
+        </div>
       </>}
 
       {/* ═══ EVENTS (المناسبات الإدارية) ═══ */}
@@ -1151,6 +1309,8 @@ export default function AdminApp() {
 
       {/* ═══ ADMIN PROFILE — تعديل حساب المدير العام ═══ */}
       {tab === "work_types" && <WorkTypesPanel t={t} B={B} emps={safeEmps} />}
+      {tab === "benefits" && <BenefitsPanel t={t} B={B} />}
+      {tab === "announcements" && <AnnouncementsPanel t={t} B={B} emps={safeEmps} branches={branches} />}
       {tab === "test_panel" && <TestPanel t={t} B={B} emps={safeEmps} />}
       {tab === "storage" && <StoragePanel t={t} B={B} />}
 
@@ -1488,6 +1648,1018 @@ function TestPanel({ t, B, emps }) {
             <div style={{ fontSize: 9, color: t.txM, marginTop: 2 }}>{item.ts}</div>
           </div>;
         })}
+      </div>
+    </div>
+  );
+}
+
+/* ═══ CUSTODY PANEL — نظام العهد الكامل (3 أنواع) ═══ */
+function CustodyPanel({ t, B, emps }) {
+  var [items, setItems] = useState([]);
+  var [invoices, setInvoices] = useState([]);
+  var [loading, setLoading] = useState(true);
+  var [filterType, setFilterType] = useState("all");
+  var [filterStatus, setFilterStatus] = useState("all");
+  var [showNew, setShowNew] = useState(false);
+  var [editing, setEditing] = useState(null);
+  var [viewingInvoices, setViewingInvoices] = useState(null);
+  var [approvingInvoice, setApprovingInvoice] = useState(null);
+
+  useEffect(function(){ load(); }, []);
+
+  async function load() {
+    setLoading(true);
+    try {
+      var r1 = await fetch("/api/data?action=custody");
+      var d1 = await r1.json();
+      setItems(Array.isArray(d1) ? d1 : []);
+      var r2 = await fetch("/api/data?action=custody-invoices");
+      var d2 = await r2.json();
+      setInvoices(Array.isArray(d2) ? d2 : []);
+    } catch(e) {}
+    setLoading(false);
+  }
+
+  async function saveItem(data) {
+    var method = data.id ? "PUT" : "POST";
+    var r = await fetch("/api/data?action=custody", {
+      method: method,
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(data),
+    });
+    var d = await r.json();
+    if (d.error) { alert("خطأ: " + d.error); return; }
+    load();
+    setShowNew(false);
+    setEditing(null);
+  }
+
+  async function deleteItem(id) {
+    if (!confirm("هل تريد حذف هذه العهدة؟")) return;
+    await fetch("/api/data?action=custody&id=" + id, { method: "DELETE" });
+    load();
+  }
+
+  async function returnItem(item) {
+    var condition = prompt("حالة العهدة عند الإعادة:\n1. جيدة\n2. تالفة\n3. مفقودة\n\nاكتب: good / damaged / lost");
+    if (!condition) return;
+    var notes = prompt("ملاحظات:") || "";
+    await fetch("/api/data?action=custody-return", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ custodyId: item.id, condition: condition, notes: notes, returnedBy: "admin" }),
+    });
+    load();
+  }
+
+  async function approveInvoice(inv, approved, rejectionReason) {
+    await fetch("/api/data?action=custody-invoices", {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ id: inv.id, status: approved ? "approved" : "rejected", rejectionReason: rejectionReason || "", reviewedBy: "admin" }),
+    });
+    load();
+    setApprovingInvoice(null);
+  }
+
+  if (loading) return <div style={{ padding: 30, textAlign: "center", color: t.txM }}>جارِ التحميل...</div>;
+
+  var filtered = items.filter(function(i) {
+    if (filterType !== "all" && i.type !== filterType) return false;
+    if (filterStatus !== "all" && i.status !== filterStatus) return false;
+    return true;
+  });
+
+  // Stats
+  var totalAssets = items.filter(function(i){ return i.type === "asset"; }).length;
+  var activeAssets = items.filter(function(i){ return i.type === "asset" && i.status === "active"; }).length;
+  var totalCash = items.filter(function(i){ return i.type === "cash"; }).reduce(function(s, c){ return s + (c.amount || 0); }, 0);
+  var cashBalance = items.filter(function(i){ return i.type === "cash" && i.status === "active"; }).reduce(function(s, c){ return s + (c.balance || 0); }, 0);
+  var pendingInvoices = invoices.filter(function(inv){ return inv.status === "pending"; }).length;
+
+  return (
+    <div style={{ maxWidth: 1100 }}>
+      <div style={{ background: B.blue + "12", border: "1px solid " + B.blue + "40", borderRadius: 10, padding: 12, marginBottom: 14, fontSize: 11, color: t.tx, lineHeight: 1.7 }}>
+        📦 <strong>إدارة العهد</strong> — 3 أنواع من العهد:<br/>
+        <span style={{ fontSize: 10 }}>🟢 <strong>استهلاكية</strong> (قرطاسية، مواد) • 🟡 <strong>دائمة</strong> (أجهزة بسيريال) • 🔵 <strong>نقدية</strong> (مع رفع فواتير)</span>
+      </div>
+
+      {/* Stats */}
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(5, 1fr)", gap: 10, marginBottom: 14 }}>
+        <div style={{ background: t.card, borderRadius: 10, padding: 12, border: "1px solid " + t.sep, textAlign: "center" }}>
+          <div style={{ fontSize: 22, fontWeight: 900, color: B.blue }}>{items.length}</div>
+          <div style={{ fontSize: 10, color: t.txM }}>إجمالي العهد</div>
+        </div>
+        <div style={{ background: t.card, borderRadius: 10, padding: 12, border: "1px solid " + t.sep, textAlign: "center" }}>
+          <div style={{ fontSize: 22, fontWeight: 900, color: "#10b981" }}>{activeAssets}</div>
+          <div style={{ fontSize: 10, color: t.txM }}>أصول نشطة</div>
+        </div>
+        <div style={{ background: t.card, borderRadius: 10, padding: 12, border: "1px solid " + t.sep, textAlign: "center" }}>
+          <div style={{ fontSize: 22, fontWeight: 900, color: B.gold }}>{Math.round(totalCash)} ر.س</div>
+          <div style={{ fontSize: 10, color: t.txM }}>إجمالي النقدية</div>
+        </div>
+        <div style={{ background: t.card, borderRadius: 10, padding: 12, border: "1px solid " + t.sep, textAlign: "center" }}>
+          <div style={{ fontSize: 22, fontWeight: 900, color: "#8b5cf6" }}>{Math.round(cashBalance)} ر.س</div>
+          <div style={{ fontSize: 10, color: t.txM }}>رصيد متبقي</div>
+        </div>
+        <div style={{ background: t.card, borderRadius: 10, padding: 12, border: "1px solid " + (pendingInvoices > 0 ? "#f59e0b" : t.sep), textAlign: "center" }}>
+          <div style={{ fontSize: 22, fontWeight: 900, color: pendingInvoices > 0 ? "#f59e0b" : t.txM }}>{pendingInvoices}</div>
+          <div style={{ fontSize: 10, color: t.txM }}>فواتير معلّقة</div>
+        </div>
+      </div>
+
+      {/* Actions bar */}
+      <div style={{ display: "flex", gap: 10, marginBottom: 14, alignItems: "center", flexWrap: "wrap" }}>
+        <button onClick={function(){ setShowNew(true); setEditing(null); }} style={{ padding: "10px 18px", borderRadius: 10, background: B.blue, color: "#fff", border: "none", fontSize: 12, fontWeight: 800, cursor: "pointer" }}>
+          ➕ عهدة جديدة
+        </button>
+        <select value={filterType} onChange={function(e){ setFilterType(e.target.value); }} style={{ padding: "10px 14px", borderRadius: 10, background: "#fff", color: "#000", border: "1px solid " + t.sep, fontSize: 12, fontWeight: 600, cursor: "pointer" }}>
+          <option value="all">كل الأنواع</option>
+          <option value="consumable">🟢 استهلاكية</option>
+          <option value="asset">🟡 دائمة</option>
+          <option value="cash">🔵 نقدية</option>
+        </select>
+        <select value={filterStatus} onChange={function(e){ setFilterStatus(e.target.value); }} style={{ padding: "10px 14px", borderRadius: 10, background: "#fff", color: "#000", border: "1px solid " + t.sep, fontSize: 12, fontWeight: 600, cursor: "pointer" }}>
+          <option value="all">كل الحالات</option>
+          <option value="active">نشطة</option>
+          <option value="issued">مصروفة</option>
+          <option value="returned">معادة</option>
+          <option value="damaged">تالفة</option>
+          <option value="closed">مغلقة</option>
+        </select>
+        <button onClick={load} style={{ padding: "10px 14px", borderRadius: 10, background: "none", border: "1px solid " + t.sep, color: t.tx, fontSize: 11, cursor: "pointer" }}>🔄 تحديث</button>
+      </div>
+
+      {/* New/Edit form */}
+      {(showNew || editing) && <CustodyForm t={t} B={B} emps={emps} initial={editing} onSave={saveItem} onCancel={function(){ setShowNew(false); setEditing(null); }} />}
+
+      {/* List */}
+      {filtered.length === 0 && !showNew && !editing && (
+        <div style={{ textAlign: "center", padding: 40, color: t.txM, fontSize: 13 }}>
+          لا توجد عهد. اضغط "➕ عهدة جديدة" للبدء.
+        </div>
+      )}
+
+      <div style={{ display: "grid", gap: 10 }}>
+        {filtered.map(function(item){
+          var typeLabels = { consumable: "🟢 استهلاكية", asset: "🟡 دائمة", cash: "🔵 نقدية" };
+          var statusColors = { active: "#10b981", issued: "#3b82f6", returned: "#64748b", damaged: "#ef4444", lost: "#dc2626", closed: "#94a3b8" };
+          var statusLabels = { active: "نشطة", issued: "مصروفة", returned: "معادة", damaged: "تالفة", lost: "مفقودة", closed: "مغلقة" };
+          var itemInvoices = invoices.filter(function(inv){ return inv.custodyId === item.id; });
+          var emp = emps.find(function(e){ return e.id === item.empId; });
+
+          return (
+            <div key={item.id} style={{ background: t.card, borderRadius: 12, padding: 14, border: "1px solid " + t.sep, borderRight: "4px solid " + (statusColors[item.status] || t.sep) }}>
+              <div style={{ display: "flex", gap: 12, alignItems: "start" }}>
+                <div style={{ flex: 1 }}>
+                  <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap", marginBottom: 6 }}>
+                    <span style={{ fontSize: 14, fontWeight: 800, color: t.tx }}>{item.name}</span>
+                    <span style={{ fontSize: 10, padding: "2px 8px", borderRadius: 4, background: t.bg, color: t.tx, fontWeight: 700 }}>{typeLabels[item.type]}</span>
+                    <span style={{ fontSize: 10, padding: "2px 8px", borderRadius: 4, background: (statusColors[item.status] || t.sep) + "20", color: statusColors[item.status] || t.tx, fontWeight: 700 }}>{statusLabels[item.status] || item.status}</span>
+                    {item.acknowledged && <span style={{ fontSize: 10, padding: "2px 8px", borderRadius: 4, background: "#10b98120", color: "#10b981", fontWeight: 700 }}>✓ موقّع</span>}
+                    {!item.acknowledged && <span style={{ fontSize: 10, padding: "2px 8px", borderRadius: 4, background: "#f59e0b20", color: "#f59e0b", fontWeight: 700 }}>⏳ بانتظار التوقيع</span>}
+                  </div>
+
+                  <div style={{ fontSize: 11, color: t.tx2, marginBottom: 4 }}>
+                    👤 {emp ? emp.name : item.empName || "غير محدد"}
+                    {item.category && " • 📁 " + item.category}
+                  </div>
+
+                  {item.type === "asset" && (
+                    <div style={{ fontSize: 10, color: t.txM, marginTop: 4 }}>
+                      {item.brand && "🏢 " + item.brand}
+                      {item.model && " • الموديل: " + item.model}
+                      {item.serialNumber && " • S/N: " + item.serialNumber}
+                      {item.value > 0 && " • القيمة: " + item.value + " ر.س"}
+                    </div>
+                  )}
+                  {item.type === "consumable" && (
+                    <div style={{ fontSize: 10, color: t.txM, marginTop: 4 }}>
+                      📦 الكمية: {item.quantity} {item.unit}
+                      {item.value > 0 && " • القيمة: " + (item.value * item.quantity) + " ر.س"}
+                    </div>
+                  )}
+                  {item.type === "cash" && (
+                    <div style={{ marginTop: 6, padding: 8, background: t.bg, borderRadius: 6 }}>
+                      <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 8, fontSize: 11 }}>
+                        <div><span style={{ color: t.txM }}>المبلغ:</span> <strong style={{ color: B.blue }}>{item.amount} ر.س</strong></div>
+                        <div><span style={{ color: t.txM }}>مصروف:</span> <strong style={{ color: "#ef4444" }}>{item.spent || 0} ر.س</strong></div>
+                        <div><span style={{ color: t.txM }}>متبقي:</span> <strong style={{ color: "#10b981" }}>{item.balance || item.amount} ر.س</strong></div>
+                      </div>
+                      {item.purpose && <div style={{ fontSize: 10, color: t.txM, marginTop: 4 }}>🎯 الغرض: {item.purpose}</div>}
+                      {itemInvoices.length > 0 && (
+                        <div style={{ fontSize: 10, color: t.tx, marginTop: 4 }}>
+                          📄 الفواتير: {itemInvoices.length} ({itemInvoices.filter(function(i){ return i.status === "pending"; }).length} معلّقة)
+                        </div>
+                      )}
+                    </div>
+                  )}
+
+                  {item.notes && <div style={{ fontSize: 10, color: t.txM, marginTop: 6, fontStyle: "italic" }}>💬 {item.notes}</div>}
+
+                  <div style={{ fontSize: 9, color: t.txM, marginTop: 6 }}>
+                    📅 صُرفت في: {new Date(item.issuedAt).toLocaleDateString("ar-SA")}
+                    {item.returnedAt && " • ↩️ أعيدت في: " + new Date(item.returnedAt).toLocaleDateString("ar-SA")}
+                  </div>
+                </div>
+
+                <div style={{ display: "flex", flexDirection: "column", gap: 4, minWidth: 100 }}>
+                  {item.type === "cash" && (
+                    <button onClick={function(){ setViewingInvoices(item); }} style={{ padding: "6px 10px", borderRadius: 6, background: B.gold, color: "#fff", border: "none", fontSize: 10, fontWeight: 700, cursor: "pointer" }}>📄 الفواتير</button>
+                  )}
+                  {item.type === "asset" && item.status === "active" && (
+                    <button onClick={function(){ returnItem(item); }} style={{ padding: "6px 10px", borderRadius: 6, background: "#f59e0b", color: "#fff", border: "none", fontSize: 10, fontWeight: 700, cursor: "pointer" }}>↩️ إعادة</button>
+                  )}
+                  <button onClick={function(){ setEditing(item); setShowNew(false); }} style={{ padding: "6px 10px", borderRadius: 6, background: B.blue, color: "#fff", border: "none", fontSize: 10, fontWeight: 700, cursor: "pointer" }}>✏️ تعديل</button>
+                  <button onClick={function(){ deleteItem(item.id); }} style={{ padding: "6px 10px", borderRadius: 6, background: "#ef4444", color: "#fff", border: "none", fontSize: 10, fontWeight: 700, cursor: "pointer" }}>🗑️ حذف</button>
+                </div>
+              </div>
+            </div>
+          );
+        })}
+      </div>
+
+      {/* Invoices Modal */}
+      {viewingInvoices && (
+        <CustodyInvoicesModal t={t} B={B} custody={viewingInvoices} invoices={invoices.filter(function(i){ return i.custodyId === viewingInvoices.id; })} onClose={function(){ setViewingInvoices(null); load(); }} onApprove={approveInvoice} />
+      )}
+    </div>
+  );
+}
+
+/* ═══ CUSTODY FORM ═══ */
+function CustodyForm({ t, B, emps, initial, onSave, onCancel }) {
+  var [type, setType] = useState(initial ? initial.type : "asset");
+  var [name, setName] = useState(initial ? initial.name : "");
+  var [category, setCategory] = useState(initial ? initial.category : "");
+  var [empId, setEmpId] = useState(initial ? initial.empId : (emps[0] ? emps[0].id : ""));
+  var [serialNumber, setSerialNumber] = useState(initial ? initial.serialNumber : "");
+  var [brand, setBrand] = useState(initial ? initial.brand : "");
+  var [model, setModel] = useState(initial ? initial.model : "");
+  var [condition, setCondition] = useState(initial ? initial.condition : "new");
+  var [quantity, setQuantity] = useState(initial ? initial.quantity : 1);
+  var [unit, setUnit] = useState(initial ? initial.unit : "قطعة");
+  var [amount, setAmount] = useState(initial ? initial.amount : "");
+  var [purpose, setPurpose] = useState(initial ? initial.purpose : "");
+  var [value, setValue] = useState(initial ? initial.value : "");
+  var [notes, setNotes] = useState(initial ? initial.notes : "");
+  var [photoUrl, setPhotoUrl] = useState(initial ? initial.photoUrl : "");
+  var [uploading, setUploading] = useState(false);
+
+  var categories = {
+    asset: ["💻 إلكترونيات", "🚗 مركبات", "🔧 معدات", "🪑 أثاث", "📱 أجهزة اتصال", "🎥 تصوير", "أخرى"],
+    consumable: ["📝 قرطاسية", "🧹 مستهلكات نظافة", "🔩 قطع غيار", "🍽️ استهلاك مكتبي", "أخرى"],
+    cash: ["💵 سلفة", "🎫 مصاريف سفر", "🛒 مشتريات", "📦 تشغيل", "🎉 ضيافة", "أخرى"],
+  };
+
+  function save() {
+    if (!name.trim()) { alert("يجب إدخال اسم العهدة"); return; }
+    if (!empId) { alert("يجب اختيار الموظف"); return; }
+    if (type === "asset" && !serialNumber.trim()) { alert("يجب إدخال رقم السيريال"); return; }
+    if (type === "cash" && (!amount || parseFloat(amount) <= 0)) { alert("يجب إدخال مبلغ صحيح"); return; }
+
+    var emp = emps.find(function(e){ return e.id === empId; });
+    var data = {
+      id: initial ? initial.id : undefined,
+      type: type,
+      name: name.trim(),
+      category: category,
+      empId: empId,
+      empName: emp ? emp.name : "",
+      serialNumber: serialNumber,
+      brand: brand,
+      model: model,
+      condition: condition,
+      photoUrl: photoUrl,
+      quantity: parseInt(quantity) || 1,
+      unit: unit,
+      amount: parseFloat(amount) || 0,
+      purpose: purpose,
+      value: parseFloat(value) || 0,
+      notes: notes,
+    };
+    onSave(data);
+  }
+
+  async function handlePhotoUpload(e) {
+    var file = e.target.files[0];
+    if (!file) return;
+    if (file.size > 5 * 1024 * 1024) { alert("حجم الصورة كبير جداً (الحد الأقصى 5MB)"); return; }
+    setUploading(true);
+    try {
+      var reader = new FileReader();
+      reader.onload = function() {
+        setPhotoUrl(reader.result);
+        setUploading(false);
+      };
+      reader.readAsDataURL(file);
+    } catch(err) {
+      alert("خطأ في رفع الصورة");
+      setUploading(false);
+    }
+  }
+
+  return (
+    <div style={{ background: t.bg === "#000000" ? "#1C1C1E" : "#F2F2F7", borderRadius: 12, padding: 16, marginBottom: 14, border: "2px solid " + B.blue }}>
+      <div style={{ fontSize: 14, fontWeight: 800, color: B.blue, marginBottom: 12 }}>{initial ? "✏️ تعديل عهدة" : "➕ عهدة جديدة"}</div>
+
+      {/* Type Selection */}
+      {!initial && (
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 8, marginBottom: 14 }}>
+          {[
+            { id: "consumable", label: "استهلاكية", icon: "🟢", desc: "مواد تُصرف ولا تُرجع" },
+            { id: "asset", label: "دائمة", icon: "🟡", desc: "أجهزة بسيريال" },
+            { id: "cash", label: "نقدية", icon: "🔵", desc: "مبلغ للصرف مع فواتير" },
+          ].map(function(tp) {
+            var selected = type === tp.id;
+            return <button key={tp.id} type="button" onClick={function(){ setType(tp.id); setCategory(""); }} style={{ padding: 14, borderRadius: 10, background: selected ? B.blue : "#fff", color: selected ? "#fff" : "#000", border: "2px solid " + (selected ? B.blue : "#ddd"), fontSize: 12, fontWeight: 700, cursor: "pointer", textAlign: "center" }}>
+              <div style={{ fontSize: 24, marginBottom: 4 }}>{tp.icon}</div>
+              <div>{tp.label}</div>
+              <div style={{ fontSize: 9, opacity: 0.8, marginTop: 2 }}>{tp.desc}</div>
+            </button>;
+          })}
+        </div>
+      )}
+
+      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
+        <label style={{ fontSize: 11, color: t.tx }}>
+          اسم العهدة:
+          <input value={name} onChange={function(e){ setName(e.target.value); }} placeholder={type === "cash" ? "مثال: سلفة مشتريات مكتبية" : "مثال: لابتوب ديل"} style={{ width: "100%", padding: 10, borderRadius: 8, border: "1px solid " + t.sep, background: "#fff", color: "#000", marginTop: 4 }} />
+        </label>
+        <label style={{ fontSize: 11, color: t.tx }}>
+          الموظف:
+          <select value={empId} onChange={function(e){ setEmpId(e.target.value); }} style={{ width: "100%", padding: 10, borderRadius: 8, border: "1px solid " + t.sep, background: "#fff", color: "#000", marginTop: 4 }}>
+            <option value="">-- اختر --</option>
+            {emps.map(function(e){ return <option key={e.id} value={e.id}>{e.name}</option>; })}
+          </select>
+        </label>
+        <label style={{ fontSize: 11, color: t.tx }}>
+          الفئة:
+          <select value={category} onChange={function(e){ setCategory(e.target.value); }} style={{ width: "100%", padding: 10, borderRadius: 8, border: "1px solid " + t.sep, background: "#fff", color: "#000", marginTop: 4 }}>
+            <option value="">-- اختر --</option>
+            {(categories[type] || []).map(function(c){ return <option key={c} value={c}>{c}</option>; })}
+          </select>
+        </label>
+
+        {/* Asset fields */}
+        {type === "asset" && (
+          <>
+            <label style={{ fontSize: 11, color: t.tx }}>
+              رقم السيريال <span style={{ color: "#ef4444" }}>*</span>:
+              <input value={serialNumber} onChange={function(e){ setSerialNumber(e.target.value); }} placeholder="SN-1234567" style={{ width: "100%", padding: 10, borderRadius: 8, border: "1px solid " + t.sep, background: "#fff", color: "#000", marginTop: 4, fontFamily: "monospace" }} />
+            </label>
+            <label style={{ fontSize: 11, color: t.tx }}>
+              العلامة التجارية:
+              <input value={brand} onChange={function(e){ setBrand(e.target.value); }} placeholder="Dell / HP / Samsung..." style={{ width: "100%", padding: 10, borderRadius: 8, border: "1px solid " + t.sep, background: "#fff", color: "#000", marginTop: 4 }} />
+            </label>
+            <label style={{ fontSize: 11, color: t.tx }}>
+              الموديل:
+              <input value={model} onChange={function(e){ setModel(e.target.value); }} placeholder="Latitude 5520" style={{ width: "100%", padding: 10, borderRadius: 8, border: "1px solid " + t.sep, background: "#fff", color: "#000", marginTop: 4 }} />
+            </label>
+            <label style={{ fontSize: 11, color: t.tx }}>
+              الحالة:
+              <select value={condition} onChange={function(e){ setCondition(e.target.value); }} style={{ width: "100%", padding: 10, borderRadius: 8, border: "1px solid " + t.sep, background: "#fff", color: "#000", marginTop: 4 }}>
+                <option value="new">جديدة</option>
+                <option value="used">مستعملة (حالة جيدة)</option>
+                <option value="refurbished">مجدّدة</option>
+              </select>
+            </label>
+            <label style={{ fontSize: 11, color: t.tx }}>
+              القيمة (ر.س):
+              <input type="number" value={value} onChange={function(e){ setValue(e.target.value); }} placeholder="3500" style={{ width: "100%", padding: 10, borderRadius: 8, border: "1px solid " + t.sep, background: "#fff", color: "#000", marginTop: 4 }} />
+            </label>
+            <label style={{ fontSize: 11, color: t.tx, gridColumn: "1 / -1" }}>
+              صورة العهدة <span style={{ color: "#ef4444" }}>(مطلوبة)</span>:
+              <div style={{ marginTop: 4 }}>
+                <input type="file" accept="image/*" onChange={handlePhotoUpload} style={{ fontSize: 11 }} />
+                {uploading && <span style={{ marginRight: 8, fontSize: 11, color: B.blue }}>⏳ جارِ الرفع...</span>}
+                {photoUrl && <img src={photoUrl} style={{ marginTop: 6, maxHeight: 150, borderRadius: 8, border: "1px solid " + t.sep }} alt="صورة العهدة" />}
+              </div>
+            </label>
+          </>
+        )}
+
+        {/* Consumable fields */}
+        {type === "consumable" && (
+          <>
+            <label style={{ fontSize: 11, color: t.tx }}>
+              الكمية:
+              <input type="number" value={quantity} onChange={function(e){ setQuantity(e.target.value); }} min={1} style={{ width: "100%", padding: 10, borderRadius: 8, border: "1px solid " + t.sep, background: "#fff", color: "#000", marginTop: 4 }} />
+            </label>
+            <label style={{ fontSize: 11, color: t.tx }}>
+              الوحدة:
+              <select value={unit} onChange={function(e){ setUnit(e.target.value); }} style={{ width: "100%", padding: 10, borderRadius: 8, border: "1px solid " + t.sep, background: "#fff", color: "#000", marginTop: 4 }}>
+                <option value="قطعة">قطعة</option>
+                <option value="علبة">علبة</option>
+                <option value="كرتون">كرتون</option>
+                <option value="لتر">لتر</option>
+                <option value="كيلو">كيلو</option>
+                <option value="متر">متر</option>
+              </select>
+            </label>
+            <label style={{ fontSize: 11, color: t.tx, gridColumn: "1 / -1" }}>
+              القيمة للوحدة الواحدة (اختياري):
+              <input type="number" value={value} onChange={function(e){ setValue(e.target.value); }} placeholder="10" style={{ width: "100%", padding: 10, borderRadius: 8, border: "1px solid " + t.sep, background: "#fff", color: "#000", marginTop: 4 }} />
+            </label>
+          </>
+        )}
+
+        {/* Cash fields */}
+        {type === "cash" && (
+          <>
+            <label style={{ fontSize: 11, color: t.tx }}>
+              المبلغ (ر.س) <span style={{ color: "#ef4444" }}>*</span>:
+              <input type="number" value={amount} onChange={function(e){ setAmount(e.target.value); }} placeholder="5000" style={{ width: "100%", padding: 10, borderRadius: 8, border: "1px solid " + t.sep, background: "#fff", color: "#000", marginTop: 4 }} />
+            </label>
+            <label style={{ fontSize: 11, color: t.tx }}>
+              الغرض من الصرف:
+              <input value={purpose} onChange={function(e){ setPurpose(e.target.value); }} placeholder="شراء مستلزمات مكتبية" style={{ width: "100%", padding: 10, borderRadius: 8, border: "1px solid " + t.sep, background: "#fff", color: "#000", marginTop: 4 }} />
+            </label>
+            <div style={{ gridColumn: "1 / -1", padding: 10, background: B.blue + "10", borderRadius: 8, border: "1px solid " + B.blue + "40", fontSize: 11, color: t.tx, lineHeight: 1.6 }}>
+              💡 <strong>ملاحظة:</strong> الموظف سيقوم برفع فواتير الصرف عبر تطبيقه. كل فاتورة ستحتاج لموافقتك قبل خصمها من الرصيد.
+            </div>
+          </>
+        )}
+
+        <label style={{ fontSize: 11, color: t.tx, gridColumn: "1 / -1" }}>
+          ملاحظات:
+          <textarea value={notes} onChange={function(e){ setNotes(e.target.value); }} rows={2} style={{ width: "100%", padding: 10, borderRadius: 8, border: "1px solid " + t.sep, background: "#fff", color: "#000", marginTop: 4, fontFamily: "inherit", resize: "vertical" }} />
+        </label>
+      </div>
+
+      <div style={{ marginTop: 14, display: "flex", gap: 8 }}>
+        <button onClick={save} style={{ flex: 1, padding: 10, borderRadius: 8, background: B.blue, color: "#fff", border: "none", fontSize: 13, fontWeight: 800, cursor: "pointer" }}>💾 حفظ</button>
+        <button onClick={onCancel} style={{ padding: "10px 24px", borderRadius: 8, background: "none", border: "1px solid " + t.sep, color: t.tx, fontSize: 12, fontWeight: 700, cursor: "pointer" }}>إلغاء</button>
+      </div>
+    </div>
+  );
+}
+
+/* ═══ CUSTODY INVOICES MODAL — فواتير العهدة النقدية ═══ */
+function CustodyInvoicesModal({ t, B, custody, invoices, onClose, onApprove }) {
+  var [viewing, setViewing] = useState(null);
+  var [rejectReason, setRejectReason] = useState("");
+
+  return (
+    <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,.7)", zIndex: 300, display: "flex", alignItems: "center", justifyContent: "center", padding: 20 }} onClick={onClose}>
+      <div onClick={function(e){ e.stopPropagation(); }} style={{ background: t.card, borderRadius: 14, padding: 20, width: "100%", maxWidth: 700, maxHeight: "90vh", overflowY: "auto" }}>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>
+          <div>
+            <div style={{ fontSize: 16, fontWeight: 800, color: t.tx }}>📄 فواتير العهدة</div>
+            <div style={{ fontSize: 11, color: t.tx2 }}>{custody.name} • {custody.empName}</div>
+          </div>
+          <button onClick={onClose} style={{ padding: "6px 12px", borderRadius: 6, background: "none", border: "1px solid " + t.sep, color: t.tx, cursor: "pointer" }}>✕</button>
+        </div>
+
+        <div style={{ padding: 12, background: t.bg, borderRadius: 10, marginBottom: 14 }}>
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 8, fontSize: 11 }}>
+            <div><span style={{ color: t.txM }}>المبلغ الأصلي:</span> <strong style={{ color: B.blue }}>{custody.amount} ر.س</strong></div>
+            <div><span style={{ color: t.txM }}>مصروف:</span> <strong style={{ color: "#ef4444" }}>{custody.spent || 0} ر.س</strong></div>
+            <div><span style={{ color: t.txM }}>متبقي:</span> <strong style={{ color: "#10b981" }}>{custody.balance || custody.amount} ر.س</strong></div>
+          </div>
+        </div>
+
+        {invoices.length === 0 ? (
+          <div style={{ textAlign: "center", padding: 30, color: t.txM, fontSize: 12 }}>لم يرفع الموظف أي فواتير بعد</div>
+        ) : (
+          <div style={{ display: "grid", gap: 8 }}>
+            {invoices.map(function(inv){
+              var statusColors = { pending: "#f59e0b", approved: "#10b981", rejected: "#ef4444" };
+              var statusLabels = { pending: "⏳ معلّقة", approved: "✓ معتمدة", rejected: "✗ مرفوضة" };
+              return (
+                <div key={inv.id} style={{ padding: 12, borderRadius: 10, border: "1px solid " + t.sep, background: t.bg }}>
+                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "start", gap: 10 }}>
+                    <div style={{ flex: 1 }}>
+                      <div style={{ fontSize: 13, fontWeight: 700, color: t.tx, marginBottom: 4 }}>{inv.description}</div>
+                      <div style={{ fontSize: 11, color: t.tx2 }}>
+                        {inv.vendor && "🏪 " + inv.vendor + " • "}
+                        📅 {new Date(inv.invoiceDate).toLocaleDateString("ar-SA")}
+                        {inv.invoiceNumber && " • فاتورة #" + inv.invoiceNumber}
+                      </div>
+                      <div style={{ marginTop: 6, fontSize: 15, fontWeight: 800, color: B.blue }}>💰 {inv.amount} ر.س</div>
+                      {inv.rejectionReason && <div style={{ fontSize: 10, color: "#ef4444", marginTop: 4 }}>سبب الرفض: {inv.rejectionReason}</div>}
+                    </div>
+                    <div style={{ display: "flex", flexDirection: "column", gap: 4, alignItems: "end" }}>
+                      <span style={{ padding: "3px 10px", borderRadius: 6, fontSize: 10, fontWeight: 700, background: statusColors[inv.status] + "20", color: statusColors[inv.status] }}>{statusLabels[inv.status]}</span>
+                      {inv.photoUrl && <button onClick={function(){ setViewing(inv.photoUrl); }} style={{ padding: "4px 10px", borderRadius: 6, background: B.blue, color: "#fff", border: "none", fontSize: 10, fontWeight: 700, cursor: "pointer" }}>🖼️ عرض</button>}
+                      {inv.status === "pending" && (
+                        <div style={{ display: "flex", gap: 4 }}>
+                          <button onClick={function(){ onApprove(inv, true); }} style={{ padding: "4px 10px", borderRadius: 6, background: "#10b981", color: "#fff", border: "none", fontSize: 10, fontWeight: 700, cursor: "pointer" }}>✓ اعتماد</button>
+                          <button onClick={function(){
+                            var reason = prompt("سبب الرفض:");
+                            if (reason) onApprove(inv, false, reason);
+                          }} style={{ padding: "4px 10px", borderRadius: 6, background: "#ef4444", color: "#fff", border: "none", fontSize: 10, fontWeight: 700, cursor: "pointer" }}>✗ رفض</button>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        )}
+
+        {viewing && (
+          <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,.9)", zIndex: 400, display: "flex", alignItems: "center", justifyContent: "center", padding: 20 }} onClick={function(){ setViewing(null); }}>
+            <img src={viewing} style={{ maxWidth: "90vw", maxHeight: "90vh", borderRadius: 8 }} alt="صورة الفاتورة" />
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+/* ═══ BENEFITS PANEL — إدارة الامتيازات ═══ */
+function BenefitsPanel({ t, B }) {
+  var [coupons, setCoupons] = useState([]);
+  var [loading, setLoading] = useState(true);
+  var [editing, setEditing] = useState(null);
+  var [showNew, setShowNew] = useState(false);
+  var [redemptions, setRedemptions] = useState([]);
+  var [filter, setFilter] = useState("all");
+
+  useEffect(function(){
+    fetch("/api/data?action=benefits").then(r => r.json()).then(function(d) {
+      setCoupons((d && d.coupons) || []);
+      setLoading(false);
+    });
+    fetch("/api/data?action=redemptions").then(r => r.json()).then(function(d) {
+      setRedemptions(Array.isArray(d) ? d : []);
+    });
+  }, []);
+
+  async function saveAll(list) {
+    await fetch("/api/data?action=benefits", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ coupons: list }) });
+    setCoupons(list);
+  }
+
+  async function addCoupon(c) {
+    c.id = c.id || ("C" + Date.now());
+    var list = [...coupons, c];
+    await saveAll(list);
+    setShowNew(false);
+  }
+
+  async function updateCoupon(id, updates) {
+    var list = coupons.map(function(c){ return c.id === id ? { ...c, ...updates } : c; });
+    await saveAll(list);
+    setEditing(null);
+  }
+
+  async function deleteCoupon(id) {
+    if (!confirm("هل تريد حذف هذا الكوبون؟")) return;
+    var list = coupons.filter(function(c){ return c.id !== id; });
+    await saveAll(list);
+  }
+
+  async function toggleActive(id) {
+    var list = coupons.map(function(c){ return c.id === id ? { ...c, active: !c.active } : c; });
+    await saveAll(list);
+  }
+
+  function getRedempCount(couponId) {
+    return redemptions.filter(function(r){ return r.couponId === couponId; }).length;
+  }
+
+  var cats = ["all", "مطاعم", "خدمات", "رياضة", "تسوق", "سفر", "ترفيه", "صحة", "تعليم", "أخرى"];
+  var filtered = filter === "all" ? coupons : coupons.filter(function(c){ return c.cat === filter; });
+
+  if (loading) return <div style={{ padding: 30, textAlign: "center", color: t.txM }}>جارِ التحميل...</div>;
+
+  return (
+    <div style={{ maxWidth: 900 }}>
+      <div style={{ background: B.gold + "12", border: "1px solid " + B.gold + "40", borderRadius: 10, padding: 12, marginBottom: 14, fontSize: 11, color: t.tx, lineHeight: 1.7 }}>
+        🏅 <strong>امتيازات العضوية</strong><br/>
+        أنشئ كوبونات خصم ومكافآت يمكن للموظفين استبدالها بنقاطهم.
+      </div>
+
+      {/* Stats */}
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 10, marginBottom: 14 }}>
+        <div style={{ background: t.card, borderRadius: 10, padding: 12, border: "1px solid " + t.sep, textAlign: "center" }}>
+          <div style={{ fontSize: 22, fontWeight: 900, color: B.blue }}>{coupons.length}</div>
+          <div style={{ fontSize: 10, color: t.txM }}>إجمالي الكوبونات</div>
+        </div>
+        <div style={{ background: t.card, borderRadius: 10, padding: 12, border: "1px solid " + t.sep, textAlign: "center" }}>
+          <div style={{ fontSize: 22, fontWeight: 900, color: "#10b981" }}>{coupons.filter(function(c){ return c.active !== false; }).length}</div>
+          <div style={{ fontSize: 10, color: t.txM }}>المفعّلة</div>
+        </div>
+        <div style={{ background: t.card, borderRadius: 10, padding: 12, border: "1px solid " + t.sep, textAlign: "center" }}>
+          <div style={{ fontSize: 22, fontWeight: 900, color: B.gold }}>{redemptions.length}</div>
+          <div style={{ fontSize: 10, color: t.txM }}>مرات الصرف</div>
+        </div>
+        <div style={{ background: t.card, borderRadius: 10, padding: 12, border: "1px solid " + t.sep, textAlign: "center" }}>
+          <div style={{ fontSize: 22, fontWeight: 900, color: "#8b5cf6" }}>{redemptions.reduce(function(s, r){ return s + (r.pts || 0); }, 0)}</div>
+          <div style={{ fontSize: 10, color: t.txM }}>نقاط مصروفة</div>
+        </div>
+      </div>
+
+      {/* Actions bar */}
+      <div style={{ display: "flex", gap: 10, marginBottom: 14, alignItems: "center", flexWrap: "wrap" }}>
+        <button onClick={function(){ setShowNew(true); }} style={{ padding: "10px 18px", borderRadius: 10, background: B.blue, color: "#fff", border: "none", fontSize: 12, fontWeight: 800, cursor: "pointer" }}>
+          ➕ كوبون جديد
+        </button>
+        <select value={filter} onChange={function(e){ setFilter(e.target.value); }} style={{ padding: "10px 14px", borderRadius: 10, background: "#fff", color: "#000", border: "1px solid " + t.sep, fontSize: 12, fontWeight: 600, cursor: "pointer" }}>
+          {cats.map(function(c){ return <option key={c} value={c} style={{ background: "#fff", color: "#000" }}>{c === "all" ? "كل الفئات" : c}</option>; })}
+        </select>
+      </div>
+
+      {/* New coupon form */}
+      {showNew && <CouponForm t={t} B={B} onSave={addCoupon} onCancel={function(){ setShowNew(false); }} />}
+
+      {/* Coupons list */}
+      {filtered.length === 0 && !showNew && (
+        <div style={{ textAlign: "center", padding: 40, color: t.txM, fontSize: 13 }}>
+          لا توجد كوبونات. اضغط "➕ كوبون جديد" لإضافة أول كوبون.
+        </div>
+      )}
+
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(280px, 1fr))", gap: 10 }}>
+        {filtered.map(function(c){
+          var isEditing = editing === c.id;
+          var redempCount = getRedempCount(c.id);
+          return (
+            <div key={c.id} style={{ background: t.card, borderRadius: 12, padding: 14, border: "1px solid " + (c.active === false ? "#ef4444" : t.sep), opacity: c.active === false ? 0.6 : 1 }}>
+              {isEditing ? (
+                <CouponForm t={t} B={B} initial={c} onSave={function(data){ updateCoupon(c.id, data); }} onCancel={function(){ setEditing(null); }} />
+              ) : (
+                <>
+                  <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 10 }}>
+                    <div style={{ fontSize: 32 }}>{c.icon || "🎁"}</div>
+                    <div style={{ flex: 1 }}>
+                      <div style={{ fontSize: 13, fontWeight: 800, color: t.tx }}>{c.brand}</div>
+                      <div style={{ fontSize: 11, color: t.tx2 }}>{c.discount}</div>
+                    </div>
+                  </div>
+                  <div style={{ display: "flex", gap: 6, marginBottom: 10, flexWrap: "wrap" }}>
+                    <span style={{ padding: "3px 10px", borderRadius: 6, background: B.gold + "20", color: B.gold, fontSize: 10, fontWeight: 700 }}>⭐ {c.pts} نقطة</span>
+                    <span style={{ padding: "3px 10px", borderRadius: 6, background: B.blue + "20", color: B.blue, fontSize: 10, fontWeight: 700 }}>{c.cat}</span>
+                    {c.minTier > 0 && <span style={{ padding: "3px 10px", borderRadius: 6, background: "#8b5cf620", color: "#8b5cf6", fontSize: 10, fontWeight: 700 }}>{c.minTier === 1 ? "🥇 تميّز+" : "💎 نخبة"}</span>}
+                    {c.active === false && <span style={{ padding: "3px 10px", borderRadius: 6, background: "#ef444420", color: "#ef4444", fontSize: 10, fontWeight: 700 }}>معطّل</span>}
+                    {redempCount > 0 && <span style={{ padding: "3px 10px", borderRadius: 6, background: "#10b98120", color: "#10b981", fontSize: 10, fontWeight: 700 }}>✓ استُخدم {redempCount}</span>}
+                  </div>
+                  <div style={{ display: "flex", gap: 6 }}>
+                    <button onClick={function(){ setEditing(c.id); }} style={{ flex: 1, padding: "6px 10px", borderRadius: 6, background: B.blue, color: "#fff", border: "none", fontSize: 11, fontWeight: 700, cursor: "pointer" }}>✏️ تعديل</button>
+                    <button onClick={function(){ toggleActive(c.id); }} style={{ padding: "6px 10px", borderRadius: 6, background: c.active === false ? "#10b981" : "#f59e0b", color: "#fff", border: "none", fontSize: 11, fontWeight: 700, cursor: "pointer" }}>{c.active === false ? "▶️" : "⏸️"}</button>
+                    <button onClick={function(){ deleteCoupon(c.id); }} style={{ padding: "6px 10px", borderRadius: 6, background: "#ef4444", color: "#fff", border: "none", fontSize: 11, fontWeight: 700, cursor: "pointer" }}>🗑️</button>
+                  </div>
+                </>
+              )}
+            </div>
+          );
+        })}
+      </div>
+
+      {/* Recent redemptions */}
+      {redemptions.length > 0 && (
+        <div style={{ marginTop: 20, background: t.card, borderRadius: 12, padding: 14, border: "1px solid " + t.sep }}>
+          <div style={{ fontSize: 13, fontWeight: 800, color: B.blue, marginBottom: 10 }}>📊 آخر عمليات الصرف</div>
+          <div style={{ maxHeight: 300, overflowY: "auto" }}>
+            {redemptions.slice(0, 20).map(function(r){
+              return <div key={r.id} style={{ display: "flex", justifyContent: "space-between", padding: "8px 0", borderBottom: "1px solid " + t.sep, fontSize: 11 }}>
+                <span style={{ color: t.tx }}>{r.couponName || "كوبون"}</span>
+                <span style={{ color: B.gold, fontWeight: 700 }}>−{r.pts} نقطة</span>
+                <span style={{ color: t.txM, fontSize: 10 }}>{new Date(r.ts).toLocaleDateString("ar-SA")}</span>
+              </div>;
+            })}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+/* ═══ COUPON FORM — نموذج إضافة/تعديل كوبون ═══ */
+function CouponForm({ t, B, initial, onSave, onCancel }) {
+  var [brand, setBrand] = useState(initial ? initial.brand : "");
+  var [discount, setDiscount] = useState(initial ? initial.discount : "");
+  var [icon, setIcon] = useState(initial ? initial.icon : "🎁");
+  var [pts, setPts] = useState(initial ? initial.pts : 50);
+  var [cat, setCat] = useState(initial ? initial.cat : "مطاعم");
+  var [minTier, setMinTier] = useState(initial ? initial.minTier : 0);
+  var [active, setActive] = useState(initial ? initial.active !== false : true);
+  var [expiry, setExpiry] = useState(initial && initial.expiry ? initial.expiry : "");
+  var [limit, setLimit] = useState(initial && initial.limit ? initial.limit : "");
+
+  var icons = ["🎁", "🍔", "☕", "🍕", "🚗", "🛒", "💪", "📱", "🏨", "✈️", "💻", "🎮", "📚", "🎬", "🏥", "💊", "🎨", "🌙", "🌴", "🎁", "💰", "🏆"];
+
+  function save() {
+    if (!brand.trim() || !discount.trim()) { alert("يجب إدخال اسم الشركة والوصف"); return; }
+    onSave({
+      brand: brand.trim(),
+      discount: discount.trim(),
+      icon: icon,
+      pts: parseInt(pts) || 0,
+      cat: cat,
+      minTier: parseInt(minTier) || 0,
+      active: active,
+      expiry: expiry || null,
+      limit: limit ? parseInt(limit) : null,
+    });
+  }
+
+  return (
+    <div style={{ background: t.bg === "#000000" ? "#1C1C1E" : "#F2F2F7", borderRadius: 12, padding: 16, marginBottom: 10, border: "2px solid " + B.blue }}>
+      <div style={{ fontSize: 13, fontWeight: 800, color: B.blue, marginBottom: 10 }}>{initial ? "✏️ تعديل كوبون" : "➕ كوبون جديد"}</div>
+      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
+        <label style={{ fontSize: 11, color: t.tx }}>
+          اسم الشركة/المحل:
+          <input value={brand} onChange={function(e){ setBrand(e.target.value); }} placeholder="مثال: مطعم البيك" style={{ width: "100%", padding: 10, borderRadius: 8, border: "1px solid " + t.sep, background: "#fff", color: "#000", marginTop: 4 }} />
+        </label>
+        <label style={{ fontSize: 11, color: t.tx }}>
+          وصف العرض:
+          <input value={discount} onChange={function(e){ setDiscount(e.target.value); }} placeholder="مثال: خصم 15%" style={{ width: "100%", padding: 10, borderRadius: 8, border: "1px solid " + t.sep, background: "#fff", color: "#000", marginTop: 4 }} />
+        </label>
+        <label style={{ fontSize: 11, color: t.tx, gridColumn: "1/-1" }}>
+          الأيقونة:
+          <div style={{ marginTop: 6, display: "flex", gap: 4, flexWrap: "wrap", maxHeight: 80, overflowY: "auto" }}>
+            {icons.map(function(ic){
+              return <button key={ic} type="button" onClick={function(){ setIcon(ic); }} style={{ fontSize: 22, padding: 6, borderRadius: 6, background: icon === ic ? B.blue + "30" : "transparent", border: icon === ic ? "2px solid " + B.blue : "1px solid " + t.sep, cursor: "pointer", minWidth: 40 }}>{ic}</button>;
+            })}
+          </div>
+        </label>
+        <label style={{ fontSize: 11, color: t.tx }}>
+          النقاط المطلوبة:
+          <input type="number" value={pts} onChange={function(e){ setPts(e.target.value); }} style={{ width: "100%", padding: 10, borderRadius: 8, border: "1px solid " + t.sep, background: "#fff", color: "#000", marginTop: 4 }} />
+        </label>
+        <label style={{ fontSize: 11, color: t.tx }}>
+          الفئة:
+          <select value={cat} onChange={function(e){ setCat(e.target.value); }} style={{ width: "100%", padding: 10, borderRadius: 8, border: "1px solid " + t.sep, background: "#fff", color: "#000", marginTop: 4 }}>
+            {["مطاعم","خدمات","رياضة","تسوق","سفر","ترفيه","صحة","تعليم","أخرى"].map(function(c){ return <option key={c} value={c} style={{ background: "#fff", color: "#000" }}>{c}</option>; })}
+          </select>
+        </label>
+        <label style={{ fontSize: 11, color: t.tx }}>
+          أقل مستوى عضوية:
+          <select value={minTier} onChange={function(e){ setMinTier(e.target.value); }} style={{ width: "100%", padding: 10, borderRadius: 8, border: "1px solid " + t.sep, background: "#fff", color: "#000", marginTop: 4 }}>
+            <option value={0} style={{ background: "#fff", color: "#000" }}>🔵 فعّال (للجميع)</option>
+            <option value={1} style={{ background: "#fff", color: "#000" }}>🥇 تميّز (500+ نقطة)</option>
+            <option value={2} style={{ background: "#fff", color: "#000" }}>💎 نخبة (1200+ نقطة)</option>
+          </select>
+        </label>
+        <label style={{ fontSize: 11, color: t.tx }}>
+          تاريخ الانتهاء (اختياري):
+          <input type="date" value={expiry} onChange={function(e){ setExpiry(e.target.value); }} style={{ width: "100%", padding: 10, borderRadius: 8, border: "1px solid " + t.sep, background: "#fff", color: "#000", marginTop: 4 }} />
+        </label>
+        <label style={{ fontSize: 11, color: t.tx }}>
+          عدد محدود (اختياري):
+          <input type="number" value={limit} onChange={function(e){ setLimit(e.target.value); }} placeholder="فارغ = غير محدود" style={{ width: "100%", padding: 10, borderRadius: 8, border: "1px solid " + t.sep, background: "#fff", color: "#000", marginTop: 4 }} />
+        </label>
+        <label style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 11, color: t.tx, gridColumn: "1/-1" }}>
+          <input type="checkbox" checked={active} onChange={function(e){ setActive(e.target.checked); }} /> مفعّل ومتاح للموظفين
+        </label>
+      </div>
+      <div style={{ marginTop: 12, display: "flex", gap: 8 }}>
+        <button onClick={save} style={{ flex: 1, padding: 10, borderRadius: 8, background: B.blue, color: "#fff", border: "none", fontSize: 12, fontWeight: 800, cursor: "pointer" }}>💾 حفظ</button>
+        <button onClick={onCancel} style={{ padding: "10px 20px", borderRadius: 8, background: "none", border: "1px solid " + t.sep, color: t.tx, fontSize: 12, fontWeight: 700, cursor: "pointer" }}>إلغاء</button>
+      </div>
+    </div>
+  );
+}
+
+/* ═══ ANNOUNCEMENTS PANEL — التعاميم ═══ */
+function AnnouncementsPanel({ t, B, emps, branches }) {
+  var [list, setList] = useState([]);
+  var [loading, setLoading] = useState(true);
+  var [showNew, setShowNew] = useState(false);
+  var [editing, setEditing] = useState(null);
+
+  useEffect(function(){
+    load();
+  }, []);
+
+  async function load() {
+    setLoading(true);
+    var r = await fetch("/api/data?action=announcements");
+    var d = await r.json();
+    setList(Array.isArray(d) ? d : []);
+    setLoading(false);
+  }
+
+  async function save(data) {
+    await fetch("/api/data?action=announcements", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(data) });
+    load();
+    setShowNew(false);
+    setEditing(null);
+  }
+
+  async function deleteAnn(id) {
+    if (!confirm("هل تريد حذف هذا التعميم؟")) return;
+    await fetch("/api/data?action=announcements", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ delete: id }) });
+    load();
+  }
+
+  async function togglePublish(a) {
+    await save({ ...a, published: !a.published });
+  }
+
+  if (loading) return <div style={{ padding: 30, textAlign: "center", color: t.txM }}>جارِ التحميل...</div>;
+
+  var published = list.filter(function(a){ return a.published; });
+  var drafts = list.filter(function(a){ return !a.published; });
+  var totalReads = list.reduce(function(s, a){ return s + ((a.readBy || []).length); }, 0);
+
+  return (
+    <div style={{ maxWidth: 900 }}>
+      <div style={{ background: "#8b5cf615", border: "1px solid #8b5cf640", borderRadius: 10, padding: 12, marginBottom: 14, fontSize: 11, color: t.tx, lineHeight: 1.7 }}>
+        📢 <strong>التعاميم</strong><br/>
+        أنشئ تعاميم للموظفين. يمكن استهداف الكل أو فرع معيّن أو موظفين محددين.
+      </div>
+
+      {/* Stats */}
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 10, marginBottom: 14 }}>
+        <div style={{ background: t.card, borderRadius: 10, padding: 12, border: "1px solid " + t.sep, textAlign: "center" }}>
+          <div style={{ fontSize: 22, fontWeight: 900, color: "#8b5cf6" }}>{list.length}</div>
+          <div style={{ fontSize: 10, color: t.txM }}>إجمالي</div>
+        </div>
+        <div style={{ background: t.card, borderRadius: 10, padding: 12, border: "1px solid " + t.sep, textAlign: "center" }}>
+          <div style={{ fontSize: 22, fontWeight: 900, color: "#10b981" }}>{published.length}</div>
+          <div style={{ fontSize: 10, color: t.txM }}>منشورة</div>
+        </div>
+        <div style={{ background: t.card, borderRadius: 10, padding: 12, border: "1px solid " + t.sep, textAlign: "center" }}>
+          <div style={{ fontSize: 22, fontWeight: 900, color: "#f59e0b" }}>{drafts.length}</div>
+          <div style={{ fontSize: 10, color: t.txM }}>مسودات</div>
+        </div>
+        <div style={{ background: t.card, borderRadius: 10, padding: 12, border: "1px solid " + t.sep, textAlign: "center" }}>
+          <div style={{ fontSize: 22, fontWeight: 900, color: B.blue }}>{totalReads}</div>
+          <div style={{ fontSize: 10, color: t.txM }}>مرات القراءة</div>
+        </div>
+      </div>
+
+      <button onClick={function(){ setShowNew(true); }} style={{ marginBottom: 14, padding: "10px 18px", borderRadius: 10, background: "#8b5cf6", color: "#fff", border: "none", fontSize: 12, fontWeight: 800, cursor: "pointer" }}>
+        ➕ تعميم جديد
+      </button>
+
+      {showNew && <AnnouncementForm t={t} B={B} emps={emps} branches={branches} onSave={save} onCancel={function(){ setShowNew(false); }} />}
+
+      {list.length === 0 && !showNew && (
+        <div style={{ textAlign: "center", padding: 40, color: t.txM, fontSize: 13 }}>
+          لا توجد تعاميم. اضغط "➕ تعميم جديد" لإنشاء أول تعميم.
+        </div>
+      )}
+
+      {list.map(function(a){
+        var isEditing = editing === a.id;
+        if (isEditing) {
+          return <AnnouncementForm key={a.id} t={t} B={B} emps={emps} branches={branches} initial={a} onSave={save} onCancel={function(){ setEditing(null); }} />;
+        }
+        var readCount = (a.readBy || []).length;
+        var targetLabel = a.target === "all" ? "جميع الموظفين" : a.target === "branch" ? "فرع محدد" : "موظفين محددين";
+        var priorityColors = { normal: B.blue, important: "#f59e0b", urgent: "#ef4444" };
+        var pColor = priorityColors[a.priority] || B.blue;
+
+        return (
+          <div key={a.id} style={{ background: t.card, borderRadius: 12, padding: 16, marginBottom: 10, border: "1px solid " + t.sep, borderRight: "4px solid " + pColor }}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "start", gap: 10 }}>
+              <div style={{ flex: 1 }}>
+                <div style={{ display: "flex", gap: 6, alignItems: "center", flexWrap: "wrap", marginBottom: 6 }}>
+                  <span style={{ fontSize: 14, fontWeight: 800, color: t.tx }}>{a.icon || "📢"} {a.title}</span>
+                  {a.priority === "urgent" && <span style={{ padding: "2px 8px", borderRadius: 4, background: "#ef4444", color: "#fff", fontSize: 9, fontWeight: 800 }}>عاجل</span>}
+                  {a.priority === "important" && <span style={{ padding: "2px 8px", borderRadius: 4, background: "#f59e0b", color: "#fff", fontSize: 9, fontWeight: 800 }}>مهم</span>}
+                  {!a.published && <span style={{ padding: "2px 8px", borderRadius: 4, background: t.sep, color: t.tx, fontSize: 9, fontWeight: 800 }}>مسودة</span>}
+                </div>
+                <div style={{ fontSize: 12, color: t.tx2, lineHeight: 1.7, marginBottom: 8, whiteSpace: "pre-wrap" }}>{a.body}</div>
+                <div style={{ display: "flex", gap: 10, fontSize: 10, color: t.txM, flexWrap: "wrap" }}>
+                  <span>🎯 {targetLabel}</span>
+                  <span>📅 {new Date(a.ts).toLocaleString("ar-SA")}</span>
+                  {readCount > 0 && <span>👁 قرأها {readCount} موظف</span>}
+                </div>
+              </div>
+              <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+                <button onClick={function(){ togglePublish(a); }} style={{ padding: "6px 10px", borderRadius: 6, background: a.published ? "#f59e0b" : "#10b981", color: "#fff", border: "none", fontSize: 10, fontWeight: 700, cursor: "pointer" }}>{a.published ? "⏸️ سحب" : "📤 نشر"}</button>
+                <button onClick={function(){ setEditing(a.id); }} style={{ padding: "6px 10px", borderRadius: 6, background: B.blue, color: "#fff", border: "none", fontSize: 10, fontWeight: 700, cursor: "pointer" }}>✏️ تعديل</button>
+                <button onClick={function(){ deleteAnn(a.id); }} style={{ padding: "6px 10px", borderRadius: 6, background: "#ef4444", color: "#fff", border: "none", fontSize: 10, fontWeight: 700, cursor: "pointer" }}>🗑️ حذف</button>
+              </div>
+            </div>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+/* ═══ ANNOUNCEMENT FORM ═══ */
+function AnnouncementForm({ t, B, emps, branches, initial, onSave, onCancel }) {
+  var [title, setTitle] = useState(initial ? initial.title : "");
+  var [body, setBody] = useState(initial ? initial.body : "");
+  var [icon, setIcon] = useState(initial ? initial.icon : "📢");
+  var [priority, setPriority] = useState(initial ? initial.priority : "normal");
+  var [target, setTarget] = useState(initial ? initial.target : "all");
+  var [targetIds, setTargetIds] = useState(initial && initial.targetIds ? initial.targetIds : []);
+  var [published, setPublished] = useState(initial ? initial.published : true);
+  var [sendPush, setSendPush] = useState(initial ? false : true);
+
+  var icons = ["📢", "📣", "🔔", "⚠️", "✅", "🎉", "📝", "🕐", "💼", "🏢", "🎁", "🏆", "📊", "🔧"];
+
+  async function handleSave() {
+    if (!title.trim()) { alert("يجب إدخال عنوان التعميم"); return; }
+    if (!body.trim()) { alert("يجب إدخال نص التعميم"); return; }
+    var data = {
+      ...(initial || {}),
+      title: title.trim(),
+      body: body.trim(),
+      icon: icon,
+      priority: priority,
+      target: target,
+      targetIds: targetIds,
+      published: published,
+    };
+    await onSave(data);
+
+    // Send push notifications if published and sendPush is on
+    if (published && sendPush && !initial) {
+      var targets = [];
+      if (target === "all") targets = emps.map(function(e){ return e.id; });
+      else if (target === "employees") targets = targetIds;
+      else if (target === "branch") targets = emps.filter(function(e){ return targetIds.indexOf(e.branch) >= 0; }).map(function(e){ return e.id; });
+
+      for (var i = 0; i < Math.min(targets.length, 50); i++) {
+        fetch("/api/data?action=test-notify", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            empId: targets[i],
+            type: "announcement",
+            title: (priority === "urgent" ? "🚨 " : priority === "important" ? "⚠️ " : "📢 ") + title.trim(),
+            message: body.trim().slice(0, 100),
+          }),
+        }).catch(function(){});
+      }
+    }
+  }
+
+  return (
+    <div style={{ background: t.bg === "#000000" ? "#1C1C1E" : "#F2F2F7", borderRadius: 12, padding: 16, marginBottom: 10, border: "2px solid #8b5cf6" }}>
+      <div style={{ fontSize: 13, fontWeight: 800, color: "#8b5cf6", marginBottom: 10 }}>{initial ? "✏️ تعديل تعميم" : "➕ تعميم جديد"}</div>
+      <div style={{ display: "grid", gap: 10 }}>
+        <label style={{ fontSize: 11, color: t.tx }}>
+          العنوان:
+          <input value={title} onChange={function(e){ setTitle(e.target.value); }} placeholder="عنوان التعميم" style={{ width: "100%", padding: 10, borderRadius: 8, border: "1px solid " + t.sep, background: "#fff", color: "#000", marginTop: 4 }} />
+        </label>
+        <label style={{ fontSize: 11, color: t.tx }}>
+          نص التعميم:
+          <textarea value={body} onChange={function(e){ setBody(e.target.value); }} placeholder="محتوى التعميم..." rows={6} style={{ width: "100%", padding: 10, borderRadius: 8, border: "1px solid " + t.sep, background: "#fff", color: "#000", marginTop: 4, fontFamily: "inherit", resize: "vertical" }} />
+        </label>
+        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
+          <label style={{ fontSize: 11, color: t.tx }}>
+            الأولوية:
+            <select value={priority} onChange={function(e){ setPriority(e.target.value); }} style={{ width: "100%", padding: 10, borderRadius: 8, border: "1px solid " + t.sep, background: "#fff", color: "#000", marginTop: 4 }}>
+              <option value="normal" style={{ background: "#fff", color: "#000" }}>🔵 عادي</option>
+              <option value="important" style={{ background: "#fff", color: "#000" }}>⚠️ مهم</option>
+              <option value="urgent" style={{ background: "#fff", color: "#000" }}>🚨 عاجل</option>
+            </select>
+          </label>
+          <label style={{ fontSize: 11, color: t.tx }}>
+            الأيقونة:
+            <select value={icon} onChange={function(e){ setIcon(e.target.value); }} style={{ width: "100%", padding: 10, borderRadius: 8, border: "1px solid " + t.sep, background: "#fff", color: "#000", marginTop: 4 }}>
+              {icons.map(function(ic){ return <option key={ic} value={ic} style={{ background: "#fff", color: "#000" }}>{ic}</option>; })}
+            </select>
+          </label>
+        </div>
+        <label style={{ fontSize: 11, color: t.tx }}>
+          الاستهداف:
+          <select value={target} onChange={function(e){ setTarget(e.target.value); setTargetIds([]); }} style={{ width: "100%", padding: 10, borderRadius: 8, border: "1px solid " + t.sep, background: "#fff", color: "#000", marginTop: 4 }}>
+            <option value="all" style={{ background: "#fff", color: "#000" }}>👥 جميع الموظفين</option>
+            <option value="branch" style={{ background: "#fff", color: "#000" }}>🏢 فرع محدد</option>
+            <option value="employees" style={{ background: "#fff", color: "#000" }}>👤 موظفين محددين</option>
+          </select>
+        </label>
+        {target === "branch" && branches && branches.length > 0 && (
+          <div style={{ fontSize: 11, color: t.tx }}>
+            اختر الفرع(الفروع):
+            <div style={{ marginTop: 6, display: "flex", gap: 6, flexWrap: "wrap" }}>
+              {branches.map(function(br){
+                var selected = targetIds.indexOf(br.id) >= 0;
+                return <button key={br.id} type="button" onClick={function(){
+                  setTargetIds(selected ? targetIds.filter(function(x){ return x !== br.id; }) : [...targetIds, br.id]);
+                }} style={{ padding: "6px 12px", borderRadius: 6, background: selected ? B.blue : "none", color: selected ? "#fff" : t.tx, border: "1px solid " + (selected ? B.blue : t.sep), fontSize: 11, cursor: "pointer" }}>{br.name}</button>;
+              })}
+            </div>
+          </div>
+        )}
+        {target === "employees" && emps && emps.length > 0 && (
+          <div style={{ fontSize: 11, color: t.tx }}>
+            اختر الموظف(الموظفين):
+            <div style={{ marginTop: 6, display: "flex", gap: 6, flexWrap: "wrap", maxHeight: 150, overflowY: "auto", padding: 6, border: "1px solid " + t.sep, borderRadius: 8 }}>
+              {emps.map(function(e){
+                var selected = targetIds.indexOf(e.id) >= 0;
+                return <button key={e.id} type="button" onClick={function(){
+                  setTargetIds(selected ? targetIds.filter(function(x){ return x !== e.id; }) : [...targetIds, e.id]);
+                }} style={{ padding: "4px 10px", borderRadius: 6, background: selected ? B.blue : "none", color: selected ? "#fff" : t.tx, border: "1px solid " + (selected ? B.blue : t.sep), fontSize: 10, cursor: "pointer" }}>{e.name}</button>;
+              })}
+            </div>
+          </div>
+        )}
+        <label style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 11, color: t.tx }}>
+          <input type="checkbox" checked={published} onChange={function(e){ setPublished(e.target.checked); }} /> نشر مباشرة (غير مفعّل = حفظ كمسودة)
+        </label>
+        {!initial && (
+          <label style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 11, color: t.tx }}>
+            <input type="checkbox" checked={sendPush} onChange={function(e){ setSendPush(e.target.checked); }} /> إرسال إشعار Push للموظفين
+          </label>
+        )}
+      </div>
+      <div style={{ marginTop: 12, display: "flex", gap: 8 }}>
+        <button onClick={handleSave} style={{ flex: 1, padding: 10, borderRadius: 8, background: "#8b5cf6", color: "#fff", border: "none", fontSize: 12, fontWeight: 800, cursor: "pointer" }}>💾 {published ? "نشر" : "حفظ كمسودة"}</button>
+        <button onClick={onCancel} style={{ padding: "10px 20px", borderRadius: 8, background: "none", border: "1px solid " + t.sep, color: t.tx, fontSize: 12, fontWeight: 700, cursor: "pointer" }}>إلغاء</button>
       </div>
     </div>
   );

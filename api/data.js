@@ -557,29 +557,175 @@ export default async function handler(req, res) {
         break;
       }
 
+      /* ═══ CUSTODY — نظام العهد المتطور (3 أنواع) ═══ */
       case 'custody': {
         if (req.method === 'GET') {
           let items = await dbGet('custody') || [];
-          const { empId } = req.query;
+          const { empId, type, status } = req.query || {};
           if (empId) items = items.filter(c => c.empId === empId);
+          if (type) items = items.filter(c => c.type === type);
+          if (status) items = items.filter(c => c.status === status);
           return res.json(items);
         }
         if (req.method === 'POST') {
           const items = await dbGet('custody') || [];
-          items.push({ id: 'CUS' + Date.now(), status: 'active', ...req.body, createdAt: new Date().toISOString() });
+          const body = req.body || {};
+
+          // Type-specific validation
+          if (body.type === 'asset' && !body.serialNumber) {
+            return res.status(400).json({ error: 'رقم السيريال مطلوب للعهد الدائمة' });
+          }
+          if (body.type === 'cash' && (!body.amount || body.amount <= 0)) {
+            return res.status(400).json({ error: 'المبلغ مطلوب للعهد النقدية' });
+          }
+
+          const item = {
+            id: 'CUS' + Date.now(),
+            type: body.type || 'consumable',  // consumable | asset | cash
+            name: body.name,
+            category: body.category || '',
+            empId: body.empId,
+            empName: body.empName || '',
+
+            // For assets
+            serialNumber: body.serialNumber || '',
+            photoUrl: body.photoUrl || '',
+            brand: body.brand || '',
+            model: body.model || '',
+            condition: body.condition || 'new',
+
+            // For consumables
+            quantity: body.quantity || 1,
+            unit: body.unit || 'قطعة',
+
+            // For cash
+            amount: parseFloat(body.amount) || 0,
+            spent: 0,
+            balance: parseFloat(body.amount) || 0,
+            purpose: body.purpose || '',
+
+            // Common
+            value: parseFloat(body.value) || 0,
+            status: body.type === 'consumable' ? 'issued' : 'active',
+            notes: body.notes || '',
+            issuedAt: new Date().toISOString(),
+            issuedBy: body.issuedBy || '',
+            returnedAt: null,
+            closedAt: null,
+
+            acknowledged: false,
+            acknowledgedAt: null,
+          };
+          items.push(item);
           await dbSet('custody', items);
-          return res.json({ ok: true });
+          return res.json({ ok: true, item });
         }
         if (req.method === 'PUT') {
           const items = await dbGet('custody') || [];
           const { id, ...up } = req.body;
           const i = items.findIndex(c => c.id === id);
-          if (i >= 0) { items[i] = { ...items[i], ...up, updatedAt: new Date().toISOString() }; await dbSet('custody', items); }
-          return res.json({ ok: true });
+          if (i < 0) return res.status(404).json({ error: 'العهدة غير موجودة' });
+          items[i] = { ...items[i], ...up, updatedAt: new Date().toISOString() };
+          await dbSet('custody', items);
+          return res.json({ ok: true, item: items[i] });
         }
         if (req.method === 'DELETE') {
           const items = await dbGet('custody') || [];
           await dbSet('custody', items.filter(c => c.id !== req.query.id));
+          return res.json({ ok: true });
+        }
+        break;
+      }
+
+      /* ═══ CUSTODY ACKNOWLEDGE — الموظف يوقّع استلام ═══ */
+      case 'custody-ack': {
+        if (req.method !== 'POST') return res.status(400).json({ error: 'POST required' });
+        const body = req.body || {};
+        const items = await dbGet('custody') || [];
+        const i = items.findIndex(c => c.id === body.custodyId);
+        if (i < 0) return res.status(404).json({ error: 'العهدة غير موجودة' });
+        if (items[i].empId !== body.empId) return res.status(403).json({ error: 'ليست عهدتك' });
+        items[i].acknowledged = true;
+        items[i].acknowledgedAt = new Date().toISOString();
+        await dbSet('custody', items);
+        return res.json({ ok: true });
+      }
+
+      /* ═══ CUSTODY RETURN — إعادة عهدة دائمة ═══ */
+      case 'custody-return': {
+        if (req.method !== 'POST') return res.status(400).json({ error: 'POST required' });
+        const body = req.body || {};
+        const items = await dbGet('custody') || [];
+        const i = items.findIndex(c => c.id === body.custodyId);
+        if (i < 0) return res.status(404).json({ error: 'العهدة غير موجودة' });
+        items[i].status = body.condition === 'damaged' ? 'damaged' : 'returned';
+        items[i].returnedAt = new Date().toISOString();
+        items[i].returnCondition = body.condition || 'good';
+        items[i].returnNotes = body.notes || '';
+        items[i].returnedBy = body.returnedBy || '';
+        await dbSet('custody', items);
+        return res.json({ ok: true, item: items[i] });
+      }
+
+      /* ═══ CUSTODY INVOICES — فواتير العهد النقدية ═══ */
+      case 'custody-invoices': {
+        if (req.method === 'GET') {
+          let invoices = await dbGet('custody_invoices') || [];
+          const { custodyId, empId } = req.query || {};
+          if (custodyId) invoices = invoices.filter(i => i.custodyId === custodyId);
+          if (empId) invoices = invoices.filter(i => i.empId === empId);
+          return res.json(invoices);
+        }
+        if (req.method === 'POST') {
+          const body = req.body || {};
+          if (!body.custodyId || !body.amount || !body.description) {
+            return res.status(400).json({ error: 'بيانات ناقصة' });
+          }
+          const invoices = await dbGet('custody_invoices') || [];
+          const invoice = {
+            id: 'INV' + Date.now(),
+            custodyId: body.custodyId,
+            empId: body.empId,
+            amount: parseFloat(body.amount),
+            description: body.description,
+            vendor: body.vendor || '',
+            invoiceDate: body.invoiceDate || new Date().toISOString().split('T')[0],
+            invoiceNumber: body.invoiceNumber || '',
+            photoUrl: body.photoUrl || '',
+            status: 'pending',
+            submittedAt: new Date().toISOString(),
+            reviewedAt: null,
+            reviewedBy: null,
+            rejectionReason: '',
+          };
+          invoices.push(invoice);
+          await dbSet('custody_invoices', invoices);
+          return res.json({ ok: true, invoice });
+        }
+        if (req.method === 'PUT') {
+          const body = req.body || {};
+          const invoices = await dbGet('custody_invoices') || [];
+          const i = invoices.findIndex(inv => inv.id === body.id);
+          if (i < 0) return res.status(404).json({ error: 'الفاتورة غير موجودة' });
+          const oldStatus = invoices[i].status;
+          invoices[i] = { ...invoices[i], ...body, reviewedAt: new Date().toISOString() };
+          await dbSet('custody_invoices', invoices);
+
+          // If approved, update custody spent/balance
+          if (oldStatus !== 'approved' && body.status === 'approved') {
+            const items = await dbGet('custody') || [];
+            const idx = items.findIndex(c => c.id === invoices[i].custodyId);
+            if (idx >= 0 && items[idx].type === 'cash') {
+              items[idx].spent = (items[idx].spent || 0) + invoices[i].amount;
+              items[idx].balance = (items[idx].amount || 0) - items[idx].spent;
+              await dbSet('custody', items);
+            }
+          }
+          return res.json({ ok: true, invoice: invoices[i] });
+        }
+        if (req.method === 'DELETE') {
+          const invoices = await dbGet('custody_invoices') || [];
+          await dbSet('custody_invoices', invoices.filter(i => i.id !== req.query.id));
           return res.json({ ok: true });
         }
         break;
@@ -1189,6 +1335,110 @@ export default async function handler(req, res) {
         }
       }
 
+      /* ═══ BENEFITS — قائمة الامتيازات ═══ */
+      case 'benefits': {
+        if (req.method === 'POST') {
+          var body = req.body || {};
+          await dbSet('benefits', body.coupons || []);
+          return res.json({ ok: true });
+        }
+        var benefits = (await dbGet('benefits')) || [];
+        return res.json({ coupons: benefits });
+      }
+
+      /* ═══ REDEEM BENEFIT — صرف كوبون ═══ */
+      case 'redeem-benefit': {
+        if (req.method !== 'POST') return res.status(400).json({ ok: false, error: 'POST required' });
+        var body = req.body || {};
+        var empId = body.empId;
+        var couponId = body.couponId;
+        if (!empId || !couponId) return res.status(400).json({ ok: false, error: 'empId + couponId required' });
+        var redemptions = (await dbGet('redemptions')) || [];
+        redemptions.unshift({
+          id: 'R' + Date.now(),
+          empId: empId,
+          couponId: couponId,
+          pts: body.pts || 0,
+          couponName: body.couponName || '',
+          ts: new Date().toISOString(),
+        });
+        await dbSet('redemptions', redemptions.slice(0, 5000));
+
+        // Deduct points from employee
+        var emps = (await dbGet('employees')) || [];
+        var empIdx = emps.findIndex(function(e){ return e.id === empId; });
+        if (empIdx >= 0) {
+          emps[empIdx].points = Math.max(0, (emps[empIdx].points || 0) - (body.pts || 0));
+          await dbSet('employees', emps);
+        }
+        return res.json({ ok: true });
+      }
+
+      /* ═══ REDEMPTIONS — سجل الصرف ═══ */
+      case 'redemptions': {
+        var redemps = (await dbGet('redemptions')) || [];
+        var empId = req.query ? req.query.empId : null;
+        if (empId) redemps = redemps.filter(function(r){ return r.empId === empId; });
+        return res.json(redemps);
+      }
+
+      /* ═══ ANNOUNCEMENTS — التعاميم ═══ */
+      case 'announcements': {
+        if (req.method === 'POST') {
+          var body = req.body || {};
+          var list = (await dbGet('announcements')) || [];
+          if (body.delete) {
+            list = list.filter(function(a){ return a.id !== body.delete; });
+            await dbSet('announcements', list);
+            return res.json({ ok: true, deleted: body.delete });
+          }
+          if (body.id) {
+            // Update existing
+            var idx = list.findIndex(function(a){ return a.id === body.id; });
+            if (idx >= 0) list[idx] = { ...list[idx], ...body };
+            else list.unshift(body);
+          } else {
+            // New
+            body.id = 'A' + Date.now();
+            body.ts = new Date().toISOString();
+            body.readBy = [];
+            list.unshift(body);
+          }
+          await dbSet('announcements', list);
+          return res.json({ ok: true, announcement: body });
+        }
+        var all = (await dbGet('announcements')) || [];
+        var empId2 = req.query ? req.query.empId : null;
+        if (empId2) {
+          // Filter by employee targeting
+          all = all.filter(function(a){
+            if (!a.published) return false;
+            if (a.target === 'all') return true;
+            if (a.target === 'branch' && a.targetIds && a.targetIds.indexOf(empId2) < 0) {
+              // need to check by branch — we'll return and let client filter
+              return true;
+            }
+            if (a.target === 'employees' && a.targetIds && a.targetIds.indexOf(empId2) >= 0) return true;
+            return a.target === 'all';
+          });
+        }
+        return res.json(all);
+      }
+
+      /* ═══ MARK ANNOUNCEMENT READ ═══ */
+      case 'announcement-read': {
+        if (req.method !== 'POST') return res.status(400).json({ ok: false, error: 'POST required' });
+        var body = req.body || {};
+        var list = (await dbGet('announcements')) || [];
+        var idx = list.findIndex(function(a){ return a.id === body.announcementId; });
+        if (idx >= 0) {
+          if (!list[idx].readBy) list[idx].readBy = [];
+          if (list[idx].readBy.indexOf(body.empId) < 0) list[idx].readBy.push(body.empId);
+          await dbSet('announcements', list);
+        }
+        return res.json({ ok: true });
+      }
+
       /* ═══ PING — اختبار بسيط بدون fetch ═══ */
       case 'ping': {
         return res.json({ ok: true, msg: 'pong', ts: new Date().toISOString(), nodeVer: process.version, fetchAvailable: typeof fetch === 'function' });
@@ -1559,6 +1809,33 @@ export default async function handler(req, res) {
           att.forEach(r => { const e = emps.find(x => x.id === r.empId); csv += `${r.date},${r.empId},${e?.name || ''},${r.type},${r.ts},${r.manual ? 'نعم' : 'لا'}\n`; });
           res.setHeader('Content-Type', 'text/csv; charset=utf-8');
           return res.send('\uFEFF' + csv);
+        }
+        if (type === 'redemptions') {
+          var reds = await dbGet('redemptions') || [];
+          var csv = 'التاريخ,رقم الموظف,اسم الكوبون,النقاط\n';
+          reds.forEach(function(r){
+            var e = emps.find(function(x){ return x.id === r.empId; });
+            csv += (r.ts || '') + ',' + (r.empId || '') + ',"' + (e ? e.name : '') + '","' + (r.couponName || '') + '",' + (r.pts || 0) + '\n';
+          });
+          res.setHeader('Content-Type', 'text/csv; charset=utf-8');
+          return res.send('\uFEFF' + csv);
+        }
+        if (type === 'announcements') {
+          var anns = await dbGet('announcements') || [];
+          var csv2 = 'التاريخ,العنوان,المحتوى,الأولوية,الاستهداف,منشور,عدد القراءات\n';
+          anns.forEach(function(a){
+            csv2 += (a.ts || '') + ',"' + (a.title || '').replace(/"/g,'""') + '","' + (a.body || '').replace(/"/g,'""').replace(/\n/g,' ') + '",' + (a.priority || 'normal') + ',' + (a.target || 'all') + ',' + (a.published ? 'نعم' : 'لا') + ',' + ((a.readBy || []).length) + '\n';
+          });
+          res.setHeader('Content-Type', 'text/csv; charset=utf-8');
+          return res.send('\uFEFF' + csv2);
+        }
+        if (type === 'employees_list') {
+          var csv3 = 'الرقم,الاسم,المسمى,الفرع,القسم,الإيميل,الجوال,الحالة,حساب نشط\n';
+          emps.forEach(function(e){
+            csv3 += (e.idNumber || e.id) + ',"' + (e.name || '') + '","' + (e.role || '') + '","' + (e.branchName || e.branch || '') + '","' + (e.department || '') + '","' + (e.email || '') + '","' + (e.phone || '') + '",' + (e.status || 'active') + ',' + (e.hasAccount ? 'نعم' : 'لا') + '\n';
+          });
+          res.setHeader('Content-Type', 'text/csv; charset=utf-8');
+          return res.send('\uFEFF' + csv3);
         }
         return res.json({ error: 'unknown type' });
       }

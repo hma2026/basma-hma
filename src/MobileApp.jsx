@@ -367,6 +367,8 @@ function MobileAppInner() {
   const [teamToday, setTeamToday] = useState([]);
   const [allEmps, setAllEmps] = useState([]);
   const [kadwarNotifs, setKadwarNotifs] = useState({ tasks: 0, exams: 0, alerts: 0 });
+  const [announcements, setAnnouncements] = useState([]);
+  const [showAnnModal, setShowAnnModal] = useState(false);
   const [legalAlerts, setLegalAlerts] = useState(0);
   const [notifications, setNotifications] = useState([]);
   const [unreadCount, setUnreadCount] = useState(0);
@@ -745,6 +747,22 @@ function MobileAppInner() {
         var vios = await api("violations_v2", { params: { empId: emp.id, status: "ACTIVE" } });
         setLegalAlerts(((invs || []).length) + ((vios || []).length));
       } catch(e) { /**/ }
+      // Fetch announcements
+      try {
+        var annR = await fetch("/api/data?action=announcements&empId=" + emp.id);
+        var annList = await annR.json();
+        if (Array.isArray(annList)) {
+          // Filter by targeting
+          var filtered = annList.filter(function(a){
+            if (!a.published) return false;
+            if (a.target === "all") return true;
+            if (a.target === "branch" && a.targetIds && a.targetIds.indexOf(emp.branch) >= 0) return true;
+            if (a.target === "employees" && a.targetIds && a.targetIds.indexOf(emp.id) >= 0) return true;
+            return false;
+          });
+          setAnnouncements(filtered);
+        }
+      } catch(e) { /**/ }
       // Fetch notifications
       try {
         var allNotifs = await api("notifications", { params: { empId: emp.id } });
@@ -883,7 +901,7 @@ function MobileAppInner() {
       {!online && <div style={{ background: C.red, color: "#fff", textAlign: "center", padding: "6px 0", fontSize: 11, fontWeight: 700 }}>⚠️ لا يوجد اتصال بالإنترنت</div>}
 
       <div key={page} style={{ flex: 1, display: "flex", flexDirection: "column", animation: "pageIn .3s ease" }}>
-        {page === "home" && <HomePage user={user} branch={branch} now={now} todayAtt={todayAtt} allAtt={allAtt} gps={gps} gpsDist={gpsDist} streak={streak} loading={loading} refreshing={refreshing} dayState={getDayState()} checkpoints={getCheckpoints()} isOffDay={isOffDay()} pendingCount={myLeaves.filter(function(l){ return l.status === "pending"; }).length + myTickets.filter(function(t){ return t.status === "pending"; }).length} teamToday={teamToday} pwaPrompt={pwaPrompt} onPwaInstall={async function(){ if(pwaPrompt){pwaPrompt.prompt();await pwaPrompt.userChoice;setPwaPrompt(null);} }} onCheckin={requestCheckin} onChallenge={function(pts) { var u = { ...user, points: (user.points||0)+pts }; setUser(u); localStorage.setItem("basma_user", JSON.stringify(u)); showToast("🎉 +" + pts + " نقطة!"); }} onLeave={() => setLeaveModal(true)} onRefresh={refresh} onPreAbsence={function(){ setPreAbsModal(true); }} onManualAtt={function(){ setManualAttModal(true); }} onPermission={function(){ setPermModal(true); }} kadwarNotifs={kadwarNotifs} darkMode={darkMode} />}
+        {page === "home" && <HomePage user={user} branch={branch} now={now} todayAtt={todayAtt} allAtt={allAtt} gps={gps} gpsDist={gpsDist} streak={streak} loading={loading} refreshing={refreshing} dayState={getDayState()} checkpoints={getCheckpoints()} isOffDay={isOffDay()} pendingCount={myLeaves.filter(function(l){ return l.status === "pending"; }).length + myTickets.filter(function(t){ return t.status === "pending"; }).length} teamToday={teamToday} pwaPrompt={pwaPrompt} onPwaInstall={async function(){ if(pwaPrompt){pwaPrompt.prompt();await pwaPrompt.userChoice;setPwaPrompt(null);} }} onCheckin={requestCheckin} onChallenge={function(pts) { var u = { ...user, points: (user.points||0)+pts }; setUser(u); localStorage.setItem("basma_user", JSON.stringify(u)); showToast("🎉 +" + pts + " نقطة!"); }} onLeave={() => setLeaveModal(true)} onRefresh={refresh} onPreAbsence={function(){ setPreAbsModal(true); }} onManualAtt={function(){ setManualAttModal(true); }} onPermission={function(){ setPermModal(true); }} kadwarNotifs={kadwarNotifs} darkMode={darkMode} announcements={announcements} onShowAnnouncements={function(){ setShowAnnModal(true); }} />}
         {page === "report" && <ReportPage user={user} allAtt={allAtt} todayAtt={todayAtt} branch={branch} isOffDay={isOffDay()} myLeaves={myLeaves} allEmps={allEmps} />}
         {page === "benefits" && <BenefitsPage user={user} />}
         {page === "profile" && <ProfilePage user={user} branch={branch} onLogout={logout} onTicket={() => setTicketModal(true)} myTickets={myTickets} darkMode={darkMode} toggleDark={toggleDark} />}
@@ -918,6 +936,9 @@ function MobileAppInner() {
       {preAbsModal && <PreAbsenceModal allEmps={allEmps} user={user} onClose={function(){ setPreAbsModal(false); }} onSubmit={async function(data) { try { await api("pre_absence", { method: "POST", body: { ...data, reportedBy: user.id } }); setPreAbsModal(false); showToast("✅ تم تسجيل الإفادة المسبقة"); } catch(e) { showToast("خطأ في الإرسال", "error"); } }} />}
       {manualAttModal && <ManualAttModal allEmps={allEmps} user={user} onClose={function(){ setManualAttModal(false); }} onSubmit={async function(data) { try { await api("manual_checkin", { method: "POST", body: { ...data, adminId: user.id } }); setManualAttModal(false); showToast("✅ تم التحضير اليدوي"); loadData(user); } catch(e) { showToast("خطأ", "error"); } }} />}
       {permModal && <PermissionModal user={user} branch={branch} onClose={function(){ setPermModal(false); }} onSubmit={async function(data) { try { await api("permissions", { method: "POST", body: { empId: user.id, ...data, date: todayStr() } }); setPermModal(false); showToast("✅ تم إرسال طلب الإذن"); } catch(e) { showToast("خطأ في الإرسال", "error"); } }} />}
+      {showAnnModal && <AnnouncementsModal announcements={announcements} user={user} onClose={function(){ setShowAnnModal(false); }} onRead={async function(id){
+        try { await fetch("/api/data?action=announcement-read", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ empId: user.id, announcementId: id }) }); } catch(e) {}
+      }} />}
     </div>
   );
 }
@@ -1050,7 +1071,7 @@ function LoginScreen({ onLogin, loading }) {
 }
 
 /* ═══════════ HOME ═══════════ */
-function HomePage({ user, branch, now, todayAtt, allAtt, gps, gpsDist, streak, loading, refreshing, dayState, checkpoints, isOffDay, pendingCount, teamToday, pwaPrompt, onPwaInstall, onCheckin, onChallenge, onLeave, onRefresh, onPreAbsence, onManualAtt, onPermission, kadwarNotifs, darkMode }) {
+function HomePage({ user, branch, now, todayAtt, allAtt, gps, gpsDist, streak, loading, refreshing, dayState, checkpoints, isOffDay, pendingCount, teamToday, pwaPrompt, onPwaInstall, onCheckin, onChallenge, onLeave, onRefresh, onPreAbsence, onManualAtt, onPermission, kadwarNotifs, darkMode, announcements, onShowAnnouncements }) {
   const { time, sec, ampm } = formatTime(now);
   const badge = memberBadge(user.points || 0);
   const inRange = branch && gpsDist !== null && gpsDist <= (branch.radius || 150);
@@ -1122,14 +1143,39 @@ function HomePage({ user, branch, now, todayAtt, allAtt, gps, gpsDist, streak, l
           <div style={{ color: C.text, fontSize: 18, fontWeight: 800, fontFamily: "'Cairo',sans-serif" }}>{"أهلاً، " + (user.name || "").split(" ")[0] + " 👋"}</div>
           <div style={{ color: C.sub, fontSize: 11 }}>{formatArabicDate(now)}</div>
         </div>
-        <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+          {announcements && announcements.length > 0 && (() => {
+            var unreadCount = announcements.filter(function(a){ return !(a.readBy || []).includes(user.id); }).length;
+            var hasUrgent = announcements.some(function(a){ return !(a.readBy || []).includes(user.id) && a.priority === "urgent"; });
+            return (
+              <button onClick={onShowAnnouncements} style={{ position: "relative", background: hasUrgent ? "rgba(239,68,68,.2)" : "rgba(255,255,255,.1)", border: "1px solid " + (hasUrgent ? "#ef4444" : "rgba(255,255,255,.2)"), borderRadius: 10, padding: "6px 10px", cursor: "pointer", display: "flex", alignItems: "center", gap: 4, animation: hasUrgent ? "pulse 1.5s ease infinite" : "none" }}>
+                <span style={{ fontSize: 16 }}>📢</span>
+                {unreadCount > 0 && <div style={{ position: "absolute", top: -4, right: -4, minWidth: 16, height: 16, borderRadius: 8, background: hasUrgent ? "#ef4444" : C.gold, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 9, fontWeight: 900, color: "#fff", padding: "0 4px", border: "2px solid " + C.hdr2 }}>{unreadCount}</div>}
+              </button>
+            );
+          })()}
           <span style={{ fontSize: 11, color: C.sub }}>{badge.icon + " " + badge.label}</span>
           <span style={{ fontSize: 10, color: C.gold, fontWeight: 800 }}>{"⭐" + (user.points || 0)}</span>
           {pendingCount > 0 && <div style={{ position: "relative" }}><span style={{ fontSize: 14 }}>🔔</span><div style={{ position: "absolute", top: -4, right: -6, width: 14, height: 14, borderRadius: 7, background: C.red, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 8, fontWeight: 800, color: "#fff" }}>{pendingCount}</div></div>}
         </div>
       </div>
 
-      <div style={{ padding: "0 16px" }}><InvestigationBanner user={user} /><MembershipFreezeNotice user={user} /><BranchHolidayBanner branch={branch} /><OccasionBanner user={user} /></div>
+      <div style={{ padding: "0 16px" }}>
+        {/* Urgent announcement banner */}
+        {announcements && announcements.filter(function(a){ return a.priority === "urgent" && !(a.readBy || []).includes(user.id); }).slice(0, 1).map(function(a){
+          return (
+            <div key={a.id} onClick={onShowAnnouncements} className="basma-pulse" style={{ background: "linear-gradient(135deg, #dc2626, #ef4444)", borderRadius: 12, padding: "10px 14px", marginBottom: 10, cursor: "pointer", display: "flex", alignItems: "center", gap: 10, border: "2px solid #fff" }}>
+              <span style={{ fontSize: 22 }}>🚨</span>
+              <div style={{ flex: 1 }}>
+                <div style={{ fontSize: 12, fontWeight: 800, color: "#fff", marginBottom: 2 }}>عاجل: {a.title}</div>
+                <div style={{ fontSize: 10, color: "rgba(255,255,255,.85)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{a.body}</div>
+              </div>
+              <span style={{ fontSize: 16, color: "#fff" }}>›</span>
+            </div>
+          );
+        })}
+        <InvestigationBanner user={user} /><MembershipFreezeNotice user={user} /><BranchHolidayBanner branch={branch} /><OccasionBanner user={user} />
+      </div>
 
       {/* Clock centered */}
       <div style={{ flex: 1, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", padding: "0 8px", overflow: "visible" }}>
@@ -1708,11 +1754,66 @@ function ProfilePage({ user, branch, onLogout, onTicket, myTickets, darkMode, to
 function BenefitsPage({ user }) {
   var badge = memberBadge(user.points || 0);
   var [filter, setFilter] = useState("all");
-  var isRamadan = false;
-  var allCoupons = isRamadan ? COUPONS.concat(RAMADAN_COUPONS) : COUPONS;
+  var [dynamicCoupons, setDynamicCoupons] = useState(null);
+  var [myRedemptions, setMyRedemptions] = useState([]);
+  var [redeeming, setRedeeming] = useState(null);
+
+  useEffect(function() {
+    // Load from admin-managed benefits
+    fetch("/api/data?action=benefits").then(r => r.json()).then(function(d){
+      if (d && Array.isArray(d.coupons) && d.coupons.length > 0) {
+        setDynamicCoupons(d.coupons.filter(function(c){ return c.active !== false; }));
+      } else {
+        setDynamicCoupons([]);
+      }
+    }).catch(function(){ setDynamicCoupons([]); });
+    // Load my redemptions
+    fetch("/api/data?action=redemptions&empId=" + user.id).then(r => r.json()).then(function(d){
+      setMyRedemptions(Array.isArray(d) ? d : []);
+    });
+  }, [user.id]);
+
+  var allCoupons = dynamicCoupons !== null ? dynamicCoupons : [];
   var cats = ["all"].concat(Array.from(new Set(allCoupons.map(function(c){ return c.cat; }))));
   var filtered = filter === "all" ? allCoupons : allCoupons.filter(function(c){ return c.cat === filter; });
-  var catLabels = { all: "الكل", "مطاعم": "مطاعم", "خدمات": "خدمات", "رياضة": "رياضة", "تسوق": "تسوق", "سفر": "سفر", "رمضان": "رمضان" };
+  var catLabels = { all: "الكل" };
+
+  async function redeem(coupon) {
+    if ((user.points || 0) < coupon.pts) {
+      alert("❌ لديك نقاط غير كافية. تحتاج " + coupon.pts + " نقطة.");
+      return;
+    }
+    if (!confirm("هل تريد صرف هذا الكوبون مقابل " + coupon.pts + " نقطة؟\n\n" + coupon.brand + " - " + coupon.discount)) return;
+    setRedeeming(coupon.id);
+    try {
+      var r = await fetch("/api/data?action=redeem-benefit", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          empId: user.id,
+          couponId: coupon.id,
+          pts: coupon.pts,
+          couponName: coupon.brand + " - " + coupon.discount,
+        }),
+      });
+      var d = await r.json();
+      if (d.ok) {
+        alert("✅ تم صرف الكوبون بنجاح!\n\n" + coupon.brand + "\n" + coupon.discount + "\n\nاحفظ رقم الكوبون: " + d.redemptionId || "R" + Date.now());
+        // Reload
+        var r2 = await fetch("/api/data?action=redemptions&empId=" + user.id);
+        setMyRedemptions(await r2.json());
+        // Update user points locally
+        var newUser = { ...user, points: Math.max(0, (user.points || 0) - coupon.pts) };
+        localStorage.setItem("basma_user", JSON.stringify(newUser));
+        window.location.reload();
+      } else {
+        alert("❌ فشل: " + (d.error || "خطأ"));
+      }
+    } catch(e) {
+      alert("❌ خطأ: " + e.message);
+    }
+    setRedeeming(null);
+  }
 
   return (
     <div style={{ flex: 1, paddingBottom: 80, background: "linear-gradient(180deg, "+COLORS.bg1+" 0%, "+COLORS.bg2+" 50%, "+COLORS.bg3+" 100%)", minHeight: "100vh" }}>
@@ -1732,56 +1833,156 @@ function BenefitsPage({ user }) {
               <div style={{ ...TYPOGRAPHY.caption, color: COLORS.textMuted }}>{(user.points || 0) + " نقطة"}</div>
             </div>
             <div style={{ textAlign: "center" }}>
-              <div style={{ ...TYPOGRAPHY.h3, color: COLORS.goldLight }}>{filtered.filter(function(c){ return c.minTier <= badge.tier; }).length}</div>
+              <div style={{ ...TYPOGRAPHY.h3, color: COLORS.goldLight }}>{filtered.filter(function(c){ return (c.minTier || 0) <= badge.tier; }).length}</div>
               <div style={{ ...TYPOGRAPHY.tiny, color: COLORS.textMuted }}>{"متاح من " + filtered.length}</div>
             </div>
           </div>
         </Card>
 
+        {dynamicCoupons === null && <div style={{ textAlign: "center", padding: 30, color: COLORS.textMuted }}>جارِ التحميل...</div>}
+
+        {dynamicCoupons !== null && dynamicCoupons.length === 0 && (
+          <Card>
+            <div style={{ textAlign: "center", padding: 20 }}>
+              <div style={{ fontSize: 40, marginBottom: 10 }}>🎁</div>
+              <div style={{ ...TYPOGRAPHY.body, color: COLORS.textPrimary, marginBottom: 6 }}>لا توجد امتيازات متاحة حالياً</div>
+              <div style={{ ...TYPOGRAPHY.caption, color: COLORS.textMuted }}>ترقّب المزيد قريباً! استمر في كسب النقاط.</div>
+            </div>
+          </Card>
+        )}
+
         {/* Category filter */}
-        <div style={{ display: "flex", gap: SPACING.xs, overflowX: "auto", paddingBottom: 4 }}>
-          {cats.map(function(cat) {
-            var active = filter === cat;
-            return (
-              <button key={cat} onClick={function(){ setFilter(cat); }} style={{ padding: SPACING.sm + "px " + SPACING.lg + "px", borderRadius: RADIUS.md, background: COLORS.metallic, color: active ? COLORS.goldLight : COLORS.textMuted, ...TYPOGRAPHY.caption, fontWeight: 700, border: "1px solid " + (active ? COLORS.goldLight : COLORS.metallicBorder), boxShadow: SHADOWS.button, cursor: "pointer", whiteSpace: "nowrap", flexShrink: 0, fontFamily: TYPOGRAPHY.fontTajawal }}>
-                {catLabels[cat] || cat}
-              </button>
-            );
-          })}
-        </div>
+        {allCoupons.length > 0 && (
+          <div style={{ display: "flex", gap: SPACING.xs, overflowX: "auto", paddingBottom: 4 }}>
+            {cats.map(function(cat) {
+              var active = filter === cat;
+              return (
+                <button key={cat} onClick={function(){ setFilter(cat); }} style={{ padding: SPACING.sm + "px " + SPACING.lg + "px", borderRadius: RADIUS.md, background: COLORS.metallic, color: active ? COLORS.goldLight : COLORS.textMuted, ...TYPOGRAPHY.caption, fontWeight: 700, border: "1px solid " + (active ? COLORS.goldLight : COLORS.metallicBorder), boxShadow: SHADOWS.button, cursor: "pointer", whiteSpace: "nowrap", flexShrink: 0, fontFamily: TYPOGRAPHY.fontTajawal }}>
+                  {catLabels[cat] || cat}
+                </button>
+              );
+            })}
+          </div>
+        )}
 
         {/* Coupons */}
         <div style={{ display: "flex", flexDirection: "column", gap: SPACING.sm }}>
           {filtered.map(function(coupon) {
-            var available = coupon.minTier <= badge.tier;
+            var minTier = coupon.minTier || 0;
+            var available = minTier <= badge.tier;
             var canAfford = (user.points || 0) >= coupon.pts;
-            var tierName = MEMBERSHIP[coupon.minTier] ? MEMBERSHIP[coupon.minTier].name.replace("عضوية ","") : "فعّال";
+            var tierName = minTier === 2 ? "نخبة" : minTier === 1 ? "تميّز" : "فعّال";
+            var alreadyRedeemed = myRedemptions.some(function(r){ return r.couponId === coupon.id; });
             return (
               <div key={coupon.id} style={{ display: "flex", alignItems: "center", gap: SPACING.md, padding: SPACING.md, borderRadius: RADIUS.xl, background: COLORS.metallic, border: "1px solid " + (available ? COLORS.goldLight + "60" : COLORS.metallicBorder), minHeight: 72, opacity: available ? 1 : 0.5, boxShadow: SHADOWS.card }}>
-                <div style={{ width: 44, height: 44, borderRadius: RADIUS.md, background: COLORS.metallic, border: "1px solid " + COLORS.metallicBorder, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 22 }}>{coupon.icon}</div>
+                <div style={{ fontSize: 32 }}>{coupon.icon || "🎁"}</div>
                 <div style={{ flex: 1 }}>
-                  <div style={{ ...TYPOGRAPHY.bodySm, fontWeight: 700, color: COLORS.textPrimary }}>{coupon.brand}</div>
-                  <div style={{ ...TYPOGRAPHY.caption, color: available ? COLORS.goldLight : COLORS.textMuted, fontWeight: 600 }}>{coupon.discount}</div>
-                  {!available && <div style={{ ...TYPOGRAPHY.tiny, color: COLORS.textMuted }}>{"يتطلب " + tierName}</div>}
+                  <div style={{ ...TYPOGRAPHY.body, color: COLORS.textPrimary, fontWeight: 700 }}>{coupon.brand}</div>
+                  <div style={{ ...TYPOGRAPHY.caption, color: COLORS.goldLight, marginTop: 2 }}>{coupon.discount}</div>
+                  {!available && <div style={{ ...TYPOGRAPHY.tiny, color: COLORS.textMuted, marginTop: 2 }}>{"يتطلب عضوية " + tierName + " (" + coupon.pts + " نقطة)"}</div>}
+                  {available && !canAfford && <div style={{ ...TYPOGRAPHY.tiny, color: "#ef4444", marginTop: 2 }}>{"تحتاج " + (coupon.pts - (user.points || 0)) + " نقطة إضافية"}</div>}
                 </div>
-                <div style={{ textAlign: "center" }}>
-                  <div style={{ fontSize: 16, fontWeight: 900, color: canAfford && available ? COLORS.goldLight : COLORS.textMuted, fontFamily: TYPOGRAPHY.fontCairo }}>{coupon.pts}</div>
-                  <div style={{ ...TYPOGRAPHY.tiny, color: COLORS.textMuted }}>نقطة</div>
-                  {available && canAfford && (
-                    <button style={{ marginTop: 4, padding: "4px 12px", borderRadius: RADIUS.sm, background: COLORS.metallic, border: "1px solid " + COLORS.goldLight, color: COLORS.goldLight, ...TYPOGRAPHY.tiny, fontWeight: 800, cursor: "pointer" }}>استبدال</button>
-                  )}
-                </div>
+                <button
+                  disabled={!available || !canAfford || redeeming === coupon.id}
+                  onClick={function(){ redeem(coupon); }}
+                  style={{ padding: SPACING.sm + "px " + SPACING.md + "px", borderRadius: RADIUS.md, background: available && canAfford ? COLORS.goldGradient : COLORS.metallic, color: available && canAfford ? "#000" : COLORS.textMuted, ...TYPOGRAPHY.caption, fontWeight: 800, border: "none", cursor: available && canAfford ? "pointer" : "not-allowed", whiteSpace: "nowrap", fontFamily: TYPOGRAPHY.fontTajawal }}>
+                  {redeeming === coupon.id ? "⏳" : available && canAfford ? "⭐ " + coupon.pts : coupon.pts}
+                </button>
               </div>
             );
           })}
         </div>
 
-        {isRamadan && (
+        {/* My redemptions history */}
+        {myRedemptions.length > 0 && (
           <Card>
-            <div style={{ textAlign: "center", ...TYPOGRAPHY.bodySm, fontWeight: 700, color: COLORS.goldLight }}>
-              عروض رمضان الخاصة متاحة
-            </div>
+            <div style={{ ...TYPOGRAPHY.h3, color: COLORS.textPrimary, marginBottom: SPACING.sm }}>🎟️ كوبوناتي المصروفة</div>
+            {myRedemptions.slice(0, 10).map(function(r){
+              return <div key={r.id} style={{ display: "flex", justifyContent: "space-between", padding: "8px 0", borderBottom: "1px solid " + COLORS.metallicBorder }}>
+                <span style={{ ...TYPOGRAPHY.caption, color: COLORS.textPrimary }}>{r.couponName}</span>
+                <span style={{ ...TYPOGRAPHY.tiny, color: COLORS.textMuted }}>{new Date(r.ts).toLocaleDateString("ar-SA")}</span>
+              </div>;
+            })}
           </Card>
+        )}
+      </div>
+    </div>
+  );
+}
+
+/* ═══════════ ANNOUNCEMENTS MODAL ═══════════ */
+function AnnouncementsModal({ announcements, user, onClose, onRead }) {
+  var [selected, setSelected] = useState(null);
+
+  function openOne(a) {
+    setSelected(a);
+    if (!(a.readBy || []).includes(user.id)) {
+      onRead(a.id);
+    }
+  }
+
+  var priorityBg = { urgent: "#ef4444", important: "#f59e0b", normal: "#3b82f6" };
+  var priorityLabel = { urgent: "عاجل", important: "مهم", normal: "عادي" };
+
+  return (
+    <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,.7)", zIndex: 300, display: "flex", alignItems: "flex-end", justifyContent: "center", padding: 0 }} onClick={onClose}>
+      <div className="basma-slideup" onClick={function(e){ e.stopPropagation(); }} style={{ background: COLORS.bg1, borderTopLeftRadius: 24, borderTopRightRadius: 24, width: "100%", maxWidth: 430, maxHeight: "90vh", overflowY: "auto", padding: 20, paddingBottom: 40 }}>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16 }}>
+          <div style={{ ...TYPOGRAPHY.h2, color: COLORS.textPrimary, fontFamily: TYPOGRAPHY.fontCairo }}>📢 التعاميم</div>
+          <button onClick={onClose} style={{ width: 32, height: 32, borderRadius: 16, background: COLORS.metallic, border: "1px solid " + COLORS.metallicBorder, color: COLORS.textPrimary, fontSize: 16, cursor: "pointer" }}>✕</button>
+        </div>
+
+        {selected ? (
+          <div>
+            <button onClick={function(){ setSelected(null); }} style={{ marginBottom: 14, padding: "6px 14px", borderRadius: 8, background: COLORS.metallic, border: "1px solid " + COLORS.metallicBorder, color: COLORS.goldLight, fontSize: 11, cursor: "pointer" }}>← رجوع</button>
+            <div style={{ padding: 16, borderRadius: 16, background: COLORS.metallic, border: "1px solid " + COLORS.metallicBorder }}>
+              <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 10 }}>
+                <span style={{ fontSize: 28 }}>{selected.icon || "📢"}</span>
+                <div style={{ flex: 1 }}>
+                  <div style={{ ...TYPOGRAPHY.h3, color: COLORS.textPrimary }}>{selected.title}</div>
+                  <div style={{ fontSize: 10, color: COLORS.textMuted, marginTop: 2 }}>{new Date(selected.ts).toLocaleString("ar-SA")}</div>
+                </div>
+                {selected.priority && selected.priority !== "normal" && (
+                  <span style={{ padding: "3px 10px", borderRadius: 6, background: priorityBg[selected.priority], color: "#fff", fontSize: 10, fontWeight: 800 }}>{priorityLabel[selected.priority]}</span>
+                )}
+              </div>
+              <div style={{ fontSize: 13, color: COLORS.textPrimary, lineHeight: 1.9, whiteSpace: "pre-wrap", paddingTop: 10, borderTop: "1px solid " + COLORS.metallicBorder }}>
+                {selected.body}
+              </div>
+            </div>
+          </div>
+        ) : announcements.length === 0 ? (
+          <div style={{ textAlign: "center", padding: 40, color: COLORS.textMuted }}>
+            <div style={{ fontSize: 48, marginBottom: 10 }}>📭</div>
+            <div style={{ fontSize: 14, fontWeight: 700, color: COLORS.textPrimary, marginBottom: 4 }}>لا توجد تعاميم</div>
+            <div style={{ fontSize: 11 }}>ستظهر التعاميم الجديدة هنا عند نشرها</div>
+          </div>
+        ) : (
+          <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+            {announcements.map(function(a){
+              var isRead = (a.readBy || []).includes(user.id);
+              return (
+                <button key={a.id} onClick={function(){ openOne(a); }} style={{ textAlign: "right", padding: 14, borderRadius: 14, background: COLORS.metallic, border: "1px solid " + (a.priority === "urgent" ? "#ef4444" : a.priority === "important" ? "#f59e0b" : COLORS.metallicBorder), borderRight: "4px solid " + (priorityBg[a.priority] || priorityBg.normal), cursor: "pointer", display: "block", width: "100%", fontFamily: TYPOGRAPHY.fontTajawal }}>
+                  <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 6 }}>
+                    <span style={{ fontSize: 22 }}>{a.icon || "📢"}</span>
+                    <div style={{ flex: 1 }}>
+                      <div style={{ fontSize: 13, fontWeight: 700, color: COLORS.textPrimary }}>
+                        {!isRead && <span style={{ display: "inline-block", width: 8, height: 8, borderRadius: 4, background: "#3b82f6", marginLeft: 6 }}></span>}
+                        {a.title}
+                      </div>
+                      <div style={{ fontSize: 10, color: COLORS.textMuted, marginTop: 2 }}>{new Date(a.ts).toLocaleDateString("ar-SA")}</div>
+                    </div>
+                    {a.priority && a.priority !== "normal" && (
+                      <span style={{ padding: "2px 8px", borderRadius: 4, background: priorityBg[a.priority], color: "#fff", fontSize: 9, fontWeight: 800 }}>{priorityLabel[a.priority]}</span>
+                    )}
+                  </div>
+                  <div style={{ fontSize: 11, color: COLORS.textMuted, lineHeight: 1.6, maxHeight: 36, overflow: "hidden", display: "-webkit-box", WebkitLineClamp: 2, WebkitBoxOrient: "vertical" }}>
+                    {a.body}
+                  </div>
+                </button>
+              );
+            })}
+          </div>
         )}
       </div>
     </div>
@@ -3440,29 +3641,303 @@ function ViolationDetailModal({ violation, user, onClose, onAppeal }) {
 /* ═══════════ CUSTODY ═══════════ */
 function CustodyTab({ user }) {
   var [items, setItems] = useState([]);
+  var [invoices, setInvoices] = useState([]);
+  var [loading, setLoading] = useState(true);
+  var [selectedCash, setSelectedCash] = useState(null);
+  var [viewingItem, setViewingItem] = useState(null);
+
   useEffect(function() {
-    api("custody", { params: { empId: user.id } }).then(function(d) { setItems(d || []); }).catch(function(){});
+    load();
   }, []);
 
-  var statusMap = { active: { label: "مستلمة", color: COLORS.goldLight }, returned: { label: "مرتجعة", color: COLORS.textMuted }, lost: { label: "مفقودة", color: COLORS.textDanger } };
+  async function load() {
+    setLoading(true);
+    try {
+      var r1 = await fetch("/api/data?action=custody&empId=" + user.id);
+      var d1 = await r1.json();
+      setItems(Array.isArray(d1) ? d1 : []);
+      var r2 = await fetch("/api/data?action=custody-invoices&empId=" + user.id);
+      var d2 = await r2.json();
+      setInvoices(Array.isArray(d2) ? d2 : []);
+    } catch(e) {}
+    setLoading(false);
+  }
+
+  async function acknowledge(item) {
+    if (!confirm("هل توافق على استلام هذه العهدة؟\n\n" + item.name)) return;
+    await fetch("/api/data?action=custody-ack", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ custodyId: item.id, empId: user.id }),
+    });
+    load();
+  }
+
+  var typeLabels = { consumable: { label: "استهلاكية", icon: "🟢" }, asset: { label: "دائمة", icon: "🟡" }, cash: { label: "نقدية", icon: "🔵" } };
+  var statusMap = {
+    active: { label: "نشطة", color: "#10b981" },
+    issued: { label: "مصروفة", color: COLORS.goldLight },
+    returned: { label: "مُعادة", color: COLORS.textMuted },
+    damaged: { label: "تالفة", color: "#ef4444" },
+    lost: { label: "مفقودة", color: "#ef4444" },
+    closed: { label: "مغلقة", color: COLORS.textMuted },
+  };
+
+  if (loading) return <div style={{ textAlign: "center", padding: 20, color: COLORS.textMuted }}>جارِ التحميل...</div>;
+
+  var cashItems = items.filter(function(i){ return i.type === "cash" && i.status === "active"; });
 
   return (
     <div>
-      <div style={{ ...TYPOGRAPHY.h3, color: COLORS.textPrimary, marginBottom: SPACING.md }}>{"العهد (" + items.length + ")"}</div>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: SPACING.md }}>
+        <div style={{ ...TYPOGRAPHY.h3, color: COLORS.textPrimary }}>📦 عهدي ({items.length})</div>
+        <button onClick={load} style={{ padding: "4px 10px", borderRadius: 6, background: "none", border: "1px solid " + COLORS.metallicBorder, color: COLORS.textMuted, fontSize: 11, cursor: "pointer" }}>🔄</button>
+      </div>
+
       {items.length === 0 && <div style={{ textAlign: "center", color: COLORS.textMuted, ...TYPOGRAPHY.bodySm, padding: SPACING.xl }}>لا توجد عهد مسجلة</div>}
+
       {items.map(function(item, i) {
-        var s = statusMap[item.status] || statusMap.active;
+        var tp = typeLabels[item.type] || typeLabels.consumable;
+        var st = statusMap[item.status] || statusMap.active;
+        var itemInvoices = invoices.filter(function(inv){ return inv.custodyId === item.id; });
+        var pending = itemInvoices.filter(function(inv){ return inv.status === "pending"; }).length;
+
         return (
-          <div key={item.id || i} style={{ display: "flex", alignItems: "center", gap: SPACING.sm, padding: SPACING.sm + "px 0", borderBottom: i < items.length - 1 ? "1px solid " + COLORS.cardRowBorder : "none" }}>
-            <div style={{ flex: 1 }}>
-              <div style={{ ...TYPOGRAPHY.bodySm, fontWeight: 700, color: COLORS.textPrimary }}>{item.name || "عهدة"}</div>
-              <div style={{ ...TYPOGRAPHY.tiny, color: COLORS.textMuted }}>{(item.serial ? "SN: " + item.serial + " · " : "") + (item.createdAt ? item.createdAt.split("T")[0] : "")}</div>
-              {item.type === "cash" && <div style={{ ...TYPOGRAPHY.tiny, color: COLORS.goldLight }}>{"عهدة نقدية: " + (item.amount || 0) + " ريال"}</div>}
+          <div key={item.id || i} style={{ padding: SPACING.md, borderRadius: RADIUS.lg, background: COLORS.metallic, border: "1px solid " + COLORS.metallicBorder, marginBottom: SPACING.sm, borderRight: "3px solid " + st.color }}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "start", gap: SPACING.sm }}>
+              <div style={{ flex: 1 }}>
+                <div style={{ display: "flex", gap: 6, alignItems: "center", flexWrap: "wrap", marginBottom: 4 }}>
+                  <span style={{ ...TYPOGRAPHY.body, fontWeight: 700, color: COLORS.textPrimary }}>{item.name}</span>
+                  <span style={{ ...TYPOGRAPHY.tiny, padding: "2px 8px", borderRadius: 4, background: COLORS.metallicBorder, color: COLORS.textPrimary }}>{tp.icon} {tp.label}</span>
+                  <span style={{ ...TYPOGRAPHY.tiny, padding: "2px 8px", borderRadius: 4, background: st.color + "20", color: st.color, fontWeight: 700 }}>{st.label}</span>
+                </div>
+
+                {item.category && <div style={{ ...TYPOGRAPHY.tiny, color: COLORS.textMuted, marginBottom: 2 }}>📁 {item.category}</div>}
+
+                {item.type === "asset" && (
+                  <div style={{ ...TYPOGRAPHY.tiny, color: COLORS.textMuted }}>
+                    {item.serialNumber && "🏷️ S/N: " + item.serialNumber}
+                    {item.brand && " • " + item.brand + (item.model ? " " + item.model : "")}
+                    {item.value > 0 && " • " + item.value + " ر.س"}
+                  </div>
+                )}
+
+                {item.type === "consumable" && (
+                  <div style={{ ...TYPOGRAPHY.tiny, color: COLORS.textMuted }}>
+                    📦 {item.quantity} {item.unit || "قطعة"}
+                  </div>
+                )}
+
+                {item.type === "cash" && (
+                  <div style={{ marginTop: 6, padding: 8, background: COLORS.metallicBorder + "40", borderRadius: 6 }}>
+                    <div style={{ display: "flex", justifyContent: "space-around", ...TYPOGRAPHY.tiny }}>
+                      <div><span style={{ color: COLORS.textMuted }}>المبلغ:</span> <strong style={{ color: COLORS.textPrimary }}>{item.amount}</strong></div>
+                      <div><span style={{ color: COLORS.textMuted }}>مصروف:</span> <strong style={{ color: "#ef4444" }}>{item.spent || 0}</strong></div>
+                      <div><span style={{ color: COLORS.textMuted }}>متبقي:</span> <strong style={{ color: "#10b981" }}>{item.balance || item.amount}</strong></div>
+                    </div>
+                    {item.purpose && <div style={{ ...TYPOGRAPHY.tiny, color: COLORS.textMuted, marginTop: 4 }}>🎯 {item.purpose}</div>}
+                  </div>
+                )}
+
+                <div style={{ ...TYPOGRAPHY.tiny, color: COLORS.textMuted, marginTop: 6 }}>
+                  📅 {new Date(item.issuedAt || item.createdAt).toLocaleDateString("ar-SA")}
+                </div>
+              </div>
             </div>
-            <span style={{ ...TYPOGRAPHY.tiny, fontWeight: 700, color: s.color, padding: "3px 10px", borderRadius: RADIUS.sm, background: s.color + "20" }}>{s.label}</span>
+
+            {/* Actions */}
+            <div style={{ marginTop: 10, display: "flex", gap: 6, flexWrap: "wrap" }}>
+              {!item.acknowledged && (
+                <button onClick={function(){ acknowledge(item); }} style={{ padding: "6px 12px", borderRadius: 6, background: COLORS.goldGradient, color: "#000", border: "none", ...TYPOGRAPHY.tiny, fontWeight: 800, cursor: "pointer" }}>✓ استلمت العهدة</button>
+              )}
+              {item.acknowledged && <span style={{ padding: "4px 10px", borderRadius: 6, background: "#10b98120", color: "#10b981", ...TYPOGRAPHY.tiny, fontWeight: 700 }}>✓ موقّع في {new Date(item.acknowledgedAt).toLocaleDateString("ar-SA")}</span>}
+              {item.type === "cash" && item.status === "active" && (
+                <button onClick={function(){ setSelectedCash(item); }} style={{ padding: "6px 12px", borderRadius: 6, background: COLORS.metallicBorder, color: COLORS.textPrimary, border: "none", ...TYPOGRAPHY.tiny, fontWeight: 700, cursor: "pointer" }}>
+                  📄 الفواتير ({itemInvoices.length}{pending > 0 ? " • " + pending + " معلّقة" : ""})
+                </button>
+              )}
+              {item.type === "asset" && item.photoUrl && (
+                <button onClick={function(){ setViewingItem(item); }} style={{ padding: "6px 12px", borderRadius: 6, background: COLORS.metallicBorder, color: COLORS.textPrimary, border: "none", ...TYPOGRAPHY.tiny, fontWeight: 700, cursor: "pointer" }}>🖼️ الصورة</button>
+              )}
+            </div>
           </div>
         );
       })}
+
+      {selectedCash && <CashInvoicesModal user={user} custody={selectedCash} invoices={invoices.filter(function(i){ return i.custodyId === selectedCash.id; })} onClose={function(){ setSelectedCash(null); load(); }} />}
+      {viewingItem && viewingItem.photoUrl && (
+        <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,.9)", zIndex: 400, display: "flex", alignItems: "center", justifyContent: "center", padding: 20 }} onClick={function(){ setViewingItem(null); }}>
+          <img src={viewingItem.photoUrl} style={{ maxWidth: "90vw", maxHeight: "90vh", borderRadius: 8 }} alt="صورة العهدة" />
+        </div>
+      )}
+    </div>
+  );
+}
+
+/* ═══ CASH INVOICES MODAL — فواتير النقدية للموظف ═══ */
+function CashInvoicesModal({ user, custody, invoices, onClose }) {
+  var [showAdd, setShowAdd] = useState(false);
+  var [amount, setAmount] = useState("");
+  var [description, setDescription] = useState("");
+  var [vendor, setVendor] = useState("");
+  var [invoiceNumber, setInvoiceNumber] = useState("");
+  var [invoiceDate, setInvoiceDate] = useState(new Date().toISOString().split("T")[0]);
+  var [photoUrl, setPhotoUrl] = useState("");
+  var [submitting, setSubmitting] = useState(false);
+  var [viewingPhoto, setViewingPhoto] = useState(null);
+
+  async function handlePhotoUpload(e) {
+    var file = e.target.files[0];
+    if (!file) return;
+    if (file.size > 5 * 1024 * 1024) { alert("حجم الصورة كبير (الحد 5MB)"); return; }
+    var reader = new FileReader();
+    reader.onload = function() { setPhotoUrl(reader.result); };
+    reader.readAsDataURL(file);
+  }
+
+  async function submit() {
+    if (!amount || parseFloat(amount) <= 0) { alert("أدخل مبلغاً صحيحاً"); return; }
+    if (!description.trim()) { alert("أدخل وصف الفاتورة"); return; }
+    setSubmitting(true);
+    try {
+      await fetch("/api/data?action=custody-invoices", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          custodyId: custody.id,
+          empId: user.id,
+          amount: amount,
+          description: description.trim(),
+          vendor: vendor.trim(),
+          invoiceNumber: invoiceNumber.trim(),
+          invoiceDate: invoiceDate,
+          photoUrl: photoUrl,
+        }),
+      });
+      alert("✅ تم رفع الفاتورة\nستُراجع من قبل المدير قريباً");
+      setShowAdd(false);
+      setAmount(""); setDescription(""); setVendor(""); setInvoiceNumber(""); setPhotoUrl("");
+      onClose();
+    } catch(e) { alert("خطأ: " + e.message); }
+    setSubmitting(false);
+  }
+
+  return (
+    <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,.7)", zIndex: 300, display: "flex", alignItems: "flex-end", justifyContent: "center", padding: 0 }} onClick={onClose}>
+      <div className="basma-slideup" onClick={function(e){ e.stopPropagation(); }} style={{ background: COLORS.bg1, borderTopLeftRadius: 24, borderTopRightRadius: 24, width: "100%", maxWidth: 430, maxHeight: "90vh", overflowY: "auto", padding: 20, paddingBottom: 40 }}>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16 }}>
+          <div>
+            <div style={{ ...TYPOGRAPHY.h2, color: COLORS.textPrimary }}>📄 فواتير العهدة</div>
+            <div style={{ ...TYPOGRAPHY.tiny, color: COLORS.textMuted }}>{custody.name}</div>
+          </div>
+          <button onClick={onClose} style={{ width: 32, height: 32, borderRadius: 16, background: COLORS.metallic, border: "1px solid " + COLORS.metallicBorder, color: COLORS.textPrimary, fontSize: 16, cursor: "pointer" }}>✕</button>
+        </div>
+
+        {/* Balance */}
+        <div style={{ padding: 14, background: COLORS.metallic, border: "1px solid " + COLORS.metallicBorder, borderRadius: 12, marginBottom: 14 }}>
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 8, textAlign: "center" }}>
+            <div>
+              <div style={{ ...TYPOGRAPHY.tiny, color: COLORS.textMuted }}>المبلغ</div>
+              <div style={{ ...TYPOGRAPHY.h3, color: COLORS.textPrimary }}>{custody.amount}</div>
+            </div>
+            <div>
+              <div style={{ ...TYPOGRAPHY.tiny, color: COLORS.textMuted }}>مصروف</div>
+              <div style={{ ...TYPOGRAPHY.h3, color: "#ef4444" }}>{custody.spent || 0}</div>
+            </div>
+            <div>
+              <div style={{ ...TYPOGRAPHY.tiny, color: COLORS.textMuted }}>متبقي</div>
+              <div style={{ ...TYPOGRAPHY.h3, color: "#10b981" }}>{custody.balance || custody.amount}</div>
+            </div>
+          </div>
+        </div>
+
+        {!showAdd && (
+          <button onClick={function(){ setShowAdd(true); }} style={{ width: "100%", padding: 12, borderRadius: 10, background: COLORS.goldGradient, color: "#000", border: "none", ...TYPOGRAPHY.body, fontWeight: 800, cursor: "pointer", marginBottom: 14 }}>
+            ➕ رفع فاتورة جديدة
+          </button>
+        )}
+
+        {showAdd && (
+          <div style={{ padding: 14, background: COLORS.metallic, border: "2px solid " + COLORS.goldLight, borderRadius: 12, marginBottom: 14 }}>
+            <div style={{ ...TYPOGRAPHY.body, fontWeight: 800, color: COLORS.goldLight, marginBottom: 10 }}>➕ فاتورة جديدة</div>
+
+            <div style={{ display: "grid", gap: 10 }}>
+              <label style={{ ...TYPOGRAPHY.tiny, color: COLORS.textPrimary }}>
+                المبلغ (ر.س) *:
+                <input type="number" value={amount} onChange={function(e){ setAmount(e.target.value); }} placeholder="250" style={{ width: "100%", padding: 10, borderRadius: 8, border: "1px solid " + COLORS.metallicBorder, background: COLORS.metallic, color: COLORS.textPrimary, marginTop: 4, fontSize: 16 }} />
+              </label>
+              <label style={{ ...TYPOGRAPHY.tiny, color: COLORS.textPrimary }}>
+                الوصف *:
+                <input value={description} onChange={function(e){ setDescription(e.target.value); }} placeholder="شراء قرطاسية للمكتب" style={{ width: "100%", padding: 10, borderRadius: 8, border: "1px solid " + COLORS.metallicBorder, background: COLORS.metallic, color: COLORS.textPrimary, marginTop: 4 }} />
+              </label>
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
+                <label style={{ ...TYPOGRAPHY.tiny, color: COLORS.textPrimary }}>
+                  المورد/المحل:
+                  <input value={vendor} onChange={function(e){ setVendor(e.target.value); }} placeholder="مكتبة جرير" style={{ width: "100%", padding: 10, borderRadius: 8, border: "1px solid " + COLORS.metallicBorder, background: COLORS.metallic, color: COLORS.textPrimary, marginTop: 4 }} />
+                </label>
+                <label style={{ ...TYPOGRAPHY.tiny, color: COLORS.textPrimary }}>
+                  رقم الفاتورة:
+                  <input value={invoiceNumber} onChange={function(e){ setInvoiceNumber(e.target.value); }} placeholder="12345" style={{ width: "100%", padding: 10, borderRadius: 8, border: "1px solid " + COLORS.metallicBorder, background: COLORS.metallic, color: COLORS.textPrimary, marginTop: 4 }} />
+                </label>
+              </div>
+              <label style={{ ...TYPOGRAPHY.tiny, color: COLORS.textPrimary }}>
+                تاريخ الفاتورة:
+                <input type="date" value={invoiceDate} onChange={function(e){ setInvoiceDate(e.target.value); }} style={{ width: "100%", padding: 10, borderRadius: 8, border: "1px solid " + COLORS.metallicBorder, background: COLORS.metallic, color: COLORS.textPrimary, marginTop: 4 }} />
+              </label>
+              <label style={{ ...TYPOGRAPHY.tiny, color: COLORS.textPrimary }}>
+                صورة الفاتورة:
+                <div style={{ marginTop: 4 }}>
+                  <input type="file" accept="image/*" capture="environment" onChange={handlePhotoUpload} style={{ fontSize: 12 }} />
+                  {photoUrl && <img src={photoUrl} style={{ marginTop: 6, maxHeight: 150, borderRadius: 8, border: "1px solid " + COLORS.metallicBorder }} alt="الفاتورة" />}
+                </div>
+              </label>
+            </div>
+
+            <div style={{ display: "flex", gap: 8, marginTop: 12 }}>
+              <button onClick={submit} disabled={submitting} style={{ flex: 1, padding: 10, borderRadius: 8, background: submitting ? COLORS.metallicBorder : COLORS.goldGradient, color: submitting ? COLORS.textMuted : "#000", border: "none", ...TYPOGRAPHY.body, fontWeight: 800, cursor: submitting ? "default" : "pointer" }}>
+                {submitting ? "⏳ جارِ الإرسال..." : "💾 إرسال الفاتورة"}
+              </button>
+              <button onClick={function(){ setShowAdd(false); }} style={{ padding: "10px 20px", borderRadius: 8, background: "none", border: "1px solid " + COLORS.metallicBorder, color: COLORS.textPrimary, ...TYPOGRAPHY.tiny, cursor: "pointer" }}>إلغاء</button>
+            </div>
+          </div>
+        )}
+
+        {invoices.length === 0 ? (
+          <div style={{ textAlign: "center", padding: 30, color: COLORS.textMuted, ...TYPOGRAPHY.tiny }}>لم ترفع أي فاتورة بعد</div>
+        ) : (
+          <div style={{ display: "grid", gap: 8 }}>
+            {invoices.map(function(inv){
+              var statusColors = { pending: "#f59e0b", approved: "#10b981", rejected: "#ef4444" };
+              var statusLabels = { pending: "⏳ قيد المراجعة", approved: "✓ معتمدة", rejected: "✗ مرفوضة" };
+              return (
+                <div key={inv.id} style={{ padding: 12, borderRadius: 10, background: COLORS.metallic, border: "1px solid " + COLORS.metallicBorder, borderRight: "3px solid " + statusColors[inv.status] }}>
+                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "start", gap: 8 }}>
+                    <div style={{ flex: 1 }}>
+                      <div style={{ ...TYPOGRAPHY.bodySm, fontWeight: 700, color: COLORS.textPrimary }}>{inv.description}</div>
+                      <div style={{ ...TYPOGRAPHY.tiny, color: COLORS.textMuted, marginTop: 2 }}>
+                        {inv.vendor && "🏪 " + inv.vendor + " • "}
+                        📅 {new Date(inv.invoiceDate).toLocaleDateString("ar-SA")}
+                      </div>
+                      <div style={{ marginTop: 4, ...TYPOGRAPHY.h3, color: COLORS.goldLight }}>{inv.amount} ر.س</div>
+                      {inv.rejectionReason && <div style={{ ...TYPOGRAPHY.tiny, color: "#ef4444", marginTop: 4 }}>سبب الرفض: {inv.rejectionReason}</div>}
+                    </div>
+                    <div style={{ display: "flex", flexDirection: "column", gap: 4, alignItems: "end" }}>
+                      <span style={{ padding: "3px 8px", borderRadius: 4, ...TYPOGRAPHY.tiny, fontWeight: 700, background: statusColors[inv.status] + "20", color: statusColors[inv.status] }}>{statusLabels[inv.status]}</span>
+                      {inv.photoUrl && <button onClick={function(){ setViewingPhoto(inv.photoUrl); }} style={{ padding: "3px 8px", borderRadius: 4, background: COLORS.metallicBorder, color: COLORS.textPrimary, border: "none", ...TYPOGRAPHY.tiny, cursor: "pointer" }}>🖼️</button>}
+                    </div>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        )}
+
+        {viewingPhoto && (
+          <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,.9)", zIndex: 400, display: "flex", alignItems: "center", justifyContent: "center", padding: 20 }} onClick={function(){ setViewingPhoto(null); }}>
+            <img src={viewingPhoto} style={{ maxWidth: "90vw", maxHeight: "90vh", borderRadius: 8 }} alt="الفاتورة" />
+          </div>
+        )}
+      </div>
     </div>
   );
 }
