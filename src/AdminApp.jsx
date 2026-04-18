@@ -264,15 +264,8 @@ export default function AdminApp() {
   const t = dk ? DK : LT;
   const toggleTheme = () => { setDk(v => { const n = !v; localStorage.setItem("basma_theme", n ? "dark" : "light"); return n; }); };
   const [loggedIn, setLoggedIn] = useState(function() {
-    // Auto-login if SSO'd admin session exists
-    try {
-      var savedEmail = localStorage.getItem("basma_admin_email");
-      var savedUser = JSON.parse(localStorage.getItem("basma_user") || "null");
-      if (savedEmail && savedUser && (savedUser.isAdmin || savedUser.isGeneralManager)) {
-        return true;
-      }
-    } catch(e) {}
-    return false;
+    // Auto-login if admin email was saved (from previous session) — survives F5
+    return !!localStorage.getItem("basma_admin_email");
   });
   const [role, setRole] = useState("manager");
   const [tab, setTab] = useState("dashboard");
@@ -485,6 +478,8 @@ export default function AdminApp() {
     { id: "events", icon: "🎉", label: "المناسبات" },
     { id: "questions", icon: "❓", label: "أسئلة الصباح" },
     { id: "settings", icon: "⚙️", label: "الإعدادات" },
+    { id: "work_types", icon: "⏰", label: "أنواع الدوام" },
+    { id: "test_panel", icon: "🧪", label: "اختبار النظام" },
     { id: "admin_profile", icon: "🔐", label: "حساب المدير العام" },
   ];
 
@@ -1154,6 +1149,9 @@ export default function AdminApp() {
       </>}
 
       {/* ═══ ADMIN PROFILE — تعديل حساب المدير العام ═══ */}
+      {tab === "work_types" && <WorkTypesPanel t={t} B={B} emps={safeEmps} />}
+      {tab === "test_panel" && <TestPanel t={t} B={B} emps={safeEmps} />}
+
       {tab === "admin_profile" && <AdminProfile t={t} B={B} onLogout={function(){ localStorage.removeItem("basma_admin_email"); localStorage.removeItem("basma_last_mode"); setLoggedIn(false); }} />}
     </div>
   </div>);
@@ -1196,6 +1194,239 @@ function AdminTopBar({ t, B, onOpenSettings }) {
 }
 
 /* ═══ ADMIN PROFILE — حساب المدير العام ═══ */
+/* ═══ WORK TYPES PANEL — أنواع الدوام + إعدادات الموظفين ═══ */
+function WorkTypesPanel({ t, B, emps }) {
+  var [workTypes, setWorkTypes] = useState(null);
+  var [editing, setEditing] = useState(null);
+  var [overrides, setOverrides] = useState({}); // per-employee overrides
+  var [loading, setLoading] = useState(true);
+
+  var defaults = {
+    full_time: { label: "موظف دوام كامل", workHours: 8, flexible: false, requireCheckin: true, allowRemote: false, breakMinutes: 30, lateAfterMin: 15, callOnLate: true },
+    full_time_flex: { label: "موظف دوام كامل مرن", workHours: 8, flexible: true, requireCheckin: true, allowRemote: true, breakMinutes: 30, lateAfterMin: 30, callOnLate: true },
+    flex_contract: { label: "عقد مرن", workHours: 6, flexible: true, requireCheckin: false, allowRemote: true, breakMinutes: 15, lateAfterMin: 60, callOnLate: false },
+    trainee: { label: "متدرب", workHours: 6, flexible: false, requireCheckin: true, allowRemote: false, breakMinutes: 30, lateAfterMin: 15, callOnLate: true },
+  };
+
+  useEffect(function() {
+    fetch("/api/data?action=work_types").then(r => r.json()).then(function(d) {
+      setWorkTypes((d && d.types) || defaults);
+      setOverrides((d && d.overrides) || {});
+      setLoading(false);
+    }).catch(function(){ setWorkTypes(defaults); setLoading(false); });
+  }, []);
+
+  async function saveTypes(newTypes, newOverrides) {
+    var final = newTypes || workTypes;
+    var finalOv = newOverrides || overrides;
+    await fetch("/api/data?action=work_types", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ types: final, overrides: finalOv }),
+    });
+    setWorkTypes(final);
+    setOverrides(finalOv);
+  }
+
+  if (loading) return <div style={{ padding: 30, textAlign: "center", color: t.txM }}>جارِ التحميل...</div>;
+  if (!workTypes) return null;
+
+  return (
+    <div style={{ maxWidth: 900 }}>
+      <div style={{ background: B.blue + "12", border: "1px solid " + B.blue + "40", borderRadius: 10, padding: 12, marginBottom: 14, fontSize: 11, color: t.tx, lineHeight: 1.7 }}>
+        ⏰ <strong>أنواع الدوام</strong><br/>
+        عدّل إعدادات كل نوع من أنواع الدوام. يمكن أيضاً تخصيص إعدادات لموظف معيّن (تجاوز الافتراضي).
+      </div>
+
+      <div style={{ background: t.card, borderRadius: 12, padding: 16, border: "1px solid " + t.sep, marginBottom: 14 }}>
+        <div style={{ fontSize: 14, fontWeight: 800, color: B.blue, marginBottom: 12 }}>📋 الأنواع الافتراضية</div>
+        {Object.keys(workTypes).map(function(key) {
+          var wt = workTypes[key];
+          var isEditing = editing === key;
+          return (
+            <div key={key} style={{ padding: 12, borderRadius: 10, background: t.bg, marginBottom: 8, border: "1px solid " + t.sep }}>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: isEditing ? 10 : 0 }}>
+                <div>
+                  <div style={{ fontSize: 13, fontWeight: 800, color: t.tx }}>{wt.label}</div>
+                  <div style={{ fontSize: 10, color: t.txM, marginTop: 3 }}>
+                    {wt.workHours} ساعة • {wt.flexible ? "مرن" : "ثابت"} • تأخير بعد {wt.lateAfterMin} د
+                    {wt.callOnLate && " • اتصال عند التأخر"}
+                    {wt.allowRemote && " • يسمح بالعمل عن بُعد"}
+                  </div>
+                </div>
+                <button onClick={function(){ setEditing(isEditing ? null : key); }} style={{ padding: "6px 12px", borderRadius: 8, background: isEditing ? t.sep : B.blue, color: "#fff", border: "none", fontSize: 11, fontWeight: 700, cursor: "pointer" }}>
+                  {isEditing ? "إلغاء" : "تعديل"}
+                </button>
+              </div>
+              {isEditing && (
+                <div style={{ marginTop: 12, display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10, fontSize: 11 }}>
+                  <label style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                    ساعات العمل:
+                    <input type="number" defaultValue={wt.workHours} onChange={function(e){ wt.workHours = parseFloat(e.target.value); }} style={{ width: 60, padding: 6, borderRadius: 6, border: "1px solid " + t.sep, background: t.inp, color: t.tx }} />
+                  </label>
+                  <label style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                    دقيقة استراحة:
+                    <input type="number" defaultValue={wt.breakMinutes} onChange={function(e){ wt.breakMinutes = parseInt(e.target.value); }} style={{ width: 60, padding: 6, borderRadius: 6, border: "1px solid " + t.sep, background: t.inp, color: t.tx }} />
+                  </label>
+                  <label style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                    تأخير بعد (د):
+                    <input type="number" defaultValue={wt.lateAfterMin} onChange={function(e){ wt.lateAfterMin = parseInt(e.target.value); }} style={{ width: 60, padding: 6, borderRadius: 6, border: "1px solid " + t.sep, background: t.inp, color: t.tx }} />
+                  </label>
+                  <label style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                    <input type="checkbox" defaultChecked={wt.flexible} onChange={function(e){ wt.flexible = e.target.checked; }} /> دوام مرن
+                  </label>
+                  <label style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                    <input type="checkbox" defaultChecked={wt.requireCheckin} onChange={function(e){ wt.requireCheckin = e.target.checked; }} /> يتطلب بصمة حضور
+                  </label>
+                  <label style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                    <input type="checkbox" defaultChecked={wt.allowRemote} onChange={function(e){ wt.allowRemote = e.target.checked; }} /> يسمح بالعمل عن بُعد
+                  </label>
+                  <label style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                    <input type="checkbox" defaultChecked={wt.callOnLate} onChange={function(e){ wt.callOnLate = e.target.checked; }} /> اتصال تذكير عند التأخر
+                  </label>
+                  <button onClick={async function(){ await saveTypes({ ...workTypes, [key]: wt }); setEditing(null); alert("✅ تم الحفظ"); }} style={{ gridColumn: "1 / -1", padding: 10, borderRadius: 8, background: B.blue, color: "#fff", border: "none", fontSize: 12, fontWeight: 800, cursor: "pointer" }}>حفظ</button>
+                </div>
+              )}
+            </div>
+          );
+        })}
+      </div>
+
+      <div style={{ background: t.card, borderRadius: 12, padding: 16, border: "1px solid " + t.sep }}>
+        <div style={{ fontSize: 14, fontWeight: 800, color: B.blue, marginBottom: 12 }}>👤 إعدادات مخصصة للموظفين</div>
+        <div style={{ fontSize: 11, color: t.txM, marginBottom: 12 }}>تعيين نوع دوام لكل موظف. الافتراضي: دوام كامل.</div>
+        {emps.length === 0 && <div style={{ color: t.txM, fontSize: 12, padding: 14, textAlign: "center" }}>لا يوجد موظفون — زامن مع كوادر أولاً</div>}
+        {emps.map(function(e) {
+          var ov = overrides[e.id] || "full_time";
+          return (
+            <div key={e.id} style={{ display: "flex", alignItems: "center", gap: 10, padding: "8px 10px", borderRadius: 8, background: t.bg, marginBottom: 4 }}>
+              <div style={{ flex: 1, fontSize: 12, fontWeight: 600 }}>{e.name}</div>
+              <select value={ov} onChange={async function(ev) {
+                var n = { ...overrides, [e.id]: ev.target.value };
+                await saveTypes(null, n);
+              }} style={{ padding: "6px 10px", borderRadius: 6, border: "1px solid " + t.sep, background: t.inp, color: t.tx, fontSize: 11 }}>
+                {Object.keys(workTypes).map(function(k){ return <option key={k} value={k}>{workTypes[k].label}</option>; })}
+              </select>
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+/* ═══ TEST PANEL — صفحة اختبار ═══ */
+function TestPanel({ t, B, emps }) {
+  var [selected, setSelected] = useState(emps[0] ? emps[0].id : "");
+  var [log, setLog] = useState([]);
+  var [busy, setBusy] = useState(false);
+
+  function addLog(msg, type) {
+    setLog(function(prev){ return [{ msg: msg, type: type || "info", ts: new Date().toLocaleTimeString("ar-SA") }, ...prev].slice(0, 30); });
+  }
+
+  async function runTest(action) {
+    if (!selected) { alert("اختر موظف أولاً"); return; }
+    setBusy(true);
+    try {
+      if (action === "notif") {
+        var r = await fetch("/api/data?action=test-notify", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ empId: selected, type: "test", title: "اختبار إشعار", message: "هذا إشعار تجريبي من المدير" }),
+        });
+        var d = await r.json();
+        addLog("📢 إشعار: " + (d.ok ? "✓ تم الإرسال" : "❌ " + (d.error || "فشل")), d.ok ? "ok" : "error");
+      }
+      else if (action === "call") {
+        var r2 = await fetch("/api/data?action=test-notify", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ empId: selected, type: "fake_call", title: "اتصال تجريبي", message: "المدير يطلب منك تأكيد الحضور" }),
+        });
+        var d2 = await r2.json();
+        addLog("📞 اتصال وهمي: " + (d2.ok ? "✓ تم الإرسال" : "❌ " + (d2.error || "فشل")), d2.ok ? "ok" : "error");
+      }
+      else if (action === "checkin") {
+        var r3 = await fetch("/api/data?action=checkin", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ empId: selected, type: "checkin", lat: 21.5433, lng: 39.1728, test: true }),
+        });
+        var d3 = await r3.json();
+        addLog("🟢 تسجيل حضور: " + (d3.ok ? "✓ نجح" : "❌ فشل"), d3.ok ? "ok" : "error");
+      }
+      else if (action === "checkout") {
+        var r4 = await fetch("/api/data?action=checkin", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ empId: selected, type: "checkout", lat: 21.5433, lng: 39.1728, test: true }),
+        });
+        var d4 = await r4.json();
+        addLog("🔴 تسجيل انصراف: " + (d4.ok ? "✓ نجح" : "❌ فشل"), d4.ok ? "ok" : "error");
+      }
+      else if (action === "face") {
+        addLog("📸 اختبار بصمة الوجه: قم بتسجيل الدخول كهذا الموظف واختبر من التطبيق", "info");
+      }
+      else if (action === "gps") {
+        var r5 = await fetch("/api/data?action=gps_log&empId=" + selected + "&date=" + new Date().toISOString().split("T")[0]);
+        var d5 = await r5.json();
+        addLog("🛰️ بيانات GPS: " + (Array.isArray(d5) ? (d5.length + " نقطة") : "لا يوجد"), "info");
+      }
+    } catch(e) {
+      addLog("❌ خطأ: " + e.message, "error");
+    }
+    setBusy(false);
+  }
+
+  return (
+    <div style={{ maxWidth: 700 }}>
+      <div style={{ background: B.red + "15", border: "1px solid " + B.red + "40", borderRadius: 10, padding: 12, marginBottom: 14, fontSize: 11, color: t.tx, lineHeight: 1.7 }}>
+        🧪 <strong>صفحة اختبار النظام</strong><br/>
+        اختبر كل الإمكانيات (إشعار، اتصال، حضور، انصراف). التغييرات فعلية — استخدم بحذر.
+      </div>
+
+      <div style={{ background: t.card, borderRadius: 12, padding: 16, border: "1px solid " + t.sep, marginBottom: 14 }}>
+        <div style={{ fontSize: 12, fontWeight: 700, color: t.tx, marginBottom: 8 }}>اختر موظف:</div>
+        <select value={selected} onChange={function(e){ setSelected(e.target.value); }} style={{ width: "100%", padding: 10, borderRadius: 8, border: "1px solid " + t.sep, background: t.inp, color: t.tx, fontSize: 13, marginBottom: 14 }}>
+          {emps.length === 0 && <option>لا يوجد موظفون</option>}
+          {emps.map(function(e){ return <option key={e.id} value={e.id}>{e.name} ({e.idNumber || e.id})</option>; })}
+        </select>
+
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 8 }}>
+          {[
+            { id: "notif", label: "📢 إشعار", color: B.blue },
+            { id: "call", label: "📞 اتصال وهمي", color: B.gold },
+            { id: "face", label: "📸 بصمة وجه", color: "#8b5cf6" },
+            { id: "checkin", label: "🟢 تسجيل حضور", color: "#10b981" },
+            { id: "checkout", label: "🔴 تسجيل انصراف", color: B.red },
+            { id: "gps", label: "🛰️ بيانات GPS", color: "#06b6d4" },
+          ].map(function(btn) {
+            return <button key={btn.id} onClick={function(){ runTest(btn.id); }} disabled={busy || !selected} style={{ padding: "12px 10px", borderRadius: 10, background: busy ? t.sep : btn.color, color: "#fff", border: "none", fontSize: 12, fontWeight: 700, cursor: busy ? "default" : "pointer", opacity: busy ? 0.5 : 1 }}>
+              {btn.label}
+            </button>;
+          })}
+        </div>
+      </div>
+
+      <div style={{ background: t.card, borderRadius: 12, padding: 16, border: "1px solid " + t.sep }}>
+        <div style={{ fontSize: 12, fontWeight: 700, color: t.tx, marginBottom: 8, display: "flex", justifyContent: "space-between" }}>
+          <span>📋 سجل الاختبارات</span>
+          {log.length > 0 && <button onClick={function(){ setLog([]); }} style={{ padding: "4px 10px", borderRadius: 6, background: "none", border: "1px solid " + t.sep, color: t.txM, fontSize: 10, cursor: "pointer" }}>مسح</button>}
+        </div>
+        {log.length === 0 && <div style={{ color: t.txM, fontSize: 11, padding: 14, textAlign: "center", fontStyle: "italic" }}>لم تبدأ اختبارات بعد</div>}
+        {log.map(function(item, i) {
+          var color = item.type === "ok" ? "#10b981" : item.type === "error" ? B.red : B.blue;
+          return <div key={i} style={{ padding: "8px 10px", borderRadius: 6, marginBottom: 4, background: color + "10", borderRight: "3px solid " + color, fontSize: 11 }}>
+            <div style={{ fontWeight: 700, color: t.tx }}>{item.msg}</div>
+            <div style={{ fontSize: 9, color: t.txM, marginTop: 2 }}>{item.ts}</div>
+          </div>;
+        })}
+      </div>
+    </div>
+  );
+}
+
 function AdminProfile({ t, B, onLogout }) {
   var [profile, setProfile] = useState(null);
   var [loading, setLoading] = useState(true);

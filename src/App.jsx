@@ -1,9 +1,33 @@
 import React, { useState, useEffect } from "react";
 import MobileApp from "./MobileApp.jsx";
 import AdminApp from "./AdminApp.jsx";
+
+function getInitialMode() {
+  try {
+    var h = window.location.hash;
+    var s = new URLSearchParams(window.location.search);
+    if (s.get("sso")) return "sso_processing";
+    if (h === "#admin") {
+      localStorage.setItem("basma_last_mode", "admin");
+      return "admin";
+    }
+    if (h === "#update" || s.get("sec") === "sys_update") return "update";
+    // Persist admin mode across F5
+    var savedAdminEmail = localStorage.getItem("basma_admin_email");
+    var lastMode = localStorage.getItem("basma_last_mode");
+    if (lastMode === "admin" && savedAdminEmail) {
+      try { window.history.replaceState({}, document.title, "/#admin"); } catch(e) {}
+      return "admin";
+    }
+    return "app";
+  } catch(e) { return "app"; }
+}
+
 export default function App() {
-  const [mode, setMode] = useState("app");
-  const [ssoProcessing, setSsoProcessing] = useState(false);
+  const [mode, setMode] = useState(getInitialMode);
+  const [ssoProcessing, setSsoProcessing] = useState(function(){
+    try { return !!new URLSearchParams(window.location.search).get("sso"); } catch(e) { return false; }
+  });
   const [ssoError, setSsoError] = useState("");
 
   useEffect(() => {
@@ -25,19 +49,18 @@ export default function App() {
           });
           const d = await r.json();
           if (d.ok && d.employee) {
-            // Save to localStorage so MobileApp/AdminApp pick it up
             localStorage.setItem("basma_user", JSON.stringify(d.employee));
             localStorage.setItem("basma_last_username", d.employee.username || d.employee.email || "");
             if (d.employee.isAdmin || d.employee.isGeneralManager) {
               localStorage.setItem("basma_admin_email", d.employee.email || "");
             }
-            // Decide target view
             const isAdminUser = d.employee.isAdmin || d.employee.isGeneralManager || d.employee.accountRole === "admin";
             if (viewMode === "admin" && isAdminUser) {
-              // Clean URL and open admin
+              localStorage.setItem("basma_last_mode", "admin");
               window.history.replaceState({}, document.title, "/#admin");
               setMode("admin");
             } else {
+              localStorage.setItem("basma_last_mode", "app");
               window.history.replaceState({}, document.title, "/");
               setMode("app");
             }
@@ -55,22 +78,17 @@ export default function App() {
         }
       }
 
-      // ═══ Normal routing ═══
-      // Persist admin mode across refreshes if admin is logged in
-      var savedAdminEmail = localStorage.getItem("basma_admin_email");
-      var savedUser = null;
-      try { savedUser = JSON.parse(localStorage.getItem("basma_user") || "null"); } catch(e) {}
-      var isAdminUser = savedUser && (savedUser.isAdmin || savedUser.isGeneralManager);
-
+      // ═══ Normal routing (on hashchange) ═══
       if (h === "#admin") {
         localStorage.setItem("basma_last_mode", "admin");
         return setMode("admin");
       }
       if (h === "#update" || s.get("sec") === "sys_update") return setMode("update");
 
-      // If admin session exists and last mode was admin → stay in admin
+      // If user explicitly navigated to root (no hash) and they are not admin, go to app
+      var savedAdminEmail = localStorage.getItem("basma_admin_email");
       var lastMode = localStorage.getItem("basma_last_mode");
-      if (lastMode === "admin" && savedAdminEmail && isAdminUser && !h) {
+      if (lastMode === "admin" && savedAdminEmail && !h) {
         window.history.replaceState({}, document.title, "/#admin");
         return setMode("admin");
       }

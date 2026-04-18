@@ -69,3 +69,48 @@ self.addEventListener('fetch', (event) => {
       .catch(() => caches.match(event.request))
   );
 });
+
+// ═══ Push Notifications ═══
+self.addEventListener('push', function(event) {
+  var data = {};
+  try { data = event.data ? event.data.json() : {}; } catch(e) { data = { title: 'بصمة HMA', body: event.data ? event.data.text() : 'إشعار جديد' }; }
+  var title = data.title || 'بصمة HMA';
+  var options = {
+    body: data.body || data.message || 'إشعار جديد',
+    icon: data.icon || '/icon.svg',
+    badge: data.badge || '/icon.svg',
+    tag: data.tag || 'basma-notif',
+    requireInteraction: data.requireInteraction || data.fakeCall || false,
+    vibrate: data.fakeCall ? [600, 300, 600, 300, 600, 300, 600] : [200, 100, 200],
+    data: data,
+  };
+  if (data.fakeCall) {
+    options.actions = [
+      { action: 'answer', title: '✓ رد' },
+      { action: 'decline', title: '✗ رفض' },
+    ];
+  }
+  event.waitUntil(self.registration.showNotification(title, options));
+});
+
+self.addEventListener('notificationclick', function(event) {
+  event.notification.close();
+  var data = event.notification.data || {};
+  var targetUrl = '/';
+  if (data.fakeCall || event.action === 'answer') {
+    targetUrl = '/?action=fake_call_answer&type=' + (data.callType || 'checkin');
+  }
+  event.waitUntil(
+    self.clients.matchAll({ type: 'window', includeUncontrolled: true }).then(function(clients) {
+      for (var i = 0; i < clients.length; i++) {
+        if (clients[i].url.includes(self.location.origin)) {
+          return clients[i].focus().then(function(client){
+            if (data.fakeCall) client.postMessage({ type: 'fake_call', callType: data.callType || 'checkin' });
+            return client;
+          });
+        }
+      }
+      return self.clients.openWindow(targetUrl);
+    })
+  );
+});

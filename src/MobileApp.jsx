@@ -373,6 +373,9 @@ function MobileAppInner() {
   const [showNotifs, setShowNotifs] = useState(false);
   const [pwaPrompt, setPwaPrompt] = useState(null);
   const [callBanner, setCallBanner] = useState(null); // { type, msg }
+  const [fakeCall, setFakeCall] = useState(null); // { type, label } — fake incoming call screen
+  const [autoCheckinPrompt, setAutoCheckinPrompt] = useState(null); // { type, label } — auto-triggered checkin
+  const [faceVerifyModal, setFaceVerifyModal] = useState(null); // { type, label, source }
   const [initDone, setInitDone] = useState(false);
 
   // Apply dark mode
@@ -507,66 +510,83 @@ function MobileAppInner() {
     if (online && user) syncGpsQueue();
   }, [online, user]);
 
-  // ═══ Call Notification Engine (4 أوقات) ═══
+  // ═══ New Call Engine + Auto-Checkin ═══
   useEffect(function() {
     if (!user || !branch) return;
-    var breakOffset = getBreakOffset(); // random 2-7 min per session
-    var callShown = {};
+    if (user.onLeave) return;
 
-    function checkCalls() {
-      var mins = now.getHours() * 60 + now.getMinutes();
-      var startMin = timeToMin(branch.start);
-      var endMin = timeToMin(branch.end);
-      var breakSMin = branch.breakS ? timeToMin(branch.breakS) : startMin + 240;
-      var breakEMin = branch.breakE ? timeToMin(branch.breakE) : breakSMin + 30;
-      var hasCheckin = todayAtt.some(function(r){ return r.type === "checkin"; });
-      var hasBreakS = todayAtt.some(function(r){ return r.type === "break_start"; });
-      var hasBreakE = todayAtt.some(function(r){ return r.type === "break_end"; });
-      var onLeave = user.onLeave;
+    var hasCheckin = todayAtt.some(function(r){ return r.type === "checkin"; });
+    var hasBreakS = todayAtt.some(function(r){ return r.type === "break_start"; });
+    var hasBreakE = todayAtt.some(function(r){ return r.type === "break_end"; });
+    var inR = gpsDist !== null && gpsDist <= (branch.radius || 150);
 
-      if (onLeave) return; // لا اتصال لو في إجازة
+    var mins = now.getHours() * 60 + now.getMinutes();
+    var startMin = timeToMin(branch.start);
+    var breakSMin = branch.breakS ? timeToMin(branch.breakS) : startMin + 240;
+    var breakEMin = branch.breakE ? timeToMin(branch.breakE) : breakSMin + 30;
 
-      // اتصال 1: بداية الدوام بالضبط
-      if (mins === startMin && !hasCheckin && !callShown.call1) {
-        callShown.call1 = true;
-        setCallBanner({ type: "checkin", msg: MASCOT.checkin });
-        if (navigator.vibrate) navigator.vibrate([300, 100, 300, 100, 300]);
-      }
-      // اتصال 2: بعد 10 دقائق لو ما حضر (فقط لو في النطاق)
-      if (mins === startMin + CALL_RETRY_DELAY && !hasCheckin && !callShown.call2) {
-        var inR = gpsDist !== null && gpsDist <= (branch.radius || 150);
-        if (inR) {
-          callShown.call2 = true;
-          setCallBanner({ type: "retry", msg: "⏰ لم تسجّل حضورك بعد!" });
-          if (navigator.vibrate) navigator.vibrate([500, 200, 500]);
-        }
-      }
-      // اتصال 3: قبل الاستراحة بـ breakOffset دقائق
-      if (mins === breakSMin - breakOffset && !hasBreakS && hasCheckin && !callShown.call3) {
-        callShown.call3 = true;
-        setCallBanner({ type: "break", msg: "☕ وقت الاستراحة قريب — سجّل!" });
-        if (navigator.vibrate) navigator.vibrate([200, 100, 200]);
-      }
-      // اتصال 4: بعد انتهاء الاستراحة بـ breakOffset دقائق
-      if (mins === breakEMin + breakOffset && !hasBreakE && hasBreakS && !callShown.call4) {
-        callShown.call4 = true;
-        setCallBanner({ type: "breakEnd", msg: "🔄 انتهت الاستراحة — سجّل عودتك!" });
-        if (navigator.vibrate) navigator.vibrate([200, 100, 200]);
-      }
-      // خارج النطاق عند الحضور — دائرة حمراء
-      if (mins >= startMin && mins <= startMin + 15 && !hasCheckin) {
-        var outside = gpsDist !== null && gpsDist > (branch.radius || 150);
-        if (outside && !callShown.outRange) {
-          callShown.outRange = true;
-          // لا اتصال — فقط تنبيه بصري (الدائرة حمراء + رسالة)
-        }
+    // Generate stable random offset per session (0-4 minutes)
+    if (!window.__basmaCallOffsets) {
+      var seed = parseInt(String(user.id).replace(/\D/g, '').slice(-4) || '0', 10);
+      window.__basmaCallOffsets = {
+        checkin: (seed * 7) % 5,       // 0-4 min after start
+        breakEnd: (seed * 11) % 5,     // 0-4 min after break end
+      };
+    }
+    var offsets = window.__basmaCallOffsets;
+    var fakeCallKey = 'basma_fake_call_' + todayStr();
+    var shown = {};
+    try { shown = JSON.parse(sessionStorage.getItem(fakeCallKey) || '{}'); } catch(e) { shown = {}; }
+
+    // 1. إذا الموظف داخل النطاق ولم يسجل حضور → سجل تلقائياً
+    if (inR && !hasCheckin && mins >= startMin - 30 && mins <= startMin + 60) {
+      // auto-trigger face verification modal
+      if (!window.__autoCheckinTriggered) {
+        window.__autoCheckinTriggered = true;
+        setAutoCheckinPrompt({ type: "checkin", label: "تسجيل الحضور" });
       }
     }
 
-    var interval = setInterval(checkCalls, 30000); // check every 30 sec
-    checkCalls(); // check immediately
-    return function() { clearInterval(interval); };
+    // 2. اتصال تذكير: إذا لم يبصم خلال 5 دقائق من بداية الدوام (بتوقيت عشوائي)
+    var checkinCallAt = startMin + offsets.checkin;
+    if (mins === checkinCallAt && !hasCheckin && !shown.checkinCall) {
+      shown.checkinCall = true;
+      sessionStorage.setItem(fakeCallKey, JSON.stringify(shown));
+      setFakeCall({ type: "checkin", label: "تسجيل الحضور" });
+    }
+
+    // 3. اتصال تذكير: إذا انتهت الاستراحة ولم يسجل عودة (بتوقيت عشوائي)
+    var breakEndCallAt = breakEMin + offsets.breakEnd;
+    if (mins === breakEndCallAt && hasBreakS && !hasBreakE && !shown.breakCall) {
+      shown.breakCall = true;
+      sessionStorage.setItem(fakeCallKey, JSON.stringify(shown));
+      setFakeCall({ type: "break_end", label: "العودة من الاستراحة" });
+    }
   }, [user, branch, now, todayAtt, gpsDist]);
+
+  // ═══ Listen for Service Worker messages (fake call from notification click) ═══
+  useEffect(function() {
+    if (!user) return;
+    function handleSwMsg(event) {
+      if (event.data && event.data.type === 'fake_call') {
+        var callType = event.data.callType || 'checkin';
+        var label = callType === 'checkin' ? 'تسجيل الحضور' : callType === 'break_end' ? 'العودة من الاستراحة' : 'التسجيل';
+        setFakeCall({ type: callType, label: label });
+      }
+    }
+    if (navigator.serviceWorker) {
+      navigator.serviceWorker.addEventListener('message', handleSwMsg);
+    }
+    // Request notification permission on first login
+    if (typeof Notification !== 'undefined' && Notification.permission === 'default') {
+      try { Notification.requestPermission().catch(function(){}); } catch(e) {}
+    }
+    return function() {
+      if (navigator.serviceWorker) {
+        navigator.serviceWorker.removeEventListener('message', handleSwMsg);
+      }
+    };
+  }, [user]);
 
   async function loadData(emp) {
     try {
@@ -777,6 +797,9 @@ function MobileAppInner() {
 
       {toast && <Toast msg={toast.msg} type={toast.type} />}
       {callBanner && <CallBanner type={callBanner.type} msg={callBanner.msg} onDismiss={function(){ setCallBanner(null); }} />}
+      {fakeCall && <FakeCallScreen type={fakeCall.type} label={fakeCall.label} user={user} onAnswer={function(){ var fc = fakeCall; setFakeCall(null); setFaceVerifyModal({ type: fc.type, label: fc.label, source: "call" }); }} onDecline={function(){ setFakeCall(null); }} />}
+      {autoCheckinPrompt && <AutoCheckinBanner label={autoCheckinPrompt.label} onConfirm={function(){ var p = autoCheckinPrompt; setAutoCheckinPrompt(null); setFaceVerifyModal({ type: p.type, label: p.label, source: "auto" }); }} onDismiss={function(){ setAutoCheckinPrompt(null); window.__autoCheckinTriggered = false; }} />}
+      {faceVerifyModal && <FaceModal empId={user.id} onVerified={function(photo){ doCheckin(faceVerifyModal.type, photo); setFaceVerifyModal(null); }} onSkip={function(){ setFaceVerifyModal(null); }} onCancel={function(){ setFaceVerifyModal(null); }} />}
       {confirmModal && <ConfirmModal label={confirmModal.label} onConfirm={confirmCheckin} onCancel={() => setConfirmModal(null)} />}
       {faceModal && <FaceModal empId={user.id} onVerified={(photo) => doCheckin(faceModal.type, photo)} onSkip={() => doCheckin(faceModal.type)} onCancel={() => setFaceModal(null)} />}
       {challengeOpen && <ChallengeModal user={user} onClose={() => setChallengeOpen(false)} onPoints={(pts) => { const u = { ...user, points: (user.points||0)+pts }; setUser(u); localStorage.setItem("basma_user", JSON.stringify(u)); showToast("🎉 +" + pts + " نقطة!"); }} />}
@@ -1093,8 +1116,19 @@ function HomePage({ user, branch, now, todayAtt, allAtt, gps, gpsDist, streak, l
           </div>
           {/* Digital time — below clock, not absolute */}
           <div style={{ textAlign: "center", marginTop: SPACING.md }}>
-            {outsideNoCheckin && <div style={{ ...TYPOGRAPHY.caption, fontWeight: 800, color: COLORS.textDanger }}>لم تقم بتسجيل الحضور</div>}
-            {outsideNoCheckin && gpsDist && <div style={{ ...TYPOGRAPHY.tiny, color: COLORS.textMuted, marginTop: 2 }}>{"خارج منطقة العمل (" + gpsDist + " م)"}</div>}
+            {outsideNoCheckin && (
+              <div style={{ background: "linear-gradient(135deg, #dc2626, #991b1b)", border: "2px solid #ef4444", borderRadius: 12, padding: "10px 14px", marginBottom: 8, animation: "basmaRedPulse 1.5s ease-in-out infinite" }}>
+                <div style={{ fontSize: 14, fontWeight: 900, color: "#fff", fontFamily: TYPOGRAPHY.fontCairo, display: "flex", alignItems: "center", justifyContent: "center", gap: 6 }}>
+                  <span style={{ fontSize: 18 }}>⚠️</span> خارج نطاق العمل
+                </div>
+                {gpsDist !== null && (
+                  <div style={{ fontSize: 11, fontWeight: 700, color: "#fecaca", marginTop: 4 }}>
+                    تبعد {gpsDist} م • يجب الاقتراب من المكتب لتسجيل الحضور
+                  </div>
+                )}
+                <style>{`@keyframes basmaRedPulse { 0%,100% { box-shadow: 0 0 0 0 rgba(239,68,68,0.7); } 50% { box-shadow: 0 0 0 8px rgba(239,68,68,0); } }`}</style>
+              </div>
+            )}
             <div style={{ fontSize: 20, fontWeight: 800, color: COLORS.goldDark, fontFamily: TYPOGRAPHY.fontSerif, letterSpacing: 3, marginTop: 4, textShadow: darkMode ? "0 0 10px rgba(201,168,76,.3)" : "none" }}>{time}<span style={{ fontSize: 12, opacity: .4 }}>:{sec}</span> <span style={{ fontSize: 11, opacity: .4 }}>{ampm}</span></div>
           </div>
           </>
@@ -4073,6 +4107,159 @@ function HelpGuideSection() {
         </div>
       )}
     </>
+  );
+}
+
+/* ═══════════ FAKE INCOMING CALL SCREEN ═══════════ */
+function FakeCallScreen({ type, label, user, onAnswer, onDecline }) {
+  var [ringing, setRinging] = useState(true);
+  var [seconds, setSeconds] = useState(0);
+  var audioRef = useRef(null);
+
+  useEffect(function() {
+    // Play ring tone (loop)
+    try {
+      var ctx = new (window.AudioContext || window.webkitAudioContext)();
+      var osc, gain;
+      var playRing = function() {
+        osc = ctx.createOscillator();
+        gain = ctx.createGain();
+        osc.connect(gain);
+        gain.connect(ctx.destination);
+        osc.frequency.value = 880;
+        gain.gain.value = 0.3;
+        osc.start();
+        setTimeout(function(){ osc.frequency.value = 660; }, 200);
+        setTimeout(function(){
+          try { osc.stop(); } catch(e){}
+        }, 400);
+      };
+      var interval = setInterval(function() {
+        if (ringing) playRing();
+      }, 1500);
+      audioRef.current = { stop: function(){ clearInterval(interval); try { osc && osc.stop(); } catch(e){} } };
+    } catch(e) {}
+
+    // Vibrate loop
+    var vibrate = setInterval(function(){
+      if (navigator.vibrate) navigator.vibrate([600, 300, 600, 300, 600]);
+    }, 2500);
+    if (navigator.vibrate) navigator.vibrate([600, 300, 600, 300, 600]);
+
+    // Timer
+    var timer = setInterval(function(){ setSeconds(function(s){ return s + 1; }); }, 1000);
+
+    // Auto-dismiss after 30 seconds
+    var autoEnd = setTimeout(function(){
+      setRinging(false);
+      onDecline();
+    }, 30000);
+
+    return function() {
+      clearInterval(vibrate);
+      clearInterval(timer);
+      clearTimeout(autoEnd);
+      if (audioRef.current) audioRef.current.stop();
+      if (navigator.vibrate) navigator.vibrate(0);
+    };
+  }, []);
+
+  function handleAnswer() {
+    setRinging(false);
+    if (audioRef.current) audioRef.current.stop();
+    if (navigator.vibrate) navigator.vibrate(0);
+    onAnswer();
+  }
+  function handleDecline() {
+    setRinging(false);
+    if (audioRef.current) audioRef.current.stop();
+    if (navigator.vibrate) navigator.vibrate(0);
+    onDecline();
+  }
+
+  var timeStr = Math.floor(seconds / 60).toString().padStart(2, "0") + ":" + (seconds % 60).toString().padStart(2, "0");
+  var bgMain = "linear-gradient(180deg, #0f1e3c, #1a3a6e 40%, #2b5ea7)";
+
+  return (
+    <div style={{ position: "fixed", inset: 0, zIndex: 9999, background: bgMain, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "space-between", padding: "60px 24px 50px", color: "#fff", direction: "rtl", fontFamily: TYPOGRAPHY.fontTajawal }}>
+      {/* Top — caller info */}
+      <div style={{ textAlign: "center", width: "100%" }}>
+        <div style={{ fontSize: 12, color: "rgba(255,255,255,0.7)", marginBottom: 8, fontWeight: 600 }}>
+          📱 مكالمة واردة • {timeStr}
+        </div>
+        <div style={{ fontSize: 28, fontWeight: 900, marginBottom: 4, fontFamily: TYPOGRAPHY.fontCairo }}>بصمة HMA</div>
+        <div style={{ fontSize: 14, color: "#FCD34D", fontWeight: 700 }}>
+          {type === "checkin" ? "⏰ تذكير بتسجيل الحضور" : type === "break_end" ? "🔄 العودة من الاستراحة" : label}
+        </div>
+      </div>
+
+      {/* Center — pulsing avatar */}
+      <div style={{ position: "relative" }}>
+        <div style={{ position: "absolute", inset: -20, borderRadius: "50%", background: "rgba(252,211,77,0.15)", animation: "basmaPulse 2s ease-out infinite" }} />
+        <div style={{ position: "absolute", inset: -40, borderRadius: "50%", background: "rgba(252,211,77,0.08)", animation: "basmaPulse 2s ease-out 0.3s infinite" }} />
+        <div style={{ position: "relative", width: 160, height: 160, borderRadius: "50%", background: "linear-gradient(135deg, #FCD34D, #F59E0B)", display: "flex", alignItems: "center", justifyContent: "center", border: "4px solid rgba(255,255,255,0.2)", boxShadow: "0 10px 40px rgba(0,0,0,0.5)" }}>
+          <svg width="80" height="80" viewBox="0 0 24 24" fill="none" stroke="#1a3a6e" strokeWidth="2.5" strokeLinecap="round">
+            <circle cx="12" cy="12" r="10"/>
+            <polyline points="12,6 12,12 16,14"/>
+          </svg>
+        </div>
+      </div>
+
+      {/* Bottom — instruction + buttons */}
+      <div style={{ width: "100%" }}>
+        <div style={{ textAlign: "center", fontSize: 12, color: "rgba(255,255,255,0.7)", marginBottom: 30, lineHeight: 1.8 }}>
+          اضغط <span style={{ color: "#10b981", fontWeight: 800 }}>رد</span> لتسجيل {label}<br/>
+          أو <span style={{ color: "#ef4444", fontWeight: 800 }}>رفض</span> لتأجيل
+        </div>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "0 20px" }}>
+          {/* Decline button */}
+          <button onClick={handleDecline} style={{ width: 72, height: 72, borderRadius: "50%", background: "#ef4444", border: "none", display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer", boxShadow: "0 8px 20px rgba(239,68,68,0.4)" }}>
+            <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.5" strokeLinecap="round" style={{ transform: "rotate(135deg)" }}>
+              <path d="M22 16.92v3a2 2 0 01-2.18 2 19.79 19.79 0 01-8.63-3.07 19.5 19.5 0 01-6-6 19.79 19.79 0 01-3.07-8.67A2 2 0 014.11 2h3a2 2 0 012 1.72 12.84 12.84 0 00.7 2.81 2 2 0 01-.45 2.11L8.09 9.91a16 16 0 006 6l1.27-1.27a2 2 0 012.11-.45 12.84 12.84 0 002.81.7A2 2 0 0122 16.92z"/>
+            </svg>
+          </button>
+          <div style={{ fontSize: 10, color: "rgba(255,255,255,0.5)", writingMode: "horizontal-tb" }}>↓ اسحب للرد</div>
+          {/* Answer button */}
+          <button onClick={handleAnswer} style={{ width: 72, height: 72, borderRadius: "50%", background: "#10b981", border: "none", display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer", boxShadow: "0 8px 20px rgba(16,185,129,0.5)", animation: "basmaAnswerPulse 1.5s ease-in-out infinite" }}>
+            <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.5" strokeLinecap="round">
+              <path d="M22 16.92v3a2 2 0 01-2.18 2 19.79 19.79 0 01-8.63-3.07 19.5 19.5 0 01-6-6 19.79 19.79 0 01-3.07-8.67A2 2 0 014.11 2h3a2 2 0 012 1.72 12.84 12.84 0 00.7 2.81 2 2 0 01-.45 2.11L8.09 9.91a16 16 0 006 6l1.27-1.27a2 2 0 012.11-.45 12.84 12.84 0 002.81.7A2 2 0 0122 16.92z"/>
+            </svg>
+          </button>
+        </div>
+        <div style={{ display: "flex", justifyContent: "space-between", marginTop: 8, padding: "0 20px", fontSize: 11, fontWeight: 700 }}>
+          <div style={{ width: 72, textAlign: "center", color: "#ef4444" }}>رفض</div>
+          <div style={{ flex: 1 }}></div>
+          <div style={{ width: 72, textAlign: "center", color: "#10b981" }}>رد</div>
+        </div>
+      </div>
+
+      <style>{`
+        @keyframes basmaPulse { 0% { transform: scale(1); opacity: 0.8; } 100% { transform: scale(1.4); opacity: 0; } }
+        @keyframes basmaAnswerPulse { 0%,100% { transform: scale(1); } 50% { transform: scale(1.08); } }
+      `}</style>
+    </div>
+  );
+}
+
+/* ═══════════ AUTO CHECKIN BANNER ═══════════ */
+function AutoCheckinBanner({ label, onConfirm, onDismiss }) {
+  return (
+    <div style={{ position: "fixed", top: 12, left: 12, right: 12, zIndex: 9998, animation: "basmaSlide .3s ease-out" }}>
+      <div style={{ background: "linear-gradient(135deg, #10b981, #059669)", borderRadius: 16, padding: "14px 16px", display: "flex", alignItems: "center", gap: 12, boxShadow: "0 8px 24px rgba(16,185,129,0.4)", direction: "rtl", fontFamily: TYPOGRAPHY.fontTajawal }}>
+        <div style={{ width: 40, height: 40, borderRadius: 12, background: "rgba(255,255,255,0.2)", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
+          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2" strokeLinecap="round">
+            <path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0118 0z"/><circle cx="12" cy="10" r="3"/>
+          </svg>
+        </div>
+        <div style={{ flex: 1, color: "#fff" }}>
+          <div style={{ fontSize: 13, fontWeight: 800, fontFamily: TYPOGRAPHY.fontCairo }}>✓ أنت داخل نطاق العمل</div>
+          <div style={{ fontSize: 11, opacity: 0.9, marginTop: 2 }}>تأكيد {label} ببصمة الوجه</div>
+        </div>
+        <button onClick={onConfirm} style={{ padding: "8px 14px", borderRadius: 10, background: "#fff", color: "#059669", border: "none", fontSize: 12, fontWeight: 800, cursor: "pointer", fontFamily: TYPOGRAPHY.fontCairo }}>تأكيد</button>
+        <button onClick={onDismiss} style={{ width: 28, height: 28, borderRadius: 8, background: "rgba(255,255,255,0.2)", color: "#fff", border: "none", cursor: "pointer", fontSize: 14 }}>✕</button>
+      </div>
+      <style>{`@keyframes basmaSlide { from { transform: translateY(-120%); opacity: 0; } to { transform: translateY(0); opacity: 1; } }`}</style>
+    </div>
   );
 }
 

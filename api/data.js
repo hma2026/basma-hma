@@ -693,6 +693,41 @@ export default async function handler(req, res) {
         }
       }
 
+      /* ═══ WORK TYPES — إعدادات أنواع الدوام + overrides للموظفين ═══ */
+      case 'work_types': {
+        if (req.method === 'POST') {
+          var body = req.body || {};
+          var current = (await dbGet('work_types')) || { types: {}, overrides: {} };
+          if (body.types) current.types = body.types;
+          if (body.overrides) current.overrides = body.overrides;
+          await dbSet('work_types', current);
+          return res.json({ ok: true, ...current });
+        }
+        var wt = (await dbGet('work_types')) || { types: {}, overrides: {} };
+        return res.json(wt);
+      }
+
+      /* ═══ TEST NOTIFY — إرسال إشعار/اتصال وهمي اختباري من المدير ═══ */
+      case 'test-notify': {
+        var body = req.body || {};
+        var empId = body.empId;
+        if (!empId) return res.status(400).json({ ok: false, error: 'empId مطلوب' });
+        var notifs = (await dbGet('notifications')) || [];
+        var newNotif = {
+          id: 'N' + Date.now(),
+          empId: empId,
+          type: body.type || 'test',
+          title: body.title || 'إشعار اختبار',
+          message: body.message || 'إشعار من المدير',
+          fakeCall: body.type === 'fake_call',
+          read: false,
+          ts: new Date().toISOString(),
+        };
+        notifs.unshift(newNotif);
+        await dbSet('notifications', notifs.slice(0, 500));
+        return res.json({ ok: true, notification: newNotif });
+      }
+
       /* ═══ PING — اختبار بسيط بدون fetch ═══ */
       case 'ping': {
         return res.json({ ok: true, msg: 'pong', ts: new Date().toISOString(), nodeVer: process.version, fetchAvailable: typeof fetch === 'function' });
