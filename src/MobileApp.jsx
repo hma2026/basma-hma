@@ -10,7 +10,7 @@ import { ALL_VIOLATIONS_DEFAULT, PENALTY_TYPES, LAIHA_INFO, COMPLAINT_STATUS, VI
 
 /* ═══════════ APP CONFIG (إعدادات التطبيق) ═══════════ */
 const APP_CONFIG = {
-  VER: "6.24",
+  VER: "6.25",
   NAME: "بصمة HMA",
   FULL_NAME: "نظام الحضور والانصراف الذكي",
   COMPANY: "هاني محمد عسيري للاستشارات الهندسية",
@@ -665,6 +665,11 @@ function MobileAppInner() {
         var callType = event.data.callType || 'checkin';
         var label = callType === 'checkin' ? 'تسجيل الحضور' : callType === 'break_end' ? 'العودة من الاستراحة' : 'التسجيل';
         setFakeCall({ type: callType, label: label });
+      }
+      // Tawasul push notification clicked — switch to tawasul page
+      if (event.data && event.data.type === 'tawasul_new_task') {
+        setPage('tawasul');
+        try { localStorage.setItem('basma_page', 'tawasul'); } catch(e) {}
       }
     }
     if (navigator.serviceWorker) {
@@ -4072,6 +4077,84 @@ function TawasulHRActionsModal({ request, user, allEmps, onClose, onSaved }) {
 
 
 /* ═══════════ TAWASUL SOUND (spec section 16) ═══════════ */
+/* Export tasks to iCal (.ics) file for calendar sync */
+function exportTawasulICS(requests, myId) {
+  // Filter: only tasks with deadlines and that involve me
+  var tasks = (requests || []).filter(function(r){
+    if (!r.deadline) return false;
+    if (["closed","cancelled","evaluated"].indexOf(r.status) >= 0) return false;
+    var isReq = String(r.requesterId) === String(myId);
+    var isAsg = (r.assignees || []).some(function(a){ return String(a.id) === String(myId); });
+    return isReq || isAsg;
+  });
+  if (tasks.length === 0) {
+    alert("لا توجد مهام بمواعيد محددة لتصديرها");
+    return;
+  }
+  function icsDate(iso) {
+    if (!iso) return "";
+    var d = new Date(iso);
+    // Format: YYYYMMDDTHHMMSSZ
+    var pad = function(n){ return n < 10 ? "0" + n : String(n); };
+    return d.getUTCFullYear() + pad(d.getUTCMonth()+1) + pad(d.getUTCDate()) + "T" + pad(d.getUTCHours()) + pad(d.getUTCMinutes()) + pad(d.getUTCSeconds()) + "Z";
+  }
+  function escICS(s) {
+    if (!s) return "";
+    return String(s).replace(/\\/g, "\\\\").replace(/\n/g, "\\n").replace(/;/g, "\\;").replace(/,/g, "\\,");
+  }
+  var now = icsDate(new Date().toISOString());
+  var lines = [
+    "BEGIN:VCALENDAR",
+    "VERSION:2.0",
+    "PRODID:-//HMA//Basma Tawasul//AR",
+    "CALSCALE:GREGORIAN",
+    "METHOD:PUBLISH",
+    "X-WR-CALNAME:مهام بصمة — التواصل",
+    "X-WR-TIMEZONE:Asia/Riyadh",
+  ];
+  tasks.forEach(function(r){
+    var dtEnd = icsDate(r.deadline);
+    // 1-hour event by default (end = deadline, start = deadline - 1h)
+    var startMs = new Date(r.deadline).getTime() - 3600000;
+    var dtStart = icsDate(new Date(startMs).toISOString());
+    var urgentTag = r.urgency === "urgent" ? "🔴 عاجل — " : "";
+    var serialTag = r.serial ? ("#" + r.serial + " ") : "";
+    lines.push("BEGIN:VEVENT");
+    lines.push("UID:" + (r.id || ("tawasul_" + Date.now())) + "@hma.basma");
+    lines.push("DTSTAMP:" + now);
+    lines.push("DTSTART:" + dtStart);
+    lines.push("DTEND:" + dtEnd);
+    lines.push("SUMMARY:" + escICS(urgentTag + serialTag + (r.title || "مهمة")));
+    var desc = (r.description || "") + "\n\n" +
+      "المشروع: " + (r.projectName || "—") + "\n" +
+      "من: " + (r.requesterName || "—") + "\n" +
+      "الحالة: " + r.status;
+    lines.push("DESCRIPTION:" + escICS(desc));
+    if (r.urgency === "urgent") {
+      lines.push("PRIORITY:1");
+      // Alarm 1 hour before
+      lines.push("BEGIN:VALARM");
+      lines.push("ACTION:DISPLAY");
+      lines.push("DESCRIPTION:" + escICS("تذكير: " + (r.title || "مهمة")));
+      lines.push("TRIGGER:-PT1H");
+      lines.push("END:VALARM");
+    }
+    lines.push("END:VEVENT");
+  });
+  lines.push("END:VCALENDAR");
+  var icsContent = lines.join("\r\n");
+  // Download
+  var blob = new Blob([icsContent], { type: "text/calendar;charset=utf-8" });
+  var url = URL.createObjectURL(blob);
+  var a = document.createElement("a");
+  a.href = url;
+  a.download = "basma-tawasul-" + new Date().toISOString().slice(0,10) + ".ics";
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  setTimeout(function(){ URL.revokeObjectURL(url); }, 1000);
+}
+
 function playTawasulNotif() {
   try {
     var ctx = new (window.AudioContext || window.webkitAudioContext)();
@@ -4089,6 +4172,31 @@ function playTawasulNotif() {
     note(1100, 0.15, 0.15);
     note(1320, 0.3, 0.2);
   } catch(e) { /* silent fail — user hasn't interacted yet */ }
+}
+
+/* Stronger alert for urgent or overdue tasks */
+function playUrgentNotif() {
+  try {
+    var ctx = new (window.AudioContext || window.webkitAudioContext)();
+    function note(freq, start, dur, vol) {
+      var o = ctx.createOscillator();
+      var g = ctx.createGain();
+      o.connect(g); g.connect(ctx.destination);
+      o.frequency.value = freq; o.type = "square";
+      g.gain.setValueAtTime(vol || 0.15, ctx.currentTime + start);
+      g.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + start + dur);
+      o.start(ctx.currentTime + start);
+      o.stop(ctx.currentTime + start + dur);
+    }
+    // Urgent: 3 quick rising then descending tones
+    note(800, 0,    0.12, 0.18);
+    note(1000, 0.12, 0.12, 0.18);
+    note(1200, 0.24, 0.12, 0.18);
+    note(1000, 0.36, 0.12, 0.18);
+    note(800,  0.48, 0.18, 0.15);
+    // Vibrate if supported (mobile)
+    if (navigator.vibrate) { try { navigator.vibrate([200, 100, 200, 100, 400]); } catch(e){} }
+  } catch(e) {}
 }
 
 async function callTawasulAI(prompt, model, opts) {
@@ -4280,6 +4388,106 @@ function TawasulAIAssistant({ categories, employees, onFilled, onClose }) {
 }
 
 
+/* ═══ NOTIFICATION ENABLE BANNER — prompts user to enable push if not granted ═══ */
+function NotifEnableBanner({ user }) {
+  var [state, setState] = useState("checking"); // checking | granted | default | denied | unsupported | subscribing
+  var [dismissed, setDismissed] = useState(function(){
+    return localStorage.getItem("basma_notif_banner_dismissed") === "1";
+  });
+
+  useEffect(function(){
+    if (typeof Notification === "undefined" || !('serviceWorker' in navigator) || !('PushManager' in window)) {
+      setState("unsupported");
+      return;
+    }
+    setState(Notification.permission);
+  }, []);
+
+  async function enableNow() {
+    setState("subscribing");
+    try {
+      if (Notification.permission === "default") {
+        var perm = await Notification.requestPermission();
+        if (perm !== "granted") { setState(perm); return; }
+      }
+      if (Notification.permission !== "granted") { setState(Notification.permission); return; }
+
+      // Fetch VAPID key
+      var keyR = await fetch('/api/data?action=vapid-public-key');
+      var keyD = await keyR.json();
+      if (!keyD.publicKey) {
+        alert("❌ مفاتيح VAPID غير مُعدَّة على الخادم. راجع الإدمن.");
+        setState("granted");
+        return;
+      }
+      function urlBase64ToUint8Array(base64) {
+        var pad = "=".repeat((4 - base64.length % 4) % 4);
+        var b = (base64 + pad).replace(/-/g, "+").replace(/_/g, "/");
+        var raw = window.atob(b);
+        var arr = new Uint8Array(raw.length);
+        for (var i = 0; i < raw.length; i++) arr[i] = raw.charCodeAt(i);
+        return arr;
+      }
+      var reg = await navigator.serviceWorker.ready;
+      var sub = await reg.pushManager.getSubscription();
+      if (!sub) {
+        sub = await reg.pushManager.subscribe({
+          userVisibleOnly: true,
+          applicationServerKey: urlBase64ToUint8Array(keyD.publicKey),
+        });
+      }
+      await fetch('/api/data?action=subscribe-push', {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ empId: user && user.id, subscription: sub }),
+      });
+      setState("granted");
+      alert("✅ تم تفعيل الإشعارات بنجاح — ستصلك إشعارات عند وصول مهام جديدة");
+    } catch(e) {
+      alert("فشل التفعيل: " + (e.message || "خطأ"));
+      setState(Notification.permission);
+    }
+  }
+
+  function dismiss() {
+    localStorage.setItem("basma_notif_banner_dismissed", "1");
+    setDismissed(true);
+  }
+
+  if (dismissed) return null;
+  if (state === "granted") return null;
+  if (state === "checking" || state === "subscribing") return null;
+
+  var title, body, color, icon, bg, btnLabel;
+  if (state === "unsupported") {
+    title = "الإشعارات غير مدعومة";
+    body = "متصفحك لا يدعم Web Push — افتح التطبيق في Chrome/Safari حديث";
+    color = "#94a3b8"; bg = "rgba(148,163,184,0.1)"; icon = "ℹ️"; btnLabel = null;
+  } else if (state === "denied") {
+    title = "الإشعارات محظورة";
+    body = "قم بتفعيلها من إعدادات المتصفح → أذونات الموقع";
+    color = "#ef4444"; bg = "rgba(239,68,68,0.08)"; icon = "🔕"; btnLabel = null;
+  } else {
+    title = "فعّل الإشعارات";
+    body = "لتصلك المهام الجديدة فوراً حتى لو التطبيق مغلق";
+    color = C.hdr2; bg = "rgba(10,132,255,0.08)"; icon = "🔔"; btnLabel = "تفعيل";
+  }
+
+  return (
+    <div style={{ margin: "8px 12px 0", padding: "10px 12px", background: bg, border: "1px solid " + color + "40", borderRadius: 10, display: "flex", alignItems: "center", gap: 10, fontSize: 11, fontFamily: "'Tajawal',sans-serif" }}>
+      <span style={{ fontSize: 18 }}>{icon}</span>
+      <div style={{ flex: 1, minWidth: 0 }}>
+        <div style={{ fontWeight: 800, color: color, fontSize: 12 }}>{title}</div>
+        <div style={{ color: C.sub, marginTop: 2 }}>{body}</div>
+      </div>
+      {btnLabel && (
+        <button onClick={enableNow} style={{ padding: "6px 12px", borderRadius: 8, background: color, color: "#fff", border: "none", fontSize: 11, fontWeight: 800, cursor: "pointer", fontFamily: "inherit", whiteSpace: "nowrap" }}>{btnLabel}</button>
+      )}
+      <button onClick={dismiss} title="إخفاء" style={{ padding: "4px 8px", borderRadius: 8, background: "transparent", color: C.sub, border: "none", fontSize: 14, cursor: "pointer", fontFamily: "inherit" }}>×</button>
+    </div>
+  );
+}
+
 function TawasulPage({ user, allEmps }) {
   var [tab, setTab] = useState("inbox");
   var [requests, setRequests] = useState(null);
@@ -4292,6 +4500,16 @@ function TawasulPage({ user, allEmps }) {
   var [filterStatus, setFilterStatus] = useState("all");
   var [filterCategory, setFilterCategory] = useState("all");
   var [filterUrgency, setFilterUrgency] = useState("all");
+  // Advanced filters
+  var [filterProject, setFilterProject] = useState("all");
+  var [filterPerson, setFilterPerson] = useState("all");
+  var [filterDeadline, setFilterDeadline] = useState("all");
+  var [filterDateFrom, setFilterDateFrom] = useState("");
+  var [filterDateTo, setFilterDateTo] = useState("");
+  var [savedSearches, setSavedSearches] = useState(function(){
+    try { return JSON.parse(localStorage.getItem("basma_tawasul_searches") || "[]"); } catch(e) { return []; }
+  });
+  var [showSaveSearch, setShowSaveSearch] = useState(false);
   var [selectedReq, setSelectedReq] = useState(null);
   var [refreshing, setRefreshing] = useState(false);
   var [showFilters, setShowFilters] = useState(false);
@@ -4304,6 +4522,35 @@ function TawasulPage({ user, allEmps }) {
   var myId = user && (user.id || user.username);
 
   async function loadData(isRefresh) {
+    // Try cache first for instant display (only on first load, not on refresh)
+    if (!isRefresh) {
+      try {
+        var cached = localStorage.getItem("basma_tawasul_cache");
+        if (cached) {
+          var cd = JSON.parse(cached);
+          var age = Date.now() - (cd.ts || 0);
+          if (age < 60000) {
+            // Fresh cache (<1 minute): use it + refresh in background
+            setRequests(cd.requests || []);
+            setCategories(cd.categories || []);
+            setProjects(cd.projects || []);
+            setHierarchy(cd.hierarchy || {});
+            setLoading(false);
+            // Background refresh
+            setTimeout(function(){ loadData(true); }, 100);
+            return;
+          } else if (age < 600000) {
+            // Stale cache (<10 min): show it while fetching
+            setRequests(cd.requests || []);
+            setCategories(cd.categories || []);
+            setProjects(cd.projects || []);
+            setHierarchy(cd.hierarchy || {});
+            setLoading(false);
+            setRefreshing(true);
+          }
+        }
+      } catch(e) {}
+    }
     if (isRefresh) setRefreshing(true); else setLoading(true);
     setErr(null);
     try {
@@ -4314,17 +4561,28 @@ function TawasulPage({ user, allEmps }) {
       var d = await r.json();
       if (!r.ok || d.error) {
         setErr(d.error || ("خطأ " + r.status));
-        setRequests([]);
+        // Don't wipe requests if we have cache
+        if (!requests) setRequests([]);
       } else {
         setRequests(d.requests || []);
         setCategories(d.categories || []);
         setProjects(d.projects || []);
         setHierarchy(d.hierarchy || {});
+        // Save cache
+        try {
+          localStorage.setItem("basma_tawasul_cache", JSON.stringify({
+            ts: Date.now(),
+            requests: d.requests || [],
+            categories: d.categories || [],
+            projects: d.projects || [],
+            hierarchy: d.hierarchy || {},
+          }));
+        } catch(e) {}
       }
     } catch (e) {
       var msg = e.name === "AbortError" ? "انتهت المهلة — الخادم بطيء، جرّب إعادة التحميل" : (e.message || "اتصال");
       setErr("تعذر تحميل البيانات: " + msg);
-      setRequests([]);
+      if (!requests) setRequests([]);
     }
     setLoading(false);
     setRefreshing(false);
@@ -4351,12 +4609,20 @@ function TawasulPage({ user, allEmps }) {
   var prevUnreadRef = useRef(0);
   useEffect(function() {
     if (!requests) return;
-    var currentUnread = requests.filter(function(r){
+    var myIncoming = requests.filter(function(r){
       var isA = (r.assignees || []).some(function(a){ return String(a.id) === String(myId); });
       return isA && (r.status === "sent" || r.status === "received");
-    }).length;
+    });
+    var currentUnread = myIncoming.length;
     if (currentUnread > prevUnreadRef.current && prevUnreadRef.current > 0) {
-      playTawasulNotif();
+      // Check if any of the new unread is urgent
+      var anyUrgent = myIncoming.some(function(r){
+        if (r.urgency === "urgent") return true;
+        var ds = getDeadlineStatus(r.deadline, r.status);
+        return ds && (ds.level === "overdue" || ds.level === "critical");
+      });
+      if (anyUrgent) playUrgentNotif();
+      else playTawasulNotif();
     }
     prevUnreadRef.current = currentUnread;
   }, [requests, myId]);
@@ -4454,9 +4720,48 @@ function TawasulPage({ user, allEmps }) {
     if (filterStatus !== "all" && r.status !== filterStatus) return false;
     if (filterCategory !== "all" && r.category !== filterCategory) return false;
     if (filterUrgency !== "all" && r.urgency !== filterUrgency) return false;
+    // Advanced: project
+    if (filterProject !== "all") {
+      var pid = String(r.projectId || "");
+      var pname = (r.projectName || "").trim();
+      if (filterProject !== pid && filterProject !== pname) return false;
+    }
+    // Advanced: person (requester OR any assignee)
+    if (filterPerson !== "all") {
+      var person = String(filterPerson);
+      var reqMatch = String(r.requesterId) === person;
+      var asgMatch = (r.assignees || []).some(function(a){ return String(a.id) === person; });
+      if (!reqMatch && !asgMatch) return false;
+    }
+    // Advanced: deadline category
+    if (filterDeadline !== "all" && r.deadline) {
+      var d = new Date(r.deadline);
+      var now = Date.now();
+      var diff = d.getTime() - now;
+      var days = diff / 86400000;
+      if (filterDeadline === "overdue" && diff >= 0) return false;
+      if (filterDeadline === "today" && (diff < 0 || days > 1)) return false;
+      if (filterDeadline === "week" && (diff < 0 || days > 7)) return false;
+      if (filterDeadline === "month" && (diff < 0 || days > 30)) return false;
+    } else if (filterDeadline !== "all" && !r.deadline) {
+      return false;
+    }
+    // Advanced: date range (createdAt)
+    if (filterDateFrom || filterDateTo) {
+      var created = new Date(r.createdAt || r.updatedAt || 0);
+      if (filterDateFrom) {
+        var from = new Date(filterDateFrom);
+        if (created < from) return false;
+      }
+      if (filterDateTo) {
+        var to = new Date(filterDateTo);
+        to.setHours(23,59,59,999); // include the whole day
+        if (created > to) return false;
+      }
+    }
     if (search.trim()) {
       var q = search.trim().toLowerCase();
-      var text = ((r.title || "") + " " + (r.description || "") + " " + (r.serial || "") + " " + (r.projectName || "")).toLowerCase();
+      var text = ((r.title || "") + " " + (r.description || "") + " " + (r.serial || "") + " " + (r.projectName || "") + " " + (r.requesterName || "")).toLowerCase();
       if (text.indexOf(q) === -1) return false;
     }
     return true;
@@ -4493,7 +4798,62 @@ function TawasulPage({ user, allEmps }) {
     dept_sent: tabCount("dept_sent"),
     dept_done: tabCount("dept_done"),
   };
-  var activeFilters = (filterStatus !== "all" ? 1 : 0) + (filterCategory !== "all" ? 1 : 0) + (filterUrgency !== "all" ? 1 : 0);
+  var activeFilters = (filterStatus !== "all" ? 1 : 0) + (filterCategory !== "all" ? 1 : 0) + (filterUrgency !== "all" ? 1 : 0) + (filterProject !== "all" ? 1 : 0) + (filterPerson !== "all" ? 1 : 0) + (filterDeadline !== "all" ? 1 : 0) + (filterDateFrom || filterDateTo ? 1 : 0);
+
+  function resetAllFilters() {
+    setFilterStatus("all");
+    setFilterCategory("all");
+    setFilterUrgency("all");
+    setFilterProject("all");
+    setFilterPerson("all");
+    setFilterDeadline("all");
+    setFilterDateFrom("");
+    setFilterDateTo("");
+    setSearch("");
+  }
+
+  function saveCurrentSearch() {
+    var name = prompt("اسم البحث (مثال: مهامي المتأخرة):", "");
+    if (!name || !name.trim()) return;
+    var newSearch = {
+      id: "search_" + Date.now(),
+      name: name.trim(),
+      search: search,
+      filterStatus: filterStatus,
+      filterCategory: filterCategory,
+      filterUrgency: filterUrgency,
+      filterProject: filterProject,
+      filterPerson: filterPerson,
+      filterDeadline: filterDeadline,
+      filterDateFrom: filterDateFrom,
+      filterDateTo: filterDateTo,
+      savedAt: new Date().toISOString(),
+    };
+    var updated = savedSearches.concat([newSearch]);
+    setSavedSearches(updated);
+    try { localStorage.setItem("basma_tawasul_searches", JSON.stringify(updated)); } catch(e) {}
+  }
+
+  function applySavedSearch(s) {
+    setSearch(s.search || "");
+    setFilterStatus(s.filterStatus || "all");
+    setFilterCategory(s.filterCategory || "all");
+    setFilterUrgency(s.filterUrgency || "all");
+    setFilterProject(s.filterProject || "all");
+    setFilterPerson(s.filterPerson || "all");
+    setFilterDeadline(s.filterDeadline || "all");
+    setFilterDateFrom(s.filterDateFrom || "");
+    setFilterDateTo(s.filterDateTo || "");
+    setShowFilters(true);
+  }
+
+  function deleteSavedSearch(id) {
+    if (!confirm("حذف هذا البحث المحفوظ؟")) return;
+    var updated = savedSearches.filter(function(s){ return s.id !== id; });
+    setSavedSearches(updated);
+    try { localStorage.setItem("basma_tawasul_searches", JSON.stringify(updated)); } catch(e) {}
+  }
+
   var pageBg = C.bg;
 
   // Show loading screen but allow user to skip after 5 seconds
@@ -4532,12 +4892,16 @@ function TawasulPage({ user, allEmps }) {
           <div style={{ fontSize: 22, fontWeight: 900, fontFamily: "'Cairo',sans-serif" }}>🤝 تواصل</div>
           <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
             <button onClick={function(){ loadData(true); }} disabled={refreshing} style={{ background: "rgba(255,255,255,.15)", border: "1px solid rgba(255,255,255,.25)", borderRadius: 10, padding: "6px 10px", color: "#fff", fontSize: 11, fontWeight: 700, cursor: "pointer", fontFamily: "inherit" }}>{refreshing ? "⟳..." : "⟳"}</button>
+            <button onClick={function(){ exportTawasulICS(requests, myId); }} title="تصدير إلى التقويم (.ics)" style={{ background: "rgba(255,255,255,.15)", border: "1px solid rgba(255,255,255,.25)", borderRadius: 10, padding: "6px 10px", color: "#fff", fontSize: 11, fontWeight: 700, cursor: "pointer", fontFamily: "inherit" }}>📆</button>
             <button onClick={function(){ setShowReports(true); }} style={{ background: "rgba(255,255,255,.15)", border: "1px solid rgba(255,255,255,.25)", borderRadius: 10, padding: "6px 10px", color: "#fff", fontSize: 11, fontWeight: 700, cursor: "pointer", fontFamily: "inherit" }}>📊</button>
             <button onClick={function(){ setShowCreate(true); }} style={{ background: "#22c55e", border: "none", borderRadius: 10, padding: "6px 12px", color: "#fff", fontSize: 12, fontWeight: 800, cursor: "pointer", fontFamily: "inherit" }}>➕ جديد</button>
           </div>
         </div>
         <div style={{ fontSize: 11, opacity: 0.85 }}>إدارة المهام الداخلية — {(requests || []).length} مهمة</div>
       </div>
+
+      {/* Push notification enable prompt — shows only if permission not granted */}
+      <NotifEnableBanner user={user} />
 
       {/* Department badge — shows count of subordinates if any */}
       {hasSubordinates && (
@@ -4618,7 +4982,93 @@ function TawasulPage({ user, allEmps }) {
                 })}
               </div>
             </div>
-            {activeFilters > 0 && <button onClick={function(){ setFilterStatus("all"); setFilterCategory("all"); setFilterUrgency("all"); }} style={{ padding: "6px 10px", borderRadius: 8, background: "rgba(239,68,68,0.1)", border: "1px solid rgba(239,68,68,0.3)", color: "#EF4444", fontSize: 10, fontWeight: 700, cursor: "pointer", fontFamily: "inherit" }}>✕ مسح الفلاتر</button>}
+            {/* Advanced filters: project, person, deadline, date range */}
+            <div style={{ borderTop: "1px dashed " + C.cardBorder, paddingTop: 10, marginTop: 4 }}>
+              <div style={{ fontSize: 10, fontWeight: 800, color: C.hdr2, marginBottom: 8 }}>🎯 فلاتر متقدمة</div>
+
+              {/* Project filter */}
+              <div style={{ marginBottom: 10 }}>
+                <div style={{ fontSize: 10, fontWeight: 700, color: C.sub, marginBottom: 5 }}>المشروع</div>
+                <select value={filterProject} onChange={function(e){ setFilterProject(e.target.value); }} style={{ width: "100%", padding: "8px 10px", borderRadius: 8, border: "1px solid " + C.cardBorder, background: C.bg, color: C.text, fontSize: 11, fontFamily: "inherit", outline: "none" }}>
+                  <option value="all">— الكل —</option>
+                  {(function(){
+                    // Collect unique projects from requests
+                    var seen = {};
+                    (requests || []).forEach(function(r){
+                      var key = String(r.projectId || r.projectName || "");
+                      if (key && !seen[key] && r.projectName) seen[key] = r.projectName;
+                    });
+                    return Object.keys(seen).map(function(k){ return <option key={k} value={k}>{seen[k]}</option>; });
+                  })()}
+                </select>
+              </div>
+
+              {/* Person filter */}
+              <div style={{ marginBottom: 10 }}>
+                <div style={{ fontSize: 10, fontWeight: 700, color: C.sub, marginBottom: 5 }}>الشخص (مُرسِل أو مستلم)</div>
+                <select value={filterPerson} onChange={function(e){ setFilterPerson(e.target.value); }} style={{ width: "100%", padding: "8px 10px", borderRadius: 8, border: "1px solid " + C.cardBorder, background: C.bg, color: C.text, fontSize: 11, fontFamily: "inherit", outline: "none" }}>
+                  <option value="all">— الكل —</option>
+                  {(allEmps || []).slice().sort(function(a,b){ return (a.name||"").localeCompare(b.name||""); }).map(function(emp){
+                    var eid = String(emp.id || emp.username);
+                    return <option key={eid} value={eid}>{emp.name || emp.username}{emp.department ? " ("+emp.department+")" : ""}</option>;
+                  })}
+                </select>
+              </div>
+
+              {/* Deadline filter */}
+              <div style={{ marginBottom: 10 }}>
+                <div style={{ fontSize: 10, fontWeight: 700, color: C.sub, marginBottom: 5 }}>الموعد النهائي</div>
+                <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+                  {[
+                    { id: "all", label: "الكل" },
+                    { id: "overdue", label: "🚨 متأخر", color: "#dc2626" },
+                    { id: "today", label: "🔴 اليوم", color: "#ef4444" },
+                    { id: "week", label: "🟡 هذا الأسبوع", color: "#f59e0b" },
+                    { id: "month", label: "⏰ هذا الشهر", color: "#eab308" },
+                  ].map(function(f){
+                    var active = filterDeadline === f.id;
+                    var c = f.color || C.hdr2;
+                    return <button key={f.id} onClick={function(){ setFilterDeadline(f.id); }} style={{ padding: "5px 10px", borderRadius: 10, background: active ? c : C.bg, border: "1px solid " + (active ? c : C.cardBorder), color: active ? "#fff" : C.text, fontSize: 10, fontWeight: 700, cursor: "pointer", fontFamily: "inherit" }}>{f.label}</button>;
+                  })}
+                </div>
+              </div>
+
+              {/* Date range filter */}
+              <div style={{ marginBottom: 4 }}>
+                <div style={{ fontSize: 10, fontWeight: 700, color: C.sub, marginBottom: 5 }}>نطاق تاريخ الإنشاء</div>
+                <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
+                  <input type="date" value={filterDateFrom} onChange={function(e){ setFilterDateFrom(e.target.value); }} style={{ flex: 1, padding: "7px 10px", borderRadius: 8, border: "1px solid " + C.cardBorder, background: C.bg, color: C.text, fontSize: 11, fontFamily: "inherit", outline: "none" }} />
+                  <span style={{ fontSize: 10, color: C.sub }}>إلى</span>
+                  <input type="date" value={filterDateTo} onChange={function(e){ setFilterDateTo(e.target.value); }} style={{ flex: 1, padding: "7px 10px", borderRadius: 8, border: "1px solid " + C.cardBorder, background: C.bg, color: C.text, fontSize: 11, fontFamily: "inherit", outline: "none" }} />
+                </div>
+              </div>
+            </div>
+
+            {/* Saved searches */}
+            <div style={{ borderTop: "1px dashed " + C.cardBorder, paddingTop: 10, marginTop: 4 }}>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 6 }}>
+                <div style={{ fontSize: 10, fontWeight: 800, color: C.gold }}>⭐ البحوث المحفوظة ({savedSearches.length})</div>
+                {activeFilters > 0 && (
+                  <button onClick={saveCurrentSearch} style={{ padding: "4px 10px", borderRadius: 8, background: C.gold, color: "#fff", border: "none", fontSize: 10, fontWeight: 800, cursor: "pointer", fontFamily: "inherit" }}>💾 احفظ الحالي</button>
+                )}
+              </div>
+              {savedSearches.length === 0 ? (
+                <div style={{ fontSize: 10, color: C.sub, padding: "8px", textAlign: "center", fontStyle: "italic" }}>لا بحوث محفوظة — طبّق فلاتر ثم اضغط "احفظ الحالي"</div>
+              ) : (
+                <div style={{ display: "flex", gap: 4, flexWrap: "wrap" }}>
+                  {savedSearches.map(function(s){
+                    return (
+                      <div key={s.id} style={{ display: "flex", alignItems: "center", background: C.bg, borderRadius: 8, border: "1px solid " + C.cardBorder, padding: "4px 4px 4px 10px", gap: 4 }}>
+                        <button onClick={function(){ applySavedSearch(s); }} style={{ background: "none", border: "none", color: C.gold, fontSize: 10, fontWeight: 700, cursor: "pointer", fontFamily: "inherit" }}>⭐ {s.name}</button>
+                        <button onClick={function(){ deleteSavedSearch(s.id); }} title="حذف" style={{ background: "none", border: "none", color: C.sub, fontSize: 11, cursor: "pointer", padding: "0 4px", fontFamily: "inherit" }}>×</button>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+
+            {activeFilters > 0 && <button onClick={resetAllFilters} style={{ padding: "6px 10px", borderRadius: 8, background: "rgba(239,68,68,0.1)", border: "1px solid rgba(239,68,68,0.3)", color: "#EF4444", fontSize: 10, fontWeight: 700, cursor: "pointer", fontFamily: "inherit" }}>✕ مسح كل الفلاتر</button>}
           </div>
         )}
       </div>
@@ -4707,6 +5157,204 @@ function TawasulPage({ user, allEmps }) {
 
       {showReports && <TawasulReportsModal user={user} onClose={function(){ setShowReports(false); }} />}
       {showHRAssistant && <TawasulHRAssistant user={user} onClose={function(){ setShowHRAssistant(false); }} />}
+    </div>
+  );
+}
+
+/* ═══════════ ATTACHMENTS PANEL — رفع/عرض/حذف المرفقات عبر R2 ═══════════ */
+function AttachmentsPanel({ request, user, readOnly, canEdit, onUpdated }) {
+  var r = request;
+  var attachments = r.attachments || [];
+  var [uploading, setUploading] = useState(false);
+  var [progress, setProgress] = useState(null); // { idx, total, filename }
+  var [err, setErr] = useState(null);
+  var [deleting, setDeleting] = useState(null); // key being deleted
+  var fileInputRef = useRef(null);
+
+  function formatSize(bytes) {
+    if (!bytes) return "—";
+    if (bytes < 1024) return bytes + " B";
+    if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(1) + " KB";
+    return (bytes / (1024 * 1024)).toFixed(1) + " MB";
+  }
+
+  function iconFor(contentType, filename) {
+    var ct = (contentType || "").toLowerCase();
+    var ext = (filename || "").split(".").pop().toLowerCase();
+    if (ct.indexOf("image") >= 0 || ["jpg","jpeg","png","gif","webp","svg"].indexOf(ext) >= 0) return "🖼";
+    if (ct.indexOf("pdf") >= 0 || ext === "pdf") return "📕";
+    if (["doc","docx"].indexOf(ext) >= 0 || ct.indexOf("word") >= 0) return "📘";
+    if (["xls","xlsx","csv"].indexOf(ext) >= 0 || ct.indexOf("sheet") >= 0 || ct.indexOf("excel") >= 0) return "📗";
+    if (["ppt","pptx"].indexOf(ext) >= 0 || ct.indexOf("presentation") >= 0) return "📙";
+    if (["zip","rar","7z","tar","gz"].indexOf(ext) >= 0) return "🗜";
+    if (["dwg","dxf"].indexOf(ext) >= 0) return "📐";
+    if (["mp4","mov","avi","mkv","webm"].indexOf(ext) >= 0) return "🎬";
+    if (["mp3","wav","ogg","m4a"].indexOf(ext) >= 0) return "🎵";
+    return "📄";
+  }
+
+  function fileToBase64(file) {
+    return new Promise(function(resolve, reject){
+      var reader = new FileReader();
+      reader.onload = function(){
+        // Strip "data:...;base64," prefix
+        var result = reader.result;
+        var commaIdx = result.indexOf(",");
+        resolve(commaIdx >= 0 ? result.substring(commaIdx + 1) : result);
+      };
+      reader.onerror = function(){ reject(new Error("فشل قراءة الملف")); };
+      reader.readAsDataURL(file);
+    });
+  }
+
+  async function uploadOne(file, idx, total) {
+    setProgress({ idx: idx, total: total, filename: file.name });
+    // Size check: 50MB max per file
+    if (file.size > 50 * 1024 * 1024) {
+      throw new Error("الملف '" + file.name + "' أكبر من 50 ميجا");
+    }
+    var dataB64 = await fileToBase64(file);
+    var r2 = await fetch("/api/data?action=tawasul-attachment-upload", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        taskId: request.id,
+        serial: request.serial || request.id,
+        projectId: request.projectId || null,
+        filename: file.name,
+        contentType: file.type || "application/octet-stream",
+        dataB64: dataB64,
+        uploadedBy: user && (user.id || user.username),
+      }),
+    });
+    var d = await r2.json();
+    if (!r2.ok || !d.ok) throw new Error(d.error || ("فشل الرفع (" + r2.status + ")"));
+    return d;
+  }
+
+  async function handleFileSelect(e) {
+    var files = Array.from(e.target.files || []);
+    e.target.value = ""; // reset so same file can be selected again
+    if (files.length === 0) return;
+    setErr(null);
+    setUploading(true);
+    var success = 0, failed = 0;
+    for (var i = 0; i < files.length; i++) {
+      try {
+        await uploadOne(files[i], i + 1, files.length);
+        success++;
+      } catch(ex) {
+        console.error("Upload failed:", ex);
+        failed++;
+        setErr((err ? err + " · " : "") + ex.message);
+      }
+    }
+    setUploading(false);
+    setProgress(null);
+    if (success > 0 && onUpdated) onUpdated();
+    if (failed > 0 && success > 0) {
+      alert("✓ نجح " + success + " · ✗ فشل " + failed);
+    } else if (failed > 0) {
+      alert("❌ فشل رفع كل الملفات (" + failed + ")");
+    }
+  }
+
+  async function handleDelete(att) {
+    if (!confirm("حذف '" + (att.filename || "الملف") + "' نهائياً؟")) return;
+    setDeleting(att.key);
+    try {
+      var r2 = await fetch("/api/data?action=tawasul-attachment-delete", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ taskId: request.id, key: att.key }),
+      });
+      var d = await r2.json();
+      if (!r2.ok || !d.ok) throw new Error(d.error || "فشل الحذف");
+      if (onUpdated) onUpdated();
+    } catch(ex) {
+      alert("فشل الحذف: " + ex.message);
+    }
+    setDeleting(null);
+  }
+
+  var canUpload = !readOnly && canEdit && !["closed","cancelled"].includes(r.status);
+
+  return (
+    <div style={{ background: C.card, borderRadius: 12, padding: 14, border: "1px solid " + C.cardBorder, marginBottom: 12 }}>
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 10 }}>
+        <div style={{ fontSize: 12, fontWeight: 800, color: C.text, fontFamily: "'Cairo',sans-serif", display: "flex", alignItems: "center", gap: 6 }}>
+          <span>📎</span>
+          <span>المرفقات ({attachments.length})</span>
+        </div>
+        {canUpload && (
+          <button
+            onClick={function(){ if (fileInputRef.current) fileInputRef.current.click(); }}
+            disabled={uploading}
+            style={{ padding: "6px 12px", borderRadius: 10, background: uploading ? C.cardBorder : C.hdr2, color: "#fff", border: "none", fontSize: 11, fontWeight: 800, cursor: uploading ? "default" : "pointer", fontFamily: "inherit" }}
+          >
+            {uploading ? "⏳ جارِ الرفع..." : "+ إضافة ملف"}
+          </button>
+        )}
+        <input ref={fileInputRef} type="file" multiple onChange={handleFileSelect} style={{ display: "none" }} />
+      </div>
+
+      {/* Progress bar */}
+      {uploading && progress && (
+        <div style={{ padding: "8px 10px", background: "rgba(10,132,255,0.08)", border: "1px solid rgba(10,132,255,0.25)", borderRadius: 8, marginBottom: 10, fontSize: 11 }}>
+          <div style={{ fontWeight: 700, color: C.hdr2, marginBottom: 4 }}>رفع {progress.idx}/{progress.total}: {progress.filename}</div>
+          <div style={{ height: 3, background: "rgba(10,132,255,0.15)", borderRadius: 2, overflow: "hidden" }}>
+            <div style={{ width: Math.round((progress.idx / progress.total) * 100) + "%", height: "100%", background: C.hdr2, transition: "width 0.3s" }} />
+          </div>
+        </div>
+      )}
+
+      {/* Error */}
+      {err && (
+        <div style={{ padding: "8px 10px", background: "rgba(239,68,68,0.08)", border: "1px solid rgba(239,68,68,0.25)", borderRadius: 8, marginBottom: 10, fontSize: 10, color: "#ef4444" }}>
+          ❌ {err}
+        </div>
+      )}
+
+      {/* Empty state */}
+      {attachments.length === 0 && !uploading && (
+        <div style={{ textAlign: "center", padding: "16px 10px", color: C.sub, fontSize: 11 }}>
+          لا مرفقات حتى الآن
+          {canUpload && <div style={{ marginTop: 4, fontSize: 10 }}>اضغط "+ إضافة ملف" لرفع واحد أو أكثر</div>}
+        </div>
+      )}
+
+      {/* List */}
+      {attachments.map(function(a, idx){
+        var isDeleting = deleting === a.key;
+        return (
+          <div key={a.key || idx} style={{ display: "flex", alignItems: "center", gap: 8, padding: "8px 0", borderTop: idx > 0 ? "1px solid " + C.cardBorder : "none", opacity: isDeleting ? 0.5 : 1 }}>
+            <div style={{ fontSize: 22, flexShrink: 0 }}>{iconFor(a.contentType, a.filename)}</div>
+            <div style={{ flex: 1, minWidth: 0 }}>
+              <a href={a.url || "#"} target="_blank" rel="noopener noreferrer" style={{ color: C.text, textDecoration: "none", fontWeight: 700, fontSize: 12, display: "block", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                {a.filename || a.name || "ملف " + (idx+1)}
+              </a>
+              <div style={{ fontSize: 9, color: C.sub, marginTop: 2, display: "flex", gap: 6, flexWrap: "wrap" }}>
+                <span>{formatSize(a.size)}</span>
+                {a.uploadedAt && <span>• {tawasulTimeAgo(a.uploadedAt)}</span>}
+              </div>
+            </div>
+            <a href={a.url || "#"} target="_blank" rel="noopener noreferrer" title="فتح" style={{ padding: "5px 9px", borderRadius: 8, background: C.bg, color: C.hdr2, fontSize: 11, fontWeight: 700, textDecoration: "none", flexShrink: 0 }}>↗</a>
+            {!readOnly && canEdit && a.key && (
+              <button onClick={function(){ handleDelete(a); }} disabled={isDeleting} title="حذف" style={{ padding: "5px 9px", borderRadius: 8, background: "transparent", color: "#ef4444", border: "1px solid rgba(239,68,68,0.3)", fontSize: 11, cursor: isDeleting ? "default" : "pointer", flexShrink: 0, fontFamily: "inherit" }}>
+                {isDeleting ? "⏳" : "🗑"}
+              </button>
+            )}
+          </div>
+        );
+      })}
+
+      {/* Total size footer */}
+      {attachments.length > 0 && (
+        <div style={{ marginTop: 8, paddingTop: 8, borderTop: "1px dashed " + C.cardBorder, fontSize: 9, color: C.sub, textAlign: "center" }}>
+          الإجمالي: {formatSize(attachments.reduce(function(sum, a){ return sum + (a.size || 0); }, 0))}
+          {r.serial && <span> · مُؤرشَف في: tawasul/{r.serial}/</span>}
+        </div>
+      )}
     </div>
   );
 }
@@ -5354,12 +6002,8 @@ function TawasulDetailModal({ request, user, allEmps, onClose, nameOf, onUpdated
             </div>
           )}
 
-          {r.attachments && r.attachments.length > 0 && (
-            <div style={{ background: C.card, borderRadius: 12, padding: 14, border: "1px solid " + C.cardBorder, marginBottom: 12 }}>
-              <div style={{ fontSize: 11, fontWeight: 800, color: C.sub, marginBottom: 8 }}>📎 المرفقات ({r.attachments.length})</div>
-              {r.attachments.map(function(a, idx){ return <div key={idx} style={{ display: "flex", alignItems: "center", gap: 8, padding: "6px 0", fontSize: 12 }}><span>📄</span><a href={a.url || a.href || "#"} target="_blank" rel="noopener noreferrer" style={{ color: C.gold, textDecoration: "none", fontWeight: 700, flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{a.name || a.filename || "ملف " + (idx+1)}</a></div>; })}
-            </div>
-          )}
+          {/* Attachments panel — upload/list/delete */}
+          <AttachmentsPanel request={r} user={user} readOnly={readOnly} canEdit={canActAsAssignee || canActAsRequester || isAdmin} onUpdated={onUpdated} />
 
           {evals.length > 0 && (
             <div style={{ background: C.card, borderRadius: 12, padding: 14, border: "1px solid " + C.cardBorder, marginBottom: 12 }}>

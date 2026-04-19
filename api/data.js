@@ -42,6 +42,18 @@ async function redisGet(key) {
   try { return JSON.parse(val); } catch(e) { return val; }
 }
 
+/* MGET: fetch multiple keys in ONE round trip — huge speedup for batched reads */
+async function redisMget(keys) {
+  if (!keys || keys.length === 0) return [];
+  var prefixedKeys = keys.map(function(k){ return PFX_REDIS + k; });
+  var vals = await redisRequest('MGET', ...prefixedKeys);
+  if (!Array.isArray(vals)) return keys.map(function(){ return null; });
+  return vals.map(function(v){
+    if (!v) return null;
+    try { return JSON.parse(v); } catch(e) { return v; }
+  });
+}
+
 async function redisSet(key, data) {
   var payload = typeof data === 'string' ? data : JSON.stringify(data);
   await redisRequest('SET', PFX_REDIS + key, payload);
@@ -1429,6 +1441,78 @@ export default async function handler(req, res) {
       }
 
       /* ═══ TAWASUL — نظام تبادل المهام الإدارية (NATIVE — Upstash Redis) ═══ */
+      /* ═══ TAWASUL ATTACHMENTS — R2 storage with task/project-based keys ═══
+         POST body: { taskId, serial, projectId, filename, contentType, dataB64 }
+         Key: tawasul/{serial || taskId}/attachments/{YYYY-MM-DD}_{filename}
+         Returns: { ok, key, url, size } */
+      case 'tawasul-attachment-upload': {
+        if (req.method !== 'POST') return res.status(405).json({ error: 'POST required' });
+        if (!USE_R2) return res.status(500).json({ error: 'R2 not configured' });
+        try {
+          var bd = req.body || {};
+          var taskId = bd.taskId;
+          var serial = bd.serial || taskId;
+          var filename = (bd.filename || 'file').replace(/[\/\\?%*:|"<>]/g, '_').substring(0, 120);
+          var contentType = bd.contentType || 'application/octet-stream';
+          var dataB64 = bd.dataB64;
+          if (!taskId || !dataB64) return res.status(400).json({ error: 'taskId and dataB64 required' });
+          // Decode base64
+          var buffer = Buffer.from(dataB64, 'base64');
+          var size = buffer.length;
+          if (size > 50 * 1024 * 1024) return res.status(413).json({ error: 'File too large (max 50MB per file)' });
+          // Build key
+          var today = new Date().toISOString().slice(0, 10);
+          var safeSerial = String(serial).replace(/[\/\\?%*:|"<>]/g, '_');
+          var ts = Date.now();
+          var key = 'tawasul/' + safeSerial + '/attachments/' + today + '_' + ts + '_' + filename;
+          // Upload
+          var result = await r2Upload(key, buffer, contentType);
+          if (!result) return res.status(500).json({ error: 'R2 upload returned null' });
+          // Append to task's attachments array
+          var task = await dbGet('twsl:' + taskId);
+          if (task) {
+            task.attachments = task.attachments || [];
+            task.attachments.push({
+              key: key,
+              url: result.url,
+              filename: filename,
+              contentType: contentType,
+              size: size,
+              uploadedAt: new Date().toISOString(),
+              uploadedBy: bd.uploadedBy || null,
+            });
+            task.updatedAt = new Date().toISOString();
+            await dbSet('twsl:' + taskId, task);
+          }
+          return res.json({ ok: true, key: key, url: result.url, size: size, filename: filename });
+        } catch(e) {
+          console.error('[tawasul-attachment-upload]', e);
+          return res.status(500).json({ error: 'upload error: ' + (e.message || 'unknown') });
+        }
+      }
+
+      case 'tawasul-attachment-delete': {
+        if (req.method !== 'POST') return res.status(405).json({ error: 'POST required' });
+        try {
+          var bd2 = req.body || {};
+          var taskId2 = bd2.taskId;
+          var key2 = bd2.key;
+          if (!taskId2 || !key2) return res.status(400).json({ error: 'taskId and key required' });
+          // Delete from R2
+          if (USE_R2) { try { await r2Delete(key2); } catch(e) { console.error('R2 delete:', e.message); } }
+          // Remove from task
+          var task2 = await dbGet('twsl:' + taskId2);
+          if (task2 && Array.isArray(task2.attachments)) {
+            task2.attachments = task2.attachments.filter(function(a){ return a.key !== key2; });
+            task2.updatedAt = new Date().toISOString();
+            await dbSet('twsl:' + taskId2, task2);
+          }
+          return res.json({ ok: true });
+        } catch(e) {
+          return res.status(500).json({ error: 'delete error: ' + (e.message || 'unknown') });
+        }
+      }
+
       case 'tawasul-list': {
         try {
           var idx = (await dbGet('twsl:idx')) || [];
@@ -1442,11 +1526,26 @@ export default async function handler(req, res) {
           ];
           var projects = (await dbGet('twsl:projects')) || [];
           var hierarchy = (await dbGet('org_hierarchy')) || {};
-          // Fetch all requests in parallel
-          var requests = await Promise.all(idx.map(function(id){
-            return dbGet('twsl:' + id).then(function(r){ return r; }).catch(function(){ return null; });
-          }));
-          requests = requests.filter(function(r){ return r && r.id; });
+
+          // SPEED: use MGET when Redis is available (one round-trip vs N)
+          var requests;
+          if (USE_REDIS && idx.length > 0) {
+            var keys = idx.map(function(id){ return 'twsl:' + id; });
+            try {
+              requests = await redisMget(keys);
+            } catch(e) {
+              console.error('[tawasul-list] MGET failed, falling back to parallel GETs:', e.message);
+              requests = await Promise.all(idx.map(function(id){
+                return dbGet('twsl:' + id).catch(function(){ return null; });
+              }));
+            }
+          } else {
+            requests = await Promise.all(idx.map(function(id){
+              return dbGet('twsl:' + id).catch(function(){ return null; });
+            }));
+          }
+          requests = (requests || []).filter(function(r){ return r && r.id; });
+
           return res.json({
             ok: true,
             requests: requests,
@@ -1514,6 +1613,40 @@ export default async function handler(req, res) {
             // Keep last 500 notifications
             if (notifs.length > 500) notifs = notifs.slice(-500);
             await dbSet('twsl:notifs', notifs);
+
+            // Send Web Push to each assignee (fire-and-forget, don't block response)
+            if (reqData.status === 'sent' && (reqData.assignees || []).length > 0) {
+              (async function(){
+                try {
+                  var pushSubs = (await dbGet('push_subscriptions')) || {};
+                  var pushTitle = (reqData.urgency === 'urgent' ? '🔴 ' : '📨 ') + 'مهمة جديدة' + (reqData.serial ? ' #' + reqData.serial : '');
+                  var pushBody = (reqData.requesterName ? reqData.requesterName + ': ' : '') + (reqData.title || '(بدون عنوان)');
+                  if (reqData.deadline) {
+                    var d = new Date(reqData.deadline);
+                    var now2 = Date.now();
+                    var hoursLeft = (d.getTime() - now2) / 3600000;
+                    if (hoursLeft > 0 && hoursLeft < 24) pushBody += ' · ⏰ الموعد: ' + d.toLocaleString('ar-SA', { hour: '2-digit', minute: '2-digit' });
+                  }
+                  var payload = {
+                    title: pushTitle,
+                    body: pushBody,
+                    tag: 'tawasul-' + reqData.id,
+                    icon: '/icon-192.png',
+                    badge: '/icon-192.png',
+                    data: { taskId: reqData.id, type: 'tawasul_new_task', url: '/?tab=tawasul' },
+                  };
+                  for (var i = 0; i < (reqData.assignees || []).length; i++) {
+                    var aid = reqData.assignees[i].id;
+                    var sub = pushSubs[aid];
+                    if (!sub || !sub.subscription) continue;
+                    try { await sendWebPush(sub.subscription, payload); }
+                    catch(e) { console.error('[tawasul push]', aid, e.message); }
+                  }
+                } catch(e) {
+                  console.error('[tawasul auto-push]', e.message);
+                }
+              })();
+            }
           }
 
           return res.json({ ok: true, request: reqData, isNew: isNew });
@@ -3228,83 +3361,4 @@ export default async function handler(req, res) {
           return { type: 'array', count: Array.isArray(idx) ? idx.length : 0 };
         });
         dataChecks['tawasul'] = { label: 'مهام التواصل', ok: twslR.ok, ms: twslR.ms, value: twslR.value, error: twslR.error };
-        report.sections.data = dataChecks;
-
-        // ══════════ CONFIGURATION ══════════
-        var config = {};
-        var settings = await dbGet('settings') || {};
-        config.has_admin_email = { ok: !!(settings.adminEmail || settings.admin_email), value: settings.adminEmail || settings.admin_email || 'not set' };
-        config.has_custom_questions = { ok: Array.isArray(settings.questions) && settings.questions.length > 0, value: Array.isArray(settings.questions) ? settings.questions.length + ' أسئلة' : 'none (uses defaults)' };
-        config.email_lists = { ok: !!settings.emailLists, value: settings.emailLists ? Object.keys(settings.emailLists).length + ' lists' : 'none' };
-        config.observed_employees = { ok: true, value: Array.isArray(settings.observed) ? settings.observed.length + ' موظف تحت الملاحظة' : '0' };
-        // Laiha
-        var laiha = await dbGet('laiha_settings') || {};
-        config.laiha_auto_enabled = { ok: laiha.autoViolations !== false, value: laiha.autoViolations === false ? 'DISABLED' : 'ENABLED (3pm UTC cron)' };
-        // Branches
-        var branches = await dbGet('branches') || [];
-        config.branches_count = { ok: branches.length > 0, value: branches.length + ' فروع' };
-        config.branches_have_geofence = { ok: branches.every(function(b){ return b.lat && b.lng && b.radius; }), value: branches.filter(function(b){ return b.lat && b.lng && b.radius; }).length + '/' + branches.length + ' بنطاق جغرافي' };
-        report.sections.config = config;
-
-        // ══════════ INTEGRATIONS ══════════
-        var integrations = {};
-        // Push notifications (VAPID)
-        integrations.vapid_public = { ok: !!process.env.VAPID_PUBLIC_KEY, value: process.env.VAPID_PUBLIC_KEY ? 'VAPID_PUBLIC_KEY set' : 'missing' };
-        integrations.vapid_private = { ok: !!process.env.VAPID_PRIVATE_KEY, value: process.env.VAPID_PRIVATE_KEY ? 'VAPID_PRIVATE_KEY set' : 'missing' };
-        integrations.vapid_email = { ok: !!process.env.VAPID_CONTACT_EMAIL, value: process.env.VAPID_CONTACT_EMAIL || 'not set' };
-        // Push subscriptions
-        var subs = await safeTime(async function(){ var s = await dbGet('push_subscriptions') || {}; return Object.keys(s).length + ' مشترك'; });
-        integrations.push_subscriptions = { ok: subs.ok, value: subs.value, error: subs.error };
-        // GitHub token (for update tool)
-        integrations.github_token = { ok: !!process.env.GITHUB_TOKEN, value: process.env.GITHUB_TOKEN ? 'GITHUB_TOKEN present (update tool OK)' : 'missing — update tool disabled' };
-        // Kadwar sync
-        var kadwarR = await safeTime(async function(){
-          var kd = await dbGet('kadwar_data');
-          return kd ? 'synced (' + (Array.isArray(kd.employees) ? kd.employees.length : 0) + ' موظف من كوادر)' : 'no kadwar data';
-        });
-        integrations.kadwar_sync = { ok: kadwarR.ok, value: kadwarR.value, error: kadwarR.error };
-        report.sections.integrations = integrations;
-
-        // ══════════ TAWASUL SYSTEM ══════════
-        var tawasul = {};
-        tawasul.task_index = await safeTime(async function(){
-          var idx = await dbGet('twsl:idx') || [];
-          return idx.length + ' مهمة مفهرسة';
-        });
-        tawasul.categories = await safeTime(async function(){
-          var c = await dbGet('twsl:categories') || [];
-          return c.length + ' تصنيف';
-        });
-        tawasul.projects = await safeTime(async function(){
-          var p = await dbGet('twsl:projects') || [];
-          return p.length + ' مشروع';
-        });
-        tawasul.notifs = await safeTime(async function(){
-          var n = await dbGet('twsl:notifs') || [];
-          return n.length + ' إشعار';
-        });
-        tawasul.serial_counter = await safeTime(async function(){
-          var s = await dbGet('twsl:serial') || 0;
-          return 'CB' + String(s).padStart(4, '0') + ' (تالي: CB' + String(s+1).padStart(4,'0') + ')';
-        });
-        report.sections.tawasul = tawasul;
-
-        // ══════════ COMPUTE OVERALL ══════════
-        var failed = [];
-        Object.keys(report.sections).forEach(function(sec){
-          Object.keys(report.sections[sec]).forEach(function(key){
-            var item = report.sections[sec][key];
-            if (item && item.ok === false) failed.push(sec + '.' + key);
-          });
-        });
-        report.overall = failed.length === 0 ? 'ok' : failed.length <= 2 ? 'warning' : 'error';
-        report.failed_checks = failed;
-        report.total_checks = Object.keys(report.sections).reduce(function(sum, sec){ return sum + Object.keys(report.sections[sec]).length; }, 0);
-
-        return res.json(report);
-      }
-
-      default: return res.status(400).json({ error: 'unknown action' });
-    }
-  } catch (err) { return res.status(500).json({ error: err.message }); }
-}
+        report.sections.data = dat
