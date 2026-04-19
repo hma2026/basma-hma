@@ -10,7 +10,7 @@ import { ALL_VIOLATIONS_DEFAULT, PENALTY_TYPES, LAIHA_INFO, COMPLAINT_STATUS, VI
 
 /* ═══════════ APP CONFIG (إعدادات التطبيق) ═══════════ */
 const APP_CONFIG = {
-  VER: "5.00",
+  VER: "5.01",
   NAME: "بصمة HMA",
   FULL_NAME: "نظام الحضور والانصراف الذكي",
   COMPANY: "هاني محمد عسيري للاستشارات الهندسية",
@@ -2756,6 +2756,447 @@ function TawasulEvalModal({ request, user, role, onClose, onSaved }) {
   );
 }
 
+
+/* ═══════════ TAWASUL PDF EXPORT (spec section 18.2) ═══════════ */
+function exportTawasulPDF(request, nameOf) {
+  var r = request;
+  var m = getTawasulStatusMeta(r.status);
+  var log = (r.log || []).slice().sort(function(a,b){ return new Date(a.at || 0) - new Date(b.at || 0); });
+  var evals = r.evaluations || [];
+  var assignees = (r.assignees || []).map(function(a){ return a.name || (nameOf ? nameOf(a.id) : a.id); }).join("، ");
+  var deliveries = (r.deliveryMethods || []).map(function(dm){ return (dm.label || dm.type) + (dm.value ? ": " + dm.value : ""); }).join("<br/>");
+  var fmtDate = function(iso){ if(!iso) return "—"; try { return new Date(iso).toLocaleString("ar-SA"); } catch(e){ return iso; } };
+
+  var logHtml = log.map(function(e){
+    return '<tr><td style="padding:6px 10px;border-bottom:1px solid #eee">' +
+      (e.text || "") + '</td><td style="padding:6px 10px;border-bottom:1px solid #eee;color:#666;font-size:11px">' +
+      (e.by || "") + '<br/>' + fmtDate(e.at) + '</td></tr>';
+  }).join("");
+
+  var evalsHtml = evals.length > 0 ? evals.map(function(ev){
+    var scoresStr = ev.scores ? Object.keys(ev.scores).map(function(k){ return k + ": " + ev.scores[k] + "/5"; }).join(" • ") : "";
+    return '<tr><td style="padding:6px 10px;border-bottom:1px solid #eee">' +
+      (ev.byName || "") + '</td><td style="padding:6px 10px;border-bottom:1px solid #eee">' +
+      scoresStr + '</td><td style="padding:6px 10px;border-bottom:1px solid #eee;font-weight:bold;color:#c9a84c">' +
+      (ev.avgScore || 0) + '/100</td></tr>';
+  }).join("") : '<tr><td colspan="3" style="padding:10px;text-align:center;color:#999">لا توجد تقييمات</td></tr>';
+
+  var html = '<!DOCTYPE html><html dir="rtl" lang="ar"><head><meta charset="utf-8"><title>طلب تواصل #' + (r.serial || r.id) + '</title>' +
+    '<style>' +
+    '@import url("https://fonts.googleapis.com/css2?family=Cairo:wght@400;700;900&family=Tajawal:wght@400;500;700&display=swap");' +
+    'body{font-family:"Tajawal","Cairo",sans-serif;direction:rtl;max-width:800px;margin:0 auto;padding:30px;color:#333;line-height:1.7}' +
+    'h1{color:#1a3a6e;border-bottom:3px solid #c9a84c;padding-bottom:10px;margin-bottom:5px;font-family:"Cairo";font-size:22px}' +
+    '.header-sub{color:#666;font-size:13px;margin-bottom:20px}' +
+    '.badge{display:inline-block;padding:3px 10px;border-radius:12px;font-size:12px;font-weight:bold;margin-left:6px}' +
+    'table{width:100%;border-collapse:collapse;margin:12px 0;font-size:12px}' +
+    'table.info td{padding:8px 12px;border-bottom:1px solid #e5e5e5}' +
+    'table.info td.label{color:#666;font-weight:bold;width:140px;background:#fafafa}' +
+    'h2{color:#1a3a6e;font-size:15px;margin-top:22px;padding:6px 10px;background:#f5f5f5;border-right:4px solid #c9a84c}' +
+    '.section{margin-bottom:12px}' +
+    '.footer{margin-top:30px;padding-top:15px;border-top:2px solid #c9a84c;text-align:center;color:#666;font-size:10px}' +
+    '.warning{background:#fee;border:1px solid #ef4444;color:#c00;padding:12px;border-radius:8px;font-size:11px;margin-top:20px}' +
+    '@media print{body{padding:15px}h1{page-break-after:avoid}table{page-break-inside:auto}tr{page-break-inside:avoid}}' +
+    '</style></head><body>' +
+    '<h1>📋 طلب تواصل — #' + (r.serial || r.id) + '</h1>' +
+    '<div class="header-sub">' +
+    '<span class="badge" style="background:' + m.color + '22;color:' + m.color + '">' + m.icon + ' ' + m.label + '</span>' +
+    (r.urgency === "urgent" ? '<span class="badge" style="background:#fee;color:#ef4444">🔴 عاجل</span>' : '') +
+    (r.escalation ? '<span class="badge" style="background:' + (r.escalation === 'red' ? '#fee' : '#fef3c7') + ';color:' + (r.escalation === 'red' ? '#ef4444' : '#b45309') + '">' + (r.escalation === 'red' ? '🔴 تصعيد أحمر' : '🟡 تصعيد أصفر') + '</span>' : '') +
+    '</div>' +
+    '<div class="section" style="font-size:17px;font-weight:bold;color:#1a3a6e;padding:12px;background:#fafafa;border-radius:8px;margin-bottom:15px">' + (r.title || "—") + '</div>' +
+    '<h2>📌 المعلومات الأساسية</h2>' +
+    '<table class="info">' +
+    '<tr><td class="label">من</td><td>' + (r.requesterName || (nameOf ? nameOf(r.requesterId) : "—")) + '</td></tr>' +
+    '<tr><td class="label">إلى</td><td>' + (assignees || "—") + '</td></tr>' +
+    (r.category ? '<tr><td class="label">الفئة</td><td>' + r.category + '</td></tr>' : '') +
+    (r.department ? '<tr><td class="label">الإدارة</td><td>' + r.department + '</td></tr>' : '') +
+    (r.projectName ? '<tr><td class="label">المشروع</td><td>' + r.projectName + '</td></tr>' : '') +
+    '<tr><td class="label">تاريخ الإنشاء</td><td>' + fmtDate(r.createdAt) + '</td></tr>' +
+    (r.deadline ? '<tr><td class="label">الموعد النهائي</td><td>' + fmtDate(r.deadline) + '</td></tr>' : '') +
+    (r.deliveredAt ? '<tr><td class="label">تاريخ التسليم</td><td>' + fmtDate(r.deliveredAt) + '</td></tr>' : '') +
+    (r.finalScore !== undefined && r.finalScore !== null ? '<tr><td class="label">التقييم النهائي</td><td style="color:#c9a84c;font-weight:bold">⭐ ' + r.finalScore + '/100</td></tr>' : '') +
+    '</table>' +
+    (r.description ? '<h2>📝 الوصف</h2><div class="section" style="padding:12px;background:#fafafa;border-radius:8px;white-space:pre-wrap">' + r.description + '</div>' : '') +
+    (deliveries ? '<h2>📦 طرق التسليم</h2><div class="section" style="padding:12px;background:#fafafa;border-radius:8px">' + deliveries + '</div>' : '') +
+    (r.rejectionReason ? '<h2>❌ سبب الرفض</h2><div class="section" style="padding:12px;background:#fee;border:1px solid #ef4444;border-radius:8px">' + r.rejectionReason + '</div>' : '') +
+    (r.returnReason ? '<h2>↩️ سبب الإرجاع</h2><div class="section" style="padding:12px;background:#fef3c7;border:1px solid #f59e0b;border-radius:8px">' + r.returnReason + '</div>' : '') +
+    '<h2>⭐ التقييمات</h2><table class="info"><thead><tr style="background:#1a3a6e;color:#fff"><th style="padding:8px;text-align:right">المُقيِّم</th><th style="padding:8px;text-align:right">المعايير</th><th style="padding:8px;text-align:right">المتوسط</th></tr></thead><tbody>' + evalsHtml + '</tbody></table>' +
+    '<h2>📜 السجل الزمني (' + log.length + ' حدث)</h2><table class="info"><thead><tr style="background:#1a3a6e;color:#fff"><th style="padding:8px;text-align:right">الحدث</th><th style="padding:8px;text-align:right">الجهة والوقت</th></tr></thead><tbody>' + logHtml + '</tbody></table>' +
+    '<div class="warning">⚠️ هذا التقرير مُولَّد تلقائياً من نظام بصمة HMA — تواصل. التاريخ: ' + new Date().toLocaleString("ar-SA") + '</div>' +
+    '<div class="footer">🏢 مكتب هاني محمد عسيري للاستشارات الهندسية — HMA Engineering | بصمة HMA</div>' +
+    '<script>window.onload=function(){setTimeout(function(){window.print()},500)}</script>' +
+    '</body></html>';
+
+  var w = window.open("", "_blank", "width=900,height=700");
+  if (!w) { alert("فشل فتح النافذة — تأكد من السماح للنوافذ المنبثقة"); return; }
+  w.document.write(html);
+  w.document.close();
+}
+
+/* ═══════════ TAWASUL REPORTS PAGE (spec section 18.1) ═══════════ */
+function TawasulReportsModal({ user, onClose }) {
+  var [data, setData] = useState(null);
+  var [loading, setLoading] = useState(true);
+  var [err, setErr] = useState("");
+  var [tab, setTab] = useState("overview"); // overview | top | late | escalated | categories
+
+  useEffect(function() {
+    fetch("/api/data?action=tawasul-list").then(function(r){ return r.json(); }).then(function(d){
+      if (d.error) { setErr(d.error); setLoading(false); return; }
+      setData({ requests: d.requests || [], categories: d.categories || [] });
+      setLoading(false);
+    }).catch(function(e){ setErr(e.message || "خطأ"); setLoading(false); });
+  }, []);
+
+  if (loading) {
+    return (
+      <div onClick={onClose} style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.7)", zIndex: 1100, display: "flex", alignItems: "center", justifyContent: "center", fontFamily: "'Tajawal',sans-serif" }}>
+        <div style={{ background: C.bg, padding: 30, borderRadius: 16, color: C.text }}>⏳ جارِ تحميل التقارير...</div>
+      </div>
+    );
+  }
+
+  if (err || !data) {
+    return (
+      <div onClick={onClose} style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.7)", zIndex: 1100, display: "flex", alignItems: "center", justifyContent: "center", padding: 16, fontFamily: "'Tajawal',sans-serif" }}>
+        <div style={{ background: C.bg, padding: 24, borderRadius: 16, color: C.text, textAlign: "center" }}>
+          <div style={{ fontSize: 14, color: "#ef4444", marginBottom: 14 }}>⚠️ {err || "فشل التحميل"}</div>
+          <button onClick={onClose} style={{ padding: "8px 18px", borderRadius: 10, background: C.card, color: C.text, border: "1px solid " + C.cardBorder, cursor: "pointer", fontFamily: "inherit" }}>إغلاق</button>
+        </div>
+      </div>
+    );
+  }
+
+  var reqs = data.requests;
+  var total = reqs.length;
+  var open = reqs.filter(function(r){ return ["closed","cancelled","evaluated","rejected"].indexOf(r.status) < 0; }).length;
+  var closed = total - open;
+  var escalated = reqs.filter(function(r){ return r.escalation; }).length;
+
+  // On-time compliance
+  var delivered = reqs.filter(function(r){ return r.deliveredAt && r.deadline; });
+  var onTime = delivered.filter(function(r){ return new Date(r.deliveredAt) <= new Date(r.deadline); }).length;
+  var onTimePct = delivered.length ? Math.round(onTime / delivered.length * 100) : 0;
+
+  // Avg received time (from sent to received)
+  var acceptTimes = [];
+  reqs.forEach(function(r){
+    if (r.receivedAt && r.createdAt) {
+      var hrs = (new Date(r.receivedAt) - new Date(r.createdAt)) / 3600000;
+      if (hrs >= 0 && hrs < 24 * 30) acceptTimes.push(hrs);
+    }
+  });
+  var avgAcceptHrs = acceptTimes.length ? Math.round(acceptTimes.reduce(function(s,x){ return s+x; }, 0) / acceptTimes.length * 10) / 10 : 0;
+
+  // Top performers — aggregate finalScore per assignee
+  var empScores = {};
+  reqs.forEach(function(r){
+    if (r.finalScore === undefined || r.finalScore === null) return;
+    (r.assignees || []).forEach(function(a){
+      if (!a.id) return;
+      if (!empScores[a.id]) empScores[a.id] = { name: a.name || a.id, total: 0, count: 0 };
+      empScores[a.id].total += r.finalScore;
+      empScores[a.id].count += 1;
+    });
+  });
+  var topPerformers = Object.keys(empScores).map(function(id){
+    var e = empScores[id];
+    return { id: id, name: e.name, avg: Math.round(e.total / e.count), count: e.count };
+  }).sort(function(a,b){ return b.avg - a.avg; }).slice(0, 5);
+
+  // Late tasks
+  var nowMs = Date.now();
+  var lateTasks = reqs.filter(function(r){
+    if (!r.deadline) return false;
+    if (["closed","cancelled","evaluated"].indexOf(r.status) >= 0) return false;
+    return new Date(r.deadline).getTime() < nowMs;
+  });
+
+  // Escalated list
+  var escalatedTasks = reqs.filter(function(r){ return r.escalation; });
+
+  // By category
+  var byCategory = {};
+  reqs.forEach(function(r){
+    var cat = r.category || "other";
+    if (!byCategory[cat]) byCategory[cat] = 0;
+    byCategory[cat] += 1;
+  });
+  var categoryList = Object.keys(byCategory).map(function(k){ return { id: k, count: byCategory[k] }; }).sort(function(a,b){ return b.count - a.count; });
+
+  function statCard(label, value, color) {
+    return (
+      <div style={{ flex: 1, minWidth: 120, padding: 14, background: C.card, borderRadius: 12, border: "1px solid " + C.cardBorder, textAlign: "center" }}>
+        <div style={{ fontSize: 22, fontWeight: 900, color: color || C.text, fontFamily: "'Cairo',sans-serif" }}>{value}</div>
+        <div style={{ fontSize: 11, color: C.sub, marginTop: 4 }}>{label}</div>
+      </div>
+    );
+  }
+
+  return (
+    <div onClick={onClose} style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.7)", zIndex: 1100, display: "flex", alignItems: "flex-end", justifyContent: "center", fontFamily: "'Tajawal',sans-serif" }}>
+      <div onClick={function(e){ e.stopPropagation(); }} style={{ background: C.bg, borderRadius: "20px 20px 0 0", maxWidth: 460, width: "100%", maxHeight: "94vh", overflowY: "auto", direction: "rtl", color: C.text }}>
+        <div style={{ padding: "14px 16px", borderBottom: "1px solid " + C.cardBorder, display: "flex", justifyContent: "space-between", alignItems: "center", position: "sticky", top: 0, background: C.bg, zIndex: 2 }}>
+          <div style={{ fontSize: 16, fontWeight: 900, fontFamily: "'Cairo',sans-serif" }}>📊 تقارير تواصل</div>
+          <button onClick={onClose} style={{ background: "none", border: "none", fontSize: 22, color: C.sub, cursor: "pointer" }}>×</button>
+        </div>
+
+        {/* Tabs */}
+        <div style={{ padding: "12px 16px", borderBottom: "1px solid " + C.cardBorder, display: "flex", gap: 6, overflowX: "auto" }}>
+          {[
+            { id: "overview", icon: "📈", label: "نظرة عامة" },
+            { id: "top",      icon: "🏆", label: "الأفضل" },
+            { id: "late",     icon: "⏰", label: "متأخرة" },
+            { id: "escalated",icon: "⬆️", label: "مُصعَّدة" },
+            { id: "categories",icon: "🏷️", label: "الفئات" },
+          ].map(function(t){
+            var active = tab === t.id;
+            return <button key={t.id} onClick={function(){ setTab(t.id); }} style={{ padding: "7px 12px", borderRadius: 10, background: active ? C.hdr2 : C.card, color: active ? "#fff" : C.text, border: "1px solid " + (active ? C.hdr2 : C.cardBorder), fontSize: 11, fontWeight: 700, cursor: "pointer", fontFamily: "inherit", whiteSpace: "nowrap" }}>{t.icon} {t.label}</button>;
+          })}
+        </div>
+
+        <div style={{ padding: 16 }}>
+          {tab === "overview" && (
+            <div>
+              <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 12 }}>
+                {statCard("إجمالي", total, C.hdr2)}
+                {statCard("مفتوحة", open, "#f59e0b")}
+                {statCard("منجزة", closed, "#22c55e")}
+                {statCard("مصعّدة", escalated, "#ef4444")}
+              </div>
+              <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+                {statCard("الالتزام بالمواعيد", onTimePct + "%", onTimePct >= 70 ? "#22c55e" : onTimePct >= 50 ? "#f59e0b" : "#ef4444")}
+                {statCard("متوسط زمن الاستلام", avgAcceptHrs + " ساعة", C.gold)}
+              </div>
+              <div style={{ marginTop: 14, padding: 12, background: C.card, borderRadius: 10, border: "1px solid " + C.cardBorder, fontSize: 11, color: C.sub, lineHeight: 1.8 }}>
+                💡 من بين {delivered.length} مهمة سُلّمت، {onTime} مهمة في الموعد.<br/>
+                💡 متوسط {avgAcceptHrs} ساعة من الإرسال إلى الاستلام.
+              </div>
+            </div>
+          )}
+
+          {tab === "top" && (
+            <div>
+              {topPerformers.length === 0 ? (
+                <div style={{ textAlign: "center", padding: 30, color: C.sub }}>لا توجد تقييمات بعد</div>
+              ) : topPerformers.map(function(p, i){
+                return (
+                  <div key={p.id} style={{ display: "flex", alignItems: "center", gap: 10, padding: 12, background: C.card, borderRadius: 12, border: "1px solid " + C.cardBorder, marginBottom: 8 }}>
+                    <div style={{ width: 32, height: 32, borderRadius: 16, background: i === 0 ? "#fbbf24" : i === 1 ? "#cbd5e1" : i === 2 ? "#d97706" : C.bg, color: "#fff", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 14, fontWeight: 900 }}>{i === 0 ? "🥇" : i === 1 ? "🥈" : i === 2 ? "🥉" : (i+1)}</div>
+                    <div style={{ flex: 1 }}>
+                      <div style={{ fontSize: 13, fontWeight: 800, color: C.text }}>{p.name}</div>
+                      <div style={{ fontSize: 10, color: C.sub }}>{p.count} مهمة</div>
+                    </div>
+                    <div style={{ fontSize: 16, fontWeight: 900, color: C.gold }}>{p.avg}<span style={{ fontSize: 10, opacity: 0.6 }}>/100</span></div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+
+          {tab === "late" && (
+            <div>
+              {lateTasks.length === 0 ? (
+                <div style={{ textAlign: "center", padding: 30, color: C.sub }}>🎉 لا توجد مهام متأخرة</div>
+              ) : lateTasks.map(function(t){
+                var daysLate = Math.floor((Date.now() - new Date(t.deadline).getTime()) / 86400000);
+                return (
+                  <div key={t.id} style={{ padding: 10, background: "rgba(239,68,68,0.08)", borderRadius: 10, border: "1px solid rgba(239,68,68,0.3)", marginBottom: 6 }}>
+                    <div style={{ fontSize: 12, fontWeight: 800, color: C.text, marginBottom: 4 }}>#{t.serial || "—"} {t.title || "(بدون عنوان)"}</div>
+                    <div style={{ fontSize: 10, color: "#ef4444", fontWeight: 700 }}>⏰ متأخرة {daysLate} يوم</div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+
+          {tab === "escalated" && (
+            <div>
+              {escalatedTasks.length === 0 ? (
+                <div style={{ textAlign: "center", padding: 30, color: C.sub }}>✅ لا توجد مهام مصعّدة</div>
+              ) : escalatedTasks.map(function(t){
+                return (
+                  <div key={t.id} style={{ padding: 10, background: t.escalation === "red" ? "rgba(239,68,68,0.08)" : "rgba(251,191,36,0.1)", borderRadius: 10, border: "1px solid " + (t.escalation === "red" ? "rgba(239,68,68,0.3)" : "rgba(251,191,36,0.4)"), marginBottom: 6 }}>
+                    <div style={{ fontSize: 12, fontWeight: 800, color: C.text, marginBottom: 4 }}>{t.escalation === "red" ? "🔴" : "🟡"} #{t.serial || "—"} {t.title || ""}</div>
+                    <div style={{ fontSize: 10, color: C.sub }}>{t.escalatedAt ? "منذ " + Math.floor((Date.now() - new Date(t.escalatedAt).getTime())/86400000) + " يوم" : ""}</div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+
+          {tab === "categories" && (
+            <div>
+              {categoryList.length === 0 ? (
+                <div style={{ textAlign: "center", padding: 30, color: C.sub }}>لا توجد بيانات</div>
+              ) : categoryList.map(function(c){
+                var pct = Math.round(c.count / total * 100);
+                var catMeta = (data.categories || []).find(function(x){ return x.id === c.id; }) || { label: c.id };
+                return (
+                  <div key={c.id} style={{ marginBottom: 10 }}>
+                    <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 4, fontSize: 12, fontWeight: 700 }}>
+                      <span>{catMeta.icon || ""} {catMeta.label || c.id}</span>
+                      <span style={{ color: C.sub }}>{c.count} ({pct}%)</span>
+                    </div>
+                    <div style={{ height: 6, background: C.card, borderRadius: 3, overflow: "hidden" }}>
+                      <div style={{ width: pct + "%", height: "100%", background: C.gold }} />
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/* ═══════════ TAWASUL HR ASSISTANT (AI recommendations — extra feature) ═══════════ */
+function TawasulHRAssistant({ user, onClose }) {
+  var [loading, setLoading] = useState(true);
+  var [aiLoading, setAiLoading] = useState(false);
+  var [data, setData] = useState(null);
+  var [recommendations, setRecommendations] = useState("");
+  var [err, setErr] = useState("");
+  var [customQ, setCustomQ] = useState("");
+
+  useEffect(function() {
+    fetch("/api/data?action=tawasul-list").then(function(r){ return r.json(); }).then(function(d){
+      if (d.error) { setErr(d.error); setLoading(false); return; }
+      setData({ requests: d.requests || [] });
+      setLoading(false);
+    }).catch(function(e){ setErr(e.message || "خطأ"); setLoading(false); });
+  }, []);
+
+  async function analyzeWithAI(question) {
+    if (!data) return;
+    setAiLoading(true); setErr(""); setRecommendations("");
+    try {
+      var reqs = data.requests;
+      var summary = {
+        total: reqs.length,
+        open: reqs.filter(function(r){ return ["closed","cancelled","evaluated","rejected"].indexOf(r.status) < 0; }).length,
+        escalatedYellow: reqs.filter(function(r){ return r.escalation === "yellow"; }).length,
+        escalatedRed: reqs.filter(function(r){ return r.escalation === "red"; }).length,
+        rejected: reqs.filter(function(r){ return r.status === "rejected"; }).length,
+        late: reqs.filter(function(r){
+          if (!r.deadline) return false;
+          if (["closed","cancelled","evaluated"].indexOf(r.status) >= 0) return false;
+          return new Date(r.deadline).getTime() < Date.now();
+        }).length,
+      };
+      // Top performers
+      var empScores = {};
+      reqs.forEach(function(r){
+        if (r.finalScore === undefined || r.finalScore === null) return;
+        (r.assignees || []).forEach(function(a){
+          if (!a.id) return;
+          if (!empScores[a.id]) empScores[a.id] = { name: a.name, total: 0, count: 0 };
+          empScores[a.id].total += r.finalScore;
+          empScores[a.id].count += 1;
+        });
+      });
+      var topPerformers = Object.keys(empScores).map(function(id){
+        return { name: empScores[id].name, avg: Math.round(empScores[id].total / empScores[id].count), count: empScores[id].count };
+      }).sort(function(a,b){ return b.avg - a.avg; }).slice(0, 5);
+
+      // Worst rejection/return candidates
+      var empRejections = {};
+      reqs.forEach(function(r){
+        if (r.status !== "rejected") return;
+        (r.assignees || []).forEach(function(a){
+          if (!empRejections[a.id]) empRejections[a.id] = { name: a.name, count: 0 };
+          empRejections[a.id].count += 1;
+        });
+      });
+      var topRejectors = Object.keys(empRejections).map(function(id){ return empRejections[id]; }).sort(function(a,b){ return b.count - a.count; }).slice(0, 3);
+
+      var systemPrompt = "أنت مساعد ذكي لمدير الموارد البشرية في مكتب هندسي. قدم توصيات عملية ومختصرة وقابلة للتنفيذ بناءً على بيانات المهام.\n\n" +
+        "البيانات:\n" +
+        "- إجمالي المهام: " + summary.total + "\n" +
+        "- مفتوحة: " + summary.open + "\n" +
+        "- متأخرة: " + summary.late + "\n" +
+        "- مُصعَّدة أصفر: " + summary.escalatedYellow + "\n" +
+        "- مُصعَّدة أحمر: " + summary.escalatedRed + "\n" +
+        "- مرفوضة: " + summary.rejected + "\n\n" +
+        "أفضل الموظفين (حسب التقييم):\n" + topPerformers.map(function(p,i){ return (i+1) + ". " + p.name + " — متوسط " + p.avg + "/100 (" + p.count + " مهمة)"; }).join("\n") + "\n\n" +
+        (topRejectors.length > 0 ? "أكثر الموظفين رفضاً للمهام:\n" + topRejectors.map(function(p,i){ return (i+1) + ". " + p.name + " — رفض " + p.count + " مهمة"; }).join("\n") + "\n\n" : "") +
+        "أجب بالعربية، مختصراً، بنقاط واضحة ومحددة (3-5 نقاط). لا تكرر الأرقام فقط — اقترح إجراءات محددة.";
+
+      var userMsg = question || "حلل أداء الفريق وقدم توصيات لتحسين سير العمل.";
+
+      var rawResp = await callTawasulAI(null, null, {
+        system: systemPrompt,
+        messages: [{ role: "user", content: userMsg }],
+        max_tokens: 700,
+      });
+      setRecommendations(rawResp);
+    } catch (e) {
+      setErr("فشل التحليل: " + (e.message || "خطأ"));
+    }
+    setAiLoading(false);
+  }
+
+  useEffect(function(){
+    if (data && !recommendations && !aiLoading) {
+      analyzeWithAI();
+    }
+  }, [data]);
+
+  var quickQs = [
+    "ما أبرز المشاكل في سير العمل؟",
+    "أي موظف يستحق مكافأة هذا الشهر؟",
+    "ما أسباب التأخير المتكررة؟",
+    "هل هناك نمط في الرفض؟",
+  ];
+
+  return (
+    <div onClick={onClose} style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.75)", zIndex: 1100, display: "flex", alignItems: "flex-end", justifyContent: "center", fontFamily: "'Tajawal',sans-serif" }}>
+      <div onClick={function(e){ e.stopPropagation(); }} style={{ background: "linear-gradient(135deg, rgba(167,139,250,0.12), rgba(124,58,237,0.06))", borderRadius: "20px 20px 0 0", maxWidth: 460, width: "100%", maxHeight: "94vh", overflowY: "auto", direction: "rtl", color: C.text, border: "1.5px solid rgba(167,139,250,0.3)" }}>
+        <div style={{ padding: "14px 16px", borderBottom: "1px solid rgba(167,139,250,0.3)", display: "flex", justifyContent: "space-between", alignItems: "center", position: "sticky", top: 0, background: C.bg, zIndex: 2 }}>
+          <div style={{ fontSize: 16, fontWeight: 900, color: "#a78bfa", fontFamily: "'Cairo',sans-serif" }}>🤖 مساعد الموارد البشرية</div>
+          <button onClick={onClose} style={{ background: "none", border: "none", fontSize: 22, color: C.sub, cursor: "pointer" }}>×</button>
+        </div>
+        <div style={{ padding: 16 }}>
+          <div style={{ fontSize: 11, color: C.sub, marginBottom: 14, lineHeight: 1.7 }}>
+            مساعد ذكي لتحليل أداء الفريق وتقديم توصيات — مخصص للإدارة والموارد البشرية.
+          </div>
+
+          {loading && <div style={{ textAlign: "center", padding: 20, color: C.sub }}>⏳ جارِ تحميل البيانات...</div>}
+          {err && <div style={{ padding: 10, background: "rgba(239,68,68,0.1)", color: "#ef4444", borderRadius: 8, fontSize: 12, fontWeight: 700 }}>⚠️ {err}</div>}
+
+          {data && !err && (
+            <div>
+              {/* Quick questions */}
+              <div style={{ display: "flex", flexWrap: "wrap", gap: 6, marginBottom: 14 }}>
+                {quickQs.map(function(q, i){
+                  return <button key={i} onClick={function(){ analyzeWithAI(q); }} disabled={aiLoading} style={{ padding: "7px 12px", borderRadius: 10, background: C.card, color: "#a78bfa", border: "1px solid rgba(167,139,250,0.4)", fontSize: 11, fontWeight: 700, cursor: aiLoading ? "default" : "pointer", fontFamily: "inherit", opacity: aiLoading ? 0.5 : 1 }}>{q}</button>;
+                })}
+              </div>
+
+              {/* Custom question */}
+              <div style={{ display: "flex", gap: 6, marginBottom: 14 }}>
+                <input type="text" value={customQ} onChange={function(e){ setCustomQ(e.target.value); }} placeholder="اسأل سؤالاً مخصصاً..." onKeyDown={function(e){ if(e.key==="Enter" && customQ.trim()){ analyzeWithAI(customQ); setCustomQ(""); } }} style={{ flex: 1, padding: "10px 12px", borderRadius: 10, border: "1px solid " + C.cardBorder, background: C.card, color: C.text, fontSize: 12, fontFamily: "inherit", outline: "none" }} />
+                <button onClick={function(){ if(customQ.trim()){ analyzeWithAI(customQ); setCustomQ(""); } }} disabled={aiLoading || !customQ.trim()} style={{ padding: "10px 14px", borderRadius: 10, background: customQ.trim() ? "#a78bfa" : C.cardBorder, color: "#fff", border: "none", fontSize: 12, fontWeight: 700, cursor: customQ.trim() ? "pointer" : "default", fontFamily: "inherit" }}>🚀</button>
+              </div>
+
+              {/* Response */}
+              {aiLoading && <div style={{ textAlign: "center", padding: 20, color: "#a78bfa", fontSize: 12 }}>🤖 جارِ التحليل...</div>}
+              {recommendations && (
+                <div style={{ background: C.card, borderRadius: 12, padding: 14, border: "1px solid rgba(167,139,250,0.3)", fontSize: 12, lineHeight: 1.9, color: C.text, whiteSpace: "pre-wrap" }}>
+                  {recommendations}
+                </div>
+              )}
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+
 /* ═══════════ TAWASUL HR ACTIONS MODAL (spec section 14) ═══════════ */
 function TawasulHRActionsModal({ request, user, allEmps, onClose, onSaved }) {
   var [action, setAction] = useState(null); // "force" | "reassign" | "investigate"
@@ -3088,6 +3529,8 @@ function TawasulPage({ user, allEmps }) {
   var [showFilters, setShowFilters] = useState(false);
   var [showCreate, setShowCreate] = useState(false);
   var [editingReq, setEditingReq] = useState(null);
+  var [showReports, setShowReports] = useState(false);
+  var [showHRAssistant, setShowHRAssistant] = useState(false);
 
   var isAdmin = user && (user.role === "admin" || user.role === "hr_manager" || user.isAdmin || user.username === "admin");
   var myId = user && (user.id || user.username);
@@ -3235,9 +3678,11 @@ function TawasulPage({ user, allEmps }) {
       <div style={{ background: "linear-gradient(135deg, " + C.hdr1 + " 0%, " + C.hdr2 + " 100%)", padding: "16px 16px 18px", color: "#fff" }}>
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 4 }}>
           <div style={{ fontSize: 22, fontWeight: 900, fontFamily: "'Cairo',sans-serif" }}>🤝 تواصل</div>
-          <div style={{ display: "flex", gap: 6 }}>
-            <button onClick={function(){ loadData(true); }} disabled={refreshing} style={{ background: "rgba(255,255,255,.15)", border: "1px solid rgba(255,255,255,.25)", borderRadius: 10, padding: "6px 12px", color: "#fff", fontSize: 11, fontWeight: 700, cursor: "pointer", fontFamily: "inherit" }}>{refreshing ? "⟳..." : "⟳"}</button>
-            <button onClick={function(){ setShowCreate(true); }} style={{ background: "#22c55e", border: "none", borderRadius: 10, padding: "6px 14px", color: "#fff", fontSize: 12, fontWeight: 800, cursor: "pointer", fontFamily: "inherit" }}>➕ جديد</button>
+          <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+            <button onClick={function(){ loadData(true); }} disabled={refreshing} style={{ background: "rgba(255,255,255,.15)", border: "1px solid rgba(255,255,255,.25)", borderRadius: 10, padding: "6px 10px", color: "#fff", fontSize: 11, fontWeight: 700, cursor: "pointer", fontFamily: "inherit" }}>{refreshing ? "⟳..." : "⟳"}</button>
+            <button onClick={function(){ setShowReports(true); }} style={{ background: "rgba(255,255,255,.15)", border: "1px solid rgba(255,255,255,.25)", borderRadius: 10, padding: "6px 10px", color: "#fff", fontSize: 11, fontWeight: 700, cursor: "pointer", fontFamily: "inherit" }}>📊</button>
+            {isAdmin && <button onClick={function(){ setShowHRAssistant(true); }} style={{ background: "rgba(167,139,250,0.3)", border: "1px solid rgba(167,139,250,0.5)", borderRadius: 10, padding: "6px 10px", color: "#fff", fontSize: 11, fontWeight: 700, cursor: "pointer", fontFamily: "inherit" }}>🤖</button>}
+            <button onClick={function(){ setShowCreate(true); }} style={{ background: "#22c55e", border: "none", borderRadius: 10, padding: "6px 12px", color: "#fff", fontSize: 12, fontWeight: 800, cursor: "pointer", fontFamily: "inherit" }}>➕ جديد</button>
           </div>
         </div>
         <div style={{ fontSize: 11, opacity: 0.85 }}>إدارة المهام الداخلية — {(requests || []).length} مهمة</div>
@@ -3335,6 +3780,9 @@ function TawasulPage({ user, allEmps }) {
       {showCreate && <TawasulCreateModal user={user} allEmps={allEmps} categories={categories} projects={projects} onClose={function(){ setShowCreate(false); }} onSaved={function(){ setShowCreate(false); loadData(true); }} />}
 
       {editingReq && <TawasulCreateModal user={user} allEmps={allEmps} categories={categories} projects={projects} existing={editingReq} onClose={function(){ setEditingReq(null); }} onSaved={function(){ setEditingReq(null); loadData(true); }} />}
+
+      {showReports && <TawasulReportsModal user={user} onClose={function(){ setShowReports(false); }} />}
+      {showHRAssistant && <TawasulHRAssistant user={user} onClose={function(){ setShowHRAssistant(false); }} />}
     </div>
   );
 }
@@ -3542,6 +3990,7 @@ function TawasulDetailModal({ request, user, allEmps, onClose, nameOf, onUpdated
             {canCancel && <button onClick={doCancel} disabled={busy} style={{ flex: "1 1 auto", minWidth: 90, padding: "10px 12px", borderRadius: 10, background: C.card, color: C.text, border: "1px solid " + C.cardBorder, fontSize: 12, fontWeight: 700, cursor: "pointer", fontFamily: "inherit" }}>🚫 إلغاء</button>}
             {canEdit && <button onClick={function(){ onEdit(r); }} style={{ flex: "1 1 auto", minWidth: 90, padding: "10px 12px", borderRadius: 10, background: C.hdr2, color: "#fff", border: "none", fontSize: 12, fontWeight: 700, cursor: "pointer", fontFamily: "inherit" }}>✎ تعديل</button>}
             {canDelete && <button onClick={doDelete} disabled={busy} style={{ flex: "1 1 auto", minWidth: 90, padding: "10px 12px", borderRadius: 10, background: "rgba(239,68,68,0.2)", color: "#ef4444", border: "1px solid #ef4444", fontSize: 12, fontWeight: 700, cursor: "pointer", fontFamily: "inherit" }}>🗑 حذف</button>}
+            <button onClick={function(){ exportTawasulPDF(r, nameOf); }} style={{ flex: "1 1 auto", minWidth: 90, padding: "10px 12px", borderRadius: 10, background: C.card, color: C.text, border: "1px solid " + C.cardBorder, fontSize: 12, fontWeight: 700, cursor: "pointer", fontFamily: "inherit" }}>🖨️ PDF</button>
           </div>
 
           {/* Pipeline */}
