@@ -1859,8 +1859,37 @@ export default async function handler(req, res) {
             { id: "other",       label: "أخرى",           icon: "📎", fixed: false },
           ];
           var projects = (await dbGet('twsl:projects')) || [];
+          // v6.42 — Build hierarchy from employees automatically (source of truth = Kadwar sync).
+          // Previously read from separate 'org_hierarchy' KV which was never populated after Kadwar sync.
           var hierarchy = {};
-          try { hierarchy = (await dbGet('org_hierarchy')) || {}; } catch(e) { hierarchy = {}; }
+          try {
+            var orgStored = (await dbGet('org_hierarchy')) || {};
+            hierarchy = Object.assign({}, orgStored); // start from any manual overrides
+          } catch(e) {}
+
+          try {
+            var allEmps = (await dbGet('employees')) || [];
+            // Map kadwarId -> empId (for resolving manager references by kadwar id)
+            var kadIdToEmpId = {};
+            allEmps.forEach(function(e){
+              if (e.kadwarId) kadIdToEmpId[String(e.kadwarId)] = String(e.id);
+            });
+            // For each employee with a manager, register in hierarchy
+            allEmps.forEach(function(e){
+              if (!e || !e.id) return;
+              var empKey = String(e.id);
+              if (hierarchy[empKey]) return; // manual override wins
+              var managerId = null;
+              // Direct manager by id
+              if (e.managerId) managerId = String(e.managerId);
+              // Manager by kadwar id → resolve to empId
+              else if (e.managerKadwarId && kadIdToEmpId[String(e.managerKadwarId)]) managerId = kadIdToEmpId[String(e.managerKadwarId)];
+              // Supervisor fallback
+              else if (e.supervisorId) managerId = String(e.supervisorId);
+              else if (e.supervisorKadwarId && kadIdToEmpId[String(e.supervisorKadwarId)]) managerId = kadIdToEmpId[String(e.supervisorKadwarId)];
+              if (managerId && managerId !== empKey) hierarchy[empKey] = managerId;
+            });
+          } catch(e) { /* silent */ }
 
           // Fetch all requests — use reliable parallel GETs (proven path)
           var requests = [];

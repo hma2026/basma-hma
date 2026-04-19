@@ -3,7 +3,7 @@ import { ALL_VIOLATIONS_DEFAULT, PENALTY_TYPES, LAIHA_INFO, COMPLAINT_STATUS, VI
 import { generateAttendanceReport, generateEmployeeReport, generateMonthlySummary, generateViolationsReport, generateEmployeesListReport, generateBenefitsReport, generateAnnouncementsReport } from "./pdfReports";
 
 const APP = "بصمة HMA";
-const VER = "6.41";
+const VER = "6.42";
 const CO = "هاني محمد عسيري للإستشارات الهندسية";
 const B = { blue: "#2B5EA7", yellow: "#FDD800", red: "#E2192C", black: "#1A1A1A", blueDk: "#1E4478", blueLt: "#EDF3FB", gold: "#D4A017" };
 
@@ -1537,9 +1537,21 @@ function WorkTypesPanel({ t, B, emps }) {
 
   useEffect(function() {
     fetch("/api/data?action=work_types").then(r => r.json()).then(function(d) {
-      setWorkTypes((d && d.types) || defaults);
+      // v6.42 — Fix: empty {} is truthy in JS, so `d.types || defaults` returned {} when server had no types.
+      // Now check if types has at least one key. If not, use defaults AND auto-save them.
+      var hasTypes = d && d.types && Object.keys(d.types).length > 0;
+      var finalTypes = hasTypes ? d.types : defaults;
+      setWorkTypes(finalTypes);
       setOverrides((d && d.overrides) || {});
       setLoading(false);
+      // Auto-seed defaults to server if server was empty
+      if (!hasTypes) {
+        fetch("/api/data?action=work_types", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ types: defaults, overrides: (d && d.overrides) || {} }),
+        }).catch(function(){});
+      }
     }).catch(function(){ setWorkTypes(defaults); setLoading(false); });
   }, []);
 

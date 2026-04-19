@@ -10,7 +10,7 @@ import { ALL_VIOLATIONS_DEFAULT, PENALTY_TYPES, LAIHA_INFO, COMPLAINT_STATUS, VI
 
 /* ═══════════ APP CONFIG (إعدادات التطبيق) ═══════════ */
 const APP_CONFIG = {
-  VER: "6.41",
+  VER: "6.42",
   NAME: "بصمة HMA",
   FULL_NAME: "نظام الحضور والانصراف الذكي",
   COMPANY: "هاني محمد عسيري للاستشارات الهندسية",
@@ -1159,7 +1159,7 @@ function MobileAppInner() {
   if (!consentGiven) return <ConsentScreen onAccept={function(){ localStorage.setItem("basma_consent_date", new Date().toISOString()); setConsentGiven(true); }} />;
 
   return (
-    <div style={S.phone}>
+    <div style={Object.assign({}, S.phone, isDesktopSession ? { maxWidth: "none", width: "100%" } : {})}>
       {!online && <div style={{ background: C.red, color: "#fff", textAlign: "center", padding: "6px 0", fontSize: 11, fontWeight: 700 }}>⚠️ لا يوجد اتصال بالإنترنت</div>}
 
       <div key={page} style={{ flex: 1, display: "flex", flexDirection: "column", animation: "pageIn .3s ease" }}>
@@ -9009,6 +9009,12 @@ function DesktopPairModal({ user, onClose }) {
   var [busy, setBusy] = useState(false);
   var [err, setErr] = useState(null);
   var [done, setDone] = useState(false);
+  // v6.42 — Camera QR scanner
+  var [mode, setMode] = useState("manual"); // "manual" or "camera"
+  var videoRef = React.useRef(null);
+  var streamRef = React.useRef(null);
+  var scanningRef = React.useRef(false);
+  var [scanErr, setScanErr] = useState(null);
 
   function onCodeChange(e) {
     // Normalize: uppercase, alphanumeric only, cap 6 chars
@@ -9017,8 +9023,19 @@ function DesktopPairModal({ user, onClose }) {
     setErr(null);
   }
 
-  async function submit() {
-    if (code.length !== 6) { setErr("الرمز يجب أن يكون 6 خانات"); return; }
+  // Extract pair code from a URL or text — URL format: "...?pair=XXXXXX"
+  function extractPairCode(text) {
+    if (!text) return null;
+    // URL pattern
+    var match = String(text).match(/pair=([A-Z0-9]{6})/i);
+    if (match) return match[1].toUpperCase();
+    // Raw 6-char code
+    var clean = String(text).toUpperCase().replace(/[^A-Z0-9]/g, "");
+    if (clean.length === 6) return clean;
+    return null;
+  }
+
+  async function submitCode(pairCode) {
     setBusy(true); setErr(null);
     try {
       // v6.38 — send FULL user object (not just 4 fields) so DesktopFrame has branch/type/points/etc.
@@ -9027,7 +9044,7 @@ function DesktopPairModal({ user, onClose }) {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          pairCode: code,
+          pairCode: pairCode,
           userId: user.id || user.username,
           userName: user.name || user.username || "",
           userData: fullUser,
@@ -9036,6 +9053,7 @@ function DesktopPairModal({ user, onClose }) {
       var d = await res.json();
       if (!res.ok) throw new Error(d.error || "فشل الإقران");
       setDone(true);
+      stopCamera();
       setTimeout(function(){ onClose(); }, 1800);
     } catch(e) {
       setErr(e.message || "خطأ غير متوقع");
@@ -9043,9 +9061,87 @@ function DesktopPairModal({ user, onClose }) {
     setBusy(false);
   }
 
+  async function submit() {
+    if (code.length !== 6) { setErr("الرمز يجب أن يكون 6 خانات"); return; }
+    submitCode(code);
+  }
+
+  // Camera scanning
+  async function startCamera() {
+    setScanErr(null);
+    try {
+      var stream = await navigator.mediaDevices.getUserMedia({
+        video: { facingMode: "environment" }, // rear camera preferred
+      });
+      streamRef.current = stream;
+      if (videoRef.current) {
+        videoRef.current.srcObject = stream;
+        await videoRef.current.play();
+      }
+      scanningRef.current = true;
+      scanLoop();
+    } catch (e) {
+      setScanErr("تعذّر فتح الكاميرا — تأكد من الأذن أو جرّب الكتابة اليدوية");
+    }
+  }
+
+  function stopCamera() {
+    scanningRef.current = false;
+    if (streamRef.current) {
+      try { streamRef.current.getTracks().forEach(function(t){ t.stop(); }); } catch(e) {}
+      streamRef.current = null;
+    }
+    if (videoRef.current) {
+      try { videoRef.current.srcObject = null; } catch(e) {}
+    }
+  }
+
+  async function scanLoop() {
+    if (!scanningRef.current || !videoRef.current) return;
+    try {
+      // Try BarcodeDetector API (iOS 17+, Chrome, Edge)
+      if (typeof window.BarcodeDetector !== "undefined") {
+        var detector = new window.BarcodeDetector({ formats: ["qr_code"] });
+        var codes = await detector.detect(videoRef.current);
+        if (codes && codes.length > 0) {
+          var text = codes[0].rawValue;
+          var pair = extractPairCode(text);
+          if (pair) {
+            stopCamera();
+            setCode(pair);
+            submitCode(pair);
+            return;
+          }
+        }
+      } else {
+        // Fallback: manual entry only
+        setScanErr("المتصفح لا يدعم مسح الباركود — استخدم الكتابة اليدوية");
+        stopCamera();
+        setMode("manual");
+        return;
+      }
+    } catch(e) { /* silent — keep trying */ }
+    setTimeout(scanLoop, 400);
+  }
+
+  // Start camera when entering camera mode
+  useEffect(function(){
+    if (mode === "camera") {
+      startCamera();
+      return stopCamera;
+    } else {
+      stopCamera();
+    }
+  }, [mode]);
+
+  // Cleanup on unmount
+  useEffect(function(){
+    return function(){ stopCamera(); };
+  }, []);
+
   return (
     <div onClick={onClose} style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.65)", zIndex: 9000, display: "flex", alignItems: "center", justifyContent: "center", padding: 16 }}>
-      <div onClick={function(e){ e.stopPropagation(); }} style={{ background: COLORS.bg1, borderRadius: RADIUS.xl, padding: 20, width: "100%", maxWidth: 360, border: "1px solid " + COLORS.metallicBorder, boxShadow: "0 12px 40px rgba(0,0,0,0.6)" }}>
+      <div onClick={function(e){ e.stopPropagation(); }} style={{ background: COLORS.bg1, borderRadius: RADIUS.xl, padding: 20, width: "100%", maxWidth: 380, border: "1px solid " + COLORS.metallicBorder, boxShadow: "0 12px 40px rgba(0,0,0,0.6)" }}>
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 14 }}>
           <div style={{ ...TYPOGRAPHY.h3, color: COLORS.textPrimary }}>🖥 ربط سطح المكتب</div>
           <button onClick={onClose} style={{ background: "none", border: "none", color: COLORS.textMuted, fontSize: 22, cursor: "pointer", padding: 0 }}>×</button>
@@ -9059,42 +9155,65 @@ function DesktopPairModal({ user, onClose }) {
           </div>
         ) : (
           <>
-            <div style={{ ...TYPOGRAPHY.caption, color: COLORS.textMuted, marginBottom: 12, lineHeight: 1.7 }}>
-              افتح <b style={{ color: COLORS.goldLight }}>b.hma.engineer/#desktop</b> على سطح المكتب، ستحصل على رمز من 6 خانات. أدخله هنا للربط.
+            {/* Mode switcher */}
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 6, marginBottom: 12, padding: 4, background: COLORS.metallic, borderRadius: RADIUS.md }}>
+              <button onClick={function(){ setMode("camera"); setErr(null); }} style={{ padding: "9px 8px", borderRadius: RADIUS.sm, background: mode === "camera" ? COLORS.goldLight : "transparent", color: mode === "camera" ? "#000" : COLORS.textMuted, border: "none", fontWeight: 800, fontSize: 12, cursor: "pointer", fontFamily: TYPOGRAPHY.fontTajawal }}>📷 مسح QR</button>
+              <button onClick={function(){ setMode("manual"); setScanErr(null); }} style={{ padding: "9px 8px", borderRadius: RADIUS.sm, background: mode === "manual" ? COLORS.goldLight : "transparent", color: mode === "manual" ? "#000" : COLORS.textMuted, border: "none", fontWeight: 800, fontSize: 12, cursor: "pointer", fontFamily: TYPOGRAPHY.fontTajawal }}>⌨️ كتابة يدوية</button>
             </div>
-            <div style={{ marginBottom: 8, ...TYPOGRAPHY.tiny, color: COLORS.textMuted }}>رمز الإقران</div>
-            <input
-              type="text"
-              inputMode="latin"
-              autoFocus
-              value={code}
-              onChange={onCodeChange}
-              placeholder="ABCD12"
-              maxLength={6}
-              style={{
-                width: "100%",
-                padding: "14px 16px",
-                borderRadius: RADIUS.md,
-                background: COLORS.metallic,
-                border: "2px solid " + (err ? COLORS.textDanger : COLORS.metallicBorder),
-                color: COLORS.textPrimary,
-                fontSize: 24,
-                fontWeight: 900,
-                fontFamily: "'Menlo','Courier New',monospace",
-                letterSpacing: 8,
-                textAlign: "center",
-                boxSizing: "border-box",
-                outline: "none",
-              }}
-            />
-            {err && <div style={{ marginTop: 10, padding: 8, borderRadius: RADIUS.sm, background: "rgba(255,59,48,0.1)", border: "1px solid rgba(255,59,48,0.3)", color: COLORS.textDanger, ...TYPOGRAPHY.caption, fontWeight: 600 }}>❌ {err}</div>}
 
-            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8, marginTop: 16 }}>
-              <button onClick={onClose} disabled={busy} style={{ padding: "11px 10px", borderRadius: RADIUS.sm, background: COLORS.metallic, color: COLORS.textPrimary, border: "1px solid " + COLORS.metallicBorder, ...TYPOGRAPHY.caption, fontWeight: 700, cursor: "pointer", fontFamily: TYPOGRAPHY.fontTajawal }}>إلغاء</button>
-              <button onClick={submit} disabled={busy || code.length !== 6} style={{ padding: "11px 10px", borderRadius: RADIUS.sm, background: code.length === 6 ? COLORS.goldLight : COLORS.metallic, color: code.length === 6 ? "#000" : COLORS.textMuted, border: "none", ...TYPOGRAPHY.caption, fontWeight: 800, cursor: busy || code.length !== 6 ? "wait" : "pointer", fontFamily: TYPOGRAPHY.fontTajawal }}>
-                {busy ? "⏳ جارِ الربط..." : "🔗 ربط"}
-              </button>
-            </div>
+            {mode === "camera" ? (
+              <>
+                <div style={{ ...TYPOGRAPHY.caption, color: COLORS.textMuted, marginBottom: 10, lineHeight: 1.7 }}>
+                  وجّه الكاميرا إلى QR المعروض على شاشة سطح المكتب
+                </div>
+                <div style={{ position: "relative", width: "100%", aspectRatio: "1/1", borderRadius: RADIUS.md, overflow: "hidden", background: "#000", border: "2px solid " + COLORS.goldLight }}>
+                  <video ref={videoRef} playsInline muted style={{ width: "100%", height: "100%", objectFit: "cover" }} />
+                  {/* Scanning frame overlay */}
+                  <div style={{ position: "absolute", inset: "15%", border: "3px solid " + COLORS.goldLight, borderRadius: 12, boxShadow: "0 0 0 200vmax rgba(0,0,0,0.4)", pointerEvents: "none" }} />
+                </div>
+                {scanErr && <div style={{ marginTop: 10, padding: 8, borderRadius: RADIUS.sm, background: "rgba(255,59,48,0.1)", border: "1px solid rgba(255,59,48,0.3)", color: COLORS.textDanger, fontSize: 11, fontWeight: 600 }}>{scanErr}</div>}
+                {busy && <div style={{ marginTop: 10, padding: 8, borderRadius: RADIUS.sm, background: "rgba(201,168,76,0.15)", color: COLORS.goldLight, fontSize: 12, fontWeight: 700, textAlign: "center" }}>⏳ جارِ الربط...</div>}
+              </>
+            ) : (
+              <>
+                <div style={{ ...TYPOGRAPHY.caption, color: COLORS.textMuted, marginBottom: 12, lineHeight: 1.7 }}>
+                  افتح <b style={{ color: COLORS.goldLight }}>b.hma.engineer/#desktop</b> على سطح المكتب، ستحصل على رمز من 6 خانات. أدخله هنا للربط.
+                </div>
+                <div style={{ marginBottom: 8, ...TYPOGRAPHY.tiny, color: COLORS.textMuted }}>رمز الإقران</div>
+                <input
+                  type="text"
+                  inputMode="latin"
+                  autoFocus
+                  value={code}
+                  onChange={onCodeChange}
+                  placeholder="ABCD12"
+                  maxLength={6}
+                  style={{
+                    width: "100%",
+                    padding: "14px 16px",
+                    borderRadius: RADIUS.md,
+                    background: COLORS.metallic,
+                    border: "2px solid " + (err ? COLORS.textDanger : COLORS.metallicBorder),
+                    color: COLORS.textPrimary,
+                    fontSize: 24,
+                    fontWeight: 900,
+                    fontFamily: "'Menlo','Courier New',monospace",
+                    letterSpacing: 8,
+                    textAlign: "center",
+                    boxSizing: "border-box",
+                    outline: "none",
+                  }}
+                />
+                {err && <div style={{ marginTop: 10, padding: 8, borderRadius: RADIUS.sm, background: "rgba(255,59,48,0.1)", border: "1px solid rgba(255,59,48,0.3)", color: COLORS.textDanger, ...TYPOGRAPHY.caption, fontWeight: 600 }}>❌ {err}</div>}
+
+                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8, marginTop: 16 }}>
+                  <button onClick={onClose} disabled={busy} style={{ padding: "11px 10px", borderRadius: RADIUS.sm, background: COLORS.metallic, color: COLORS.textPrimary, border: "1px solid " + COLORS.metallicBorder, ...TYPOGRAPHY.caption, fontWeight: 700, cursor: "pointer", fontFamily: TYPOGRAPHY.fontTajawal }}>إلغاء</button>
+                  <button onClick={submit} disabled={busy || code.length !== 6} style={{ padding: "11px 10px", borderRadius: RADIUS.sm, background: code.length === 6 ? COLORS.goldLight : COLORS.metallic, color: code.length === 6 ? "#000" : COLORS.textMuted, border: "none", ...TYPOGRAPHY.caption, fontWeight: 800, cursor: busy || code.length !== 6 ? "wait" : "pointer", fontFamily: TYPOGRAPHY.fontTajawal }}>
+                    {busy ? "⏳ جارِ الربط..." : "🔗 ربط"}
+                  </button>
+                </div>
+              </>
+            )}
           </>
         )}
       </div>
