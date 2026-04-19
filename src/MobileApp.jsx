@@ -10,7 +10,7 @@ import { ALL_VIOLATIONS_DEFAULT, PENALTY_TYPES, LAIHA_INFO, COMPLAINT_STATUS, VI
 
 /* ═══════════ APP CONFIG (إعدادات التطبيق) ═══════════ */
 const APP_CONFIG = {
-  VER: "4.93",
+  VER: "4.94",
   NAME: "بصمة HMA",
   FULL_NAME: "نظام الحضور والانصراف الذكي",
   COMPANY: "هاني محمد عسيري للاستشارات الهندسية",
@@ -1374,7 +1374,6 @@ function HomePage({ user, branch, now, todayAtt, allAtt, gps, gpsDist, streak, l
             </div>
             <div className="basma-flip-back">
               <div style={{ display: "flex", gap: SPACING.xs }}>
-                <KadwarBtn icon={<Icons.message size={18} />} label="تواصل" count={kadwarNotifs.tasks} />
                 <KadwarBtn icon={<Icons.edit size={18} />} label="اختبار" count={kadwarNotifs.exams} />
                 <KadwarBtn icon={<Icons.user size={18} />} label="حسابي" count={kadwarNotifs.alerts} />
               </div>
@@ -2126,6 +2125,7 @@ function TawasulCreateModal({ user, allEmps, categories, projects, onClose, onSa
   var [step, setStep] = useState(1);
   var [saving, setSaving] = useState(false);
   var [err, setErr] = useState("");
+  var [showAI, setShowAI] = useState(false);
 
   function updateForm(patch) { setForm(function(prev){ return Object.assign({}, prev, patch); }); }
 
@@ -2292,7 +2292,10 @@ function TawasulCreateModal({ user, allEmps, categories, projects, onClose, onSa
           </div>
           <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 10 }}>
             <div style={{ fontSize: 16, fontWeight: 900, color: C.text, fontFamily: "'Cairo',sans-serif" }}>{isEdit ? "✎ تعديل مهمة" : "➕ مهمة جديدة"}</div>
-            <button onClick={onClose} style={{ background: "none", border: "none", fontSize: 22, color: C.sub, cursor: "pointer", padding: 0 }}>×</button>
+            <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+              {!isEdit && <button onClick={function(){ setShowAI(true); }} style={{ padding: "6px 12px", borderRadius: 10, background: "rgba(167,139,250,0.15)", color: "#a78bfa", border: "1px solid rgba(167,139,250,0.4)", fontSize: 11, fontWeight: 800, cursor: "pointer", fontFamily: "inherit" }}>🤖 مساعد ذكي</button>}
+              <button onClick={onClose} style={{ background: "none", border: "none", fontSize: 22, color: C.sub, cursor: "pointer", padding: 0 }}>×</button>
+            </div>
           </div>
           {/* Progress */}
           <div style={{ display: "flex", alignItems: "center", gap: 3, marginBottom: 6 }}>
@@ -2567,6 +2570,7 @@ function TawasulCreateModal({ user, allEmps, categories, projects, onClose, onSa
             </>
           )}
         </div>
+        {showAI && <TawasulAIAssistant categories={cats} employees={allEmps} onClose={function(){ setShowAI(false); }} onFilled={function(patch){ setForm(function(prev){ return Object.assign({}, prev, patch); }); setStep(1); }} />}
       </div>
     </div>
   );
@@ -2834,6 +2838,216 @@ function TawasulHRActionsModal({ request, user, allEmps, onClose, onSaved }) {
 }
 
 
+
+/* ═══════════ TAWASUL SOUND (spec section 16) ═══════════ */
+function playTawasulNotif() {
+  try {
+    var ctx = new (window.AudioContext || window.webkitAudioContext)();
+    function note(freq, start, dur) {
+      var o = ctx.createOscillator();
+      var g = ctx.createGain();
+      o.connect(g); g.connect(ctx.destination);
+      o.frequency.value = freq; o.type = "sine";
+      g.gain.setValueAtTime(0.2, ctx.currentTime + start);
+      g.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + start + dur);
+      o.start(ctx.currentTime + start);
+      o.stop(ctx.currentTime + start + dur);
+    }
+    note(880, 0, 0.15);
+    note(1100, 0.15, 0.15);
+    note(1320, 0.3, 0.2);
+  } catch(e) { /* silent fail — user hasn't interacted yet */ }
+}
+
+async function callTawasulAI(prompt, model, opts) {
+  opts = opts || {};
+  var body = {
+    model: model || "claude-sonnet-4-20250514",
+    max_tokens: opts.max_tokens || 800,
+    messages: opts.messages || [{ role: "user", content: prompt }],
+    system: opts.system || "",
+  };
+  var r = await fetch("/api/data?action=tawasul-ai", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+  var d = await r.json();
+  if (!r.ok || d.error) throw new Error(d.error || "خطأ AI");
+  // Claude response: d.content[0].text
+  // Gemini response: different shape — try to normalize
+  if (d.content && Array.isArray(d.content) && d.content[0] && d.content[0].text) return d.content[0].text;
+  if (d.text) return d.text;
+  if (d.candidates && d.candidates[0] && d.candidates[0].content && d.candidates[0].content.parts) return d.candidates[0].content.parts[0].text || "";
+  return JSON.stringify(d);
+}
+
+async function compressImageB64(file) {
+  return new Promise(function(resolve, reject) {
+    var reader = new FileReader();
+    reader.onload = function(e) {
+      var img = new Image();
+      img.onload = function() {
+        var canvas = document.createElement("canvas");
+        var maxSize = 1024;
+        var w = img.width, h = img.height;
+        if (w > maxSize || h > maxSize) {
+          if (w > h) { h = h * (maxSize / w); w = maxSize; }
+          else { w = w * (maxSize / h); h = maxSize; }
+        }
+        canvas.width = w; canvas.height = h;
+        canvas.getContext("2d").drawImage(img, 0, 0, w, h);
+        var b64 = canvas.toDataURL("image/jpeg", 0.85).split(",")[1];
+        resolve({ b64: b64, mime: "image/jpeg" });
+      };
+      img.onerror = reject;
+      img.src = e.target.result;
+    };
+    reader.onerror = reject;
+    reader.readAsDataURL(file);
+  });
+}
+
+/* ═══════════ TAWASUL AI ASSISTANT MODAL (spec section 5) ═══════════ */
+function TawasulAIAssistant({ categories, employees, onFilled, onClose }) {
+  var [text, setText] = useState("");
+  var [file, setFile] = useState(null);
+  var [analyzing, setAnalyzing] = useState(false);
+  var [err, setErr] = useState("");
+  var [result, setResult] = useState(null);
+  var fileRef = useRef(null);
+
+  async function analyze() {
+    if (!text.trim() && !file) { setErr("اكتب وصفاً أو ارفع صورة"); return; }
+    setAnalyzing(true); setErr(""); setResult(null);
+    try {
+      var cats = (categories || []).map(function(c){ return (c.icon || "") + " " + c.label; }).join("، ");
+      var emps = (employees || []).slice(0, 30).map(function(e){ return e.name || e.username; }).join("، ");
+
+      var systemPrompt = "أنت مساعد ذكي لنظام طلبات العمل الداخلية. حلل المدخلات (نص أو صورة) واستخرج تفاصيل المهمة.\n\n" +
+        "الموظفون المتاحون: " + emps + "\n" +
+        "التصنيفات: " + cats + "\n\n" +
+        "أرجع JSON فقط بدون أي نص إضافي بهذه البنية:\n" +
+        '{\n' +
+        '  "urgency": "urgent أو normal",\n' +
+        '  "title": "وصف الطلب بجملة واحدة",\n' +
+        '  "description": "الوصف التفصيلي",\n' +
+        '  "category": "أقرب تصنيف من القائمة",\n' +
+        '  "assigneeNames": ["اسم الموظف المستلم"],\n' +
+        '  "projectName": "اسم المشروع أو العميل إن وُجد",\n' +
+        '  "clientPhone": "رقم الجوال إن وُجد",\n' +
+        '  "deadline": "YYYY-MM-DD إن ذُكر موعد"\n' +
+        '}';
+
+      var messages;
+      if (file) {
+        var comp = await compressImageB64(file);
+        messages = [{
+          role: "user",
+          content: [
+            { type: "image", source: { type: "base64", media_type: comp.mime, data: comp.b64 } },
+            { type: "text", text: text.trim() ? ("وصف إضافي: " + text.trim()) : "حلل المحتوى واستخرج تفاصيل المهمة" },
+          ],
+        }];
+      } else {
+        messages = [{ role: "user", content: text.trim() }];
+      }
+
+      var rawResp = await callTawasulAI(null, null, { system: systemPrompt, messages: messages, max_tokens: 600 });
+
+      // Parse JSON from response
+      var jsonMatch = rawResp.match(/\{[\s\S]*\}/);
+      if (!jsonMatch) throw new Error("لم يتم استخراج JSON من الرد");
+      var parsed = JSON.parse(jsonMatch[0]);
+      setResult(parsed);
+    } catch (e) {
+      setErr("فشل التحليل: " + (e.message || "خطأ"));
+    }
+    setAnalyzing(false);
+  }
+
+  function applyResult() {
+    if (!result) return;
+    // Map to form fields
+    var patch = {};
+    if (result.urgency) patch.urgency = result.urgency;
+    if (result.title) patch.title = result.title;
+    if (result.description) patch.description = result.description;
+    if (result.projectName) patch.projectName = result.projectName;
+    if (result.clientPhone) patch.projectClientPhone = result.clientPhone;
+    if (result.deadline) { patch.timed = true; patch.deadline = result.deadline + "T17:00"; }
+
+    // Match category by label
+    if (result.category && categories) {
+      var cat = categories.find(function(c){
+        return c.label && (c.label.indexOf(result.category) >= 0 || result.category.indexOf(c.label) >= 0);
+      });
+      if (cat) patch.category = cat.id;
+    }
+
+    // Match assignees by name
+    if (result.assigneeNames && result.assigneeNames.length && employees) {
+      var matched = result.assigneeNames.map(function(n){
+        var emp = employees.find(function(e){
+          var nm = e.name || e.username || "";
+          return nm.indexOf(n) >= 0 || n.indexOf(nm) >= 0;
+        });
+        return emp ? { id: emp.id || emp.username, name: emp.name || emp.username, acceptedAt: null, deliveredAt: null, returns: 0, objected: false } : null;
+      }).filter(Boolean);
+      if (matched.length) patch.assignees = matched;
+    }
+
+    onFilled(patch);
+    onClose();
+  }
+
+  return (
+    <div onClick={onClose} style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.75)", zIndex: 1200, display: "flex", alignItems: "center", justifyContent: "center", padding: 14, fontFamily: "'Tajawal',sans-serif" }}>
+      <div onClick={function(e){ e.stopPropagation(); }} style={{ background: "linear-gradient(135deg, rgba(167,139,250,0.15), rgba(124,58,237,0.08))", borderRadius: 16, maxWidth: 440, width: "100%", maxHeight: "90vh", overflowY: "auto", direction: "rtl", color: C.text, border: "1.5px solid rgba(167,139,250,0.5)" }}>
+        <div style={{ padding: 16, borderBottom: "1px solid rgba(167,139,250,0.3)", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+          <div style={{ fontSize: 16, fontWeight: 900, color: "#a78bfa" }}>🤖 المساعد الذكي</div>
+          <button onClick={onClose} style={{ background: "none", border: "none", fontSize: 22, color: C.sub, cursor: "pointer" }}>×</button>
+        </div>
+        <div style={{ padding: 16 }}>
+          <div style={{ fontSize: 11, color: C.sub, lineHeight: 1.7, marginBottom: 10 }}>
+            اكتب وصف الطلب أو ارفع صورة (مثل لقطة من واتساب) — الذكاء الاصطناعي سيستخرج التفاصيل ويملأ النموذج تلقائياً.
+          </div>
+
+          <textarea value={text} onChange={function(e){ setText(e.target.value); }} placeholder="مثال: أحتاج مخططات فيلا المرجان من قسم التصميم قبل يوم الخميس" rows={4} style={{ width: "100%", padding: "12px 14px", borderRadius: 12, border: "1px solid rgba(167,139,250,0.4)", background: C.bg, color: C.text, fontSize: 13, fontFamily: "'Tajawal',sans-serif", outline: "none", resize: "vertical", boxSizing: "border-box", marginBottom: 10 }} />
+
+          <input ref={fileRef} type="file" accept="image/*" onChange={function(e){ setFile(e.target.files && e.target.files[0]); }} style={{ display: "none" }} />
+          <button onClick={function(){ fileRef.current && fileRef.current.click(); }} style={{ width: "100%", padding: "11px", borderRadius: 10, background: C.card, color: "#a78bfa", border: "1px dashed rgba(167,139,250,0.5)", fontSize: 12, fontWeight: 700, cursor: "pointer", fontFamily: "inherit", marginBottom: 10 }}>
+            📎 {file ? "تم اختيار: " + file.name : "رفع صورة أو مستند"}
+          </button>
+
+          <button onClick={analyze} disabled={analyzing || (!text.trim() && !file)} style={{ width: "100%", padding: "12px", borderRadius: 12, background: analyzing ? C.cardBorder : "#a78bfa", color: "#fff", border: "none", fontSize: 13, fontWeight: 800, cursor: analyzing ? "default" : "pointer", fontFamily: "inherit" }}>
+            {analyzing ? "⏳ جارِ التحليل..." : "🚀 تحليل بالذكاء الاصطناعي"}
+          </button>
+
+          {err && <div style={{ color: "#ef4444", fontSize: 12, marginTop: 10, padding: 10, background: "rgba(239,68,68,0.1)", borderRadius: 8, fontWeight: 700 }}>⚠️ {err}</div>}
+
+          {result && (
+            <div style={{ marginTop: 14, background: C.card, borderRadius: 12, padding: 14, border: "2px solid #22c55e" }}>
+              <div style={{ fontSize: 12, fontWeight: 900, color: "#22c55e", marginBottom: 10 }}>✅ تم التحليل — راجع النتيجة</div>
+              <div style={{ fontSize: 11, lineHeight: 1.9, color: C.text }}>
+                {result.urgency && <div>🎯 <strong>الأولوية:</strong> {result.urgency === "urgent" ? "🔴 عاجل" : "🟡 عادي"}</div>}
+                {result.title && <div>📝 <strong>العنوان:</strong> {result.title}</div>}
+                {result.category && <div>🏷️ <strong>التصنيف:</strong> {result.category}</div>}
+                {result.assigneeNames && <div>👥 <strong>المستلمون:</strong> {result.assigneeNames.join("، ")}</div>}
+                {result.projectName && <div>🏗️ <strong>المشروع:</strong> {result.projectName}</div>}
+                {result.clientPhone && <div>📞 <strong>رقم:</strong> {result.clientPhone}</div>}
+                {result.deadline && <div>📅 <strong>الموعد:</strong> {result.deadline}</div>}
+              </div>
+              <button onClick={applyResult} style={{ width: "100%", marginTop: 12, padding: 10, borderRadius: 10, background: "#22c55e", color: "#fff", border: "none", fontSize: 12, fontWeight: 800, cursor: "pointer", fontFamily: "inherit" }}>✓ تطبيق على النموذج</button>
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+
 function TawasulPage({ user, allEmps }) {
   var [tab, setTab] = useState("inbox");
   var [requests, setRequests] = useState(null);
@@ -2876,7 +3090,30 @@ function TawasulPage({ user, allEmps }) {
     setRefreshing(false);
   }
 
-  useEffect(function(){ loadData(false); }, []);
+  useEffect(function(){
+    loadData(false);
+    // Run auto-escalation check in background (spec section 13)
+    fetch("/api/data?action=tawasul-check-escalations").then(function(r){ return r.json(); }).then(function(d){
+      if (d && d.updates > 0) {
+        // Re-fetch to show new escalations
+        setTimeout(function(){ loadData(true); }, 500);
+      }
+    }).catch(function(){});
+  }, []);
+
+  // Play notif sound on increase of unread (new task arrived while on page)
+  var prevUnreadRef = useRef(0);
+  useEffect(function() {
+    if (!requests) return;
+    var currentUnread = requests.filter(function(r){
+      var isA = (r.assignees || []).some(function(a){ return String(a.id) === String(myId); });
+      return isA && (r.status === "sent" || r.status === "received");
+    }).length;
+    if (currentUnread > prevUnreadRef.current && prevUnreadRef.current > 0) {
+      playTawasulNotif();
+    }
+    prevUnreadRef.current = currentUnread;
+  }, [requests, myId]);
 
   function nameOf(id) {
     if (!id) return "—";

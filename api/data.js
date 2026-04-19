@@ -1473,6 +1473,49 @@ export default async function handler(req, res) {
         }
       }
 
+      case 'tawasul-check-escalations': {
+        // Check and update auto-escalations (spec section 13) — called from client on page load
+        try {
+          var kr = await fetch('https://hma.engineer/api/basma-sync?action=tawasul');
+          if (!kr.ok) return res.status(kr.status).json({ error: 'kadwar error ' + kr.status, updates: 0 });
+          var kd = await kr.json();
+          var reqs = kd.requests || [];
+          var now = Date.now();
+          var updates = [];
+          reqs.forEach(function(r){
+            if (['closed','cancelled','evaluated'].indexOf(r.status) >= 0) return;
+            // Yellow: 3 days after issueAt
+            if (r.escalation !== 'yellow' && r.escalation !== 'red' && r.issueAt) {
+              if (now - new Date(r.issueAt).getTime() > 3 * 86400000) {
+                updates.push(Object.assign({}, r, { escalation: 'yellow', escalatedAt: new Date().toISOString() }));
+                return;
+              }
+            }
+            // Red: 7 days after yellow
+            if (r.escalation === 'yellow' && r.escalatedAt) {
+              if (now - new Date(r.escalatedAt).getTime() > 7 * 86400000) {
+                updates.push(Object.assign({}, r, { escalation: 'red', redEscalatedAt: new Date().toISOString() }));
+              }
+            }
+          });
+          // Save each updated
+          var saved = 0;
+          for (var i = 0; i < updates.length; i++) {
+            try {
+              var sr = await fetch('https://hma.engineer/api/basma-sync?action=tawasul-save', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ request: updates[i] }),
+              });
+              if (sr.ok) saved++;
+            } catch(e) {}
+          }
+          return res.json({ ok: true, updates: saved, checked: reqs.length });
+        } catch (e) {
+          return res.status(502).json({ error: 'تعذر الفحص: ' + (e.message || 'unknown'), updates: 0 });
+        }
+      }
+
       /* ═══ BANNERS — بنر الصفحة الرئيسية ═══ */
       case 'banners': {
         if (req.method === 'POST') {
