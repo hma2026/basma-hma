@@ -3,7 +3,7 @@ import { ALL_VIOLATIONS_DEFAULT, PENALTY_TYPES, LAIHA_INFO, COMPLAINT_STATUS, VI
 import { generateAttendanceReport, generateEmployeeReport, generateMonthlySummary, generateViolationsReport, generateEmployeesListReport, generateBenefitsReport, generateAnnouncementsReport } from "./pdfReports";
 
 const APP = "بصمة HMA";
-const VER = "5.10";
+const VER = "5.11";
 const CO = "هاني محمد عسيري للإستشارات الهندسية";
 const B = { blue: "#2B5EA7", yellow: "#FDD800", red: "#E2192C", black: "#1A1A1A", blueDk: "#1E4478", blueLt: "#EDF3FB", gold: "#D4A017" };
 
@@ -500,33 +500,66 @@ export default function AdminApp() {
     return true;
   });
 
-  const sideItems = [
-    { id: "dashboard", icon: "📊", label: "الرئيسية" },
-    { id: "employees", icon: "👥", label: "الموظفين" },
-    { id: "leaves", icon: "📋", label: "الإجازات", badge: pending },
-    { id: "admin_requests", icon: "📝", label: "الطلبات" },
-    { id: "complaints", icon: "📣", label: "الشكاوى (HR)", badge: badgeCounts.complaints },
-    { id: "investigations", icon: "🔍", label: "التحقيقات (HR)", badge: badgeCounts.investigations },
-    { id: "violations_v2", icon: "⚖️", label: "المخالفات الرسمية", badge: badgeCounts.violations },
-    { id: "appeals", icon: "📢", label: "التظلمات", badge: badgeCounts.appeals },
-    { id: "laiha", icon: "📜", label: "لائحة العمل" },
-    { id: "custody_admin", icon: "📦", label: "العهد" },
-    { id: "tracking", icon: "🛰️", label: "تتبّع الحركة" },
-    { id: "termination", icon: "🚪", label: "إنهاء خدمات" },
-    { id: "geofence", icon: "📍", label: "النطاق الجغرافي" },
-    { id: "reports", icon: "📄", label: "التقارير" },
-    { id: "events", icon: "🎉", label: "المناسبات" },
-    { id: "questions", icon: "❓", label: "أسئلة الصباح" },
-    { id: "settings", icon: "⚙️", label: "الإعدادات" },
-    { id: "work_types", icon: "⏰", label: "أنواع الدوام" },
-    { id: "benefits", icon: "🏅", label: "الامتيازات" },
-    { id: "announcements", icon: "📢", label: "التعاميم" },
-    { id: "banners", icon: "🎨", label: "إدارة البنر" },
-    { id: "tawasul", icon: "🤝", label: "نظام تواصل" },
-    { id: "test_panel", icon: "🧪", label: "اختبار النظام" },
-    { id: "storage", icon: "💾", label: "التخزين" },
-    { id: "admin_profile", icon: "🔐", label: "حساب المدير العام" },
+  const sideGroups = [
+    {
+      id: "main",
+      label: "الرئيسية",
+      items: [
+        { id: "dashboard", icon: "📊", label: "لوحة التحكم" },
+      ],
+    },
+    {
+      id: "hr",
+      label: "الموارد البشرية",
+      items: [
+        { id: "employees", icon: "👥", label: "الموظفين" },
+        { id: "leaves", icon: "📋", label: "الإجازات", badge: pending },
+        { id: "admin_requests", icon: "📝", label: "الطلبات" },
+        { id: "complaints", icon: "📣", label: "الشكاوى", badge: badgeCounts.complaints },
+        { id: "investigations", icon: "🔍", label: "التحقيقات", badge: badgeCounts.investigations },
+        { id: "violations_v2", icon: "⚖️", label: "المخالفات الرسمية", badge: badgeCounts.violations },
+        { id: "appeals", icon: "📢", label: "التظلمات", badge: badgeCounts.appeals },
+        { id: "laiha", icon: "📜", label: "لائحة العمل" },
+        { id: "termination", icon: "🚪", label: "إنهاء الخدمات" },
+      ],
+    },
+    {
+      id: "ops",
+      label: "العمليات والمتابعة",
+      items: [
+        { id: "tawasul", icon: "🤝", label: "نظام تواصل" },
+        { id: "custody_admin", icon: "📦", label: "العهد" },
+        { id: "tracking", icon: "🛰️", label: "تتبّع الحركة" },
+        { id: "geofence", icon: "📍", label: "النطاق الجغرافي" },
+        { id: "reports", icon: "📄", label: "التقارير" },
+      ],
+    },
+    {
+      id: "comm",
+      label: "التواصل والمناسبات",
+      items: [
+        { id: "announcements", icon: "📢", label: "التعاميم" },
+        { id: "banners", icon: "🎨", label: "إدارة البنر" },
+        { id: "events", icon: "🎉", label: "المناسبات" },
+        { id: "questions", icon: "❓", label: "أسئلة الصباح" },
+      ],
+    },
+    {
+      id: "config",
+      label: "إعدادات النظام",
+      items: [
+        { id: "settings", icon: "⚙️", label: "الإعدادات العامة" },
+        { id: "work_types", icon: "⏰", label: "أنواع الدوام" },
+        { id: "benefits", icon: "🏅", label: "الامتيازات" },
+        { id: "storage", icon: "💾", label: "التخزين" },
+        { id: "test_panel", icon: "🧪", label: "اختبار النظام" },
+        { id: "admin_profile", icon: "🔐", label: "حساب المدير" },
+      ],
+    },
   ];
+
+  // Flatten for internal compatibility
+  const sideItems = sideGroups.reduce(function(acc, g){ return acc.concat(g.items); }, []);
 
   return (<div style={{ direction: "rtl", fontFamily: Fn, display: "flex", minHeight: "100vh", background: t.bg }}>
     <style>{`button:active{transform:scale(.97)!important} ::-webkit-scrollbar{width:6px} ::-webkit-scrollbar-thumb{background:#CBD5E1;border-radius:3px}`}</style>
@@ -536,13 +569,47 @@ export default function AdminApp() {
       <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "0 16px", marginBottom: 6 }}><Logo s={30} /><div><div style={{ fontSize: 14, fontWeight: 800, color: B.blue }}>{APP}</div><div style={{ fontSize: 8, color: t.txM }}>لوحة الإدارة</div></div></div>
       <Stripe />
       <SyncStatus t={t} B={B} />
-      <div style={{ flex: 1, padding: "10px 8px" }}>
-        {sideItems.map(item => { const a = tab === item.id; return (<button key={item.id} onClick={() => { setTab(item.id); setSelEmp(null); }} style={{ width: "100%", padding: "10px 12px", borderRadius: 10, border: "none", marginBottom: 2, background: a ? B.blueLt : "transparent", cursor: "pointer", display: "flex", alignItems: "center", gap: 8 }}>
-          <span style={{ fontSize: 16, filter: a ? "none" : "grayscale(.5) opacity(.6)" }}>{item.icon}</span>
-          <span style={{ fontSize: 12, fontWeight: a ? 700 : 500, color: a ? B.blue : t.tx2, flex: 1, textAlign: "right" }}>{item.label}</span>
-          {item.badge > 0 && <div style={{ width: 18, height: 18, borderRadius: "50%", background: t.bad, color: "#fff", fontSize: 9, fontWeight: 800, display: "flex", alignItems: "center", justifyContent: "center" }}>{item.badge}</div>}
-        </button>); })}
+
+      {/* Switch to employee fingerprint view */}
+      <div style={{ padding: "8px 10px", borderBottom: "1px solid " + t.sep, marginBottom: 6 }}>
+        <button onClick={function(){
+          localStorage.setItem("basma_explicit_employee", "1");
+          localStorage.setItem("basma_last_mode", "app");
+          window.location.hash = "";
+          window.location.reload();
+        }} style={{ width: "100%", padding: "10px 12px", borderRadius: 10, background: "linear-gradient(135deg, " + B.blue + ", " + B.blueDk + ")", border: "none", color: "#fff", fontSize: 12, fontWeight: 800, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", gap: 8, boxShadow: "0 2px 8px " + B.blue + "40", fontFamily: "inherit" }}
+          onMouseEnter={function(e){ e.currentTarget.style.transform = "translateY(-1px)"; e.currentTarget.style.boxShadow = "0 4px 12px " + B.blue + "60"; }}
+          onMouseLeave={function(e){ e.currentTarget.style.transform = "translateY(0)"; e.currentTarget.style.boxShadow = "0 2px 8px " + B.blue + "40"; }}>
+          <span style={{ fontSize: 16 }}>📱</span>
+          <span>التبديل لشاشة البصمة</span>
+        </button>
       </div>
+
+      <div style={{ flex: 1, padding: "6px 8px", overflowY: "auto" }}>
+        {sideGroups.map(function(group, gIdx){
+          return (
+            <div key={group.id} style={{ marginBottom: 10 }}>
+              {group.id !== "main" && (
+                <div style={{ fontSize: 9, fontWeight: 800, color: t.txM, padding: "6px 10px 4px", letterSpacing: 0.5, textTransform: "uppercase", opacity: 0.7 }}>
+                  {group.label}
+                </div>
+              )}
+              {group.items.map(function(item){
+                var a = tab === item.id;
+                return (
+                  <button key={item.id} onClick={function(){ setTab(item.id); setSelEmp(null); }} style={{ width: "100%", padding: "9px 12px", borderRadius: 10, border: "none", marginBottom: 2, background: a ? B.blueLt : "transparent", cursor: "pointer", display: "flex", alignItems: "center", gap: 8, fontFamily: "inherit" }}>
+                    <span style={{ fontSize: 15, filter: a ? "none" : "grayscale(.5) opacity(.6)" }}>{item.icon}</span>
+                    <span style={{ fontSize: 12, fontWeight: a ? 700 : 500, color: a ? B.blue : t.tx2, flex: 1, textAlign: "right" }}>{item.label}</span>
+                    {item.badge > 0 && <div style={{ width: 18, height: 18, borderRadius: "50%", background: t.bad, color: "#fff", fontSize: 9, fontWeight: 800, display: "flex", alignItems: "center", justifyContent: "center" }}>{item.badge}</div>}
+                  </button>
+                );
+              })}
+              {gIdx < sideGroups.length - 1 && <div style={{ height: 1, background: t.sep, margin: "6px 10px", opacity: 0.5 }} />}
+            </div>
+          );
+        })}
+      </div>
+
       <div style={{ padding: "8px 16px", borderTop: "1px solid " + t.sep }}>
         <button onClick={toggleTheme} style={{ width: "100%", padding: "8px", borderRadius: 8, background: dk ? "#2C2C2E" : "#E5E5EA", border: "none", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", gap: 6, marginBottom: 8 }}>
           <span style={{ fontSize: 14 }}>{dk ? "☀️" : "🌙"}</span>
