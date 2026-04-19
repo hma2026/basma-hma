@@ -10,7 +10,7 @@ import { ALL_VIOLATIONS_DEFAULT, PENALTY_TYPES, LAIHA_INFO, COMPLAINT_STATUS, VI
 
 /* ═══════════ APP CONFIG (إعدادات التطبيق) ═══════════ */
 const APP_CONFIG = {
-  VER: "6.37",
+  VER: "6.38",
   NAME: "بصمة HMA",
   FULL_NAME: "نظام الحضور والانصراف الذكي",
   COMPANY: "هاني محمد عسيري للاستشارات الهندسية",
@@ -9010,6 +9010,8 @@ function DesktopPairModal({ user, onClose }) {
     if (code.length !== 6) { setErr("الرمز يجب أن يكون 6 خانات"); return; }
     setBusy(true); setErr(null);
     try {
+      // v6.38 — send FULL user object (not just 4 fields) so DesktopFrame has branch/type/points/etc.
+      var fullUser = Object.assign({}, user, { _desktopSession: true });
       var res = await fetch("/api/data?action=tawasul-web-authorize", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -9017,7 +9019,7 @@ function DesktopPairModal({ user, onClose }) {
           pairCode: code,
           userId: user.id || user.username,
           userName: user.name || user.username || "",
-          userData: { id: user.id || user.username, name: user.name, username: user.username, role: user.role },
+          userData: fullUser,
         }),
       });
       var d = await res.json();

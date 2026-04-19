@@ -19,9 +19,18 @@ const LS_SESSION = "basma_desktop_session_v1"; // { token, userId, userName, exp
 // still type the pair code manually.
 function QRImage({ data, size }) {
   var s = size || 200;
-  // Use qrserver.com (free, no-auth QR API). If blocked by network, fallback shown.
-  var url = "https://api.qrserver.com/v1/create-qr-code/?size=" + s + "x" + s + "&data=" + encodeURIComponent(data) + "&margin=1&qzone=1";
+  // v6.38 — Multiple QR service fallbacks (primary + backup) to survive network restrictions
+  var sources = [
+    "https://api.qrserver.com/v1/create-qr-code/?size=" + s + "x" + s + "&data=" + encodeURIComponent(data) + "&margin=1",
+    "https://chart.googleapis.com/chart?cht=qr&chs=" + s + "x" + s + "&chl=" + encodeURIComponent(data),
+    "https://quickchart.io/qr?text=" + encodeURIComponent(data) + "&size=" + s,
+  ];
+  var [srcIdx, setSrcIdx] = useState(0);
   var [failed, setFailed] = useState(false);
+  function onErr() {
+    if (srcIdx < sources.length - 1) setSrcIdx(srcIdx + 1);
+    else setFailed(true);
+  }
   if (failed) {
     return (
       <div style={{
@@ -29,19 +38,20 @@ function QRImage({ data, size }) {
         display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center",
         border: "2px dashed #C7C7CC", color: "#6E6E73", fontSize: 11, textAlign: "center", padding: 12,
       }}>
-        <div style={{ fontSize: 28, marginBottom: 6 }}>📱</div>
-        <div>تعذّر تحميل QR</div>
-        <div style={{ marginTop: 4 }}>استخدم الرمز أدناه</div>
+        <div style={{ fontSize: 36, marginBottom: 8 }}>🔢</div>
+        <div style={{ fontWeight: 700, color: "#1a3a6e" }}>استخدم الرمز بالأسفل</div>
+        <div style={{ marginTop: 4, fontSize: 10 }}>(QR غير متاح حالياً)</div>
       </div>
     );
   }
   return (
     <img
-      src={url}
+      key={srcIdx}
+      src={sources[srcIdx]}
       alt="QR Code"
       width={s} height={s}
       style={{ display: "block", borderRadius: 8, background: "#fff", padding: 6 }}
-      onError={function(){ setFailed(true); }}
+      onError={onErr}
     />
   );
 }
@@ -61,14 +71,24 @@ function PairingSplash({ onAuthorized }) {
     setErr(null);
     try {
       var res = await fetch("/api/data?action=tawasul-web-init");
+      if (!res.ok) {
+        var errText = await res.text().catch(function(){ return ""; });
+        console.error("[TawasulWeb] init failed:", res.status, errText);
+        throw new Error("الخادم رفض الاتصال (" + res.status + ")" + (errText ? " — " + errText.substring(0, 100) : ""));
+      }
       var d = await res.json();
-      if (!res.ok || !d.token) throw new Error(d.error || "فشل إنشاء جلسة الإقران");
+      if (!d || !d.token) {
+        console.error("[TawasulWeb] init response missing token:", d);
+        throw new Error(d && d.error ? d.error : "الاستجابة غير صحيحة من الخادم");
+      }
+      console.log("[TawasulWeb] session created:", { pairCode: d.pairCode, expiresInSec: d.expiresInSec });
       setToken(d.token);
       setPairCode(d.pairCode);
       setExpiresIn(d.expiresInSec || 300);
       setStatus("ready");
     } catch (e) {
-      setErr(e.message || "خطأ غير متوقع");
+      console.error("[TawasulWeb] init error:", e);
+      setErr((e && e.message) || "خطأ غير متوقع — تحقق من الاتصال بالإنترنت");
       setStatus("error");
     }
   }
@@ -315,7 +335,8 @@ function DesktopFrame({ session, onLogout }) {
         }
         localStorage.setItem("basma_user", JSON.stringify(u));
       }
-      // Desktop should default to tawasul tab
+      // v6.38 — Desktop defaults to tawasul page
+      try { localStorage.setItem("basma_page", "tawasul"); } catch(e) {}
       try { localStorage.setItem("basma_active_tab", "tawasul"); } catch(e) {}
     } catch(e) {}
   }, [session.userId]);
@@ -389,7 +410,7 @@ function DesktopFrame({ session, onLogout }) {
         </div>
       </div>
 
-      {/* Phone-frame container */}
+      {/* Phone-frame container — v6.38 wider for desktop use */}
       <div style={{
         flex: 1,
         display: "flex",
@@ -400,11 +421,11 @@ function DesktopFrame({ session, onLogout }) {
       }}>
         <div style={{
           width: "100%",
-          maxWidth: 520,
+          maxWidth: 900,
           minHeight: "calc(100vh - 120px)",
           background: "#000",
           borderRadius: 24,
-          boxShadow: "0 20px 60px rgba(0,0,0,0.5), 0 0 0 8px #0b1526, 0 0 0 10px rgba(255,255,255,0.06)",
+          boxShadow: "0 20px 60px rgba(0,0,0,0.5), 0 0 0 6px #0b1526, 0 0 0 8px rgba(255,255,255,0.06)",
           overflow: "hidden",
           position: "relative",
         }}>
