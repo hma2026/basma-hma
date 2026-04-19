@@ -10,7 +10,7 @@ import { ALL_VIOLATIONS_DEFAULT, PENALTY_TYPES, LAIHA_INFO, COMPLAINT_STATUS, VI
 
 /* ═══════════ APP CONFIG (إعدادات التطبيق) ═══════════ */
 const APP_CONFIG = {
-  VER: "4.91",
+  VER: "4.92",
   NAME: "بصمة HMA",
   FULL_NAME: "نظام الحضور والانصراف الذكي",
   COMPANY: "هاني محمد عسيري للاستشارات الهندسية",
@@ -381,6 +381,7 @@ function MobileAppInner() {
   const [faceVerifyModal, setFaceVerifyModal] = useState(null); // { type, label, source }
   const [initDone, setInitDone] = useState(false);
   const [tawasulUnread, setTawasulUnread] = useState(0);
+  const [fieldProjects, setFieldProjects] = useState([]);
 
   // Apply dark mode
   useEffect(function() {
@@ -786,6 +787,13 @@ function MobileAppInner() {
           setTawasulUnread(unread);
         }
       } catch(e) { /**/ }
+      // Fetch field projects (for field/mixed employees — used in GPS pill)
+      try {
+        if (emp.type === "field" || emp.type === "mixed") {
+          var ps = await api("projects");
+          if (Array.isArray(ps)) setFieldProjects(ps);
+        }
+      } catch(e) { /**/ }
       // Fetch notifications
       try {
         var allNotifs = await api("notifications", { params: { empId: emp.id } });
@@ -924,7 +932,7 @@ function MobileAppInner() {
       {!online && <div style={{ background: C.red, color: "#fff", textAlign: "center", padding: "6px 0", fontSize: 11, fontWeight: 700 }}>⚠️ لا يوجد اتصال بالإنترنت</div>}
 
       <div key={page} style={{ flex: 1, display: "flex", flexDirection: "column", animation: "pageIn .3s ease" }}>
-        {page === "home" && <HomePage user={user} branch={branch} now={now} todayAtt={todayAtt} allAtt={allAtt} gps={gps} gpsDist={gpsDist} streak={streak} loading={loading} refreshing={refreshing} dayState={getDayState()} checkpoints={getCheckpoints()} isOffDay={isOffDay()} pendingCount={myLeaves.filter(function(l){ return l.status === "pending"; }).length + myTickets.filter(function(t){ return t.status === "pending"; }).length} teamToday={teamToday} pwaPrompt={pwaPrompt} onPwaInstall={async function(){ if(pwaPrompt){pwaPrompt.prompt();await pwaPrompt.userChoice;setPwaPrompt(null);} }} onCheckin={requestCheckin} onChallenge={function(pts) { var u = { ...user, points: (user.points||0)+pts }; setUser(u); localStorage.setItem("basma_user", JSON.stringify(u)); showToast("🎉 +" + pts + " نقطة!"); }} onLeave={() => setLeaveModal(true)} onRefresh={refresh} onPreAbsence={function(){ setPreAbsModal(true); }} onManualAtt={function(){ setManualAttModal(true); }} onPermission={function(){ setPermModal(true); }} kadwarNotifs={kadwarNotifs} darkMode={darkMode} announcements={announcements} banners={banners} onShowAnnouncements={function(){ setShowAnnModal(true); }} />}
+        {page === "home" && <HomePage user={user} branch={branch} now={now} todayAtt={todayAtt} allAtt={allAtt} gps={gps} gpsDist={gpsDist} streak={streak} loading={loading} refreshing={refreshing} dayState={getDayState()} checkpoints={getCheckpoints()} isOffDay={isOffDay()} pendingCount={myLeaves.filter(function(l){ return l.status === "pending"; }).length + myTickets.filter(function(t){ return t.status === "pending"; }).length} teamToday={teamToday} pwaPrompt={pwaPrompt} onPwaInstall={async function(){ if(pwaPrompt){pwaPrompt.prompt();await pwaPrompt.userChoice;setPwaPrompt(null);} }} onCheckin={requestCheckin} onChallenge={function(pts) { var u = { ...user, points: (user.points||0)+pts }; setUser(u); localStorage.setItem("basma_user", JSON.stringify(u)); showToast("🎉 +" + pts + " نقطة!"); }} onLeave={() => setLeaveModal(true)} onRefresh={refresh} onPreAbsence={function(){ setPreAbsModal(true); }} onManualAtt={function(){ setManualAttModal(true); }} onPermission={function(){ setPermModal(true); }} kadwarNotifs={kadwarNotifs} darkMode={darkMode} announcements={announcements} banners={banners} fieldProjects={fieldProjects} onShowAnnouncements={function(){ setShowAnnModal(true); }} />}
         {page === "report" && <ReportPage user={user} allAtt={allAtt} todayAtt={todayAtt} branch={branch} isOffDay={isOffDay()} myLeaves={myLeaves} allEmps={allEmps} />}
         {page === "benefits" && <BenefitsPage user={user} />}
         {page === "tawasul" && <TawasulPage user={user} allEmps={allEmps} />}
@@ -1095,10 +1103,36 @@ function LoginScreen({ onLogin, loading }) {
 }
 
 /* ═══════════ HOME ═══════════ */
-function HomePage({ user, branch, now, todayAtt, allAtt, gps, gpsDist, streak, loading, refreshing, dayState, checkpoints, isOffDay, pendingCount, teamToday, pwaPrompt, onPwaInstall, onCheckin, onChallenge, onLeave, onRefresh, onPreAbsence, onManualAtt, onPermission, kadwarNotifs, darkMode, announcements, banners, onShowAnnouncements }) {
+function HomePage({ user, branch, now, todayAtt, allAtt, gps, gpsDist, streak, loading, refreshing, dayState, checkpoints, isOffDay, pendingCount, teamToday, pwaPrompt, onPwaInstall, onCheckin, onChallenge, onLeave, onRefresh, onPreAbsence, onManualAtt, onPermission, kadwarNotifs, darkMode, announcements, banners, fieldProjects, onShowAnnouncements }) {
   const { time, sec, ampm } = formatTime(now);
   const badge = memberBadge(user.points || 0);
   const inRange = branch && gpsDist !== null && gpsDist <= (branch.radius || 150);
+
+  // Zone detection — support office/field/mixed employees
+  const canWorkField = user.type === "field" || user.type === "mixed";
+  const projectsInRange = (fieldProjects || []).filter(function(p){
+    if (!gps || !p.lat || !p.lng) return false;
+    var d = Math.round(haversine(gps.lat, gps.lng, p.lat, p.lng));
+    return d <= (p.radius || 200);
+  });
+  const inAnyProject = canWorkField && projectsInRange.length > 0;
+  const currentProject = inAnyProject ? projectsInRange[0] : null;
+  // Final in-range: either in main branch, OR (field-eligible AND in some project)
+  const inAnyValidZone = inRange || inAnyProject;
+  // Build zone text
+  var zoneText = "تحديد الموقع...";
+  if (gps) {
+    if (inRange) {
+      zoneText = "في النطاق — المركز الرئيسي بجدة";
+    } else if (inAnyProject) {
+      zoneText = "في النطاق — " + (currentProject.name || "مشروع");
+    } else {
+      // Outside everything
+      zoneText = canWorkField
+        ? "خارج النطاق — مواقع الإشراف والمركز الرئيسي"
+        : "خارج النطاق — المركز الرئيسي بجدة";
+    }
+  }
 
   // Challenge state — inside the circle
   var [challengeQ] = useState(function() { return CHALLENGES[Math.floor(Math.random() * CHALLENGES.length)]; });
@@ -1315,9 +1349,9 @@ function HomePage({ user, branch, now, todayAtt, allAtt, gps, gpsDist, streak, l
         )}
 
         {/* GPS indicator — enlarged pill */}
-        <div style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 8, padding: "8px 18px", borderRadius: 22, background: gps ? (inRange ? "rgba(48,209,88,0.12)" : "rgba(239,68,68,0.15)") : "rgba(150,150,150,0.1)", border: "1.5px solid " + (gps ? (inRange ? "rgba(48,209,88,0.45)" : "rgba(239,68,68,0.5)") : "rgba(150,150,150,0.25)"), margin: "2px auto", width: "fit-content", maxWidth: "90%" }}>
-          <div style={{ width: 9, height: 9, borderRadius: RADIUS.pill, background: gps ? (inRange ? "#30D158" : "#EF4444") : COLORS.textMuted, boxShadow: gps ? "0 0 8px " + (inRange ? "rgba(48,209,88,0.6)" : "rgba(239,68,68,0.6)") : "none" }} />
-          <span style={{ fontSize: 13, fontWeight: 700, color: gps ? (inRange ? "#30D158" : "#EF4444") : COLORS.textMuted, fontFamily: "'Tajawal',sans-serif" }}>{gps ? (inRange ? "في النطاق" : "خارج النطاق") + (branch ? " — " + branch.name : "") : "تحديد الموقع..."}</span>
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 8, padding: "8px 18px", borderRadius: 22, background: gps ? (inAnyValidZone ? "rgba(48,209,88,0.12)" : "rgba(239,68,68,0.15)") : "rgba(150,150,150,0.1)", border: "1.5px solid " + (gps ? (inAnyValidZone ? "rgba(48,209,88,0.45)" : "rgba(239,68,68,0.5)") : "rgba(150,150,150,0.25)"), margin: "2px auto", width: "fit-content", maxWidth: "90%" }}>
+          <div style={{ width: 9, height: 9, borderRadius: RADIUS.pill, background: gps ? (inAnyValidZone ? "#30D158" : "#EF4444") : COLORS.textMuted, boxShadow: gps ? "0 0 8px " + (inAnyValidZone ? "rgba(48,209,88,0.6)" : "rgba(239,68,68,0.6)") : "none" }} />
+          <span style={{ fontSize: 13, fontWeight: 700, color: gps ? (inAnyValidZone ? "#30D158" : "#EF4444") : COLORS.textMuted, fontFamily: "'Tajawal',sans-serif" }}>{zoneText}</span>
           {streak > 0 && <span style={{ fontSize: 13, fontWeight: 800, color: COLORS.goldLight, marginRight: 4 }}>{"🔥 " + streak}</span>}
         </div>
 
