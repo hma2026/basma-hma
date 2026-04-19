@@ -10,7 +10,7 @@ import { ALL_VIOLATIONS_DEFAULT, PENALTY_TYPES, LAIHA_INFO, COMPLAINT_STATUS, VI
 
 /* ═══════════ APP CONFIG (إعدادات التطبيق) ═══════════ */
 const APP_CONFIG = {
-  VER: "6.25",
+  VER: "6.24",
   NAME: "بصمة HMA",
   FULL_NAME: "نظام الحضور والانصراف الذكي",
   COMPANY: "هاني محمد عسيري للاستشارات الهندسية",
@@ -63,6 +63,7 @@ if (typeof document !== "undefined" && !document.getElementById("basma-css")) {
     "@keyframes slideDown{from{opacity:0;transform:translateY(-20px)}to{opacity:1;transform:translateY(0)}}",
     "@keyframes pulse{0%,100%{opacity:1}50%{opacity:.5}}",
     "@keyframes pageIn{from{opacity:0;transform:translateX(8px)}to{opacity:1;transform:translateX(0)}}",
+    "@keyframes tawasulDeadlinePulse{0%,100%{transform:scale(1);box-shadow:0 0 0 0 rgba(239,68,68,.5)}50%{transform:scale(1.05);box-shadow:0 0 0 6px rgba(239,68,68,0)}}",
     ".basma-fadein{animation:fadeIn .4s ease both}",
     ".basma-fadein-d1{animation:fadeIn .4s ease .1s both}",
     ".basma-fadein-d2{animation:fadeIn .4s ease .2s both}",
@@ -2070,6 +2071,43 @@ function tawasulTimeAgo(iso) {
     return d.toLocaleDateString("ar-SA");
   } catch(e) { return ""; }
 }
+
+/* ═══ Smart deadline status — color, urgency, text ═══ */
+function getDeadlineStatus(deadline, status) {
+  if (!deadline || ["closed","evaluated","cancelled","delivered"].indexOf(status) >= 0) {
+    return null; // no deadline alerts for completed/cancelled
+  }
+  try {
+    var d = new Date(deadline);
+    var now = Date.now();
+    var msLeft = d.getTime() - now;
+    var hoursLeft = msLeft / 3600000;
+    var daysLeft = msLeft / 86400000;
+
+    if (msLeft < 0) {
+      // Overdue
+      var overdueHours = Math.floor(Math.abs(hoursLeft));
+      var overdueText = overdueHours < 24 ? ("متأخر " + overdueHours + " ساعة") : ("متأخر " + Math.floor(Math.abs(daysLeft)) + " يوم");
+      return { level: "overdue", color: "#dc2626", bg: "rgba(220,38,38,0.12)", icon: "🚨", text: overdueText, pulse: true };
+    }
+    if (hoursLeft < 24) {
+      // Red: less than 24h
+      var hrsText = hoursLeft < 1 ? "أقل من ساعة!" : ("باقي " + Math.floor(hoursLeft) + " ساعة");
+      return { level: "critical", color: "#ef4444", bg: "rgba(239,68,68,0.12)", icon: "🔴", text: hrsText, pulse: hoursLeft < 4 };
+    }
+    if (daysLeft < 3) {
+      // Orange: 1-3 days
+      return { level: "warning", color: "#f59e0b", bg: "rgba(245,158,11,0.12)", icon: "🟡", text: "باقي " + Math.floor(daysLeft) + " أيام", pulse: false };
+    }
+    if (daysLeft < 7) {
+      // Yellow: 3-7 days
+      return { level: "notice", color: "#eab308", bg: "rgba(234,179,8,0.1)", icon: "⏰", text: "باقي " + Math.floor(daysLeft) + " أيام", pulse: false };
+    }
+    // Green: more than a week
+    return { level: "ok", color: "#10b981", bg: "rgba(16,185,129,0.08)", icon: "✓", text: "باقي " + Math.floor(daysLeft) + " يوم", pulse: false };
+  } catch(e) { return null; }
+}
+
 /* Stages for pipeline (spec 7.5) */
 var TAWASUL_STAGES = [
   { key: "sent",       label: "جديدة",        icon: "📥" },
@@ -4606,11 +4644,27 @@ function TawasulPage({ user, allEmps }) {
           var assigneeNames = (r.assignees || []).map(function(a){ return nameOf(a.id); }).join("، ") || "—";
           var requesterName = r.requesterName || nameOf(r.requesterId);
           var hasEval = r.finalScore !== undefined && r.finalScore !== null;
+          // Multi-assignee progress indicator
+          var totalA = (r.assignees || []).length;
+          var deliveredA = (r.assignees || []).filter(function(a){ return !!a.deliveredAt; }).length;
+          var acceptedA = (r.assignees || []).filter(function(a){ return !!a.acceptedAt; }).length;
+          var showMultiProgress = totalA >= 2;
+          // Detect if this is a subordinate task (for department tabs)
+          var isDeptTab = tab && tab.indexOf("dept_") === 0;
+          // Smart deadline indicator
+          var deadlineStatus = getDeadlineStatus(r.deadline, r.status);
           return (
-            <div key={r.id} onClick={function(){ setSelectedReq(r); }} style={{ background: C.card, borderRadius: 14, padding: 14, marginBottom: 10, border: "1px solid " + C.cardBorder, borderRight: "4px solid " + m.color, cursor: "pointer" }}>
+            <div key={r.id} onClick={function(){ setSelectedReq(r); }} style={{ background: C.card, borderRadius: 14, padding: 14, marginBottom: 10, border: isDeptTab ? "1.5px solid rgba(124,58,237,0.35)" : "1px solid " + C.cardBorder, borderRight: "4px solid " + (isDeptTab ? "#7c3aed" : (deadlineStatus && deadlineStatus.level === "overdue" ? "#dc2626" : m.color)), cursor: "pointer", position: "relative" }}>
+              {isDeptTab && <div style={{ position: "absolute", top: 8, left: 8, fontSize: 9, fontWeight: 800, color: "#7c3aed", background: "rgba(124,58,237,0.1)", padding: "2px 7px", borderRadius: 6 }}>👁 قراءة</div>}
               <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 8, flexWrap: "wrap" }}>
                 <div style={{ display: "inline-flex", alignItems: "center", gap: 4, padding: "3px 9px", borderRadius: 10, background: m.color + "22", color: m.color, fontSize: 10, fontWeight: 800 }}><span>{m.icon}</span><span>{m.label}</span></div>
                 {isUrgent && <div style={{ padding: "3px 9px", borderRadius: 10, background: "rgba(239,68,68,0.15)", color: "#ef4444", fontSize: 10, fontWeight: 800 }}>🔴 عاجل</div>}
+                {deadlineStatus && (
+                  <div style={{ padding: "3px 9px", borderRadius: 10, background: deadlineStatus.bg, color: deadlineStatus.color, fontSize: 10, fontWeight: 800, display: "inline-flex", alignItems: "center", gap: 3, animation: deadlineStatus.pulse ? "tawasulDeadlinePulse 1.5s ease-in-out infinite" : "none" }}>
+                    <span>{deadlineStatus.icon}</span>
+                    <span>{deadlineStatus.text}</span>
+                  </div>
+                )}
                 {escColor && <div style={{ padding: "3px 9px", borderRadius: 10, background: escColor + "22", color: escColor, fontSize: 10, fontWeight: 800 }}>{r.escalation === "red" ? "🔴 تصعيد أحمر" : "🟡 تصعيد"}</div>}
                 {r.serial && <div style={{ fontSize: 10, color: C.sub, fontWeight: 700, background: C.bg, padding: "2px 7px", borderRadius: 6, fontFamily: "monospace" }}>#{r.serial}</div>}
                 <div style={{ flex: 1 }} />
@@ -4619,6 +4673,18 @@ function TawasulPage({ user, allEmps }) {
               {(r.category || r.projectName) && <div style={{ fontSize: 10, color: C.sub, marginBottom: 4, fontWeight: 600 }}>{r.category && <span>🏷 {r.category}</span>}{r.category && r.projectName && <span style={{ margin: "0 5px" }}>•</span>}{r.projectName && <span>🏗️ {r.projectName}</span>}</div>}
               <div style={{ fontSize: 14, fontWeight: 800, color: C.text, marginBottom: 6, lineHeight: 1.4 }}>{r.title || "(بدون عنوان)"}</div>
               {r.description && <div style={{ fontSize: 11, color: C.sub, marginBottom: 8, lineHeight: 1.5, overflow: "hidden", display: "-webkit-box", WebkitLineClamp: 2, WebkitBoxOrient: "vertical" }}>{r.description}</div>}
+
+              {/* Multi-assignee mini-progress */}
+              {showMultiProgress && (
+                <div style={{ marginBottom: 8, padding: "6px 10px", background: C.bg, borderRadius: 8, display: "flex", alignItems: "center", gap: 10, fontSize: 10, fontWeight: 700 }}>
+                  <span>👥 {totalA}</span>
+                  <div style={{ flex: 1, display: "flex", gap: 6 }}>
+                    <span style={{ color: acceptedA === totalA ? "#10b981" : "#f59e0b" }}>📥 {acceptedA}/{totalA}</span>
+                    <span style={{ color: deliveredA === totalA ? "#10b981" : C.sub }}>✅ {deliveredA}/{totalA}</span>
+                  </div>
+                </div>
+              )}
+
               <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", fontSize: 10, color: C.sub, borderTop: "1px solid " + C.cardBorder, paddingTop: 8, gap: 8, flexWrap: "wrap" }}>
                 <div style={{ minWidth: 0, flex: 1 }}><span style={{ fontWeight: 600 }}>من:</span> {requesterName} <span style={{ margin: "0 4px" }}>•</span> <span style={{ fontWeight: 600 }}>إلى:</span> {assigneeNames}</div>
                 <div style={{ display: "flex", gap: 8, flexShrink: 0 }}>
@@ -4641,6 +4707,116 @@ function TawasulPage({ user, allEmps }) {
 
       {showReports && <TawasulReportsModal user={user} onClose={function(){ setShowReports(false); }} />}
       {showHRAssistant && <TawasulHRAssistant user={user} onClose={function(){ setShowHRAssistant(false); }} />}
+    </div>
+  );
+}
+
+/* ═══════════ MULTI-ASSIGNEES PROGRESS — "2/3 استلموا · 1/3 سلّم" ═══════════ */
+function MultiAssigneesProgress({ request, myId }) {
+  var assignees = request.assignees || [];
+  var total = assignees.length;
+  if (total < 2) return null;
+
+  var acceptedCount = assignees.filter(function(a){ return !!a.acceptedAt; }).length;
+  var deliveredCount = assignees.filter(function(a){ return !!a.deliveredAt; }).length;
+
+  // Determine per-person state
+  function stateOf(a) {
+    if (a.deliveredAt) return { label: "سلّم", color: "#10b981", icon: "✓", bg: "rgba(16,185,129,0.12)" };
+    if (a.acceptedAt)  return { label: "قيد العمل", color: "#f59e0b", icon: "⏳", bg: "rgba(245,158,11,0.12)" };
+    return { label: "بانتظار الاستلام", color: "#94a3b8", icon: "○", bg: "rgba(148,163,184,0.1)" };
+  }
+
+  function relTime(iso) {
+    if (!iso) return "";
+    var d = new Date(iso);
+    var ms = Date.now() - d.getTime();
+    var mins = Math.floor(ms / 60000);
+    if (mins < 1) return "الآن";
+    if (mins < 60) return "قبل " + mins + " د";
+    var hrs = Math.floor(mins / 60);
+    if (hrs < 24) return "قبل " + hrs + " س";
+    var days = Math.floor(hrs / 24);
+    if (days === 1) return "أمس";
+    return "قبل " + days + " أيام";
+  }
+
+  var acceptPct = Math.round((acceptedCount / total) * 100);
+  var deliverPct = Math.round((deliveredCount / total) * 100);
+
+  return (
+    <div style={{ background: C.card, borderRadius: 14, padding: 14, border: "1px solid " + C.cardBorder, marginBottom: 14 }}>
+      <div style={{ fontSize: 13, fontWeight: 800, color: C.text, marginBottom: 12, fontFamily: "'Cairo',sans-serif", display: "flex", alignItems: "center", gap: 6 }}>
+        <span>👥</span>
+        <span>تقدّم الأطراف ({total})</span>
+      </div>
+
+      {/* Summary bars */}
+      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10, marginBottom: 14 }}>
+        <div>
+          <div style={{ display: "flex", justifyContent: "space-between", fontSize: 10, fontWeight: 700, color: C.sub, marginBottom: 4 }}>
+            <span>📥 استلم</span>
+            <span style={{ color: acceptedCount === total ? "#10b981" : "#f59e0b", fontWeight: 900 }}>{acceptedCount} / {total}</span>
+          </div>
+          <div style={{ height: 6, borderRadius: 3, background: C.bg, overflow: "hidden" }}>
+            <div style={{ width: acceptPct + "%", height: "100%", background: acceptedCount === total ? "#10b981" : "#f59e0b", transition: "width 0.3s" }} />
+          </div>
+        </div>
+        <div>
+          <div style={{ display: "flex", justifyContent: "space-between", fontSize: 10, fontWeight: 700, color: C.sub, marginBottom: 4 }}>
+            <span>✅ سلّم</span>
+            <span style={{ color: deliveredCount === total ? "#10b981" : "#94a3b8", fontWeight: 900 }}>{deliveredCount} / {total}</span>
+          </div>
+          <div style={{ height: 6, borderRadius: 3, background: C.bg, overflow: "hidden" }}>
+            <div style={{ width: deliverPct + "%", height: "100%", background: deliveredCount === total ? "#10b981" : C.gold, transition: "width 0.3s" }} />
+          </div>
+        </div>
+      </div>
+
+      {/* Per-person cards */}
+      <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+        {assignees.map(function(a, idx){
+          var s = stateOf(a);
+          var isMe = String(a.id) === String(myId);
+          var initial = ((a.name || "?").trim().charAt(0)) || "?";
+          return (
+            <div key={a.id + "_" + idx} style={{ display: "flex", alignItems: "center", gap: 10, padding: "8px 10px", borderRadius: 10, background: isMe ? "rgba(34,197,94,0.08)" : s.bg, border: isMe ? "1.5px solid #22c55e" : "1px solid " + C.cardBorder }}>
+              <div style={{ width: 32, height: 32, borderRadius: 16, background: s.color, color: "#fff", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 13, fontWeight: 800, flexShrink: 0 }}>
+                {initial}
+              </div>
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <div style={{ fontSize: 12, fontWeight: 700, color: C.text, display: "flex", alignItems: "center", gap: 4 }}>
+                  <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{a.name || a.id}</span>
+                  {isMe && <span style={{ padding: "1px 6px", fontSize: 8, fontWeight: 900, background: "#22c55e", color: "#fff", borderRadius: 4, flexShrink: 0 }}>أنت</span>}
+                  {a.addedAsCollab && <span style={{ padding: "1px 6px", fontSize: 8, fontWeight: 900, background: "rgba(124,58,237,0.2)", color: "#7c3aed", borderRadius: 4, flexShrink: 0 }}>متعاون</span>}
+                </div>
+                <div style={{ fontSize: 9, color: C.sub, marginTop: 2, display: "flex", gap: 8, flexWrap: "wrap" }}>
+                  {a.acceptedAt && <span>📥 {relTime(a.acceptedAt)}</span>}
+                  {a.deliveredAt && <span style={{ color: "#10b981", fontWeight: 700 }}>✅ {relTime(a.deliveredAt)}</span>}
+                  {!a.acceptedAt && !a.deliveredAt && <span>بانتظار</span>}
+                  {a.returns > 0 && <span style={{ color: "#f59e0b" }}>🔄 {a.returns}</span>}
+                </div>
+              </div>
+              <div style={{ padding: "3px 8px", borderRadius: 8, background: s.color, color: "#fff", fontSize: 9, fontWeight: 800, whiteSpace: "nowrap", display: "flex", alignItems: "center", gap: 3 }}>
+                <span>{s.icon}</span>
+                <span>{s.label}</span>
+              </div>
+            </div>
+          );
+        })}
+      </div>
+
+      {/* Summary hint */}
+      {deliveredCount > 0 && deliveredCount < total && (
+        <div style={{ marginTop: 10, padding: "8px 10px", borderRadius: 8, background: "rgba(245,158,11,0.1)", border: "1px dashed #f59e0b", fontSize: 10, color: "#92400e", textAlign: "center", fontWeight: 600 }}>
+          💡 {deliveredCount} من {total} سلّم جزءه · الباقي: {total - deliveredCount}
+        </div>
+      )}
+      {deliveredCount === total && total > 1 && (
+        <div style={{ marginTop: 10, padding: "8px 10px", borderRadius: 8, background: "rgba(16,185,129,0.1)", border: "1px solid #10b981", fontSize: 10, color: "#065f46", textAlign: "center", fontWeight: 700 }}>
+          🎉 كل الأطراف سلّموا!
+        </div>
+      )}
     </div>
   );
 }
@@ -5008,6 +5184,11 @@ function TawasulDetailModal({ request, user, allEmps, onClose, nameOf, onUpdated
               <div style={{ fontSize: 16, fontWeight: 800, color: bigBtn.color, marginBottom: 4 }}>{bigBtn.label}</div>
               <div style={{ fontSize: 12, color: C.sub }}>{bigBtn.sub}</div>
             </div>
+          )}
+
+          {/* ═══ Multi-assignees progress — only if 2+ assignees ═══ */}
+          {(r.assignees || []).length >= 2 && (
+            <MultiAssigneesProgress request={r} myId={myId} />
           )}
 
           {/* Action buttons — uniform grid (all same size) */}
