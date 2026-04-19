@@ -10,7 +10,7 @@ import { ALL_VIOLATIONS_DEFAULT, PENALTY_TYPES, LAIHA_INFO, COMPLAINT_STATUS, VI
 
 /* ═══════════ APP CONFIG (إعدادات التطبيق) ═══════════ */
 const APP_CONFIG = {
-  VER: "6.35",
+  VER: "6.37",
   NAME: "بصمة HMA",
   FULL_NAME: "نظام الحضور والانصراف الذكي",
   COMPANY: "هاني محمد عسيري للاستشارات الهندسية",
@@ -972,6 +972,23 @@ function MobileAppInner() {
         fetch("/api/data?action=auto_violations_check").then(function(r){ return r.json(); }).then(function(d){
           if (d && d.ok) console.log("[auto_violations] ran:", d.count, "violations generated");
         }).catch(function(){});
+
+        // v6.36 — Auto-trigger attendance check (late/absent detection + auto-warnings)
+        // Throttled: max once per hour via localStorage
+        try {
+          var lastCheck = parseInt(localStorage.getItem("basma_auto_check_ts") || "0", 10);
+          var oneHourMs = 60 * 60 * 1000;
+          if (Date.now() - lastCheck > oneHourMs) {
+            localStorage.setItem("basma_auto_check_ts", String(Date.now()));
+            fetch("/api/data?action=auto_check")
+              .then(function(r){ return r.json(); })
+              .then(function(d){
+                if (d && d.ok) {
+                  console.log("[auto_check] ran:", { newViolations: d.newViolations, autoWarnings: d.autoWarnings, escalated: d.escalated });
+                }
+              }).catch(function(){});
+          }
+        } catch(e) {}
       }, 2000);
       // Start polling for tawasul notifications every 30 seconds (any page)
       startTawasulPolling(emp);
@@ -8576,6 +8593,16 @@ function LeaveModal({ user, onClose, onSubmit }) {
   var [to, setTo] = useState(todayStr());
   var [reason, setReason] = useState("");
   var [submitting, setSubmitting] = useState(false);
+  // v6.37 — Leave balance
+  var [balance, setBalance] = useState(null);
+
+  useEffect(function(){
+    if (!user || !user.id) return;
+    fetch("/api/data?action=leave-balance&empId=" + encodeURIComponent(user.id))
+      .then(function(r){ return r.json(); })
+      .then(function(d){ if (d && !d.error) setBalance(d); })
+      .catch(function(){});
+  }, [user]);
 
   var leaveTypes = [
     { id: "annual", label: "سنوية", icon: "🏖️" },
@@ -8584,17 +8611,51 @@ function LeaveModal({ user, onClose, onSubmit }) {
     { id: "personal", label: "شخصية", icon: "👤" },
   ];
 
+  // Compute requested days
+  var requestedDays = 1;
+  try {
+    if (from && to) {
+      var fromD = new Date(from);
+      var toD = new Date(to);
+      requestedDays = Math.max(1, Math.round((toD - fromD) / (24*3600*1000)) + 1);
+    }
+  } catch(e) {}
+
+  var currentBalance = balance ? (balance[type] || 0) : null;
+  var exceedsBalance = currentBalance !== null && requestedDays > currentBalance && type !== "personal";
+
   async function submit() {
     if (!from || !to) return;
+    if (exceedsBalance) {
+      if (!window.confirm("الرصيد المتبقي (" + currentBalance + " يوم) أقل من الأيام المطلوبة (" + requestedDays + " يوم). هل تريد المتابعة؟ سيتم رفع الطلب ولكن قد يُرفض.")) return;
+    }
     setSubmitting(true);
-    await onSubmit({ type: type, from: from, to: to, reason: reason });
+    await onSubmit({ type: type, from: from, to: to, reason: reason, days: requestedDays });
     setSubmitting(false);
   }
 
   return (
     <div style={S.overlay} onClick={onClose}>
       <div className="basma-slideup" style={{ ...S.modal, maxWidth: 380, background: C.card }} onClick={function(e){ e.stopPropagation(); }}>
-        <div style={{ fontSize: 16, fontWeight: 800, fontFamily: "'Cairo',sans-serif", textAlign: "center", marginBottom: 16, color: C.text }}>📝 طلب إجازة</div>
+        <div style={{ fontSize: 16, fontWeight: 800, fontFamily: "'Cairo',sans-serif", textAlign: "center", marginBottom: 12, color: C.text }}>📝 طلب إجازة</div>
+
+        {/* v6.37 — Balance summary */}
+        {balance && (
+          <div style={{ background: "linear-gradient(135deg, rgba(201,168,76,0.12), rgba(201,168,76,0.05))", border: "1px solid rgba(201,168,76,0.3)", borderRadius: 12, padding: 10, marginBottom: 12 }}>
+            <div style={{ fontSize: 10, color: C.sub, fontWeight: 700, marginBottom: 6 }}>📊 رصيدك المتبقي (سنة {balance.year})</div>
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 6 }}>
+              {[{k:"annual",l:"سنوية",i:"🏖️"},{k:"sick",l:"مرضية",i:"🏥"},{k:"emergency",l:"طارئة",i:"⚡"},{k:"personal",l:"شخصية",i:"👤"}].map(function(b){
+                return (
+                  <div key={b.k} style={{ textAlign: "center", padding: "6px 2px", borderRadius: 8, background: type === b.k ? "rgba(201,168,76,0.2)" : "transparent", border: type === b.k ? "1px solid rgba(201,168,76,0.5)" : "1px solid transparent" }}>
+                    <div style={{ fontSize: 12 }}>{b.i}</div>
+                    <div style={{ fontSize: 14, fontWeight: 900, color: type === b.k ? "#C9A84C" : C.text }}>{balance[b.k] || 0}</div>
+                    <div style={{ fontSize: 8, color: C.sub }}>{b.l}</div>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        )}
 
         <div style={{ display: "flex", gap: 6, marginBottom: 14 }}>
           {leaveTypes.map(function(lt) {
@@ -8617,6 +8678,14 @@ function LeaveModal({ user, onClose, onSubmit }) {
             <div style={{ fontSize: 10, color: C.sub, fontWeight: 600, marginBottom: 4 }}>إلى</div>
             <input type="date" value={to} onChange={function(e){ setTo(e.target.value); }} style={{ width: "100%", padding: 10, borderRadius: 10, border: "1px solid " + C.bg, fontSize: 13, fontFamily: "'Tajawal',sans-serif" }} />
           </div>
+        </div>
+
+        {/* Days counter + balance warning */}
+        <div style={{ padding: "8px 10px", borderRadius: 10, background: exceedsBalance ? "rgba(239,68,68,0.1)" : "rgba(43,94,167,0.08)", border: "1px solid " + (exceedsBalance ? "rgba(239,68,68,0.3)" : "rgba(43,94,167,0.2)"), marginBottom: 12, fontSize: 11, fontWeight: 600, color: exceedsBalance ? "#EF4444" : C.blue, textAlign: "center" }}>
+          {exceedsBalance ? "⚠️ " : "📅 "}
+          الأيام المطلوبة: <strong>{requestedDays}</strong>
+          {currentBalance !== null && <span> · الرصيد المتبقي: <strong>{currentBalance}</strong></span>}
+          {exceedsBalance && <div style={{ marginTop: 2, fontSize: 10 }}>الأيام المطلوبة أكثر من الرصيد!</div>}
         </div>
 
         <div style={{ marginBottom: 14 }}>

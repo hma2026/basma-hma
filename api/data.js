@@ -533,13 +533,189 @@ export default async function handler(req, res) {
 
       case 'leaves': {
         if (req.method === 'GET') return res.json(await dbGet('leaves') || []);
-        if (req.method === 'POST') { const ls = await dbGet('leaves') || []; ls.push({ id: 'L' + Date.now(), status: 'pending', ...req.body, ts: new Date().toISOString() }); await dbSet('leaves', ls); return res.json({ ok: true }); }
+        if (req.method === 'POST') {
+          // v6.37 — enhanced submit: compute days + notify manager + validate balance
+          var lbody = req.body || {};
+          var ls = await dbGet('leaves') || [];
+          var now = new Date();
+          // Compute number of days (inclusive)
+          var daysCount = 1;
+          if (lbody.from && lbody.to) {
+            var fromD = new Date(lbody.from);
+            var toD = new Date(lbody.to);
+            daysCount = Math.max(1, Math.round((toD - fromD) / (24*3600*1000)) + 1);
+          }
+          var newLeave = { id: 'L' + Date.now(), status: 'pending', ...lbody, days: daysCount, ts: now.toISOString() };
+          ls.push(newLeave);
+          await dbSet('leaves', ls);
+
+          // Notify manager + HR in-app
+          (async function(){
+            try {
+              var emps = (await dbGet('employees')) || [];
+              var emp = emps.find(function(e){ return e.id === lbody.empId; });
+              var managerId = emp && (emp.managerId || emp.supervisorId);
+              var hrIds = emps.filter(function(e){ return e.role === 'hr_manager' || e.role === 'admin' || e.isAdmin; }).map(function(e){ return e.id; });
+              var targets = [];
+              if (managerId) targets.push(managerId);
+              hrIds.forEach(function(id){ if (targets.indexOf(id) < 0) targets.push(id); });
+
+              var leaveTypeLbl = { annual:'سنوية', sick:'مرضية', emergency:'طارئة', personal:'شخصية' }[lbody.type] || 'إجازة';
+              var notifs = (await dbGet('notifications')) || [];
+              var nowISO = now.toISOString();
+              targets.forEach(function(tid){
+                notifs.push({
+                  id: 'n_lvreq_' + Date.now() + '_' + Math.random().toString(36).substr(2,4),
+                  empId: tid,
+                  type: 'leave_request',
+                  title: '📝 طلب إجازة جديد',
+                  message: (emp && emp.name ? emp.name : 'موظف') + ' طلب إجازة ' + leaveTypeLbl + ' (' + daysCount + ' يوم)',
+                  leaveId: newLeave.id,
+                  targetEmpId: lbody.empId,
+                  read: false,
+                  createdAt: nowISO,
+                });
+              });
+              if (notifs.length > 1000) notifs = notifs.slice(-1000);
+              await dbSet('notifications', notifs);
+
+              // Push notification to manager
+              if (managerId) {
+                try {
+                  var pushSubs = (await dbGet('push_subscriptions')) || {};
+                  var sub = pushSubs[managerId];
+                  if (sub && sub.subscription) {
+                    await sendWebPush(sub.subscription, {
+                      title: '📝 طلب إجازة جديد',
+                      body: (emp && emp.name ? emp.name : 'موظف') + ' طلب ' + leaveTypeLbl + ' (' + daysCount + ' يوم)',
+                      tag: 'leave-' + newLeave.id,
+                      data: { leaveId: newLeave.id, type: 'leave_request' },
+                    });
+                  }
+                } catch(ePush) { /* silent */ }
+              }
+            } catch(e) { /* silent */ }
+          })();
+
+          return res.json({ ok: true, leave: newLeave, days: daysCount });
+        }
         if (req.method === 'PUT') {
+          // v6.37 — enhanced approve/reject: auto-deduct balance + notify employee
           const ls = await dbGet('leaves') || [];
-          const { id, status } = req.body;
+          const { id, status, rejectReason } = req.body;
           const i = ls.findIndex(l => l.id === id);
-          if (i >= 0) { ls[i].status = status; await dbSet('leaves', ls); }
-          return res.json({ ok: true });
+          if (i < 0) return res.status(404).json({ error: 'الطلب غير موجود' });
+
+          var leave = ls[i];
+          var prevStatus = leave.status;
+          leave.status = status;
+          leave.decidedAt = new Date().toISOString();
+          if (rejectReason) leave.rejectReason = rejectReason;
+
+          // Auto-deduct balance on approval (only if moving to approved state)
+          if (status === 'approved' && prevStatus !== 'approved' && leave.type) {
+            var balances = (await dbGet('leave_balances')) || {};
+            var curYear = new Date().getFullYear();
+            var empBal = balances[leave.empId] || { annual: 21, sick: 30, emergency: 5, personal: 0, year: curYear };
+            if (empBal.year !== curYear) {
+              // Year rolled over — reset defaults
+              empBal = { annual: 21, sick: 30, emergency: 5, personal: 0, year: curYear };
+            }
+            var days = leave.days || 1;
+            if (empBal[leave.type] !== undefined) {
+              empBal[leave.type] = Math.max(0, empBal[leave.type] - days);
+            }
+            balances[leave.empId] = empBal;
+            await dbSet('leave_balances', balances);
+          }
+
+          // Reverse deduction if moving FROM approved
+          if (prevStatus === 'approved' && status !== 'approved' && leave.type) {
+            var balances2 = (await dbGet('leave_balances')) || {};
+            var curYear2 = new Date().getFullYear();
+            var empBal2 = balances2[leave.empId] || { annual: 21, sick: 30, emergency: 5, personal: 0, year: curYear2 };
+            if (empBal2.year !== curYear2) empBal2 = { annual: 21, sick: 30, emergency: 5, personal: 0, year: curYear2 };
+            var daysRev = leave.days || 1;
+            if (empBal2[leave.type] !== undefined) {
+              empBal2[leave.type] = empBal2[leave.type] + daysRev;
+            }
+            balances2[leave.empId] = empBal2;
+            await dbSet('leave_balances', balances2);
+          }
+
+          await dbSet('leaves', ls);
+
+          // Notify employee
+          (async function(){
+            try {
+              var notifs = (await dbGet('notifications')) || [];
+              var nowISO = new Date().toISOString();
+              var leaveTypeLbl2 = { annual:'السنوية', sick:'المرضية', emergency:'الطارئة', personal:'الشخصية' }[leave.type] || '';
+              var titleStr = status === 'approved' ? '✅ تمت الموافقة على إجازتك' : status === 'rejected' ? '❌ تم رفض طلب الإجازة' : '🔄 تحديث على طلب الإجازة';
+              var msgStr = status === 'approved'
+                ? 'تمت الموافقة على الإجازة ' + leaveTypeLbl2 + ' (' + (leave.days || 1) + ' يوم). إجازة سعيدة!'
+                : status === 'rejected'
+                ? 'تم رفض طلب الإجازة ' + leaveTypeLbl2 + (rejectReason ? '. السبب: ' + rejectReason : '. راجع مديرك.')
+                : 'تم تحديث طلب الإجازة.';
+              notifs.push({
+                id: 'n_lvres_' + Date.now() + '_' + Math.random().toString(36).substr(2,4),
+                empId: leave.empId,
+                type: 'leave_response',
+                title: titleStr,
+                message: msgStr,
+                leaveId: leave.id,
+                read: false,
+                createdAt: nowISO,
+              });
+              if (notifs.length > 1000) notifs = notifs.slice(-1000);
+              await dbSet('notifications', notifs);
+
+              // Push
+              try {
+                var pushSubs = (await dbGet('push_subscriptions')) || {};
+                var sub = pushSubs[leave.empId];
+                if (sub && sub.subscription) {
+                  await sendWebPush(sub.subscription, { title: titleStr, body: msgStr, tag: 'leave-resp-' + leave.id, data: { leaveId: leave.id, type: 'leave_response' } });
+                }
+              } catch(e){}
+            } catch(e){}
+          })();
+
+          return res.json({ ok: true, leave: leave });
+        }
+        break;
+      }
+
+      /* ═══ v6.37 — LEAVE BALANCE (رصيد الإجازات) ═══ */
+      case 'leave-balance': {
+        if (req.method === 'GET') {
+          var empIdLB = req.query.empId;
+          if (!empIdLB) return res.status(400).json({ error: 'empId مطلوب' });
+          var balancesLB = (await dbGet('leave_balances')) || {};
+          var curYearLB = new Date().getFullYear();
+          var empBalLB = balancesLB[empIdLB] || { annual: 21, sick: 30, emergency: 5, personal: 0, year: curYearLB };
+          // Auto-reset on new year
+          if (empBalLB.year !== curYearLB) {
+            empBalLB = { annual: 21, sick: 30, emergency: 5, personal: 0, year: curYearLB };
+            balancesLB[empIdLB] = empBalLB;
+            await dbSet('leave_balances', balancesLB);
+          }
+          return res.json(empBalLB);
+        }
+        if (req.method === 'PUT') {
+          // Admin-only: adjust balance
+          var bodyLB = req.body || {};
+          var balancesLB2 = (await dbGet('leave_balances')) || {};
+          var curYearLB2 = new Date().getFullYear();
+          var empBalLB2 = balancesLB2[bodyLB.empId] || { annual: 21, sick: 30, emergency: 5, personal: 0, year: curYearLB2 };
+          if (bodyLB.annual !== undefined) empBalLB2.annual = Math.max(0, parseInt(bodyLB.annual, 10));
+          if (bodyLB.sick !== undefined) empBalLB2.sick = Math.max(0, parseInt(bodyLB.sick, 10));
+          if (bodyLB.emergency !== undefined) empBalLB2.emergency = Math.max(0, parseInt(bodyLB.emergency, 10));
+          if (bodyLB.personal !== undefined) empBalLB2.personal = Math.max(0, parseInt(bodyLB.personal, 10));
+          empBalLB2.year = curYearLB2;
+          balancesLB2[bodyLB.empId] = empBalLB2;
+          await dbSet('leave_balances', balancesLB2);
+          return res.json({ ok: true, balance: empBalLB2 });
         }
         break;
       }
@@ -584,9 +760,57 @@ export default async function handler(req, res) {
         if (req.method === 'GET') return res.json(await dbGet('pre_absences') || []);
         if (req.method === 'POST') {
           const pas = await dbGet('pre_absences') || [];
-          pas.push({ id: 'PA' + Date.now(), ...req.body, ts: new Date().toISOString() });
+          var newPA = { id: 'PA' + Date.now(), status: 'pending', ...req.body, ts: new Date().toISOString() };
+          pas.push(newPA);
           await dbSet('pre_absences', pas);
-          return res.json({ ok: true });
+
+          // v6.37 — Notify manager + HR
+          (async function(){
+            try {
+              var emps = (await dbGet('employees')) || [];
+              var emp = emps.find(function(e){ return e.id === newPA.empId; });
+              var managerId = emp && (emp.managerId || emp.supervisorId);
+              var hrIds = emps.filter(function(e){ return e.role === 'hr_manager' || e.role === 'admin' || e.isAdmin; }).map(function(e){ return e.id; });
+              var targets = [];
+              if (managerId) targets.push(managerId);
+              hrIds.forEach(function(id){ if (targets.indexOf(id) < 0) targets.push(id); });
+
+              var notifs = (await dbGet('notifications')) || [];
+              var nowISO = new Date().toISOString();
+              targets.forEach(function(tid){
+                notifs.push({
+                  id: 'n_pareq_' + Date.now() + '_' + Math.random().toString(36).substr(2,4),
+                  empId: tid,
+                  type: 'pre_absence_request',
+                  title: '🏥 إفادة غياب بعذر',
+                  message: (emp && emp.name ? emp.name : 'موظف') + ' قدّم إفادة غياب بعذر (' + (newPA.reason || 'بدون سبب محدد') + ')',
+                  preAbsenceId: newPA.id,
+                  targetEmpId: newPA.empId,
+                  read: false,
+                  createdAt: nowISO,
+                });
+              });
+              if (notifs.length > 1000) notifs = notifs.slice(-1000);
+              await dbSet('notifications', notifs);
+
+              if (managerId) {
+                try {
+                  var pushSubs = (await dbGet('push_subscriptions')) || {};
+                  var sub = pushSubs[managerId];
+                  if (sub && sub.subscription) {
+                    await sendWebPush(sub.subscription, {
+                      title: '🏥 إفادة غياب بعذر',
+                      body: (emp && emp.name ? emp.name : 'موظف') + ' قدّم إفادة غياب بعذر',
+                      tag: 'preabs-' + newPA.id,
+                      data: { id: newPA.id, type: 'pre_absence' },
+                    });
+                  }
+                } catch(e) {}
+              }
+            } catch(e) {}
+          })();
+
+          return res.json({ ok: true, preAbsence: newPA });
         }
         break;
       }
@@ -918,7 +1142,7 @@ export default async function handler(req, res) {
       }
 
       case 'auto_check': {
-        // Auto-detect violations for today
+        // Auto-detect violations for today + workType-aware + auto-warn after 3 lates
         const today = new Date().toISOString().split('T')[0];
         const emps = await dbGet('employees') || [];
         const att = (await dbGet('attendance') || []).filter(a => a.date === today);
@@ -926,31 +1150,43 @@ export default async function handler(req, res) {
         const preAbs = (await dbGet('pre_absences') || []).filter(p => p.date === today);
         const branches = await dbGet('branches') || [];
         const settings = await dbGet('settings') || {};
+        // v6.36 — load work_types for per-employee thresholds
+        const workTypesData = (await dbGet('work_types')) || { types: {}, overrides: {} };
         var newViolations = [];
         var hour = new Date().getHours(), min = new Date().getMinutes();
         var curMin = hour * 60 + min;
+
+        // Helper: get workType for employee
+        function getEmpWorkType(empId) {
+          var key = (workTypesData.overrides && workTypesData.overrides[empId]) || 'full_time';
+          return (workTypesData.types && workTypesData.types[key]) || null;
+        }
 
         for (const emp of emps) {
           if (emp.terminated || emp.onLeave) continue;
           if (preAbs.find(p => p.empId === emp.id)) continue; // Pre-notified absence
           var empAtt = att.filter(a => a.empId === emp.id);
-          var hasCheckin = empAtt.find(a => a.type === "الحضور");
+          var hasCheckin = empAtt.find(a => a.type === 'checkin' || a.type === 'الحضور');
+          var wt = getEmpWorkType(emp.id);
+          var isFlex = wt && wt.flexible === true;
+          var lateGrace = (wt && wt.lateAfterMin) || 15;
           var br = branches.find(b => b.id === emp.branch) || { start: "08:30" };
-          var startMin = parseInt(br.start?.split(":")[0] || 8) * 60 + parseInt(br.start?.split(":")[1] || 30);
+          var startMin = parseInt((br.start || '08:30').split(":")[0] || 8) * 60 + parseInt((br.start || '08:30').split(":")[1] || 30);
 
-          // Late detection (after start + 15 min grace)
-          if (curMin > startMin + 15 && hasCheckin) {
+          // Late detection — skipped for flexible workers (they set their own start)
+          if (!isFlex && curMin > startMin + lateGrace && hasCheckin) {
             var checkinTime = new Date(hasCheckin.ts);
             var checkinMin = checkinTime.getHours() * 60 + checkinTime.getMinutes();
             if (checkinMin > startMin + 5) {
               var lateMin = checkinMin - startMin;
               var existing = violations.find(v => v.empId === emp.id && v.date === today && v.type === "late");
-              if (!existing) newViolations.push({ empId: emp.id, empName: emp.name, type: "late", date: today, details: "تأخر " + lateMin + " دقيقة" });
+              if (!existing) newViolations.push({ empId: emp.id, empName: emp.name, type: "late", date: today, details: "تأخر " + lateMin + " دقيقة (حد نوع الدوام: " + lateGrace + " د)" });
             }
           }
 
-          // Absent detection (after start + 60 min, no checkin)
-          if (curMin > startMin + 60 && !hasCheckin) {
+          // Absent detection — flex workers only considered absent at end of day
+          var absentThreshold = isFlex ? (24 * 60) : (startMin + 60);
+          if (curMin > absentThreshold && !hasCheckin) {
             var existing2 = violations.find(v => v.empId === emp.id && v.date === today && v.type === "absent");
             if (!existing2) newViolations.push({ empId: emp.id, empName: emp.name, type: "absent", date: today, details: "غياب بدون إفادة مسبقة" });
           }
@@ -1008,8 +1244,81 @@ export default async function handler(req, res) {
           await dbSet('notifications', allNotifs);
         }
 
-        // Auto-escalate overdue warnings
-        const warnings = await dbGet('warnings') || [];
+        // v6.36 — AUTO-WARNING ESCALATION: 3+ late/absent in rolling 30 days → auto-warning
+        var warnings = await dbGet('warnings') || [];
+        var autoWarningsCreated = 0;
+        var thirtyDaysAgo = new Date();
+        thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
+
+        // Group violations by employee, count lates in last 30 days
+        var empViolationCounts = {};
+        violations.forEach(function(v){
+          if (!v.empId) return;
+          if (v.type !== 'late' && v.type !== 'absent' && v.type !== 'break_window') return;
+          var vDate = v.date ? new Date(v.date) : (v.ts ? new Date(v.ts) : null);
+          if (!vDate || vDate < thirtyDaysAgo) return;
+          var key = v.empId + ':' + v.type;
+          if (!empViolationCounts[key]) empViolationCounts[key] = { empId: v.empId, type: v.type, count: 0, empName: v.empName };
+          empViolationCounts[key].count++;
+        });
+
+        // Thresholds for auto-warning
+        var WARNING_THRESHOLDS = { late: 3, absent: 2, break_window: 3 };
+        var WARNING_LABELS = { late: 'تأخر متكرر', absent: 'غياب متكرر', break_window: 'مخالفة بريك متكررة' };
+
+        Object.keys(empViolationCounts).forEach(function(k){
+          var info = empViolationCounts[k];
+          var threshold = WARNING_THRESHOLDS[info.type];
+          if (info.count < threshold) return;
+          // Check if we already issued a warning for this employee+type in the last 30 days
+          var alreadyWarned = warnings.some(function(w){
+            if (w.empId !== info.empId) return false;
+            if (w.autoType !== info.type) return false;
+            var wDate = w.ts ? new Date(w.ts) : null;
+            return wDate && wDate >= thirtyDaysAgo;
+          });
+          if (alreadyWarned) return;
+          // Create auto-warning
+          var wNow = new Date().toISOString();
+          var deadlineDate = new Date(); deadlineDate.setDate(deadlineDate.getDate() + 7);
+          warnings.push({
+            id: 'W' + Date.now() + Math.random().toString(36).substr(2, 4),
+            empId: info.empId,
+            empName: info.empName || '—',
+            status: 'pending',
+            level: 'auto',
+            autoType: info.type,
+            reason: WARNING_LABELS[info.type] + ' — ' + info.count + ' حالات خلال 30 يوماً',
+            issuedBy: 'system_auto',
+            ts: wNow,
+            deadline: deadlineDate.toISOString(),
+          });
+          autoWarningsCreated++;
+          // Notify the employee
+          var warnAllNotifs = [];
+          try { warnAllNotifs = (allNotifs && allNotifs.length) ? allNotifs : ((/** @type {any[]} */ (warnAllNotifs || []))); } catch(e) {}
+          // Push in-app notification
+          (async function(){
+            try {
+              var curNotifs = (await dbGet('notifications')) || [];
+              curNotifs.push({
+                id: 'n_warn_' + Date.now() + '_' + Math.random().toString(36).substr(2,4),
+                empId: info.empId,
+                type: 'auto_warning',
+                title: '📋 إنذار رسمي تلقائي',
+                message: WARNING_LABELS[info.type] + ' — ' + info.count + ' حالات خلال 30 يوماً. تواصل مع HR خلال 7 أيام.',
+                read: false,
+                createdAt: wNow,
+              });
+              if (curNotifs.length > 1000) curNotifs = curNotifs.slice(-1000);
+              await dbSet('notifications', curNotifs);
+            } catch(e) {}
+          })();
+        });
+
+        if (autoWarningsCreated > 0) await dbSet('warnings', warnings);
+
+        // Auto-escalate overdue warnings (original behavior preserved)
         var escalated = 0;
         for (const w of warnings) {
           if (w.status === 'pending' && w.deadline && new Date(w.deadline) < new Date()) {
@@ -1020,7 +1329,10 @@ export default async function handler(req, res) {
         }
         if (escalated > 0) await dbSet('warnings', warnings);
 
-        return res.json({ ok: true, newViolations: newViolations.length, escalated, date: today });
+        // v6.36 — Track last auto-check timestamp for throttling
+        await dbSet('auto_check_last_run', new Date().toISOString());
+
+        return res.json({ ok: true, newViolations: newViolations.length, escalated, autoWarnings: autoWarningsCreated, date: today });
       }
 
       case 'dependents': {
@@ -3223,12 +3535,96 @@ export default async function handler(req, res) {
           var newPerm = { id: 'PERM' + Date.now(), status: 'pending', ts: new Date().toISOString(), ...req.body };
           perms.push(newPerm);
           await dbSet('permissions', perms);
+
+          // v6.37 — Notify manager + HR
+          (async function(){
+            try {
+              var empsP = (await dbGet('employees')) || [];
+              var empP = empsP.find(function(e){ return e.id === newPerm.empId; });
+              var mgrId = empP && (empP.managerId || empP.supervisorId);
+              var hrIdsP = empsP.filter(function(e){ return e.role === 'hr_manager' || e.role === 'admin' || e.isAdmin; }).map(function(e){ return e.id; });
+              var tgtsP = [];
+              if (mgrId) tgtsP.push(mgrId);
+              hrIdsP.forEach(function(id){ if (tgtsP.indexOf(id) < 0) tgtsP.push(id); });
+
+              var notifsP = (await dbGet('notifications')) || [];
+              var nowISOP = new Date().toISOString();
+              tgtsP.forEach(function(tid){
+                notifsP.push({
+                  id: 'n_prmreq_' + Date.now() + '_' + Math.random().toString(36).substr(2,4),
+                  empId: tid,
+                  type: 'permission_request',
+                  title: '⏱ طلب استئذان',
+                  message: (empP && empP.name ? empP.name : 'موظف') + ' طلب استئذان' + (newPerm.reason ? ' (' + newPerm.reason + ')' : ''),
+                  permissionId: newPerm.id,
+                  targetEmpId: newPerm.empId,
+                  read: false,
+                  createdAt: nowISOP,
+                });
+              });
+              if (notifsP.length > 1000) notifsP = notifsP.slice(-1000);
+              await dbSet('notifications', notifsP);
+
+              if (mgrId) {
+                try {
+                  var pushSubsP = (await dbGet('push_subscriptions')) || {};
+                  var subP = pushSubsP[mgrId];
+                  if (subP && subP.subscription) {
+                    await sendWebPush(subP.subscription, {
+                      title: '⏱ طلب استئذان',
+                      body: (empP && empP.name ? empP.name : 'موظف') + ' طلب استئذان',
+                      tag: 'perm-' + newPerm.id,
+                      data: { id: newPerm.id, type: 'permission_request' },
+                    });
+                  }
+                } catch(e) {}
+              }
+            } catch(e) {}
+          })();
+
           return res.json({ ok: true, permission: newPerm });
         }
         if (req.method === 'PUT') {
           var perms = await dbGet('permissions') || [];
           var idx = perms.findIndex(p => p.id === req.body.id);
-          if (idx >= 0) { perms[idx] = { ...perms[idx], ...req.body }; await dbSet('permissions', perms); }
+          if (idx >= 0) {
+            var prevStatusPerm = perms[idx].status;
+            perms[idx] = { ...perms[idx], ...req.body, decidedAt: new Date().toISOString() };
+            await dbSet('permissions', perms);
+
+            // v6.37 — Notify employee on decision
+            if (req.body.status && req.body.status !== prevStatusPerm) {
+              (async function(){
+                try {
+                  var permX = perms[idx];
+                  var notifsX = (await dbGet('notifications')) || [];
+                  var nowX = new Date().toISOString();
+                  var titleX = req.body.status === 'approved' ? '✅ تم الموافقة على الاستئذان' : '❌ تم رفض الاستئذان';
+                  var msgX = req.body.status === 'approved' ? 'استئذانك تم اعتماده.' : 'استئذانك لم يُعتمد' + (req.body.rejectReason ? ' — ' + req.body.rejectReason : '.');
+                  notifsX.push({
+                    id: 'n_prmres_' + Date.now() + '_' + Math.random().toString(36).substr(2,4),
+                    empId: permX.empId,
+                    type: 'permission_response',
+                    title: titleX,
+                    message: msgX,
+                    permissionId: permX.id,
+                    read: false,
+                    createdAt: nowX,
+                  });
+                  if (notifsX.length > 1000) notifsX = notifsX.slice(-1000);
+                  await dbSet('notifications', notifsX);
+
+                  try {
+                    var pushSubsX = (await dbGet('push_subscriptions')) || {};
+                    var subX = pushSubsX[permX.empId];
+                    if (subX && subX.subscription) {
+                      await sendWebPush(subX.subscription, { title: titleX, body: msgX, tag: 'perm-resp-' + permX.id, data: { id: permX.id, type: 'permission_response' } });
+                    }
+                  } catch(e){}
+                } catch(e){}
+              })();
+            }
+          }
           return res.json({ ok: true });
         }
         break;
