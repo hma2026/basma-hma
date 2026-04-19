@@ -1382,141 +1382,234 @@ export default async function handler(req, res) {
         return res.json(redemps);
       }
 
-      /* ═══ TAWASUL — نظام تبادل المهام الإدارية (proxy to kadwar) ═══ */
+      /* ═══ TAWASUL — نظام تبادل المهام الإدارية (NATIVE — Upstash Redis) ═══ */
       case 'tawasul-list': {
         try {
-          var ctrl = new AbortController();
-          var tmo = setTimeout(function(){ ctrl.abort(); }, 8000);
-          var kr = await fetch('https://hma.engineer/api/basma-sync?action=tawasul', { signal: ctrl.signal });
-          clearTimeout(tmo);
-          if (!kr.ok) return res.status(kr.status).json({ error: 'kadwar returned ' + kr.status, requests: [], categories: [], projects: [] });
-          var kd = await kr.json();
+          var idx = (await dbGet('twsl:idx')) || [];
+          var categories = (await dbGet('twsl:categories')) || [
+            { id: "supervision", label: "أعمال الإشراف", icon: "🏗️", fixed: true },
+            { id: "design",      label: "أعمال التصميم", icon: "✏️", fixed: true },
+            { id: "survey",      label: "أعمال المساحة", icon: "📐", fixed: true },
+            { id: "clients",     label: "علاقات العملاء", icon: "👥", fixed: true },
+            { id: "admin",       label: "إداري",          icon: "📋", fixed: true },
+            { id: "other",       label: "أخرى",           icon: "📎", fixed: false },
+          ];
+          var projects = (await dbGet('twsl:projects')) || [];
+          // Fetch all requests in parallel
+          var requests = await Promise.all(idx.map(function(id){
+            return dbGet('twsl:' + id).then(function(r){ return r; }).catch(function(){ return null; });
+          }));
+          requests = requests.filter(function(r){ return r && r.id; });
           return res.json({
             ok: true,
-            requests: kd.requests || [],
-            categories: kd.categories || [],
-            projects: kd.projects || [],
-            total: kd.total || (kd.requests || []).length,
-            syncDate: kd.syncDate || new Date().toISOString(),
+            requests: requests,
+            categories: categories,
+            projects: projects,
+            total: requests.length,
+            syncDate: new Date().toISOString(),
           });
         } catch (e) {
-          var msg = e.name === 'AbortError' ? 'انتهت المهلة (كوادر بطيء)' : (e.message || 'unknown');
-          return res.status(502).json({ error: 'تعذر الاتصال بنظام كوادر: ' + msg, requests: [], categories: [], projects: [] });
+          return res.status(500).json({ error: 'tawasul-list error: ' + (e.message || 'unknown'), requests: [], categories: [], projects: [] });
         }
       }
 
       case 'tawasul-save': {
         if (req.method !== 'POST') return res.status(405).json({ error: 'POST required' });
         try {
-          var kr = await fetch('https://hma.engineer/api/basma-sync?action=tawasul-save', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(req.body || {}),
-          });
-          var kd = await kr.json();
-          if (!kr.ok) return res.status(kr.status).json({ error: kd.error || 'kadwar error ' + kr.status });
-          return res.json(kd);
+          var body = req.body || {};
+          var reqData = body.request;
+          if (!reqData) return res.status(400).json({ error: 'request object required' });
+
+          var now = new Date().toISOString();
+          var isNew = !reqData.id;
+
+          // Generate ID if new
+          if (isNew) reqData.id = 'twsl_' + Date.now() + '_' + Math.random().toString(36).slice(2, 8);
+
+          // Generate serial if new
+          if (!reqData.serial) {
+            var counter = (await dbGet('twsl:serial')) || 0;
+            counter = counter + 1;
+            reqData.serial = 'CB' + String(counter).padStart(4, '0');
+            await dbSet('twsl:serial', counter);
+          }
+
+          reqData.updatedAt = now;
+          if (!reqData.createdAt) reqData.createdAt = now;
+
+          // Save the request
+          await dbSet('twsl:' + reqData.id, reqData);
+
+          // Update index if new
+          if (isNew) {
+            var idx = (await dbGet('twsl:idx')) || [];
+            if (idx.indexOf(reqData.id) < 0) {
+              idx.push(reqData.id);
+              await dbSet('twsl:idx', idx);
+            }
+
+            // Create notification for each assignee
+            var notifs = (await dbGet('twsl:notifs')) || [];
+            (reqData.assignees || []).forEach(function(a){
+              notifs.push({
+                id: 'n_' + Date.now() + '_' + Math.random().toString(36).slice(2, 6),
+                type: 'new_task',
+                taskId: reqData.id,
+                serial: reqData.serial,
+                from: reqData.requesterName || '',
+                createdAt: now,
+                read: false,
+                targetId: a.id,
+              });
+            });
+            // Keep last 500 notifications
+            if (notifs.length > 500) notifs = notifs.slice(-500);
+            await dbSet('twsl:notifs', notifs);
+          }
+
+          return res.json({ ok: true, request: reqData });
         } catch (e) {
-          return res.status(502).json({ error: 'تعذر الحفظ على كوادر: ' + (e.message || 'unknown') });
+          return res.status(500).json({ error: 'tawasul-save error: ' + (e.message || 'unknown') });
         }
       }
 
       case 'tawasul-delete': {
         if (req.method !== 'POST') return res.status(405).json({ error: 'POST required' });
         try {
-          var kr = await fetch('https://hma.engineer/api/basma-sync?action=tawasul-delete', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(req.body || {}),
-          });
-          var kd = await kr.json();
-          if (!kr.ok) return res.status(kr.status).json({ error: kd.error || 'kadwar error ' + kr.status });
-          return res.json(kd);
+          var body2 = req.body || {};
+          var id = body2.id;
+          if (!id) return res.status(400).json({ error: 'id required' });
+
+          // Remove from index
+          var idx2 = (await dbGet('twsl:idx')) || [];
+          idx2 = idx2.filter(function(x){ return x !== id; });
+          await dbSet('twsl:idx', idx2);
+
+          // Delete the object (overwrite with null since we don't have a delete helper)
+          await dbSet('twsl:' + id, null);
+
+          return res.json({ ok: true, id: id });
         } catch (e) {
-          return res.status(502).json({ error: 'تعذر الحذف على كوادر: ' + (e.message || 'unknown') });
+          return res.status(500).json({ error: 'tawasul-delete error: ' + (e.message || 'unknown') });
         }
       }
 
       case 'tawasul-notifs': {
-        // GET: list notifications from kadwar; POST: mark read
         try {
           if (req.method === 'POST') {
-            var body = req.body || {};
-            var kr = await fetch('https://hma.engineer/api/basma-sync?action=tawasul-notifs', {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify(body),
-            });
-            var kd = await kr.json();
-            if (!kr.ok) return res.status(kr.status).json({ error: kd.error || 'kadwar error ' + kr.status });
-            return res.json(kd);
+            var pb = req.body || {};
+            var notifs2 = (await dbGet('twsl:notifs')) || [];
+            // Mark notifications as read
+            if (pb.markRead && Array.isArray(pb.ids)) {
+              notifs2 = notifs2.map(function(n){
+                if (pb.ids.indexOf(n.id) >= 0) return Object.assign({}, n, { read: true });
+                return n;
+              });
+              await dbSet('twsl:notifs', notifs2);
+            }
+            // Add a new notification
+            if (pb.notif) {
+              notifs2.push(Object.assign({ id: 'n_' + Date.now() + '_' + Math.random().toString(36).slice(2,6), createdAt: new Date().toISOString(), read: false }, pb.notif));
+              if (notifs2.length > 500) notifs2 = notifs2.slice(-500);
+              await dbSet('twsl:notifs', notifs2);
+            }
+            return res.json({ ok: true, notifs: notifs2 });
           }
-          var kr2 = await fetch('https://hma.engineer/api/basma-sync?action=tawasul-notifs');
-          if (!kr2.ok) return res.status(kr2.status).json({ error: 'kadwar returned ' + kr2.status, notifs: [] });
-          var kd2 = await kr2.json();
-          return res.json({ ok: true, notifs: kd2.notifs || [] });
+          var notifsR = (await dbGet('twsl:notifs')) || [];
+          return res.json({ ok: true, notifs: notifsR });
         } catch (e) {
-          return res.status(502).json({ error: 'تعذر الاتصال بكوادر: ' + (e.message || 'unknown'), notifs: [] });
+          return res.status(500).json({ error: 'tawasul-notifs error: ' + (e.message || 'unknown'), notifs: [] });
         }
       }
 
       case 'tawasul-ai': {
-        // Proxy AI requests to kadwar's /api/ai endpoint (Claude/Gemini)
+        // AI stays on kadwar (has API keys) — proxy with timeout
         if (req.method !== 'POST') return res.status(405).json({ error: 'POST required' });
         try {
-          var kr = await fetch('https://hma.engineer/api/ai', {
+          var ctrlAI = new AbortController();
+          var tmoAI = setTimeout(function(){ ctrlAI.abort(); }, 30000);
+          var krAI = await fetch('https://hma.engineer/api/ai', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify(req.body || {}),
+            signal: ctrlAI.signal,
           });
-          var kd = await kr.json();
-          if (!kr.ok) return res.status(kr.status).json({ error: kd.error || 'ai error ' + kr.status });
-          return res.json(kd);
+          clearTimeout(tmoAI);
+          var kdAI = await krAI.json();
+          if (!krAI.ok) return res.status(krAI.status).json({ error: kdAI.error || 'ai error ' + krAI.status });
+          return res.json(kdAI);
         } catch (e) {
           return res.status(502).json({ error: 'تعذر الاتصال بـ AI: ' + (e.message || 'unknown') });
         }
       }
 
       case 'tawasul-check-escalations': {
-        // Check and update auto-escalations (spec section 13) — called from client on page load
+        // Check and update auto-escalations (spec section 13) — native
         try {
-          var kr = await fetch('https://hma.engineer/api/basma-sync?action=tawasul');
-          if (!kr.ok) return res.status(kr.status).json({ error: 'kadwar error ' + kr.status, updates: 0 });
-          var kd = await kr.json();
-          var reqs = kd.requests || [];
-          var now = Date.now();
-          var updates = [];
-          reqs.forEach(function(r){
-            if (['closed','cancelled','evaluated'].indexOf(r.status) >= 0) return;
+          var idxE = (await dbGet('twsl:idx')) || [];
+          var nowE = Date.now();
+          var savedE = 0;
+          for (var i = 0; i < idxE.length; i++) {
+            var rE = await dbGet('twsl:' + idxE[i]);
+            if (!rE || !rE.id) continue;
+            if (['closed','cancelled','evaluated'].indexOf(rE.status) >= 0) continue;
+            var updated = null;
             // Yellow: 3 days after issueAt
-            if (r.escalation !== 'yellow' && r.escalation !== 'red' && r.issueAt) {
-              if (now - new Date(r.issueAt).getTime() > 3 * 86400000) {
-                updates.push(Object.assign({}, r, { escalation: 'yellow', escalatedAt: new Date().toISOString() }));
-                return;
+            if (rE.escalation !== 'yellow' && rE.escalation !== 'red' && rE.issueAt) {
+              if (nowE - new Date(rE.issueAt).getTime() > 3 * 86400000) {
+                updated = Object.assign({}, rE, { escalation: 'yellow', escalatedAt: new Date().toISOString() });
               }
             }
             // Red: 7 days after yellow
-            if (r.escalation === 'yellow' && r.escalatedAt) {
-              if (now - new Date(r.escalatedAt).getTime() > 7 * 86400000) {
-                updates.push(Object.assign({}, r, { escalation: 'red', redEscalatedAt: new Date().toISOString() }));
+            else if (rE.escalation === 'yellow' && rE.escalatedAt) {
+              if (nowE - new Date(rE.escalatedAt).getTime() > 7 * 86400000) {
+                updated = Object.assign({}, rE, { escalation: 'red', redEscalatedAt: new Date().toISOString() });
               }
             }
-          });
-          // Save each updated
-          var saved = 0;
-          for (var i = 0; i < updates.length; i++) {
-            try {
-              var sr = await fetch('https://hma.engineer/api/basma-sync?action=tawasul-save', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ request: updates[i] }),
-              });
-              if (sr.ok) saved++;
-            } catch(e) {}
+            if (updated) {
+              await dbSet('twsl:' + rE.id, updated);
+              savedE++;
+            }
           }
-          return res.json({ ok: true, updates: saved, checked: reqs.length });
+          return res.json({ ok: true, updates: savedE, checked: idxE.length });
         } catch (e) {
-          return res.status(502).json({ error: 'تعذر الفحص: ' + (e.message || 'unknown'), updates: 0 });
+          return res.status(500).json({ error: 'check-escalations error: ' + (e.message || 'unknown'), updates: 0 });
+        }
+      }
+
+      case 'tawasul-categories': {
+        // Manage categories (for admin panel later)
+        try {
+          if (req.method === 'POST') {
+            var cats = req.body && req.body.categories;
+            if (!Array.isArray(cats)) return res.status(400).json({ error: 'categories array required' });
+            await dbSet('twsl:categories', cats);
+            return res.json({ ok: true, categories: cats });
+          }
+          var catsR = (await dbGet('twsl:categories')) || [];
+          return res.json({ ok: true, categories: catsR });
+        } catch (e) {
+          return res.status(500).json({ error: 'categories error: ' + (e.message || 'unknown') });
+        }
+      }
+
+      case 'tawasul-projects': {
+        // Manage projects (reuse main projects from geofence if exists)
+        try {
+          if (req.method === 'POST') {
+            var prjs = req.body && req.body.projects;
+            if (!Array.isArray(prjs)) return res.status(400).json({ error: 'projects array required' });
+            await dbSet('twsl:projects', prjs);
+            return res.json({ ok: true, projects: prjs });
+          }
+          // Try twsl:projects first, fallback to geofence projects
+          var prjsR = await dbGet('twsl:projects');
+          if (!prjsR || !prjsR.length) {
+            prjsR = (await dbGet('projects')) || [];
+          }
+          return res.json({ ok: true, projects: prjsR });
+        } catch (e) {
+          return res.status(500).json({ error: 'projects error: ' + (e.message || 'unknown') });
         }
       }
 
@@ -1641,170 +1734,6 @@ export default async function handler(req, res) {
           await dbSet('announcements', list);
         }
         return res.json({ ok: true });
-      }
-
-      /* ═══ TAWASUL — نظام الطلبات الداخلية ═══ */
-      case 'tawasul': {
-        // GET: return all requests + categories + projects
-        var requests = (await dbGet('tawasul_requests')) || [];
-        var categories = (await dbGet('tawasul_categories')) || [
-          { id: 'leave', name: 'طلب إجازة', icon: '🌴', color: '#059669' },
-          { id: 'maintenance', name: 'طلب صيانة', icon: '🔧', color: '#EA580C' },
-          { id: 'clarification', name: 'طلب توضيح', icon: '❓', color: '#0EA5E9' },
-          { id: 'info', name: 'طلب معلومات', icon: '📊', color: '#7C3AED' },
-          { id: 'work', name: 'طلب عمل', icon: '💼', color: '#2B5EA7' },
-          { id: 'legal', name: 'طلب قانوني', icon: '⚖️', color: '#DC2626' },
-          { id: 'other', name: 'أخرى', icon: '📝', color: '#6B7280' },
-        ];
-        var projects = (await dbGet('tawasul_projects')) || [];
-        return res.json({
-          requests: requests,
-          categories: categories,
-          projects: projects,
-          total: requests.length,
-          syncDate: new Date().toISOString(),
-        });
-      }
-
-      case 'tawasul-save': {
-        if (req.method !== 'POST') return res.status(400).json({ ok: false, error: 'POST required' });
-        var body = req.body || {};
-        var incoming = body.request;
-        if (!incoming || !incoming.title) return res.status(400).json({ ok: false, error: 'title required' });
-
-        var list = (await dbGet('tawasul_requests')) || [];
-        var nowIso = new Date().toISOString();
-
-        if (incoming.id) {
-          // Update existing
-          var idx = list.findIndex(function(x){ return x.id === incoming.id; });
-          if (idx >= 0) {
-            var prev = list[idx];
-            // Append history entry if status changed
-            if (prev.status !== incoming.status) {
-              if (!incoming.history) incoming.history = prev.history || [];
-              incoming.history.push({
-                action: 'status_changed',
-                by: incoming.updatedBy || 'system',
-                at: nowIso,
-                from: prev.status,
-                to: incoming.status,
-              });
-            }
-            incoming.updatedAt = nowIso;
-            // Preserve createdAt
-            incoming.createdAt = prev.createdAt || incoming.createdAt || nowIso;
-            list[idx] = incoming;
-          } else {
-            // ID provided but not found — treat as new
-            incoming.createdAt = incoming.createdAt || nowIso;
-            incoming.updatedAt = nowIso;
-            list.unshift(incoming);
-          }
-        } else {
-          // New request
-          incoming.id = 'twsl_' + Date.now() + '_' + Math.floor(Math.random() * 1000);
-          incoming.createdAt = nowIso;
-          incoming.updatedAt = nowIso;
-          if (!incoming.history) incoming.history = [];
-          incoming.history.push({
-            action: 'created',
-            by: incoming.requesterId || 'system',
-            at: nowIso,
-          });
-          list.unshift(incoming);
-        }
-
-        await dbSet('tawasul_requests', list.slice(0, 5000));
-        return res.json({ ok: true, id: incoming.id, request: incoming });
-      }
-
-      case 'tawasul-delete': {
-        if (req.method !== 'POST') return res.status(400).json({ ok: false, error: 'POST required' });
-        var body = req.body || {};
-        if (!body.id) return res.status(400).json({ ok: false, error: 'id required' });
-        var list = (await dbGet('tawasul_requests')) || [];
-        var filtered = list.filter(function(x){ return x.id !== body.id; });
-        await dbSet('tawasul_requests', filtered);
-        return res.json({ ok: true });
-      }
-
-      case 'tawasul-comment': {
-        if (req.method !== 'POST') return res.status(400).json({ ok: false, error: 'POST required' });
-        var body = req.body || {};
-        if (!body.id || !body.comment) return res.status(400).json({ ok: false, error: 'id + comment required' });
-        var list = (await dbGet('tawasul_requests')) || [];
-        var idx = list.findIndex(function(x){ return x.id === body.id; });
-        if (idx < 0) return res.status(404).json({ ok: false, error: 'request not found' });
-        if (!list[idx].comments) list[idx].comments = [];
-        var nowIso = new Date().toISOString();
-        list[idx].comments.push({
-          by: body.by || 'anonymous',
-          byName: body.byName || '',
-          text: body.comment,
-          at: nowIso,
-        });
-        list[idx].updatedAt = nowIso;
-        await dbSet('tawasul_requests', list);
-        return res.json({ ok: true });
-      }
-
-      case 'tawasul-categories': {
-        if (req.method === 'POST') {
-          var body = req.body || {};
-          await dbSet('tawasul_categories', body.categories || []);
-          return res.json({ ok: true });
-        }
-        var cats = (await dbGet('tawasul_categories')) || [];
-        return res.json({ categories: cats });
-      }
-
-      case 'tawasul-ai': {
-        // AI helper: analyzes description and suggests category + urgency + title
-        if (req.method !== 'POST') return res.status(400).json({ ok: false, error: 'POST required' });
-        var body = req.body || {};
-        var text = (body.text || '').trim();
-        if (!text) return res.json({ ok: false, error: 'text required' });
-
-        // Keyword-based heuristic (fast, no API cost, works offline)
-        var lower = text.toLowerCase();
-        var suggestedCategory = 'other';
-        var suggestedUrgency = 'normal';
-
-        // Category detection
-        var catPatterns = {
-          leave: ['إجاز', 'عطل', 'اجاز', 'إجازة', 'سنوية', 'مرضية', 'طارئة', 'عيد', 'سفر'],
-          maintenance: ['صيان', 'عطل ', 'تصليح', 'كسر', 'مكسور', 'خرب', 'كهرباء', 'تكييف', 'سباك', 'ماء', 'انترنت'],
-          clarification: ['توضيح', 'استفسار', 'شرح', 'كيف', 'لماذا', 'متى', 'وين', 'ما هو'],
-          info: ['معلوم', 'بيانات', 'تقرير', 'إحصائ', 'سجل', 'عدد'],
-          work: ['مهم', 'تسليم', 'مشروع', 'تنفيذ', 'عمل', 'طلب منك', 'نحتاج', 'مطلوب'],
-          legal: ['قانون', 'عقد', 'نظامي', 'محكم', 'مخالف', 'إنذار', 'محامي', 'قضية'],
-        };
-        var bestScore = 0;
-        Object.keys(catPatterns).forEach(function(catKey){
-          var score = 0;
-          catPatterns[catKey].forEach(function(kw){
-            if (lower.indexOf(kw) >= 0) score++;
-          });
-          if (score > bestScore) { bestScore = score; suggestedCategory = catKey; }
-        });
-
-        // Urgency detection
-        var urgentKw = ['عاجل', 'طارئ', 'فور', 'الآن', 'سريع', 'ضروري جداً', 'اليوم', 'مستعجل', 'خطير'];
-        for (var i = 0; i < urgentKw.length; i++) {
-          if (lower.indexOf(urgentKw[i]) >= 0) { suggestedUrgency = 'urgent'; break; }
-        }
-
-        // Title suggestion: first meaningful sentence, truncated
-        var suggestedTitle = text.split(/[.\n،]/)[0].trim();
-        if (suggestedTitle.length > 60) suggestedTitle = suggestedTitle.substring(0, 57) + '...';
-
-        return res.json({
-          ok: true,
-          category: suggestedCategory,
-          urgency: suggestedUrgency,
-          title: suggestedTitle,
-        });
       }
 
       /* ═══ PING — اختبار بسيط بدون fetch ═══ */
