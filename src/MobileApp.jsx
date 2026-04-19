@@ -10,7 +10,7 @@ import { ALL_VIOLATIONS_DEFAULT, PENALTY_TYPES, LAIHA_INFO, COMPLAINT_STATUS, VI
 
 /* ═══════════ APP CONFIG (إعدادات التطبيق) ═══════════ */
 const APP_CONFIG = {
-  VER: "4.95",
+  VER: "4.97",
   NAME: "بصمة HMA",
   FULL_NAME: "نظام الحضور والانصراف الذكي",
   COMPANY: "هاني محمد عسيري للاستشارات الهندسية",
@@ -957,7 +957,7 @@ function MobileAppInner() {
         {page === "report" && <ReportPage user={user} allAtt={allAtt} todayAtt={todayAtt} branch={branch} isOffDay={isOffDay()} myLeaves={myLeaves} allEmps={allEmps} />}
         {page === "benefits" && <BenefitsPage user={user} />}
         {page === "tawasul" && <TawasulPage user={user} allEmps={allEmps} />}
-        {page === "profile" && <ProfilePage user={user} branch={branch} onLogout={logout} onTicket={() => setTicketModal(true)} myTickets={myTickets} darkMode={darkMode} toggleDark={toggleDark} />}
+        {page === "profile" && <ProfilePage user={user} branch={branch} onLogout={logout} onTicket={() => setTicketModal(true)} myTickets={myTickets} darkMode={darkMode} toggleDark={toggleDark} kadwarNotifs={kadwarNotifs} />}
       </div>
 
       <BottomNav page={page} setPage={setPage} legalAlerts={legalAlerts} tawasulUnread={tawasulUnread} />
@@ -1158,9 +1158,10 @@ function HomePage({ user, branch, now, todayAtt, allAtt, gps, gpsDist, streak, l
   // Challenge state — inside the circle
   var [challengeQ] = useState(function() { return CHALLENGES[Math.floor(Math.random() * CHALLENGES.length)]; });
   var [challengeAnswer, setChallengeAnswer] = useState(null); // null = not answered, true = correct, false = wrong
-  var [kadwarFlip, setKadwarFlip] = useState(false);
   var challengeDoneToday = localStorage.getItem("basma_challenge_" + todayStr()) === "1";
-  var showChallenge = dayState === "before" && !challengeDoneToday && challengeAnswer === null;
+  // Show challenge if user hasn't checked in yet today AND hasn't already answered
+  var hasCheckedIn = (todayAtt || []).some(function(r){ return r.type === "checkin"; });
+  var showChallenge = !hasCheckedIn && !challengeDoneToday && challengeAnswer === null;
 
   function answerChallenge(idx) {
     if (challengeAnswer !== null) return;
@@ -1266,7 +1267,7 @@ function HomePage({ user, branch, now, todayAtt, allAtt, gps, gpsDist, streak, l
               {challengeQ.opts.map(function(opt, idx) { return <button key={idx} onClick={function(){ answerChallenge(idx); }} style={{ padding: "10px 16px", borderRadius: 12, background: "rgba(255,255,255,.12)", border: "1px solid rgba(255,255,255,.2)", fontSize: 13, fontWeight: 700, color: "#fff", cursor: "pointer", textAlign: "center" }}>{opt}</button>; })}
             </div>
           </div>
-        ) : challengeAnswer !== null && dayState === "before" ? (
+        ) : challengeAnswer !== null && !hasCheckedIn ? (
           <div style={{ textAlign: "center" }}>
             <div style={{ fontSize: 42 }}>{challengeAnswer ? "🎉" : "😅"}</div>
             <div style={{ fontSize: 14, fontWeight: 800, color: "#fff", marginTop: 6 }}>{challengeAnswer ? MASCOT.correct : MASCOT.wrong}</div>
@@ -1356,7 +1357,7 @@ function HomePage({ user, branch, now, todayAtt, allAtt, gps, gpsDist, streak, l
         )}
 
         {/* Challenge text below clock */}
-        {dayState === "before" && !showChallenge && challengeAnswer === null && challengeDoneToday && <div style={{ marginTop: SPACING.sm, ...TYPOGRAPHY.caption, color: COLORS.textSecondary }}>{"✓ أجبت على تحدي اليوم"}</div>}
+        {!hasCheckedIn && !showChallenge && challengeAnswer === null && challengeDoneToday && <div style={{ marginTop: SPACING.sm, ...TYPOGRAPHY.caption, color: COLORS.textSecondary }}>{"✓ أجبت على تحدي اليوم"}</div>}
       </div>
 
       {/* ═══ BOTTOM (unified buttons, uniform height) ═══ */}
@@ -1383,23 +1384,6 @@ function HomePage({ user, branch, now, todayAtt, allAtt, gps, gpsDist, streak, l
         <div style={{ display: "flex", gap: SPACING.sm }}>
           <Button variant="secondary" size="md" icon={<Icons.clipboard size={20} />} onClick={onLeave}>إجازة</Button>
           <Button variant="secondary" size="md" icon={<Icons.hand size={20} />} onClick={onPermission}>إذن</Button>
-        </div>
-
-        {/* كوادر — secondary flippable */}
-        <div className="basma-flip-container">
-          <div className={"basma-flip-inner" + (kadwarFlip ? " flipped" : "")} style={{ minHeight: 44 }}>
-            <div className="basma-flip-front">
-              <Button variant="secondary" size="md" icon={<Icons.building size={20} />} onClick={function(){ setKadwarFlip(true); }}>
-                الدخول إلى منصة كوادر
-              </Button>
-            </div>
-            <div className="basma-flip-back">
-              <div style={{ display: "flex", gap: SPACING.xs }}>
-                <KadwarBtn icon={<Icons.edit size={18} />} label="اختبار" count={kadwarNotifs.exams} />
-                <KadwarBtn icon={<Icons.user size={18} />} label="حسابي" count={kadwarNotifs.alerts} />
-              </div>
-            </div>
-          </div>
         </div>
       </div>
     </div>
@@ -1650,8 +1634,10 @@ function ReportPage({ user, allAtt, todayAtt, branch, isOffDay, myLeaves, allEmp
 }
 
 /* ═══════════ PROFILE ═══════════ */
-function ProfilePage({ user, branch, onLogout, onTicket, myTickets, darkMode, toggleDark }) {
+function ProfilePage({ user, branch, onLogout, onTicket, myTickets, darkMode, toggleDark, kadwarNotifs }) {
   var [tab, setTab] = useState(function(){ return localStorage.getItem("basma_profile_tab") || "info"; });
+  var [kadwarFlip, setKadwarFlip] = useState(false);
+  var kn = kadwarNotifs || { tasks: 0, exams: 0, alerts: 0 };
   useEffect(function(){ localStorage.setItem("basma_profile_tab", tab); }, [tab]);
   useEffect(function() {
     function handleTabChange() {
@@ -1726,6 +1712,23 @@ function ProfilePage({ user, branch, onLogout, onTicket, myTickets, darkMode, to
 
             <MembershipCard points={user.points || 0} />
             <PointsLogCard user={user} allAtt={[]} />
+
+            {/* كوادر — flippable card (moved from home) */}
+            <div className="basma-flip-container">
+              <div className={"basma-flip-inner" + (kadwarFlip ? " flipped" : "")} style={{ minHeight: 44 }}>
+                <div className="basma-flip-front">
+                  <Button variant="secondary" size="md" icon={<Icons.building size={20} />} onClick={function(){ setKadwarFlip(true); }}>
+                    الدخول إلى منصة كوادر
+                  </Button>
+                </div>
+                <div className="basma-flip-back">
+                  <div style={{ display: "flex", gap: SPACING.xs }}>
+                    <KadwarBtn icon={<Icons.edit size={18} />} label="اختبار" count={kn.exams} />
+                    <KadwarBtn icon={<Icons.user size={18} />} label="حسابي" count={kn.alerts} />
+                  </div>
+                </div>
+              </div>
+            </div>
 
             {/* Settings card */}
             <Card>
