@@ -3,7 +3,7 @@ import { ALL_VIOLATIONS_DEFAULT, PENALTY_TYPES, LAIHA_INFO, COMPLAINT_STATUS, VI
 import { generateAttendanceReport, generateEmployeeReport, generateMonthlySummary, generateViolationsReport, generateEmployeesListReport, generateBenefitsReport, generateAnnouncementsReport } from "./pdfReports";
 
 const APP = "بصمة HMA";
-const VER = "6.45";
+const VER = "6.47";
 const CO = "هاني محمد عسيري للإستشارات الهندسية";
 const B = { blue: "#2B5EA7", yellow: "#FDD800", red: "#E2192C", black: "#1A1A1A", blueDk: "#1E4478", blueLt: "#EDF3FB", gold: "#D4A017" };
 
@@ -515,6 +515,7 @@ export default function AdminApp() {
         { id: "employees", icon: "👥", label: "الموظفين" },
         { id: "org_hierarchy", icon: "🏢", label: "الهيكل التنظيمي" },
         { id: "leaves", icon: "📋", label: "الإجازات", badge: pending },
+        { id: "leave_balances", icon: "💰", label: "أرصدة الإجازات" },
         { id: "admin_requests", icon: "📝", label: "الطلبات" },
         { id: "complaints", icon: "📣", label: "الشكاوى", badge: badgeCounts.complaints },
         { id: "investigations", icon: "🔍", label: "التحقيقات", badge: badgeCounts.investigations },
@@ -1458,6 +1459,7 @@ export default function AdminApp() {
 
       {/* ═══ ADMIN PROFILE — تعديل حساب المدير العام ═══ */}
       {tab === "work_types" && <WorkTypesPanel t={t} B={B} emps={safeEmps} />}
+      {tab === "leave_balances" && <LeaveBalancesPanel t={t} B={B} emps={safeEmps} />}
       {tab === "benefits" && <BenefitsPanel t={t} B={B} />}
       {tab === "announcements" && <AnnouncementsPanel t={t} B={B} emps={safeEmps} branches={branches} />}
       {tab === "banners" && <BannersPanel t={t} B={B} />}
@@ -1853,6 +1855,340 @@ function WorkTypePickerModal({ t, B, emp, workTypes, currentKey, onClose, onSele
           <button onClick={handleSave} disabled={saving} style={{ flex: 2, padding: 12, borderRadius: 10, background: saving ? t.sep : B.blue, color: "#fff", border: "none", fontSize: 13, fontWeight: 800, cursor: saving ? "default" : "pointer", fontFamily: "inherit", WebkitTapHighlightColor: "transparent" }}>
             {saving ? "جارِ الحفظ..." : "✓ حفظ"}
           </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/* ═══ LEAVE BALANCES PANEL — لوحة إدارة رصيد الإجازات (v6.46) ═══ */
+var LEAVE_TYPES_META = {
+  annual:    { label: "سنوية",  icon: "🏖️", color: "#0891B2", light: "rgba(8,145,178,0.1)",  default: 21 },
+  sick:      { label: "مرضية",  icon: "🏥", color: "#DC2626", light: "rgba(220,38,38,0.1)",  default: 30 },
+  emergency: { label: "طارئة",  icon: "⚡",  color: "#D97706", light: "rgba(217,119,6,0.1)", default: 5  },
+  personal:  { label: "شخصية",  icon: "👤", color: "#7C3AED", light: "rgba(124,58,237,0.1)", default: 0  },
+};
+
+function LeaveBalancesPanel({ t, B, emps }) {
+  var [balances, setBalances] = useState({}); // { empId: { annual, sick, emergency, personal, year } }
+  var [leaves, setLeaves] = useState([]);
+  var [loading, setLoading] = useState(true);
+  var [search, setSearch] = useState("");
+  var [editEmp, setEditEmp] = useState(null); // currently editing employee
+  var [showHistory, setShowHistory] = useState(null); // empId whose history we're viewing
+  var [bulkBusy, setBulkBusy] = useState(false);
+
+  var curYear = new Date().getFullYear();
+
+  async function loadAll() {
+    setLoading(true);
+    try {
+      // Fetch balances for each employee in parallel
+      var results = await Promise.all(emps.map(function(e){
+        return fetch("/api/data?action=leave-balance&empId=" + encodeURIComponent(e.id))
+          .then(function(r){ return r.json(); })
+          .then(function(d){ return { empId: e.id, bal: (d && !d.error) ? d : null }; })
+          .catch(function(){ return { empId: e.id, bal: null }; });
+      }));
+      var bMap = {};
+      results.forEach(function(r){ if (r.bal) bMap[r.empId] = r.bal; });
+      setBalances(bMap);
+
+      // Fetch all leaves to show history
+      var lRes = await fetch("/api/data?action=leaves");
+      var lData = await lRes.json();
+      setLeaves(Array.isArray(lData) ? lData : []);
+    } catch(e) {}
+    setLoading(false);
+  }
+
+  useEffect(function(){ if (emps && emps.length) loadAll(); }, [emps]);
+
+  async function saveBalance(empId, newBal) {
+    try {
+      var r = await fetch("/api/data?action=leave-balance", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(Object.assign({ empId: empId }, newBal)),
+      });
+      var d = await r.json();
+      if (d && d.ok) {
+        setBalances(function(prev){
+          var n = Object.assign({}, prev);
+          n[empId] = d.balance;
+          return n;
+        });
+      }
+    } catch(e) {}
+  }
+
+  async function resetAllToDefault() {
+    if (!window.confirm("إعادة تعيين جميع الموظفين إلى الأرصدة الافتراضية (21 سنوية، 30 مرضية، 5 طارئة، 0 شخصية) لسنة " + curYear + "؟")) return;
+    setBulkBusy(true);
+    try {
+      await Promise.all(emps.map(function(e){
+        return fetch("/api/data?action=leave-balance", {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ empId: e.id, annual: 21, sick: 30, emergency: 5, personal: 0 }),
+        }).catch(function(){});
+      }));
+      await loadAll();
+      alert("✅ تم إعادة تعيين أرصدة " + emps.length + " موظف");
+    } catch(e) { alert("خطأ في إعادة التعيين"); }
+    setBulkBusy(false);
+  }
+
+  var filteredEmps = search.trim()
+    ? emps.filter(function(e){ return (e.name || "").toLowerCase().includes(search.toLowerCase()); })
+    : emps;
+
+  // Summary stats
+  var totalBalance = { annual: 0, sick: 0, emergency: 0, personal: 0 };
+  Object.values(balances).forEach(function(b){
+    totalBalance.annual += b.annual || 0;
+    totalBalance.sick += b.sick || 0;
+    totalBalance.emergency += b.emergency || 0;
+    totalBalance.personal += b.personal || 0;
+  });
+
+  if (loading) return <div style={{ padding: 30, textAlign: "center", color: t.txM }}>جارِ التحميل...</div>;
+
+  return (
+    <div style={{ maxWidth: 1100 }}>
+      {/* Gradient Header */}
+      <div style={{ background: "linear-gradient(135deg, " + B.blue + " 0%, " + B.blueDk + " 100%)", borderRadius: 16, padding: "20px 22px", marginBottom: 16, color: "#fff", boxShadow: "0 4px 20px rgba(43,94,167,0.25)" }}>
+        <div style={{ fontSize: 20, fontWeight: 800, marginBottom: 4 }}>💰 أرصدة الإجازات ({curYear})</div>
+        <div style={{ fontSize: 11, opacity: 0.9 }}>{emps.length} موظف · تعديل يدوي للرصيد + عرض السجل</div>
+      </div>
+
+      {/* Stats + bulk actions */}
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(140px, 1fr))", gap: 10, marginBottom: 16 }}>
+        {["annual","sick","emergency","personal"].map(function(k){
+          var m = LEAVE_TYPES_META[k];
+          return (
+            <div key={k} style={{ background: t.card, borderRadius: 12, padding: 14, border: "1px solid " + t.sep, borderTop: "3px solid " + m.color }}>
+              <div style={{ fontSize: 10, color: t.txM, fontWeight: 700, marginBottom: 4 }}>{m.icon} {m.label}</div>
+              <div style={{ fontSize: 20, fontWeight: 900, color: m.color }}>{totalBalance[k]}</div>
+              <div style={{ fontSize: 9, color: t.txM }}>إجمالي المتبقي</div>
+            </div>
+          );
+        })}
+        <div style={{ background: t.card, borderRadius: 12, padding: 14, border: "1px solid " + t.sep, borderTop: "3px solid #10B981", display: "flex", flexDirection: "column", justifyContent: "center" }}>
+          <button onClick={resetAllToDefault} disabled={bulkBusy} style={{ padding: "8px 10px", borderRadius: 8, background: "#10B981", color: "#fff", border: "none", fontSize: 11, fontWeight: 700, cursor: bulkBusy ? "default" : "pointer", fontFamily: "inherit" }}>
+            {bulkBusy ? "⏳..." : "🔄 إعادة تعيين الكل"}
+          </button>
+          <div style={{ fontSize: 9, color: t.txM, marginTop: 4, textAlign: "center" }}>لبداية السنة الجديدة</div>
+        </div>
+      </div>
+
+      {/* Search */}
+      {emps.length > 10 && (
+        <input type="text" value={search} onChange={function(e){ setSearch(e.target.value); }} placeholder="🔍 بحث عن موظف..." style={{ width: "100%", padding: "11px 14px", borderRadius: 10, border: "1px solid " + t.sep, background: t.inp, color: t.tx, fontSize: 12, fontFamily: "inherit", outline: "none", marginBottom: 10, boxSizing: "border-box" }} />
+      )}
+
+      {/* Employee list */}
+      <div style={{ background: t.card, borderRadius: 14, padding: 14, border: "1px solid " + t.sep }}>
+        {filteredEmps.length === 0 ? (
+          <div style={{ color: t.txM, fontSize: 12, padding: 30, textAlign: "center" }}>لا يوجد نتائج</div>
+        ) : (
+          filteredEmps.map(function(e){
+            var bal = balances[e.id] || { annual: 21, sick: 30, emergency: 5, personal: 0, year: curYear };
+            var initial = (e.name || "؟").trim().charAt(0);
+            var empLeaves = leaves.filter(function(l){ return l.empId === e.id && l.status === "approved"; });
+            return (
+              <div key={e.id} style={{ display: "flex", alignItems: "center", gap: 12, padding: "12px 14px", borderRadius: 10, background: t.bg, marginBottom: 6, border: "1px solid " + t.sep, WebkitTapHighlightColor: "transparent" }}>
+                <div style={{ width: 38, height: 38, borderRadius: 19, background: B.blue + "22", color: B.blue, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 15, fontWeight: 800, flexShrink: 0 }}>{initial}</div>
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div style={{ fontSize: 13, fontWeight: 700, color: t.tx, marginBottom: 6, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{e.name || "موظف بدون اسم"}</div>
+                  <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+                    {["annual","sick","emergency","personal"].map(function(k){
+                      var m = LEAVE_TYPES_META[k];
+                      return (
+                        <div key={k} style={{ padding: "3px 8px", borderRadius: 8, background: m.light, color: m.color, fontSize: 10, fontWeight: 700, display: "inline-flex", alignItems: "center", gap: 3 }}>
+                          <span>{m.icon}</span><span>{bal[k] || 0}</span>
+                        </div>
+                      );
+                    })}
+                    {empLeaves.length > 0 && (
+                      <button onClick={function(){ setShowHistory(e.id); }} style={{ padding: "3px 8px", borderRadius: 8, background: "rgba(110,110,115,0.1)", color: t.txM, fontSize: 10, fontWeight: 700, border: "none", cursor: "pointer", fontFamily: "inherit" }}>
+                        📜 {empLeaves.length} معتمدة
+                      </button>
+                    )}
+                  </div>
+                </div>
+                <button onClick={function(){ setEditEmp(e); }} style={{ padding: "7px 12px", borderRadius: 8, background: B.blue, color: "#fff", fontSize: 11, fontWeight: 700, border: "none", cursor: "pointer", fontFamily: "inherit", flexShrink: 0 }}>
+                  ✎ تعديل
+                </button>
+              </div>
+            );
+          })
+        )}
+      </div>
+
+      {/* Edit Modal */}
+      {editEmp && (
+        <LeaveBalanceEditModal
+          t={t}
+          B={B}
+          emp={editEmp}
+          balance={balances[editEmp.id] || { annual: 21, sick: 30, emergency: 5, personal: 0, year: curYear }}
+          onClose={function(){ setEditEmp(null); }}
+          onSave={async function(newBal){
+            await saveBalance(editEmp.id, newBal);
+            setEditEmp(null);
+          }}
+        />
+      )}
+
+      {/* History Modal */}
+      {showHistory && (
+        <LeaveHistoryModal
+          t={t}
+          B={B}
+          emp={emps.find(function(x){ return x.id === showHistory; })}
+          leaves={leaves.filter(function(l){ return l.empId === showHistory; })}
+          onClose={function(){ setShowHistory(null); }}
+        />
+      )}
+    </div>
+  );
+}
+
+function LeaveBalanceEditModal({ t, B, emp, balance, onClose, onSave }) {
+  var [annual, setAnnual] = useState(balance.annual || 0);
+  var [sick, setSick] = useState(balance.sick || 0);
+  var [emergency, setEmergency] = useState(balance.emergency || 0);
+  var [personal, setPersonal] = useState(balance.personal || 0);
+  var [saving, setSaving] = useState(false);
+
+  useEffect(function(){
+    var prev = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    return function(){ document.body.style.overflow = prev; };
+  }, []);
+
+  async function handleSave() {
+    setSaving(true);
+    await onSave({
+      annual: parseInt(annual, 10) || 0,
+      sick: parseInt(sick, 10) || 0,
+      emergency: parseInt(emergency, 10) || 0,
+      personal: parseInt(personal, 10) || 0,
+    });
+    setSaving(false);
+  }
+
+  function resetDefaults() {
+    setAnnual(21); setSick(30); setEmergency(5); setPersonal(0);
+  }
+
+  var inputStyle = { width: "100%", padding: "10px 12px", borderRadius: 8, border: "1px solid " + t.sep, background: t.inp, color: t.tx, fontSize: 14, fontFamily: "inherit", outline: "none", boxSizing: "border-box", fontWeight: 800, textAlign: "center" };
+
+  return (
+    <div onClick={onClose} style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.55)", zIndex: 9999, display: "flex", alignItems: "center", justifyContent: "center", padding: 12 }}>
+      <div onClick={function(e){ e.stopPropagation(); }} style={{ background: t.card, borderRadius: 18, maxWidth: 440, width: "100%", maxHeight: "92vh", overflowY: "auto", boxShadow: "0 10px 40px rgba(0,0,0,0.3)" }}>
+        <div style={{ padding: "18px 20px", borderBottom: "1px solid " + t.sep }}>
+          <div style={{ fontSize: 15, fontWeight: 800, color: t.tx }}>💰 تعديل رصيد الإجازات</div>
+          <div style={{ fontSize: 11, color: t.txM, marginTop: 3, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{emp.name || "موظف"} · سنة {balance.year || new Date().getFullYear()}</div>
+        </div>
+
+        <div style={{ padding: 18 }}>
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12, marginBottom: 14 }}>
+            {[
+              { key: "annual", setter: setAnnual, val: annual },
+              { key: "sick", setter: setSick, val: sick },
+              { key: "emergency", setter: setEmergency, val: emergency },
+              { key: "personal", setter: setPersonal, val: personal },
+            ].map(function(f){
+              var m = LEAVE_TYPES_META[f.key];
+              return (
+                <div key={f.key} style={{ padding: 12, borderRadius: 10, background: m.light, border: "1px solid " + m.color + "44" }}>
+                  <div style={{ fontSize: 11, fontWeight: 700, color: m.color, marginBottom: 6, display: "flex", alignItems: "center", gap: 4 }}>
+                    <span>{m.icon}</span><span>{m.label}</span>
+                  </div>
+                  <input type="number" min="0" value={f.val} onChange={function(e){ f.setter(e.target.value); }} style={inputStyle} />
+                  <div style={{ fontSize: 9, color: t.txM, marginTop: 4, textAlign: "center" }}>أيام متبقية</div>
+                </div>
+              );
+            })}
+          </div>
+
+          <button onClick={resetDefaults} style={{ width: "100%", padding: 10, borderRadius: 8, background: "transparent", color: t.tx, border: "1px dashed " + t.sep, fontSize: 11, fontWeight: 700, cursor: "pointer", fontFamily: "inherit" }}>
+            ↺ استعادة الافتراضيات (21 / 30 / 5 / 0)
+          </button>
+
+          <div style={{ marginTop: 14, padding: 10, borderRadius: 8, background: "rgba(217,119,6,0.1)", border: "1px solid rgba(217,119,6,0.3)", fontSize: 11, color: "#D97706", fontWeight: 600, lineHeight: 1.6 }}>
+            ⚠️ تنبيه: تعديل الرصيد لا يُلغي إجازات معتمدة سابقاً. يؤثر فقط على المتبقي.
+          </div>
+        </div>
+
+        <div style={{ padding: "14px 20px", borderTop: "1px solid " + t.sep, display: "flex", gap: 10 }}>
+          <button onClick={onClose} style={{ flex: 1, padding: 12, borderRadius: 10, background: t.bg, color: t.tx, border: "1px solid " + t.sep, fontSize: 13, fontWeight: 700, cursor: "pointer", fontFamily: "inherit" }}>إلغاء</button>
+          <button onClick={handleSave} disabled={saving} style={{ flex: 2, padding: 12, borderRadius: 10, background: saving ? t.sep : B.blue, color: "#fff", border: "none", fontSize: 13, fontWeight: 800, cursor: saving ? "default" : "pointer", fontFamily: "inherit" }}>
+            {saving ? "جارِ الحفظ..." : "✓ حفظ"}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function LeaveHistoryModal({ t, B, emp, leaves, onClose }) {
+  useEffect(function(){
+    var prev = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    return function(){ document.body.style.overflow = prev; };
+  }, []);
+
+  var statusMeta = {
+    pending: { label: "قيد المراجعة", color: "#D97706", bg: "rgba(217,119,6,0.1)" },
+    approved: { label: "معتمدة", color: "#10B981", bg: "rgba(16,185,129,0.1)" },
+    rejected: { label: "مرفوضة", color: "#DC2626", bg: "rgba(220,38,38,0.1)" },
+  };
+
+  // Sort by date desc
+  var sorted = (leaves || []).slice().sort(function(a,b){ return (b.ts || "").localeCompare(a.ts || ""); });
+
+  return (
+    <div onClick={onClose} style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.55)", zIndex: 9999, display: "flex", alignItems: "center", justifyContent: "center", padding: 12 }}>
+      <div onClick={function(e){ e.stopPropagation(); }} style={{ background: t.card, borderRadius: 18, maxWidth: 540, width: "100%", maxHeight: "90vh", overflowY: "auto", boxShadow: "0 10px 40px rgba(0,0,0,0.3)" }}>
+        <div style={{ padding: "18px 20px", borderBottom: "1px solid " + t.sep, display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+          <div>
+            <div style={{ fontSize: 15, fontWeight: 800, color: t.tx }}>📜 سجل الإجازات</div>
+            <div style={{ fontSize: 11, color: t.txM, marginTop: 3 }}>{emp && emp.name} · {sorted.length} طلب</div>
+          </div>
+          <button onClick={onClose} style={{ background: "none", border: "none", fontSize: 22, color: t.txM, cursor: "pointer", padding: 4 }}>×</button>
+        </div>
+
+        <div style={{ padding: 14 }}>
+          {sorted.length === 0 ? (
+            <div style={{ color: t.txM, fontSize: 12, padding: 30, textAlign: "center" }}>لا توجد إجازات</div>
+          ) : (
+            sorted.map(function(l){
+              var s = statusMeta[l.status] || { label: l.status, color: t.txM, bg: t.bg };
+              var m = LEAVE_TYPES_META[l.type] || { label: l.type, icon: "📋", color: t.txM };
+              return (
+                <div key={l.id} style={{ padding: 12, borderRadius: 10, background: t.bg, marginBottom: 8, border: "1px solid " + t.sep }}>
+                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 6 }}>
+                    <div style={{ display: "inline-flex", alignItems: "center", gap: 5, padding: "3px 8px", borderRadius: 8, background: m.color + "22", color: m.color, fontSize: 11, fontWeight: 700 }}>
+                      <span>{m.icon}</span><span>{m.label}</span>
+                    </div>
+                    <div style={{ padding: "3px 8px", borderRadius: 8, background: s.bg, color: s.color, fontSize: 10, fontWeight: 700 }}>{s.label}</div>
+                  </div>
+                  <div style={{ fontSize: 11, color: t.tx, marginBottom: 4 }}>
+                    <strong>{l.days || 1}</strong> يوم · من {l.from} إلى {l.to}
+                  </div>
+                  {l.reason && <div style={{ fontSize: 10, color: t.txM, fontStyle: "italic" }}>"{l.reason}"</div>}
+                  <div style={{ fontSize: 9, color: t.txM, marginTop: 4 }}>
+                    📅 قُدِّم: {l.ts ? new Date(l.ts).toLocaleDateString("ar-SA") : "—"}
+                    {l.decidedAt && " · قُرِّر: " + new Date(l.decidedAt).toLocaleDateString("ar-SA")}
+                  </div>
+                  {l.rejectReason && <div style={{ fontSize: 10, color: "#DC2626", marginTop: 4 }}>❌ سبب الرفض: {l.rejectReason}</div>}
+                </div>
+              );
+            })
+          )}
         </div>
       </div>
     </div>

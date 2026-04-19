@@ -10,7 +10,7 @@ import { ALL_VIOLATIONS_DEFAULT, PENALTY_TYPES, LAIHA_INFO, COMPLAINT_STATUS, VI
 
 /* ═══════════ APP CONFIG (إعدادات التطبيق) ═══════════ */
 const APP_CONFIG = {
-  VER: "6.45",
+  VER: "6.47",
   NAME: "بصمة HMA",
   FULL_NAME: "نظام الحضور والانصراف الذكي",
   COMPANY: "هاني محمد عسيري للاستشارات الهندسية",
@@ -82,13 +82,24 @@ if (typeof document !== "undefined" && !document.getElementById("basma-css")) {
     "body.basma-modal-open{overflow:hidden!important;position:fixed!important;width:100%!important;top:0;left:0;touch-action:none;overscroll-behavior:contain}",
     ".basma-modal-content{-webkit-overflow-scrolling:touch;overscroll-behavior:contain;touch-action:pan-y}",
     ".basma-modal-overlay{-webkit-tap-highlight-color:transparent;touch-action:none}",
-    /* v6.43 — Desktop session: expand modals to match frame width */
-    "body.basma-desktop-mode div[style*='maxWidth: 420px']{max-width:720px!important}",
-    "body.basma-desktop-mode div[style*='maxWidth: 380px']{max-width:640px!important}",
-    "body.basma-desktop-mode div[style*='maxWidth: 360px']{max-width:600px!important}",
-    "body.basma-desktop-mode div[style*='maxWidth: 500px']{max-width:760px!important}",
-    "body.basma-desktop-mode div[style*='max-width: 420px']{max-width:720px!important}",
+    /* v6.43/v6.47 — Desktop session: expand modals to match frame width.
+       CSS attribute matches against the rendered style attribute (React outputs kebab-case). */
+    "body.basma-desktop-mode div[style*='max-width: 340px']{max-width:560px!important}",
+    "body.basma-desktop-mode div[style*='max-width: 360px']{max-width:600px!important}",
     "body.basma-desktop-mode div[style*='max-width: 380px']{max-width:640px!important}",
+    "body.basma-desktop-mode div[style*='max-width: 420px']{max-width:700px!important}",
+    "body.basma-desktop-mode div[style*='max-width: 430px']{max-width:720px!important}",
+    "body.basma-desktop-mode div[style*='max-width: 440px']{max-width:720px!important}",
+    "body.basma-desktop-mode div[style*='max-width: 500px']{max-width:780px!important}",
+    "body.basma-desktop-mode div[style*='max-width: 600px']{max-width:820px!important}",
+    /* Older/unspaced variants just in case */
+    "body.basma-desktop-mode div[style*='max-width:340px']{max-width:560px!important}",
+    "body.basma-desktop-mode div[style*='max-width:360px']{max-width:600px!important}",
+    "body.basma-desktop-mode div[style*='max-width:380px']{max-width:640px!important}",
+    "body.basma-desktop-mode div[style*='max-width:420px']{max-width:700px!important}",
+    "body.basma-desktop-mode div[style*='max-width:430px']{max-width:720px!important}",
+    "body.basma-desktop-mode div[style*='max-width:440px']{max-width:720px!important}",
+    "body.basma-desktop-mode div[style*='max-width:500px']{max-width:780px!important}",
   ].join("\n");
   document.head.appendChild(style);
 
@@ -415,6 +426,13 @@ function MobileAppInner() {
 
   // Persist page across refresh (skip in desktop mode to always force tawasul)
   useEffect(function(){ if (!isDesktopSession) localStorage.setItem("basma_page", page); }, [page, isDesktopSession]);
+
+  // v6.47 — In desktop mode, force page back to tawasul if it ever changes
+  useEffect(function(){
+    if (isDesktopSession && page !== "tawasul") {
+      setPage("tawasul");
+    }
+  }, [isDesktopSession, page]);
 
   // Listen for "go to legal" event from InvestigationBanner
   useEffect(function() {
@@ -2046,8 +2064,8 @@ function ProfilePage({ user, branch, workType, onLogout, onTicket, myTickets, da
         {tab === "record" && <EmployeeRecordTab user={user} />}
         {tab === "legal" && <LegalTab user={user} />}
 
-        {/* Manager panel button */}
-        {(user.isManager || user.isAssistant) && (
+        {/* Manager panel button — hidden in desktop session (v6.47) */}
+        {(user.isManager || user.isAssistant) && !(user && user._desktopSession) && (
           <Button variant="primary" size="md" icon={<Icons.building size={20} />} onClick={function(){ window.location.hash = "admin"; }}>
             لوحة الإدارة
           </Button>
