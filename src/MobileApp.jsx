@@ -10,7 +10,7 @@ import { ALL_VIOLATIONS_DEFAULT, PENALTY_TYPES, LAIHA_INFO, COMPLAINT_STATUS, VI
 
 /* ═══════════ APP CONFIG (إعدادات التطبيق) ═══════════ */
 const APP_CONFIG = {
-  VER: "6.48",
+  VER: "6.49",
   NAME: "بصمة HMA",
   FULL_NAME: "نظام الحضور والانصراف الذكي",
   COMPANY: "هاني محمد عسيري للاستشارات الهندسية",
@@ -4972,7 +4972,6 @@ function TawasulPage({ user, allEmps }) {
   var subordinatesSet = React.useMemo(function(){
     var result = new Set();
     if (!myId || !hierarchy || Object.keys(hierarchy).length === 0) {
-      // v6.48 — diagnostic logging
       try {
         console.log("[Tawasul/إدارتي] subordinatesSet empty because:", {
           myId: myId,
@@ -4983,35 +4982,64 @@ function TawasulPage({ user, allEmps }) {
       } catch(e) {}
       return result;
     }
-    var myStr = String(myId);
-    // Build reverse index: manager -> [subordinates]
+
+    // v6.49 — Collect all possible user identifiers (email, id, username, kadwarId, idNumber)
+    // because login may return user.id = email while hierarchy stores internal emp.id
+    var myAliases = new Set();
+    if (user) {
+      [user.id, user.email, user.username, user.kadwarId, user.idNumber].forEach(function(x){
+        if (x) myAliases.add(String(x).toLowerCase());
+      });
+    }
+    [myId].forEach(function(x){ if (x) myAliases.add(String(x).toLowerCase()); });
+
+    // Build reverse index: manager (lowercased) -> [subordinates]
     var reverse = {};
     Object.keys(hierarchy).forEach(function(empKey){
-      var mgr = String(hierarchy[empKey]);
+      var mgr = String(hierarchy[empKey]).toLowerCase();
       if (!reverse[mgr]) reverse[mgr] = [];
       reverse[mgr].push(empKey);
     });
-    // BFS from me
-    var queue = (reverse[myStr] || []).slice();
+
+    // BFS from ANY of my aliases
+    var queue = [];
+    myAliases.forEach(function(alias){
+      if (reverse[alias]) queue.push.apply(queue, reverse[alias]);
+    });
     while (queue.length > 0) {
       var cur = queue.shift();
       if (result.has(cur)) continue;
       result.add(cur);
-      if (reverse[cur]) queue.push.apply(queue, reverse[cur]);
+      // For transitive subordinates, also match by their lowercase alias
+      var curLower = String(cur).toLowerCase();
+      if (reverse[curLower]) queue.push.apply(queue, reverse[curLower]);
     }
-    // v6.48 — diagnostic
+
+    // v6.49 — Admin/general manager fallback: see all employees as subordinates
+    if (isAdmin || (user && (user.isAdmin || user.isGeneralManager))) {
+      if (result.size === 0 && allEmps && allEmps.length > 0) {
+        allEmps.forEach(function(e){
+          var eid = String(e.id || e.username || "").toLowerCase();
+          // Skip self
+          if (myAliases.has(eid)) return;
+          result.add(String(e.id || e.username));
+        });
+      }
+    }
+
     try {
       console.log("[Tawasul/إدارتي] hierarchy analysis:", {
-        myId: myStr,
+        myId: myId,
+        myAliases: Array.from(myAliases),
         totalHierarchyEntries: Object.keys(hierarchy).length,
         managersInHierarchy: Object.keys(reverse),
-        myDirectReports: reverse[myStr] || [],
+        matchedByAlias: Array.from(myAliases).filter(function(a){ return !!reverse[a]; }),
         mySubordinatesSetSize: result.size,
-        mySubordinates: Array.from(result),
+        adminFallbackApplied: (isAdmin || (user && (user.isAdmin || user.isGeneralManager))) && result.size > 0,
       });
     } catch(e) {}
     return result;
-  }, [myId, hierarchy]);
+  }, [myId, hierarchy, user, isAdmin, allEmps]);
 
   var hasSubordinates = subordinatesSet.size > 0;
 
@@ -5437,21 +5465,22 @@ function TawasulPage({ user, allEmps }) {
 
       {err && <div style={{ margin: "0 12px 12px", padding: "12px 14px", borderRadius: 12, background: "rgba(239,68,68,0.1)", border: "1px solid #EF4444", color: "#EF4444", fontSize: 12, fontWeight: 600, display: "flex", alignItems: "center", gap: 8 }}><span style={{ fontSize: 18 }}>⚠️</span><div style={{ flex: 1 }}>{err}</div><button onClick={function(){ loadData(true); }} style={{ background: "#EF4444", border: "none", borderRadius: 8, padding: "6px 12px", color: "#fff", fontSize: 11, fontWeight: 700, cursor: "pointer", fontFamily: "inherit" }}>إعادة</button></div>}
 
-      {/* v6.48 — Hierarchy diagnostic banner (shows only for managers/admins when subordinates set is empty) */}
+      {/* v6.48/v6.49 — Hierarchy diagnostic banner (managers with empty subordinates) */}
       {!err && (user && (user.isManager || user.isAdmin || isAdmin)) && !hasSubordinates && (
         <div style={{ margin: "0 12px 12px", padding: "14px 16px", borderRadius: 12, background: "rgba(245,158,11,0.1)", border: "1px solid #F59E0B", color: "#B45309", fontSize: 12, lineHeight: 1.7 }}>
-          <div style={{ fontWeight: 800, marginBottom: 6, fontSize: 13 }}>📊 تبويبات "إدارتي" مخفية لأن الهرمية غير معرّفة</div>
+          <div style={{ fontWeight: 800, marginBottom: 6, fontSize: 13 }}>📊 تبويبات "إدارتي" مخفية</div>
           <div style={{ fontSize: 11, marginBottom: 8 }}>
             <strong>رقمك (myId):</strong> {String(myId)}<br/>
-            <strong>عدد العلاقات المحفوظة:</strong> {hierarchy ? Object.keys(hierarchy).length : 0}
+            <strong>عدد العلاقات المحفوظة:</strong> {hierarchy ? Object.keys(hierarchy).length : 0}<br/>
+            <strong>عدد الموظفين المحمّلين:</strong> {allEmps ? allEmps.length : 0}
           </div>
           <div style={{ fontSize: 11, marginBottom: 8 }}>
             {hierarchy && Object.keys(hierarchy).length > 0
-              ? "الهرمية موجودة لكن لا أحد مُسند لك. تحقق أن الـ ID المحفوظ للمدير يطابق رقمك."
+              ? "الهرمية موجودة لكن لا أحد مُسند لك بأي من أسمائك البديلة (email/id/username). تحقق من تعيين الموظفين لك في لوحة الإدارة."
               : "الهرمية فارغة. افتح لوحة الإدارة → الهيكل التنظيمي → عيّن مديراً لكل موظف."
             }
           </div>
-          <div style={{ fontSize: 10, color: "#78350F", fontStyle: "italic" }}>افتح Console (F12) لتفاصيل أكثر · أرسل النتيجة للمطور</div>
+          <div style={{ fontSize: 10, color: "#78350F", fontStyle: "italic" }}>افتح Console (F12) للتفاصيل الكاملة · hasSubordinates={String(hasSubordinates)}</div>
         </div>
       )}
 
