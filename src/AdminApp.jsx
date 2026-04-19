@@ -3,7 +3,7 @@ import { ALL_VIOLATIONS_DEFAULT, PENALTY_TYPES, LAIHA_INFO, COMPLAINT_STATUS, VI
 import { generateAttendanceReport, generateEmployeeReport, generateMonthlySummary, generateViolationsReport, generateEmployeesListReport, generateBenefitsReport, generateAnnouncementsReport } from "./pdfReports";
 
 const APP = "بصمة HMA";
-const VER = "5.02";
+const VER = "5.05";
 const CO = "هاني محمد عسيري للإستشارات الهندسية";
 const B = { blue: "#2B5EA7", yellow: "#FDD800", red: "#E2192C", black: "#1A1A1A", blueDk: "#1E4478", blueLt: "#EDF3FB", gold: "#D4A017" };
 
@@ -522,6 +522,7 @@ export default function AdminApp() {
     { id: "benefits", icon: "🏅", label: "الامتيازات" },
     { id: "announcements", icon: "📢", label: "التعاميم" },
     { id: "banners", icon: "🎨", label: "إدارة البنر" },
+    { id: "tawasul", icon: "🤝", label: "نظام تواصل" },
     { id: "test_panel", icon: "🧪", label: "اختبار النظام" },
     { id: "storage", icon: "💾", label: "التخزين" },
     { id: "admin_profile", icon: "🔐", label: "حساب المدير العام" },
@@ -1330,6 +1331,7 @@ export default function AdminApp() {
       {tab === "benefits" && <BenefitsPanel t={t} B={B} />}
       {tab === "announcements" && <AnnouncementsPanel t={t} B={B} emps={safeEmps} branches={branches} />}
       {tab === "banners" && <BannersPanel t={t} B={B} />}
+      {tab === "tawasul" && <TawasulAdminPanel t={t} B={B} />}
       {tab === "test_panel" && <TestPanel t={t} B={B} emps={safeEmps} />}
       {tab === "storage" && <StoragePanel t={t} B={B} />}
 
@@ -1965,6 +1967,457 @@ function BannerEditModal({ t, B, banner, onClose, onSaved }) {
 }
 
 /* ═══ TEST PANEL — صفحة اختبار ═══ */
+
+function TawasulAdminPanel({ t, B }) {
+  var [subtab, setSubtab] = useState("tasks"); // tasks | categories | projects
+  var [data, setData] = useState(null);
+  var [loading, setLoading] = useState(true);
+  var [err, setErr] = useState("");
+
+  async function load() {
+    setLoading(true); setErr("");
+    try {
+      var r = await fetch("/api/data?action=tawasul-list");
+      var d = await r.json();
+      if (d.error) { setErr(d.error); }
+      setData({ requests: d.requests || [], categories: d.categories || [], projects: d.projects || [] });
+    } catch(e) { setErr(e.message); }
+    setLoading(false);
+  }
+  useEffect(function(){ load(); }, []);
+
+  if (loading) return <div style={{ padding: 20, textAlign: "center", color: t.txM }}>⏳ جارِ التحميل...</div>;
+  if (err) return <div style={{ padding: 20, color: "#ef4444", textAlign: "center" }}>⚠️ {err}</div>;
+  if (!data) return null;
+
+  var reqs = data.requests;
+  var stats = {
+    total: reqs.length,
+    open: reqs.filter(function(r){ return ["closed","cancelled","evaluated","rejected"].indexOf(r.status) < 0; }).length,
+    escalated: reqs.filter(function(r){ return r.escalation; }).length,
+    late: reqs.filter(function(r){
+      if (!r.deadline) return false;
+      if (["closed","cancelled","evaluated"].indexOf(r.status) >= 0) return false;
+      return new Date(r.deadline).getTime() < Date.now();
+    }).length,
+  };
+
+  return (
+    <div style={{ padding: 20 }}>
+      <div style={{ fontSize: 22, fontWeight: 800, color: B.blue, marginBottom: 20 }}>🤝 نظام تواصل — إدارة</div>
+
+      {/* Stats cards */}
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 12, marginBottom: 24 }}>
+        <div style={{ background: t.card, border: "1px solid " + t.sep, borderRadius: 12, padding: 14, textAlign: "center" }}>
+          <div style={{ fontSize: 26, fontWeight: 900, color: B.blue }}>{stats.total}</div>
+          <div style={{ fontSize: 11, color: t.txM, marginTop: 4 }}>إجمالي المهام</div>
+        </div>
+        <div style={{ background: t.card, border: "1px solid " + t.sep, borderRadius: 12, padding: 14, textAlign: "center" }}>
+          <div style={{ fontSize: 26, fontWeight: 900, color: "#f59e0b" }}>{stats.open}</div>
+          <div style={{ fontSize: 11, color: t.txM, marginTop: 4 }}>مفتوحة</div>
+        </div>
+        <div style={{ background: t.card, border: "1px solid " + t.sep, borderRadius: 12, padding: 14, textAlign: "center" }}>
+          <div style={{ fontSize: 26, fontWeight: 900, color: "#ef4444" }}>{stats.escalated}</div>
+          <div style={{ fontSize: 11, color: t.txM, marginTop: 4 }}>مصعّدة</div>
+        </div>
+        <div style={{ background: t.card, border: "1px solid " + t.sep, borderRadius: 12, padding: 14, textAlign: "center" }}>
+          <div style={{ fontSize: 26, fontWeight: 900, color: "#dc2626" }}>{stats.late}</div>
+          <div style={{ fontSize: 11, color: t.txM, marginTop: 4 }}>متأخرة</div>
+        </div>
+      </div>
+
+      {/* Subtabs */}
+      <div style={{ display: "flex", gap: 8, marginBottom: 16, borderBottom: "1px solid " + t.sep }}>
+        {[
+          { id: "tasks", icon: "📋", label: "كل المهام" },
+          { id: "categories", icon: "🏷️", label: "الفئات" },
+          { id: "projects", icon: "🏗️", label: "المشاريع" },
+          { id: "permissions", icon: "🔐", label: "الصلاحيات" },
+        ].map(function(s){
+          var active = subtab === s.id;
+          return <button key={s.id} onClick={function(){ setSubtab(s.id); }} style={{ padding: "10px 16px", background: "none", border: "none", borderBottom: active ? "2px solid " + B.blue : "2px solid transparent", color: active ? B.blue : t.txM, fontSize: 13, fontWeight: 700, cursor: "pointer", fontFamily: "inherit" }}>{s.icon} {s.label}</button>;
+        })}
+        <div style={{ flex: 1 }} />
+        <button onClick={load} style={{ padding: "6px 14px", background: t.card, color: t.tx, border: "1px solid " + t.sep, borderRadius: 8, fontSize: 12, fontWeight: 700, cursor: "pointer", fontFamily: "inherit", marginBottom: 4 }}>⟳ تحديث</button>
+      </div>
+
+      {subtab === "tasks" && <TawasulAdminTasksList reqs={reqs} t={t} B={B} onChange={load} />}
+      {subtab === "categories" && <TawasulAdminCategories categories={data.categories} t={t} B={B} onChange={load} />}
+      {subtab === "projects" && <TawasulAdminProjects projects={data.projects} t={t} B={B} onChange={load} />}
+      {subtab === "permissions" && <TawasulAdminPermissions t={t} B={B} />}
+    </div>
+  );
+}
+
+function TawasulAdminTasksList({ reqs, t, B, onChange }) {
+  var [filter, setFilter] = useState("all"); // all | open | closed | escalated
+  var filtered = reqs.filter(function(r){
+    if (filter === "open") return ["closed","cancelled","evaluated","rejected"].indexOf(r.status) < 0;
+    if (filter === "closed") return ["closed","cancelled","evaluated"].indexOf(r.status) >= 0;
+    if (filter === "escalated") return !!r.escalation;
+    return true;
+  }).sort(function(a,b){ return new Date(b.updatedAt || 0) - new Date(a.updatedAt || 0); });
+
+  var statusMeta = {
+    draft: { label: "مسودة", color: "#94a3b8" },
+    sent: { label: "مُرسَلة", color: "#3b82f6" },
+    received: { label: "مستلمة", color: "#22c55e" },
+    accepted: { label: "مقبولة", color: "#22c55e" },
+    inprogress: { label: "قيد التنفيذ", color: "#7c3aed" },
+    delivered: { label: "تم التسليم", color: "#b8960c" },
+    evaluated: { label: "مُقيَّمة", color: "#10b981" },
+    closed: { label: "مغلقة", color: "#10b981" },
+    rejected: { label: "مرفوضة", color: "#ef4444" },
+    incomplete: { label: "بحاجة استكمال", color: "#f59e0b" },
+    cancelled: { label: "ملغاة", color: "#64748b" },
+  };
+
+  async function deleteTask(id) {
+    if (!confirm("حذف هذه المهمة نهائياً؟")) return;
+    try {
+      await fetch("/api/data?action=tawasul-delete", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ id: id }) });
+      onChange();
+    } catch(e) { alert("فشل: " + e.message); }
+  }
+
+  return (
+    <div>
+      <div style={{ display: "flex", gap: 6, marginBottom: 12, flexWrap: "wrap" }}>
+        {[
+          { id: "all", label: "الكل (" + reqs.length + ")" },
+          { id: "open", label: "مفتوحة" },
+          { id: "closed", label: "منجزة" },
+          { id: "escalated", label: "🔴 مصعّدة" },
+        ].map(function(f){
+          var active = filter === f.id;
+          return <button key={f.id} onClick={function(){ setFilter(f.id); }} style={{ padding: "6px 14px", borderRadius: 8, background: active ? B.blue : t.card, color: active ? "#fff" : t.tx, border: "1px solid " + (active ? B.blue : t.sep), fontSize: 12, fontWeight: 700, cursor: "pointer", fontFamily: "inherit" }}>{f.label}</button>;
+        })}
+      </div>
+
+      {filtered.length === 0 ? (
+        <div style={{ padding: 40, textAlign: "center", color: t.txM, background: t.card, borderRadius: 12 }}>لا توجد مهام</div>
+      ) : (
+        <div style={{ background: t.card, borderRadius: 12, overflow: "hidden", border: "1px solid " + t.sep }}>
+          {filtered.map(function(r, idx){
+            var m = statusMeta[r.status] || { label: r.status, color: "#64748b" };
+            return (
+              <div key={r.id} style={{ padding: 14, borderBottom: idx < filtered.length - 1 ? "1px solid " + t.sep : "none", display: "flex", alignItems: "center", gap: 12 }}>
+                <div style={{ fontSize: 11, fontFamily: "monospace", color: t.txM, minWidth: 60 }}>{r.serial || "—"}</div>
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div style={{ fontSize: 13, fontWeight: 700, color: t.tx, marginBottom: 3 }}>{r.title || "(بدون عنوان)"}</div>
+                  <div style={{ fontSize: 11, color: t.txM }}>
+                    من: {r.requesterName || "—"} ← إلى: {(r.assignees || []).map(function(a){ return a.name; }).join("، ") || "—"}
+                  </div>
+                </div>
+                <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
+                  {r.escalation && <span style={{ padding: "3px 8px", borderRadius: 6, fontSize: 10, fontWeight: 800, background: r.escalation === "red" ? "#fee" : "#fef3c7", color: r.escalation === "red" ? "#ef4444" : "#b45309" }}>{r.escalation === "red" ? "🔴" : "🟡"}</span>}
+                  {r.urgency === "urgent" && <span style={{ padding: "3px 8px", borderRadius: 6, fontSize: 10, fontWeight: 800, background: "#fee", color: "#ef4444" }}>🔴 عاجل</span>}
+                  <span style={{ padding: "3px 10px", borderRadius: 6, fontSize: 10, fontWeight: 800, background: m.color + "22", color: m.color }}>{m.label}</span>
+                  <button onClick={function(){ deleteTask(r.id); }} title="حذف" style={{ padding: "4px 8px", background: "rgba(239,68,68,0.1)", color: "#ef4444", border: "1px solid rgba(239,68,68,0.3)", borderRadius: 6, fontSize: 11, cursor: "pointer", fontFamily: "inherit" }}>🗑</button>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function TawasulAdminCategories({ categories, t, B, onChange }) {
+  var [editing, setEditing] = useState(null); // null | newIdx | number
+  var [working, setWorking] = useState(categories || []);
+  useEffect(function(){ setWorking(categories || []); }, [categories]);
+
+  async function save(newList) {
+    try {
+      var r = await fetch("/api/data?action=tawasul-categories", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ categories: newList }) });
+      var d = await r.json();
+      if (d.error) throw new Error(d.error);
+      setWorking(newList);
+      onChange();
+    } catch(e) { alert("فشل: " + e.message); }
+  }
+
+  function addNew() {
+    var newItem = { id: "cat_" + Date.now(), label: "فئة جديدة", icon: "📎", fixed: false };
+    save(working.concat([newItem]));
+  }
+  function updateItem(idx, patch) {
+    var nl = working.slice();
+    nl[idx] = Object.assign({}, nl[idx], patch);
+    save(nl);
+  }
+  function deleteItem(idx) {
+    if (working[idx].fixed) { alert("لا يمكن حذف فئة ثابتة"); return; }
+    if (!confirm("حذف هذه الفئة؟")) return;
+    save(working.filter(function(_, i){ return i !== idx; }));
+  }
+
+  return (
+    <div>
+      <div style={{ marginBottom: 14 }}>
+        <button onClick={addNew} style={{ padding: "8px 16px", background: B.blue, color: "#fff", border: "none", borderRadius: 8, fontSize: 13, fontWeight: 700, cursor: "pointer", fontFamily: "inherit" }}>+ إضافة فئة</button>
+      </div>
+      <div style={{ background: t.card, borderRadius: 12, overflow: "hidden", border: "1px solid " + t.sep }}>
+        {working.map(function(cat, idx){
+          return (
+            <div key={cat.id || idx} style={{ padding: 14, borderBottom: idx < working.length - 1 ? "1px solid " + t.sep : "none", display: "flex", alignItems: "center", gap: 10 }}>
+              <input value={cat.icon || ""} onChange={function(e){ updateItem(idx, { icon: e.target.value }); }} maxLength={2} style={{ width: 40, padding: 6, borderRadius: 6, border: "1px solid " + t.sep, background: t.bg, color: t.tx, fontSize: 18, textAlign: "center", fontFamily: "inherit" }} />
+              <input value={cat.label || ""} onChange={function(e){ updateItem(idx, { label: e.target.value }); }} style={{ flex: 1, padding: 8, borderRadius: 6, border: "1px solid " + t.sep, background: t.bg, color: t.tx, fontSize: 13, fontFamily: "inherit" }} />
+              <span style={{ fontSize: 10, color: t.txM, fontFamily: "monospace" }}>{cat.id}</span>
+              {cat.fixed && <span style={{ padding: "3px 8px", borderRadius: 6, background: B.yellow + "22", color: B.yellow, fontSize: 10, fontWeight: 700 }}>🔒 ثابتة</span>}
+              <button onClick={function(){ deleteItem(idx); }} disabled={cat.fixed} style={{ padding: "6px 10px", background: cat.fixed ? "#ccc" : "rgba(239,68,68,0.1)", color: cat.fixed ? "#666" : "#ef4444", border: "1px solid " + (cat.fixed ? "#ccc" : "rgba(239,68,68,0.3)"), borderRadius: 6, fontSize: 11, cursor: cat.fixed ? "not-allowed" : "pointer", fontFamily: "inherit" }}>🗑</button>
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+function TawasulAdminProjects({ projects, t, B, onChange }) {
+  var [working, setWorking] = useState(projects || []);
+  useEffect(function(){ setWorking(projects || []); }, [projects]);
+
+  async function save(newList) {
+    try {
+      var r = await fetch("/api/data?action=tawasul-projects", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ projects: newList }) });
+      var d = await r.json();
+      if (d.error) throw new Error(d.error);
+      setWorking(newList);
+      onChange();
+    } catch(e) { alert("فشل: " + e.message); }
+  }
+
+  function addNew() {
+    var newItem = { id: "prj_" + Date.now(), name: "مشروع جديد", client: "", branch: "", status: "active" };
+    save(working.concat([newItem]));
+  }
+  function updateItem(idx, patch) {
+    var nl = working.slice();
+    nl[idx] = Object.assign({}, nl[idx], patch);
+    save(nl);
+  }
+  function deleteItem(idx) {
+    if (!confirm("حذف هذا المشروع؟")) return;
+    save(working.filter(function(_, i){ return i !== idx; }));
+  }
+
+  return (
+    <div>
+      <div style={{ marginBottom: 14 }}>
+        <button onClick={addNew} style={{ padding: "8px 16px", background: B.blue, color: "#fff", border: "none", borderRadius: 8, fontSize: 13, fontWeight: 700, cursor: "pointer", fontFamily: "inherit" }}>+ إضافة مشروع</button>
+      </div>
+      {working.length === 0 ? (
+        <div style={{ padding: 40, textAlign: "center", color: t.txM, background: t.card, borderRadius: 12 }}>لا توجد مشاريع</div>
+      ) : (
+        <div style={{ background: t.card, borderRadius: 12, overflow: "hidden", border: "1px solid " + t.sep }}>
+          {working.map(function(p, idx){
+            return (
+              <div key={p.id || idx} style={{ padding: 14, borderBottom: idx < working.length - 1 ? "1px solid " + t.sep : "none", display: "flex", alignItems: "center", gap: 10 }}>
+                <input value={p.name || ""} onChange={function(e){ updateItem(idx, { name: e.target.value }); }} placeholder="اسم المشروع" style={{ flex: 2, padding: 8, borderRadius: 6, border: "1px solid " + t.sep, background: t.bg, color: t.tx, fontSize: 13, fontFamily: "inherit" }} />
+                <input value={p.client || ""} onChange={function(e){ updateItem(idx, { client: e.target.value }); }} placeholder="العميل" style={{ flex: 1, padding: 8, borderRadius: 6, border: "1px solid " + t.sep, background: t.bg, color: t.tx, fontSize: 13, fontFamily: "inherit" }} />
+                <input value={p.branch || ""} onChange={function(e){ updateItem(idx, { branch: e.target.value }); }} placeholder="الفرع" style={{ width: 110, padding: 8, borderRadius: 6, border: "1px solid " + t.sep, background: t.bg, color: t.tx, fontSize: 13, fontFamily: "inherit" }} />
+                <button onClick={function(){ deleteItem(idx); }} style={{ padding: "6px 10px", background: "rgba(239,68,68,0.1)", color: "#ef4444", border: "1px solid rgba(239,68,68,0.3)", borderRadius: 6, fontSize: 11, cursor: "pointer", fontFamily: "inherit" }}>🗑</button>
+              </div>
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function TawasulAdminPermissions({ t, B }) {
+  var [perms, setPerms] = useState([]);
+  var [loading, setLoading] = useState(true);
+  var [err, setErr] = useState("");
+  var [search, setSearch] = useState("");
+  var [editing, setEditing] = useState(null); // employee object
+  var [saving, setSaving] = useState(false);
+
+  async function load() {
+    setLoading(true); setErr("");
+    try {
+      var r = await fetch("/api/data?action=tawasul-permissions");
+      var d = await r.json();
+      if (d.error) setErr(d.error);
+      else setPerms(d.permissions || []);
+    } catch(e) { setErr(e.message); }
+    setLoading(false);
+  }
+  useEffect(function(){ load(); }, []);
+
+  async function saveEmployee(empId, inbox, allowedSenders) {
+    setSaving(true);
+    try {
+      var r = await fetch("/api/data?action=tawasul-permissions", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ empId: empId, tawasulInbox: inbox, tawasulAllowedSenders: allowedSenders || [] }),
+      });
+      var d = await r.json();
+      if (d.error) throw new Error(d.error);
+      await load();
+      setEditing(null);
+    } catch(e) { alert("فشل: " + e.message); }
+    setSaving(false);
+  }
+
+  var filtered = perms.filter(function(p){
+    if (!search.trim()) return true;
+    var q = search.toLowerCase();
+    return (p.name || "").toLowerCase().indexOf(q) >= 0 || (p.username || "").toLowerCase().indexOf(q) >= 0 || (p.department || "").toLowerCase().indexOf(q) >= 0;
+  });
+
+  function inboxMeta(mode) {
+    if (mode === "none") return { label: "🚫 لا أحد يرسل", color: "#ef4444" };
+    if (mode === "restricted") return { label: "🔒 محدود", color: "#f59e0b" };
+    return { label: "🟢 الكل", color: "#22c55e" };
+  }
+
+  if (loading) return <div style={{ padding: 20, textAlign: "center", color: t.txM }}>⏳ جارِ التحميل...</div>;
+  if (err) return <div style={{ padding: 20, color: "#ef4444" }}>⚠️ {err}</div>;
+
+  return (
+    <div>
+      <div style={{ padding: 14, background: B.blue + "10", borderRadius: 10, border: "1px solid " + B.blue + "40", marginBottom: 16, fontSize: 12, color: t.tx, lineHeight: 1.7 }}>
+        💡 <strong>صلاحيات استلام المهام:</strong> تحدد هنا من يحق لهم إرسال مهام لكل موظف. يمكن: <strong>الكل</strong> (افتراضي) / <strong>محدود</strong> (قائمة معينة فقط) / <strong>لا أحد</strong>.
+      </div>
+
+      <input type="text" value={search} onChange={function(e){ setSearch(e.target.value); }} placeholder="🔍 بحث بالاسم أو القسم..." style={{ width: "100%", padding: "10px 14px", borderRadius: 10, border: "1px solid " + t.sep, background: t.card, color: t.tx, fontSize: 13, fontFamily: "inherit", outline: "none", boxSizing: "border-box", marginBottom: 14 }} />
+
+      <div style={{ background: t.card, borderRadius: 12, overflow: "hidden", border: "1px solid " + t.sep }}>
+        {filtered.length === 0 ? (
+          <div style={{ padding: 40, textAlign: "center", color: t.txM }}>لا توجد نتائج</div>
+        ) : filtered.map(function(p, idx){
+          var m = inboxMeta(p.tawasulInbox);
+          var allowedCount = (p.tawasulAllowedSenders || []).length;
+          return (
+            <div key={p.id || p.username} style={{ padding: 14, borderBottom: idx < filtered.length - 1 ? "1px solid " + t.sep : "none", display: "flex", alignItems: "center", gap: 12 }}>
+              <div style={{ width: 36, height: 36, borderRadius: 18, background: B.blueLt, color: B.blue, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 14, fontWeight: 800, flexShrink: 0 }}>
+                {(p.name || p.username || "?").charAt(0)}
+              </div>
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <div style={{ fontSize: 13, fontWeight: 700, color: t.tx }}>{p.name || p.username}</div>
+                <div style={{ fontSize: 10, color: t.txM, marginTop: 2 }}>
+                  {p.department || "—"}
+                  {p.tawasulInbox === "restricted" && <span style={{ marginRight: 6, color: "#f59e0b" }}>• {allowedCount} مسموح لهم</span>}
+                </div>
+              </div>
+              <span style={{ padding: "4px 10px", borderRadius: 6, fontSize: 10, fontWeight: 800, background: m.color + "22", color: m.color }}>{m.label}</span>
+              <button onClick={function(){ setEditing(p); }} style={{ padding: "6px 12px", background: B.blue, color: "#fff", border: "none", borderRadius: 6, fontSize: 11, fontWeight: 700, cursor: "pointer", fontFamily: "inherit" }}>⚙️ تعديل</button>
+            </div>
+          );
+        })}
+      </div>
+
+      {editing && <TawasulPermissionEditor employee={editing} allEmps={perms} t={t} B={B} saving={saving} onSave={saveEmployee} onClose={function(){ setEditing(null); }} />}
+    </div>
+  );
+}
+
+function TawasulPermissionEditor({ employee, allEmps, t, B, saving, onSave, onClose }) {
+  var [inbox, setInbox] = useState(employee.tawasulInbox || "anyone");
+  var [allowedSenders, setAllowedSenders] = useState(employee.tawasulAllowedSenders || []);
+  var [search, setSearch] = useState("");
+
+  function toggleSender(empId) {
+    var strId = String(empId);
+    if (allowedSenders.map(String).indexOf(strId) >= 0) {
+      setAllowedSenders(allowedSenders.filter(function(x){ return String(x) !== strId; }));
+    } else {
+      setAllowedSenders(allowedSenders.concat([empId]));
+    }
+  }
+
+  var others = allEmps.filter(function(p){
+    if (String(p.id) === String(employee.id)) return false; // skip self
+    if (!search.trim()) return true;
+    var q = search.toLowerCase();
+    return (p.name || "").toLowerCase().indexOf(q) >= 0 || (p.username || "").toLowerCase().indexOf(q) >= 0;
+  });
+
+  return (
+    <div onClick={onClose} style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.7)", zIndex: 1100, display: "flex", alignItems: "center", justifyContent: "center", padding: 14, fontFamily: Fn }}>
+      <div onClick={function(e){ e.stopPropagation(); }} style={{ background: t.card, borderRadius: 14, maxWidth: 540, width: "100%", maxHeight: "92vh", overflowY: "auto", direction: "rtl", color: t.tx }}>
+        <div style={{ padding: 16, borderBottom: "1px solid " + t.sep, display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+          <div>
+            <div style={{ fontSize: 15, fontWeight: 800, color: B.blue }}>🔐 صلاحيات استلام المهام</div>
+            <div style={{ fontSize: 12, color: t.txM, marginTop: 2 }}>{employee.name || employee.username}</div>
+          </div>
+          <button onClick={onClose} style={{ background: "none", border: "none", fontSize: 24, color: t.txM, cursor: "pointer" }}>×</button>
+        </div>
+
+        <div style={{ padding: 16 }}>
+          <div style={{ fontSize: 12, fontWeight: 700, color: t.txM, marginBottom: 8 }}>من يستطيع إرسال مهام لهذا الموظف؟</div>
+          <div style={{ display: "flex", flexDirection: "column", gap: 6, marginBottom: 16 }}>
+            {[
+              { id: "anyone", icon: "🟢", title: "الكل", desc: "أي موظف يستطيع الإرسال (الافتراضي)", color: "#22c55e" },
+              { id: "restricted", icon: "🔒", title: "محدود", desc: "فقط الموظفون المُحددون في القائمة أدناه", color: "#f59e0b" },
+              { id: "none", icon: "🚫", title: "لا أحد", desc: "لا أحد يستطيع إرسال مهام لهذا الحساب", color: "#ef4444" },
+            ].map(function(opt){
+              var active = inbox === opt.id;
+              return (
+                <button key={opt.id} onClick={function(){ setInbox(opt.id); }} style={{
+                  padding: "12px 14px",
+                  borderRadius: 10,
+                  background: active ? opt.color + "15" : t.bg,
+                  color: active ? opt.color : t.tx,
+                  border: "2px solid " + (active ? opt.color : t.sep),
+                  cursor: "pointer",
+                  fontFamily: "inherit",
+                  textAlign: "right",
+                  display: "flex",
+                  alignItems: "flex-start",
+                  gap: 10,
+                }}>
+                  <span style={{ fontSize: 22, lineHeight: 1 }}>{opt.icon}</span>
+                  <div style={{ flex: 1 }}>
+                    <div style={{ fontSize: 13, fontWeight: 800 }}>{opt.title}</div>
+                    <div style={{ fontSize: 11, color: active ? opt.color : t.txM, fontWeight: 500, marginTop: 3 }}>{opt.desc}</div>
+                  </div>
+                  {active && <span style={{ fontSize: 20 }}>✓</span>}
+                </button>
+              );
+            })}
+          </div>
+
+          {inbox === "restricted" && (
+            <div>
+              <div style={{ fontSize: 12, fontWeight: 700, color: t.txM, marginBottom: 6 }}>اختر الموظفين المسموح لهم ({allowedSenders.length} محدد):</div>
+              <input type="text" value={search} onChange={function(e){ setSearch(e.target.value); }} placeholder="🔍 بحث..." style={{ width: "100%", padding: "8px 12px", borderRadius: 8, border: "1px solid " + t.sep, background: t.bg, color: t.tx, fontSize: 12, fontFamily: "inherit", outline: "none", boxSizing: "border-box", marginBottom: 8 }} />
+              <div style={{ maxHeight: 260, overflowY: "auto", border: "1px solid " + t.sep, borderRadius: 8 }}>
+                {others.map(function(emp){
+                  var isChecked = allowedSenders.map(String).indexOf(String(emp.id)) >= 0;
+                  return (
+                    <label key={emp.id || emp.username} style={{ display: "flex", alignItems: "center", gap: 10, padding: "8px 12px", cursor: "pointer", background: isChecked ? B.blue + "10" : "transparent", borderBottom: "1px solid " + t.sep + "66" }}>
+                      <input type="checkbox" checked={isChecked} onChange={function(){ toggleSender(emp.id); }} style={{ width: 16, height: 16, accentColor: B.blue }} />
+                      <div style={{ flex: 1 }}>
+                        <div style={{ fontSize: 12, fontWeight: 700, color: t.tx }}>{emp.name || emp.username}</div>
+                        <div style={{ fontSize: 10, color: t.txM }}>{emp.department || "—"}</div>
+                      </div>
+                    </label>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+        </div>
+
+        <div style={{ padding: "12px 16px", borderTop: "1px solid " + t.sep, display: "flex", gap: 8 }}>
+          <button onClick={onClose} style={{ flex: 1, padding: 10, borderRadius: 8, background: t.bg, color: t.tx, border: "1px solid " + t.sep, fontSize: 13, fontWeight: 700, cursor: "pointer", fontFamily: "inherit" }}>إلغاء</button>
+          <button onClick={function(){ onSave(employee.id || employee.username, inbox, allowedSenders); }} disabled={saving} style={{ flex: 2, padding: 10, borderRadius: 8, background: saving ? "#ccc" : B.blue, color: "#fff", border: "none", fontSize: 13, fontWeight: 800, cursor: saving ? "default" : "pointer", fontFamily: "inherit" }}>
+            {saving ? "جارِ الحفظ..." : "💾 حفظ الصلاحيات"}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+
 function TestPanel({ t, B, emps }) {
   var [selected, setSelected] = useState(emps[0] ? emps[0].id : "");
   var [log, setLog] = useState([]);

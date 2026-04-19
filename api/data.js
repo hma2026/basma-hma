@@ -1614,6 +1614,43 @@ export default async function handler(req, res) {
         }
       }
 
+      case 'tawasul-permissions': {
+        // Manage per-employee inbox permissions (admin only)
+        // Each employee has: tawasulInbox ("anyone" | "restricted" | "none")
+        //                     tawasulAllowedSenders: [empId, empId, ...]
+        try {
+          if (req.method === 'POST') {
+            var body = req.body || {};
+            var empId = body.empId;
+            if (!empId) return res.status(400).json({ error: 'empId required' });
+            var emps = (await dbGet('employees')) || [];
+            var idx = emps.findIndex(function(e){ return String(e.id) === String(empId) || e.username === empId; });
+            if (idx < 0) return res.status(404).json({ error: 'employee not found' });
+            emps[idx] = Object.assign({}, emps[idx], {
+              tawasulInbox: body.tawasulInbox || 'anyone',
+              tawasulAllowedSenders: Array.isArray(body.tawasulAllowedSenders) ? body.tawasulAllowedSenders : [],
+            });
+            await dbSet('employees', emps);
+            return res.json({ ok: true, employee: emps[idx] });
+          }
+          // GET: list all employees with their permissions
+          var empsR = (await dbGet('employees')) || [];
+          var perms = empsR.map(function(e){
+            return {
+              id: e.id,
+              username: e.username,
+              name: e.name,
+              department: e.department,
+              tawasulInbox: e.tawasulInbox || 'anyone',
+              tawasulAllowedSenders: e.tawasulAllowedSenders || [],
+            };
+          });
+          return res.json({ ok: true, permissions: perms });
+        } catch (e) {
+          return res.status(500).json({ error: 'permissions error: ' + (e.message || 'unknown') });
+        }
+      }
+
       /* ═══ BANNERS — بنر الصفحة الرئيسية ═══ */
       case 'banners': {
         if (req.method === 'POST') {

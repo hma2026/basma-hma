@@ -10,7 +10,7 @@ import { ALL_VIOLATIONS_DEFAULT, PENALTY_TYPES, LAIHA_INFO, COMPLAINT_STATUS, VI
 
 /* ═══════════ APP CONFIG (إعدادات التطبيق) ═══════════ */
 const APP_CONFIG = {
-  VER: "5.02",
+  VER: "5.05",
   NAME: "بصمة HMA",
   FULL_NAME: "نظام الحضور والانصراف الذكي",
   COMPANY: "هاني محمد عسيري للاستشارات الهندسية",
@@ -2160,15 +2160,53 @@ function TawasulCreateModal({ user, allEmps, categories, projects, onClose, onSa
     updateForm({ timed: true, deadline: val });
   }
 
-  // Group employees per spec 6.3
+  // Robust self-identification (multiple possible keys)
+  function isSelf(e) {
+    if (!e) return false;
+    var candidates = [
+      user && user.id,
+      user && user.username,
+      user && user.email,
+      user && user.idNumber,
+    ].filter(Boolean).map(String);
+    var empIds = [e.id, e.username, e.email, e.idNumber].filter(Boolean).map(String);
+    for (var i = 0; i < candidates.length; i++) {
+      for (var j = 0; j < empIds.length; j++) {
+        if (candidates[i] === empIds[j]) return true;
+      }
+    }
+    return false;
+  }
+
+  // Permission filter: employee's inbox setting controls who can send to them
+  function canSendTo(emp) {
+    // anyone = default (no restriction)
+    var inbox = emp.tawasulInbox;
+    if (!inbox || inbox === "anyone") return true;
+    // Restricted: whitelist allowedSenders
+    if (inbox === "restricted") {
+      var allowed = emp.tawasulAllowedSenders || [];
+      var myIds = [user && user.id, user && user.username, user && user.email, user && user.idNumber].filter(Boolean).map(String);
+      for (var i = 0; i < allowed.length; i++) {
+        if (myIds.indexOf(String(allowed[i])) >= 0) return true;
+      }
+      return false;
+    }
+    // "none" = no one can send
+    if (inbox === "none") return false;
+    return true;
+  }
+
+  // Group employees per spec 6.3 (excluding self + respecting permissions)
   var empGroups = (function(){
-    var myEmp = (allEmps || []).find(function(e){ return String(e.id) === String(myId) || e.username === user.username; }) || {};
+    var myEmp = (allEmps || []).find(function(e){ return isSelf(e); }) || {};
     var managers = [];
     var peers = [];
     var subordinates = [];
     var others = [];
     (allEmps || []).forEach(function(e){
-      if (String(e.id) === String(myId) || e.username === user.username) return;
+      if (isSelf(e)) return; // ← skip self reliably
+      if (!canSendTo(e)) return; // ← skip those who don't allow me to send
       var isManager = e.id === myEmp.managerId || e.role === "admin" || e.role === "hr_manager" || e.isAdmin;
       var isSubordinate = (myEmp.id && (e.managerId === myEmp.id || e.supervisorId === myEmp.id));
       var isPeer = myEmp.department && e.department === myEmp.department;
@@ -2182,7 +2220,8 @@ function TawasulCreateModal({ user, allEmps, categories, projects, onClose, onSa
 
   function toggleAssignee(emp) {
     var eid = emp.id || emp.username;
-    if (String(eid) === String(myId) || eid === user.username) { setErr("لا يمكنك تكليف نفسك بالمهمة"); return; }
+    if (isSelf(emp)) { setErr("⚠️ لا يمكنك تكليف نفسك بالمهمة"); return; }
+    if (!canSendTo(emp)) { setErr("⚠️ لا تملك صلاحية إرسال مهام لهذا الموظف"); return; }
     setErr("");
     var list = form.assignees || [];
     var idx = list.findIndex(function(a){ return String(a.id) === String(eid); });
@@ -2602,54 +2641,113 @@ function TawasulCreateModal({ user, allEmps, categories, projects, onClose, onSa
   );
 }
 
-/* ═══════════ TAWASUL REASON MODAL (reject/return) ═══════════ */
+/* ═══════════ TAWASUL REASON MODAL (reject/return/escalate) ═══════════ */
 function TawasulReasonModal({ title, reasons, requireLegal, onConfirm, onClose, confirmColor, confirmLabel }) {
   var [reasonId, setReasonId] = useState("");
   var [reasonText, setReasonText] = useState("");
   var [legalAck, setLegalAck] = useState(false);
   var [busy, setBusy] = useState(false);
+
+  var mainColor = confirmColor || "#ef4444";
   var inputStyle = { width: "100%", padding: "10px 12px", borderRadius: 10, border: "1px solid " + C.cardBorder, background: C.card, color: C.text, fontSize: 13, fontFamily: "'Tajawal',sans-serif", outline: "none", boxSizing: "border-box" };
 
+  // Determine action type from title
+  var isReject = title.indexOf("رفض") >= 0;
+  var isReturn = title.indexOf("إرجاع") >= 0;
+  var isEscalate = title.indexOf("تصعيد") >= 0;
+  var icon = isReject ? "❌" : isReturn ? "📋" : isEscalate ? "⬆️" : "⚠️";
+  var subtitle = isReject
+    ? "رفض المهمة نهائياً — تُعاد للمُرسِل"
+    : isReturn
+    ? "إرجاع للاستكمال — المُرسِل يكمّل النواقص ويعيد الإرسال"
+    : isEscalate
+    ? "رفع المشكلة لمستوى أعلى (مدير/HR)"
+    : "";
+
   function handleConfirm() {
-    if (!reasonId) return alert("اختر سبباً");
-    if (!reasonText.trim()) return alert("اكتب تفصيلاً");
-    if (requireLegal && !legalAck) return alert("يجب الإقرار بالتحذير القانوني");
+    if (!reasonId) return alert("⚠️ اختر سبباً من القائمة");
+    if (!reasonText.trim()) return alert("⚠️ اكتب تفصيلاً للسبب");
+    if (requireLegal && !legalAck) return alert("⚠️ يجب الإقرار بالتحذير القانوني قبل المتابعة");
     setBusy(true);
     onConfirm({ reasonId: reasonId, reasonText: reasonText.trim(), reasonLabel: (reasons.find(function(r){ return r.id === reasonId; }) || {}).label });
   }
 
   return (
-    <div onClick={onClose} style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.7)", zIndex: 1100, display: "flex", alignItems: "center", justifyContent: "center", padding: 14, fontFamily: "'Tajawal',sans-serif" }}>
-      <div onClick={function(e){ e.stopPropagation(); }} style={{ background: C.bg, borderRadius: 16, maxWidth: 420, width: "100%", maxHeight: "90vh", overflowY: "auto", direction: "rtl", color: C.text }}>
-        <div style={{ padding: 16, borderBottom: "1px solid " + C.cardBorder, display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-          <div style={{ fontSize: 15, fontWeight: 900 }}>{title}</div>
-          <button onClick={onClose} style={{ background: "none", border: "none", fontSize: 22, color: C.sub, cursor: "pointer" }}>×</button>
+    <div onClick={onClose} style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.75)", zIndex: 1100, display: "flex", alignItems: "center", justifyContent: "center", padding: 12, fontFamily: "'Tajawal',sans-serif" }}>
+      <div onClick={function(e){ e.stopPropagation(); }} style={{ background: C.bg, borderRadius: 18, maxWidth: 440, width: "100%", maxHeight: "92vh", overflowY: "auto", direction: "rtl", color: C.text, overflow: "hidden" }}>
+
+        {/* COLORED HEADER */}
+        <div style={{ background: "linear-gradient(135deg, " + mainColor + ", " + mainColor + "cc)", padding: "20px 18px", color: "#fff", position: "relative" }}>
+          <button onClick={onClose} style={{ position: "absolute", top: 12, left: 12, background: "rgba(255,255,255,0.2)", border: "none", borderRadius: 8, width: 30, height: 30, fontSize: 18, color: "#fff", cursor: "pointer", fontFamily: "inherit" }}>×</button>
+          <div style={{ fontSize: 32, marginBottom: 6 }}>{icon}</div>
+          <div style={{ fontSize: 18, fontWeight: 900, fontFamily: "'Cairo',sans-serif", marginBottom: 4 }}>{title}</div>
+          {subtitle && <div style={{ fontSize: 12, opacity: 0.9, fontWeight: 500 }}>{subtitle}</div>}
         </div>
-        <div style={{ padding: 16 }}>
-          <div style={{ fontSize: 11, fontWeight: 700, color: C.sub, marginBottom: 6 }}>السبب *:</div>
-          <div style={{ display: "flex", flexDirection: "column", gap: 6, marginBottom: 12 }}>
+
+        <div style={{ padding: 18 }}>
+          {/* REASON SELECTION */}
+          <div style={{ fontSize: 12, fontWeight: 800, color: C.text, marginBottom: 8, display: "flex", alignItems: "center", gap: 6 }}>
+            <span style={{ color: mainColor }}>1.</span> اختر السبب *
+          </div>
+          <div style={{ display: "flex", flexDirection: "column", gap: 6, marginBottom: 16 }}>
             {reasons.map(function(r){
               var active = reasonId === r.id;
-              return <button key={r.id} onClick={function(){ setReasonId(r.id); }} style={{ padding: "10px 12px", borderRadius: 10, background: active ? C.hdr2 : C.card, color: active ? "#fff" : C.text, border: "1.5px solid " + (active ? C.hdr2 : C.cardBorder), fontSize: 12, fontWeight: 700, cursor: "pointer", fontFamily: "inherit", textAlign: "right" }}>{r.label}</button>;
+              return (
+                <button key={r.id} onClick={function(){ setReasonId(r.id); }} style={{
+                  padding: "12px 14px",
+                  borderRadius: 12,
+                  background: active ? mainColor + "15" : C.card,
+                  color: active ? mainColor : C.text,
+                  border: "2px solid " + (active ? mainColor : C.cardBorder),
+                  fontSize: 13,
+                  fontWeight: active ? 800 : 600,
+                  cursor: "pointer",
+                  fontFamily: "inherit",
+                  textAlign: "right",
+                  transition: "all 0.15s",
+                  display: "flex",
+                  alignItems: "center",
+                  gap: 8,
+                }}>
+                  <span style={{ width: 18, height: 18, borderRadius: 9, border: "2px solid " + (active ? mainColor : C.cardBorder), background: active ? mainColor : "transparent", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
+                    {active && <span style={{ color: "#fff", fontSize: 11, fontWeight: 900 }}>✓</span>}
+                  </span>
+                  <span>{r.label}</span>
+                </button>
+              );
             })}
           </div>
-          <div style={{ fontSize: 11, fontWeight: 700, color: C.sub, marginBottom: 6 }}>تفصيل نصي *:</div>
-          <textarea value={reasonText} onChange={function(e){ setReasonText(e.target.value); }} placeholder="اشرح السبب بالتفصيل..." rows={3} style={Object.assign({}, inputStyle, { resize: "vertical" })} />
 
+          {/* TEXTAREA */}
+          <div style={{ fontSize: 12, fontWeight: 800, color: C.text, marginBottom: 8, display: "flex", alignItems: "center", gap: 6 }}>
+            <span style={{ color: mainColor }}>2.</span> تفصيل السبب *
+          </div>
+          <textarea value={reasonText} onChange={function(e){ setReasonText(e.target.value); }} placeholder="اشرح السبب بالتفصيل — سيكون جزءاً من السجل الرسمي..." rows={4} style={Object.assign({}, inputStyle, { resize: "vertical", minHeight: 90, marginBottom: requireLegal ? 0 : 4 })} />
+
+          {/* LEGAL WARNING BOX — stronger design */}
           {requireLegal && (
-            <div style={{ marginTop: 14, padding: 12, background: "rgba(239,68,68,0.08)", borderRadius: 10, border: "1px solid rgba(239,68,68,0.3)" }}>
-              <div style={{ fontSize: 11, fontWeight: 900, color: "#ef4444", marginBottom: 6 }}>⚠️ تحذير قانوني</div>
-              <div style={{ fontSize: 10, color: C.text, lineHeight: 1.7, marginBottom: 10 }}>{LEGAL_WARNING_TEXT}</div>
-              <label style={{ display: "flex", alignItems: "flex-start", gap: 8, cursor: "pointer" }}>
-                <input type="checkbox" checked={legalAck} onChange={function(e){ setLegalAck(e.target.checked); }} style={{ marginTop: 2, flexShrink: 0 }} />
-                <span style={{ fontSize: 10, color: C.text, lineHeight: 1.6, fontWeight: 600 }}>{LEGAL_ACK_TEXT}</span>
-              </label>
+            <div style={{ marginTop: 16, borderRadius: 12, border: "2px solid " + mainColor, overflow: "hidden" }}>
+              <div style={{ background: mainColor, color: "#fff", padding: "10px 14px", fontSize: 13, fontWeight: 900, display: "flex", alignItems: "center", gap: 8 }}>
+                <span style={{ fontSize: 18 }}>⚠️</span>
+                <span>تحذير قانوني إلزامي</span>
+              </div>
+              <div style={{ background: mainColor + "10", padding: "12px 14px" }}>
+                <div style={{ fontSize: 11, color: C.text, lineHeight: 1.9, marginBottom: 12, textAlign: "justify" }}>{LEGAL_WARNING_TEXT}</div>
+                <label style={{ display: "flex", alignItems: "flex-start", gap: 10, cursor: "pointer", padding: 10, background: C.bg, borderRadius: 10, border: "1px solid " + mainColor + "40" }}>
+                  <input type="checkbox" checked={legalAck} onChange={function(e){ setLegalAck(e.target.checked); }} style={{ marginTop: 2, flexShrink: 0, width: 18, height: 18, accentColor: mainColor }} />
+                  <span style={{ fontSize: 11, color: C.text, lineHeight: 1.7, fontWeight: 700 }}>{LEGAL_ACK_TEXT}</span>
+                </label>
+              </div>
             </div>
           )}
         </div>
-        <div style={{ padding: "12px 16px", borderTop: "1px solid " + C.cardBorder, display: "flex", gap: 8 }}>
-          <button onClick={onClose} style={{ flex: 1, padding: 12, borderRadius: 10, background: C.card, color: C.text, border: "1px solid " + C.cardBorder, fontSize: 13, fontWeight: 700, cursor: "pointer", fontFamily: "inherit" }}>إلغاء</button>
-          <button onClick={handleConfirm} disabled={busy} style={{ flex: 2, padding: 12, borderRadius: 10, background: busy ? C.cardBorder : (confirmColor || "#ef4444"), color: "#fff", border: "none", fontSize: 13, fontWeight: 800, cursor: busy ? "default" : "pointer", fontFamily: "inherit" }}>{busy ? "..." : (confirmLabel || "تأكيد")}</button>
+
+        {/* FOOTER ACTIONS */}
+        <div style={{ padding: "14px 18px", borderTop: "1px solid " + C.cardBorder, display: "flex", gap: 10, background: C.bg }}>
+          <button onClick={onClose} style={{ flex: 1, padding: 13, borderRadius: 12, background: C.card, color: C.text, border: "1px solid " + C.cardBorder, fontSize: 13, fontWeight: 700, cursor: "pointer", fontFamily: "inherit" }}>إلغاء</button>
+          <button onClick={handleConfirm} disabled={busy} style={{ flex: 2, padding: 13, borderRadius: 12, background: busy ? C.cardBorder : mainColor, color: "#fff", border: "none", fontSize: 14, fontWeight: 900, cursor: busy ? "default" : "pointer", fontFamily: "'Cairo',sans-serif", boxShadow: busy ? "none" : "0 4px 12px " + mainColor + "66" }}>
+            {busy ? "⏳ ..." : (icon + " " + (confirmLabel || "تأكيد"))}
+          </button>
         </div>
       </div>
     </div>
@@ -3968,26 +4066,65 @@ function TawasulDetailModal({ request, user, allEmps, onClose, nameOf, onUpdated
         </div>
 
         <div style={{ padding: 16 }}>
-          {/* Big button */}
+          {/* BIG BUTTON — designed prominent with pulse animation */}
           {bigBtn && canPressBig && (
-            <button onClick={applyBigAction} disabled={busy} style={{ width: "100%", padding: "18px 20px", borderRadius: 16, background: busy ? C.cardBorder : bigBtn.color, color: "#fff", border: "none", fontSize: 18, fontWeight: 900, cursor: busy ? "default" : "pointer", fontFamily: "'Cairo',sans-serif", marginBottom: 10, boxShadow: "0 4px 12px rgba(0,0,0,0.15)" }}>
-              {busy ? "جارِ الحفظ..." : bigBtn.label}
-              <div style={{ fontSize: 11, fontWeight: 600, opacity: 0.9, marginTop: 4 }}>{bigBtn.sub}</div>
+            <button onClick={applyBigAction} disabled={busy} style={{
+              width: "100%",
+              padding: "24px 20px",
+              borderRadius: 20,
+              background: busy ? C.cardBorder : "linear-gradient(135deg, " + bigBtn.color + ", " + bigBtn.color + "dd)",
+              color: "#fff",
+              border: "none",
+              cursor: busy ? "default" : "pointer",
+              fontFamily: "'Cairo',sans-serif",
+              marginBottom: 14,
+              boxShadow: busy ? "none" : "0 8px 24px " + bigBtn.color + "55, 0 2px 6px rgba(0,0,0,0.15)",
+              position: "relative",
+              overflow: "hidden",
+              animation: busy ? "none" : "tawasulPulse 2s ease-in-out infinite",
+            }}>
+              <style>{"@keyframes tawasulPulse{0%,100%{box-shadow:0 8px 24px " + bigBtn.color + "55,0 2px 6px rgba(0,0,0,0.15)}50%{box-shadow:0 10px 32px " + bigBtn.color + "99,0 2px 6px rgba(0,0,0,0.2)}}"}</style>
+              <div style={{ fontSize: 26, fontWeight: 900, letterSpacing: 0.5, marginBottom: 6 }}>
+                {busy ? "⏳ جارِ الحفظ..." : bigBtn.label}
+              </div>
+              <div style={{ fontSize: 13, fontWeight: 500, opacity: 0.92 }}>
+                {bigBtn.sub}
+              </div>
+              {!busy && <div style={{ position: "absolute", top: "50%", left: 20, transform: "translateY(-50%)", fontSize: 24, opacity: 0.3 }}>→</div>}
             </button>
           )}
           {bigBtn && !canPressBig && bigBtn.who === "requester" && (
-            <div style={{ padding: 14, borderRadius: 12, background: C.card, border: "1px dashed " + C.cardBorder, textAlign: "center", marginBottom: 10 }}>
-              <div style={{ fontSize: 13, fontWeight: 800, color: bigBtn.color, marginBottom: 3 }}>{bigBtn.label}</div>
-              <div style={{ fontSize: 11, color: C.sub }}>{bigBtn.sub}</div>
+            <div style={{ padding: 18, borderRadius: 16, background: C.card, border: "2px dashed " + C.cardBorder, textAlign: "center", marginBottom: 14 }}>
+              <div style={{ fontSize: 16, fontWeight: 800, color: bigBtn.color, marginBottom: 4 }}>{bigBtn.label}</div>
+              <div style={{ fontSize: 12, color: C.sub }}>{bigBtn.sub}</div>
             </div>
           )}
 
-          {/* Secondary actions */}
-          <div style={{ display: "flex", flexWrap: "wrap", gap: 6, marginBottom: 12 }}>
+          {/* Action buttons — organized by priority */}
+          {/* Row 1: Decision actions for assignee (reject/return) */}
+          {(canReject || canReturn) && (
+            <div style={{ display: "flex", gap: 8, marginBottom: 8 }}>
+              {canReject && (
+                <button onClick={function(){ setShowReject(true); }} style={{ flex: 1, padding: "12px 10px", borderRadius: 12, background: "rgba(239,68,68,0.1)", color: "#ef4444", border: "1.5px solid rgba(239,68,68,0.4)", fontSize: 13, fontWeight: 800, cursor: "pointer", fontFamily: "inherit", display: "flex", flexDirection: "column", alignItems: "center", gap: 2 }}>
+                  <span style={{ fontSize: 18 }}>❌</span>
+                  <span>رفض المهمة</span>
+                  <span style={{ fontSize: 9, opacity: 0.7, fontWeight: 500 }}>مع تحذير قانوني</span>
+                </button>
+              )}
+              {canReturn && (
+                <button onClick={function(){ setShowReturn(true); }} style={{ flex: 1, padding: "12px 10px", borderRadius: 12, background: "rgba(245,158,11,0.1)", color: "#f59e0b", border: "1.5px solid rgba(245,158,11,0.4)", fontSize: 13, fontWeight: 800, cursor: "pointer", fontFamily: "inherit", display: "flex", flexDirection: "column", alignItems: "center", gap: 2 }}>
+                  <span style={{ fontSize: 18 }}>📋</span>
+                  <span>إرجاع للاستكمال</span>
+                  <span style={{ fontSize: 9, opacity: 0.7, fontWeight: 500 }}>نواقص أو تعديلات</span>
+                </button>
+              )}
+            </div>
+          )}
+
+          {/* Row 2: Secondary actions */}
+          <div style={{ display: "flex", flexWrap: "wrap", gap: 6, marginBottom: 14 }}>
             {canEvaluate && <button onClick={function(){ setShowEval(true); }} style={{ flex: "1 1 auto", minWidth: 90, padding: "10px 12px", borderRadius: 10, background: "rgba(201,168,76,0.2)", color: C.gold, border: "1px solid " + C.gold, fontSize: 12, fontWeight: 700, cursor: "pointer", fontFamily: "inherit" }}>⭐ تقييم</button>}
             {canHR && <button onClick={function(){ setShowHR(true); }} style={{ flex: "1 1 auto", minWidth: 90, padding: "10px 12px", borderRadius: 10, background: "rgba(124,58,237,0.15)", color: "#7c3aed", border: "1px solid rgba(124,58,237,0.4)", fontSize: 12, fontWeight: 700, cursor: "pointer", fontFamily: "inherit" }}>👔 إجراء HR</button>}
-            {canReject && <button onClick={function(){ setShowReject(true); }} style={{ flex: "1 1 auto", minWidth: 90, padding: "10px 12px", borderRadius: 10, background: "rgba(239,68,68,0.1)", color: "#ef4444", border: "1px solid rgba(239,68,68,0.3)", fontSize: 12, fontWeight: 700, cursor: "pointer", fontFamily: "inherit" }}>❌ رفض</button>}
-            {canReturn && <button onClick={function(){ setShowReturn(true); }} style={{ flex: "1 1 auto", minWidth: 90, padding: "10px 12px", borderRadius: 10, background: "rgba(245,158,11,0.1)", color: "#f59e0b", border: "1px solid rgba(245,158,11,0.3)", fontSize: 12, fontWeight: 700, cursor: "pointer", fontFamily: "inherit" }}>📋 إرجاع</button>}
             {canEscalate && <button onClick={function(){ setShowEscalate(true); }} style={{ flex: "1 1 auto", minWidth: 90, padding: "10px 12px", borderRadius: 10, background: "rgba(251,191,36,0.15)", color: "#fbbf24", border: "1px solid rgba(251,191,36,0.4)", fontSize: 12, fontWeight: 700, cursor: "pointer", fontFamily: "inherit" }}>⬆️ تصعيد</button>}
             {canCancel && <button onClick={doCancel} disabled={busy} style={{ flex: "1 1 auto", minWidth: 90, padding: "10px 12px", borderRadius: 10, background: C.card, color: C.text, border: "1px solid " + C.cardBorder, fontSize: 12, fontWeight: 700, cursor: "pointer", fontFamily: "inherit" }}>🚫 إلغاء</button>}
             {canEdit && <button onClick={function(){ onEdit(r); }} style={{ flex: "1 1 auto", minWidth: 90, padding: "10px 12px", borderRadius: 10, background: C.hdr2, color: "#fff", border: "none", fontSize: 12, fontWeight: 700, cursor: "pointer", fontFamily: "inherit" }}>✎ تعديل</button>}
