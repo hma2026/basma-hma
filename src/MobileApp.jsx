@@ -10,7 +10,7 @@ import { ALL_VIOLATIONS_DEFAULT, PENALTY_TYPES, LAIHA_INFO, COMPLAINT_STATUS, VI
 
 /* ═══════════ APP CONFIG (إعدادات التطبيق) ═══════════ */
 const APP_CONFIG = {
-  VER: "4.92",
+  VER: "4.93",
   NAME: "بصمة HMA",
   FULL_NAME: "نظام الحضور والانصراف الذكي",
   COMPANY: "هاني محمد عسيري للاستشارات الهندسية",
@@ -2626,6 +2626,214 @@ function TawasulReasonModal({ title, reasons, requireLegal, onConfirm, onClose, 
   );
 }
 
+
+/* ═══════════ TAWASUL EVALUATION MODAL (spec section 12) ═══════════ */
+var EVAL_CRITERIA = ["الجودة", "الدقة", "السرعة", "التعاون"];
+
+function TawasulEvalModal({ request, user, role, onClose, onSaved }) {
+  var [scores, setScores] = useState({});
+  var [saving, setSaving] = useState(false);
+  var [err, setErr] = useState("");
+
+  function setScore(crit, val) {
+    setScores(function(prev){ var n = Object.assign({}, prev); n[crit] = val; return n; });
+  }
+
+  var allRated = EVAL_CRITERIA.every(function(c){ return scores[c]; });
+
+  async function submit() {
+    if (!allRated) { setErr("قيّم كل المعايير"); return; }
+    setSaving(true); setErr("");
+    try {
+      var sum = EVAL_CRITERIA.reduce(function(s, c){ return s + (scores[c] || 0); }, 0);
+      var avgScore = Math.round(sum / 4 * 20); // 0-100
+      var now = new Date().toISOString();
+      var myName = (user && (user.name || user.username)) || "";
+
+      var newEval = {
+        by: user.id || user.username,
+        byName: myName,
+        role: role, // "requester" or "assignee"
+        scores: scores,
+        avgScore: avgScore,
+        at: now,
+      };
+
+      var evaluations = (request.evaluations || []).concat([newEval]);
+      var hasRequester = evaluations.some(function(e){ return e.role === "requester"; });
+      var hasAssignee = evaluations.some(function(e){ return e.role === "assignee"; });
+
+      var updates = {
+        evaluations: evaluations,
+        finalScore: Math.round(evaluations.reduce(function(s,e){ return s + (e.avgScore || 0); }, 0) / evaluations.length),
+        updatedAt: now,
+      };
+      // If both sides rated → close as evaluated
+      if (hasRequester && hasAssignee) {
+        updates.status = "evaluated";
+        updates.closedAt = now;
+      }
+
+      var updated = Object.assign({}, request, updates);
+      updated.log = (request.log || []).concat([{ text: "⭐ تقييم (" + avgScore + "/100) بواسطة " + myName, by: myName, at: now }]);
+      await saveTawasul(updated);
+      setSaving(false);
+      onSaved();
+    } catch (e) {
+      setErr(e.message || "فشل الحفظ");
+      setSaving(false);
+    }
+  }
+
+  return (
+    <div onClick={onClose} style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.7)", zIndex: 1100, display: "flex", alignItems: "center", justifyContent: "center", padding: 14, fontFamily: "'Tajawal',sans-serif" }}>
+      <div onClick={function(e){ e.stopPropagation(); }} style={{ background: C.bg, borderRadius: 16, maxWidth: 420, width: "100%", maxHeight: "90vh", overflowY: "auto", direction: "rtl", color: C.text }}>
+        <div style={{ padding: 16, borderBottom: "1px solid " + C.cardBorder, display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+          <div style={{ fontSize: 15, fontWeight: 900 }}>⭐ تقييم المهمة</div>
+          <button onClick={onClose} style={{ background: "none", border: "none", fontSize: 22, color: C.sub, cursor: "pointer" }}>×</button>
+        </div>
+        <div style={{ padding: 16 }}>
+          <div style={{ fontSize: 12, color: C.sub, marginBottom: 14, textAlign: "center" }}>
+            {role === "requester" ? "قيّم جودة التسليم من المستلم" : "قيّم وضوح الطلب والدعم من المُرسِل"}
+          </div>
+          {EVAL_CRITERIA.map(function(crit){
+            var current = scores[crit] || 0;
+            return (
+              <div key={crit} style={{ background: C.card, borderRadius: 12, padding: 14, border: "1px solid " + C.cardBorder, marginBottom: 10 }}>
+                <div style={{ fontSize: 13, fontWeight: 800, color: C.text, marginBottom: 10, textAlign: "center" }}>{crit}</div>
+                <div style={{ display: "flex", justifyContent: "center", gap: 6 }}>
+                  {[1,2,3,4,5].map(function(n){
+                    var active = n <= current;
+                    return (
+                      <button key={n} onClick={function(){ setScore(crit, n); }} style={{ width: 44, height: 44, borderRadius: 22, background: active ? C.gold : C.bg, border: "2px solid " + (active ? C.gold : C.cardBorder), fontSize: 22, cursor: "pointer", color: active ? "#fff" : C.sub, fontFamily: "inherit" }}>
+                        {active ? "★" : "☆"}
+                      </button>
+                    );
+                  })}
+                </div>
+                {current > 0 && <div style={{ fontSize: 10, color: C.gold, fontWeight: 700, textAlign: "center", marginTop: 6 }}>{current} / 5</div>}
+              </div>
+            );
+          })}
+          {err && <div style={{ color: "#ef4444", fontSize: 12, marginTop: 10, padding: 10, background: "rgba(239,68,68,0.1)", borderRadius: 8, fontWeight: 700 }}>⚠️ {err}</div>}
+        </div>
+        <div style={{ padding: "12px 16px", borderTop: "1px solid " + C.cardBorder, display: "flex", gap: 8 }}>
+          <button onClick={onClose} style={{ flex: 1, padding: 12, borderRadius: 10, background: C.card, color: C.text, border: "1px solid " + C.cardBorder, fontSize: 13, fontWeight: 700, cursor: "pointer", fontFamily: "inherit" }}>إلغاء</button>
+          <button onClick={submit} disabled={saving || !allRated} style={{ flex: 2, padding: 12, borderRadius: 10, background: saving || !allRated ? C.cardBorder : C.gold, color: "#fff", border: "none", fontSize: 13, fontWeight: 800, cursor: saving || !allRated ? "default" : "pointer", fontFamily: "inherit" }}>
+            {saving ? "جارِ الحفظ..." : allRated ? "⭐ إرسال التقييم" : "قيّم جميع المعايير"}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/* ═══════════ TAWASUL HR ACTIONS MODAL (spec section 14) ═══════════ */
+function TawasulHRActionsModal({ request, user, allEmps, onClose, onSaved }) {
+  var [action, setAction] = useState(null); // "force" | "reassign" | "investigate"
+  var [notes, setNotes] = useState("");
+  var [newAssigneeId, setNewAssigneeId] = useState("");
+  var [saving, setSaving] = useState(false);
+  var [err, setErr] = useState("");
+
+  async function confirmAction() {
+    if (!action) return;
+    if (action === "reassign" && !newAssigneeId) { setErr("اختر موظفاً جديداً"); return; }
+    if (!notes.trim()) { setErr("اكتب ملاحظات/مبررات"); return; }
+    setSaving(true); setErr("");
+    try {
+      var now = new Date().toISOString();
+      var myName = (user && (user.name || user.username)) || "HR";
+      var patch = { hrDecision: action, updatedAt: now };
+      var logText = "";
+
+      if (action === "force") {
+        patch.status = "sent"; // reopen as sent
+        patch.escalation = null; // reset escalation
+        logText = "📌 HR إلزام بالتنفيذ: " + notes;
+      } else if (action === "reassign") {
+        var newEmp = (allEmps || []).find(function(e){ return String(e.id) === String(newAssigneeId) || e.username === newAssigneeId; });
+        if (!newEmp) { setErr("الموظف غير موجود"); setSaving(false); return; }
+        patch.assignees = [{ id: newEmp.id || newEmp.username, name: newEmp.name || newEmp.username, acceptedAt: null, deliveredAt: null, returns: 0, objected: false }];
+        patch.status = "sent";
+        patch.escalation = null;
+        logText = "🔄 HR إعادة إسناد إلى " + (newEmp.name || newEmp.username) + ": " + notes;
+      } else if (action === "investigate") {
+        logText = "🔍 HR تحقيق — تصعيد غير مبرر: " + notes;
+      }
+
+      var updated = Object.assign({}, request, patch);
+      updated.log = (request.log || []).concat([{ text: logText, by: myName, at: now }]);
+      await saveTawasul(updated);
+      setSaving(false);
+      onSaved();
+    } catch (e) {
+      setErr(e.message || "فشل الحفظ");
+      setSaving(false);
+    }
+  }
+
+  var inputStyle = { width: "100%", padding: "10px 12px", borderRadius: 10, border: "1px solid " + C.cardBorder, background: C.card, color: C.text, fontSize: 13, fontFamily: "'Tajawal',sans-serif", outline: "none", boxSizing: "border-box" };
+
+  return (
+    <div onClick={onClose} style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.7)", zIndex: 1100, display: "flex", alignItems: "center", justifyContent: "center", padding: 14, fontFamily: "'Tajawal',sans-serif" }}>
+      <div onClick={function(e){ e.stopPropagation(); }} style={{ background: C.bg, borderRadius: 16, maxWidth: 440, width: "100%", maxHeight: "92vh", overflowY: "auto", direction: "rtl", color: C.text }}>
+        <div style={{ padding: 16, borderBottom: "1px solid " + C.cardBorder, display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+          <div style={{ fontSize: 15, fontWeight: 900 }}>👔 إجراءات HR</div>
+          <button onClick={onClose} style={{ background: "none", border: "none", fontSize: 22, color: C.sub, cursor: "pointer" }}>×</button>
+        </div>
+        <div style={{ padding: 16 }}>
+          <div style={{ fontSize: 11, color: C.sub, marginBottom: 12 }}>اختر الإجراء المناسب (مطلوب: ملاحظات/مبررات):</div>
+
+          <div style={{ display: "flex", flexDirection: "column", gap: 8, marginBottom: 14 }}>
+            <button onClick={function(){ setAction("force"); }} style={{ padding: "12px 14px", borderRadius: 12, background: action === "force" ? "#22c55e" : C.card, color: action === "force" ? "#fff" : C.text, border: "2px solid " + (action === "force" ? "#22c55e" : C.cardBorder), fontSize: 13, fontWeight: 800, cursor: "pointer", fontFamily: "inherit", textAlign: "right" }}>
+              📌 إلزام بالتنفيذ + إنذار
+              <div style={{ fontSize: 10, fontWeight: 600, opacity: 0.85, marginTop: 3 }}>إعادة فتح المهمة ومطالبة المستلم بالتنفيذ</div>
+            </button>
+            <button onClick={function(){ setAction("reassign"); }} style={{ padding: "12px 14px", borderRadius: 12, background: action === "reassign" ? "#3b82f6" : C.card, color: action === "reassign" ? "#fff" : C.text, border: "2px solid " + (action === "reassign" ? "#3b82f6" : C.cardBorder), fontSize: 13, fontWeight: 800, cursor: "pointer", fontFamily: "inherit", textAlign: "right" }}>
+              🔄 إعادة إسناد لموظف آخر
+              <div style={{ fontSize: 10, fontWeight: 600, opacity: 0.85, marginTop: 3 }}>نقل المهمة لموظف بديل</div>
+            </button>
+            <button onClick={function(){ setAction("investigate"); }} style={{ padding: "12px 14px", borderRadius: 12, background: action === "investigate" ? "#ef4444" : C.card, color: action === "investigate" ? "#fff" : C.text, border: "2px solid " + (action === "investigate" ? "#ef4444" : C.cardBorder), fontSize: 13, fontWeight: 800, cursor: "pointer", fontFamily: "inherit", textAlign: "right" }}>
+              🔍 فتح تحقيق
+              <div style={{ fontSize: 10, fontWeight: 600, opacity: 0.85, marginTop: 3 }}>تصعيد غير مبرر — يفتح تحقيق رسمي</div>
+            </button>
+          </div>
+
+          {action === "reassign" && (
+            <div style={{ marginBottom: 12 }}>
+              <div style={{ fontSize: 11, fontWeight: 700, color: C.sub, marginBottom: 6 }}>الموظف الجديد *:</div>
+              <select value={newAssigneeId} onChange={function(e){ setNewAssigneeId(e.target.value); }} style={Object.assign({}, inputStyle, { background: C.card })}>
+                <option value="">-- اختر موظفاً --</option>
+                {(allEmps || []).map(function(e){
+                  var eid = e.id || e.username;
+                  return <option key={eid} value={eid}>{e.name || e.username}</option>;
+                })}
+              </select>
+            </div>
+          )}
+
+          {action && (
+            <div style={{ marginBottom: 12 }}>
+              <div style={{ fontSize: 11, fontWeight: 700, color: C.sub, marginBottom: 6 }}>ملاحظات / مبررات *:</div>
+              <textarea value={notes} onChange={function(e){ setNotes(e.target.value); }} placeholder="اذكر مبرراتك..." rows={3} style={Object.assign({}, inputStyle, { resize: "vertical" })} />
+            </div>
+          )}
+
+          {err && <div style={{ color: "#ef4444", fontSize: 12, marginTop: 8, padding: 10, background: "rgba(239,68,68,0.1)", borderRadius: 8, fontWeight: 700 }}>⚠️ {err}</div>}
+        </div>
+        <div style={{ padding: "12px 16px", borderTop: "1px solid " + C.cardBorder, display: "flex", gap: 8 }}>
+          <button onClick={onClose} style={{ flex: 1, padding: 12, borderRadius: 10, background: C.card, color: C.text, border: "1px solid " + C.cardBorder, fontSize: 13, fontWeight: 700, cursor: "pointer", fontFamily: "inherit" }}>إلغاء</button>
+          <button onClick={confirmAction} disabled={saving || !action} style={{ flex: 2, padding: 12, borderRadius: 10, background: saving || !action ? C.cardBorder : C.hdr2, color: "#fff", border: "none", fontSize: 13, fontWeight: 800, cursor: saving || !action ? "default" : "pointer", fontFamily: "inherit" }}>
+            {saving ? "جارِ التنفيذ..." : "✓ تأكيد الإجراء"}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+
 function TawasulPage({ user, allEmps }) {
   var [tab, setTab] = useState("inbox");
   var [requests, setRequests] = useState(null);
@@ -2986,6 +3194,18 @@ function TawasulDetailModal({ request, user, allEmps, onClose, nameOf, onUpdated
   var canDelete = (isAdmin || isRequester) && r.status === "draft";
   var canEdit = (isRequester || isAdmin) && ["draft","incomplete"].includes(r.status);
 
+  // Evaluation eligibility (spec section 12)
+  var hasMyEval = (r.evaluations || []).some(function(e){ return String(e.by) === String(myId); });
+  var evalRole = isRequester ? "requester" : (isAssignee ? "assignee" : null);
+  var canEvaluate = evalRole && !hasMyEval && r.status === "delivered";
+
+  // HR eligibility (spec section 14) — available for admins on escalated tasks
+  var isHR = user && (user.role === "hr_manager" || user.username === "admin" || user.isAdmin);
+  var canHR = isHR && r.escalation && r.status !== "evaluated" && r.status !== "closed";
+
+  var [showEval, setShowEval] = useState(false);
+  var [showHR, setShowHR] = useState(false);
+
   return (
     <div onClick={onClose} style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.6)", zIndex: 1000, display: "flex", alignItems: "flex-end", justifyContent: "center", fontFamily: "'Tajawal',sans-serif" }}>
       <div onClick={function(e){ e.stopPropagation(); }} style={{ background: C.bg, borderRadius: "20px 20px 0 0", maxWidth: 430, width: "100%", maxHeight: "94vh", overflowY: "auto", direction: "rtl", color: C.text, paddingBottom: 20 }}>
@@ -3022,6 +3242,8 @@ function TawasulDetailModal({ request, user, allEmps, onClose, nameOf, onUpdated
 
           {/* Secondary actions */}
           <div style={{ display: "flex", flexWrap: "wrap", gap: 6, marginBottom: 12 }}>
+            {canEvaluate && <button onClick={function(){ setShowEval(true); }} style={{ flex: "1 1 auto", minWidth: 90, padding: "10px 12px", borderRadius: 10, background: "rgba(201,168,76,0.2)", color: C.gold, border: "1px solid " + C.gold, fontSize: 12, fontWeight: 700, cursor: "pointer", fontFamily: "inherit" }}>⭐ تقييم</button>}
+            {canHR && <button onClick={function(){ setShowHR(true); }} style={{ flex: "1 1 auto", minWidth: 90, padding: "10px 12px", borderRadius: 10, background: "rgba(124,58,237,0.15)", color: "#7c3aed", border: "1px solid rgba(124,58,237,0.4)", fontSize: 12, fontWeight: 700, cursor: "pointer", fontFamily: "inherit" }}>👔 إجراء HR</button>}
             {canReject && <button onClick={function(){ setShowReject(true); }} style={{ flex: "1 1 auto", minWidth: 90, padding: "10px 12px", borderRadius: 10, background: "rgba(239,68,68,0.1)", color: "#ef4444", border: "1px solid rgba(239,68,68,0.3)", fontSize: 12, fontWeight: 700, cursor: "pointer", fontFamily: "inherit" }}>❌ رفض</button>}
             {canReturn && <button onClick={function(){ setShowReturn(true); }} style={{ flex: "1 1 auto", minWidth: 90, padding: "10px 12px", borderRadius: 10, background: "rgba(245,158,11,0.1)", color: "#f59e0b", border: "1px solid rgba(245,158,11,0.3)", fontSize: 12, fontWeight: 700, cursor: "pointer", fontFamily: "inherit" }}>📋 إرجاع</button>}
             {canEscalate && <button onClick={function(){ setShowEscalate(true); }} style={{ flex: "1 1 auto", minWidth: 90, padding: "10px 12px", borderRadius: 10, background: "rgba(251,191,36,0.15)", color: "#fbbf24", border: "1px solid rgba(251,191,36,0.4)", fontSize: 12, fontWeight: 700, cursor: "pointer", fontFamily: "inherit" }}>⬆️ تصعيد</button>}
@@ -3116,6 +3338,8 @@ function TawasulDetailModal({ request, user, allEmps, onClose, nameOf, onUpdated
         {showReject && <TawasulReasonModal title="❌ رفض المهمة" reasons={TAWASUL_REJECT_REASONS} requireLegal={true} confirmColor="#ef4444" confirmLabel="تأكيد الرفض" onConfirm={doReject} onClose={function(){ setShowReject(false); }} />}
         {showReturn && <TawasulReasonModal title="📋 إرجاع للاستكمال" reasons={TAWASUL_RETURN_REASONS} requireLegal={false} confirmColor="#f59e0b" confirmLabel="تأكيد الإرجاع" onConfirm={doReturn} onClose={function(){ setShowReturn(false); }} />}
         {showEscalate && <TawasulReasonModal title="⬆️ تصعيد المهمة" reasons={[{id:"delay",label:"تأخر عن الموعد"},{id:"no_response",label:"عدم استجابة"},{id:"quality",label:"مشكلة في الجودة"},{id:"other",label:"أخرى"}]} requireLegal={true} confirmColor="#fbbf24" confirmLabel="تأكيد التصعيد" onConfirm={doEscalate} onClose={function(){ setShowEscalate(false); }} />}
+        {showEval && <TawasulEvalModal request={r} user={user} role={evalRole} onClose={function(){ setShowEval(false); }} onSaved={function(){ setShowEval(false); onUpdated(); }} />}
+        {showHR && <TawasulHRActionsModal request={r} user={user} allEmps={allEmps} onClose={function(){ setShowHR(false); }} onSaved={function(){ setShowHR(false); onUpdated(); }} />}
       </div>
     </div>
   );

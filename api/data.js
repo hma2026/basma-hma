@@ -1433,6 +1433,46 @@ export default async function handler(req, res) {
         }
       }
 
+      case 'tawasul-notifs': {
+        // GET: list notifications from kadwar; POST: mark read
+        try {
+          if (req.method === 'POST') {
+            var body = req.body || {};
+            var kr = await fetch('https://hma.engineer/api/basma-sync?action=tawasul-notifs', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify(body),
+            });
+            var kd = await kr.json();
+            if (!kr.ok) return res.status(kr.status).json({ error: kd.error || 'kadwar error ' + kr.status });
+            return res.json(kd);
+          }
+          var kr2 = await fetch('https://hma.engineer/api/basma-sync?action=tawasul-notifs');
+          if (!kr2.ok) return res.status(kr2.status).json({ error: 'kadwar returned ' + kr2.status, notifs: [] });
+          var kd2 = await kr2.json();
+          return res.json({ ok: true, notifs: kd2.notifs || [] });
+        } catch (e) {
+          return res.status(502).json({ error: 'تعذر الاتصال بكوادر: ' + (e.message || 'unknown'), notifs: [] });
+        }
+      }
+
+      case 'tawasul-ai': {
+        // Proxy AI requests to kadwar's /api/ai endpoint (Claude/Gemini)
+        if (req.method !== 'POST') return res.status(405).json({ error: 'POST required' });
+        try {
+          var kr = await fetch('https://hma.engineer/api/ai', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(req.body || {}),
+          });
+          var kd = await kr.json();
+          if (!kr.ok) return res.status(kr.status).json({ error: kd.error || 'ai error ' + kr.status });
+          return res.json(kd);
+        } catch (e) {
+          return res.status(502).json({ error: 'تعذر الاتصال بـ AI: ' + (e.message || 'unknown') });
+        }
+      }
+
       /* ═══ BANNERS — بنر الصفحة الرئيسية ═══ */
       case 'banners': {
         if (req.method === 'POST') {
