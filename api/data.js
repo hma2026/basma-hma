@@ -1748,6 +1748,151 @@ export default async function handler(req, res) {
         }
       }
 
+      case 'tawasul-check-recurring': {
+        // Check recurring task templates and generate next instance if due
+        // Should be called periodically (client polls on load; can also be a cron)
+        try {
+          var idxR = (await dbGet('twsl:idx')) || [];
+          var nowR = Date.now();
+          var generated = 0;
+          var errors = [];
+
+          function calcNextDue(pattern, interval, fromIso, weekdays) {
+            var iv = interval || 1;
+            var d = new Date(fromIso);
+            if (pattern === 'daily') {
+              d.setDate(d.getDate() + iv);
+            } else if (pattern === 'weekly') {
+              if (Array.isArray(weekdays) && weekdays.length > 0) {
+                // Find next weekday in the list
+                var currentDay = d.getDay();
+                var sorted = weekdays.slice().sort();
+                var nextDay = sorted.find(function(w){ return w > currentDay; });
+                if (nextDay !== undefined) {
+                  d.setDate(d.getDate() + (nextDay - currentDay));
+                } else {
+                  // wrap to next week's first day
+                  d.setDate(d.getDate() + (7 - currentDay + sorted[0]));
+                }
+                // If interval > 1, add extra weeks after wrap
+                if (iv > 1 && nextDay === undefined) {
+                  d.setDate(d.getDate() + (iv - 1) * 7);
+                }
+              } else {
+                d.setDate(d.getDate() + 7 * iv);
+              }
+            } else if (pattern === 'monthly') {
+              d.setMonth(d.getMonth() + iv);
+            } else if (pattern === 'yearly') {
+              d.setFullYear(d.getFullYear() + iv);
+            }
+            return d.toISOString();
+          }
+
+          for (var i = 0; i < idxR.length; i++) {
+            var tmpl = await dbGet('twsl:' + idxR[i]);
+            if (!tmpl || !tmpl.id) continue;
+            if (!tmpl.recurrence || !tmpl.recurrence.pattern) continue;
+            if (tmpl.recurrence.paused) continue;
+
+            var nextDueIso = tmpl.recurrence.nextDue || tmpl.deadline || tmpl.createdAt;
+            if (!nextDueIso) continue;
+            var nextDueMs = new Date(nextDueIso).getTime();
+
+            // Skip if not yet due
+            if (nextDueMs > nowR) continue;
+
+            // Skip if past end date
+            if (tmpl.recurrence.endDate) {
+              var endMs = new Date(tmpl.recurrence.endDate).getTime();
+              if (nowR > endMs) continue;
+            }
+
+            try {
+              // Create a new instance (copy of template, fresh ID/serial/status)
+              var counter = (await dbGet('twsl:serial')) || 0;
+              counter = counter + 1;
+              await dbSet('twsl:serial', counter);
+
+              var newInstance = Object.assign({}, tmpl, {
+                id: 'twsl_' + Date.now() + '_' + Math.random().toString(36).slice(2, 8),
+                serial: 'CB' + String(counter).padStart(4, '0'),
+                status: 'sent',
+                deadline: nextDueIso,
+                createdAt: new Date().toISOString(),
+                updatedAt: new Date().toISOString(),
+                log: [{
+                  text: '🔁 مهمة مُتكرّرة — مُولَّدة تلقائياً (#' + tmpl.serial + ')',
+                  by: 'النظام',
+                  at: new Date().toISOString(),
+                }],
+                evaluations: [],
+                attachments: [], // fresh attachments
+                rejectionReason: null,
+                returnReason: null,
+                rejectedCount: 0,
+                returnCount: 0,
+                escalation: null,
+                escalatedAt: null,
+                finalScore: null,
+                pendingCollabRequests: [],
+                // reset assignee states
+                assignees: (tmpl.assignees || []).map(function(a){
+                  return Object.assign({}, a, { acceptedAt: null, deliveredAt: null, returns: 0, objected: false });
+                }),
+                // Track origin
+                recurrenceParentId: tmpl.id,
+                recurrenceParentSerial: tmpl.serial,
+                recurrence: null, // instance is not itself recurring
+              });
+              await dbSet('twsl:' + newInstance.id, newInstance);
+
+              // Add to index
+              var idxNow = (await dbGet('twsl:idx')) || [];
+              if (idxNow.indexOf(newInstance.id) < 0) {
+                idxNow.push(newInstance.id);
+                await dbSet('twsl:idx', idxNow);
+              }
+
+              // Create notifications for assignees
+              var notifsR = (await dbGet('twsl:notifs')) || [];
+              (newInstance.assignees || []).forEach(function(a){
+                notifsR.push({
+                  id: 'n_' + Date.now() + '_' + Math.random().toString(36).slice(2, 6),
+                  type: 'new_task_recurring',
+                  taskId: newInstance.id,
+                  serial: newInstance.serial,
+                  from: newInstance.requesterName || '',
+                  createdAt: new Date().toISOString(),
+                  read: false,
+                  targetId: a.id,
+                });
+              });
+              if (notifsR.length > 500) notifsR = notifsR.slice(-500);
+              await dbSet('twsl:notifs', notifsR);
+
+              // Update template's nextDue + generationCount
+              var updatedRec = Object.assign({}, tmpl.recurrence, {
+                nextDue: calcNextDue(tmpl.recurrence.pattern, tmpl.recurrence.interval, nextDueIso, tmpl.recurrence.weekdays),
+                generationCount: (tmpl.recurrence.generationCount || 0) + 1,
+                lastGeneratedAt: new Date().toISOString(),
+              });
+              tmpl.recurrence = updatedRec;
+              tmpl.updatedAt = new Date().toISOString();
+              await dbSet('twsl:' + tmpl.id, tmpl);
+
+              generated++;
+            } catch (innerE) {
+              errors.push('twsl:' + idxR[i] + ' — ' + (innerE.message || 'error'));
+            }
+          }
+
+          return res.json({ ok: true, generated: generated, errors: errors, checked: idxR.length });
+        } catch (e) {
+          return res.status(500).json({ error: 'check-recurring error: ' + (e.message || 'unknown'), generated: 0 });
+        }
+      }
+
       case 'tawasul-check-escalations': {
         // Check and update auto-escalations (spec section 13) — native
         try {

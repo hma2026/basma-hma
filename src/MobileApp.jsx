@@ -10,7 +10,7 @@ import { ALL_VIOLATIONS_DEFAULT, PENALTY_TYPES, LAIHA_INFO, COMPLAINT_STATUS, VI
 
 /* ═══════════ APP CONFIG (إعدادات التطبيق) ═══════════ */
 const APP_CONFIG = {
-  VER: "6.27",
+  VER: "6.28",
   NAME: "بصمة HMA",
   FULL_NAME: "نظام الحضور والانصراف الذكي",
   COMPANY: "هاني محمد عسيري للاستشارات الهندسية",
@@ -2177,6 +2177,14 @@ var BIG_BTN_MAP = {
 
 /* Saves tawasul request via proxy to kadwar */
 async function saveTawasul(request) {
+  // If recurrence is set, initialize nextDue to the deadline
+  if (request.recurrence && request.recurrence.pattern && request.recurrence.pattern !== "none") {
+    if (!request.recurrence.nextDue && request.deadline) {
+      request.recurrence.nextDue = new Date(request.deadline).toISOString();
+    }
+    if (!request.recurrence.interval) request.recurrence.interval = 1;
+    if (!request.recurrence.generationCount) request.recurrence.generationCount = 0;
+  }
   var r = await fetch("/api/data?action=tawasul-save", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
@@ -2530,6 +2538,78 @@ function TawasulCreateModal({ user, allEmps, categories, projects, onClose, onSa
                   <input type="datetime-local" value={form.deadline} onChange={function(e){ updateForm({ deadline: e.target.value }); }} style={inputStyle} />
                 </div>
               )}
+
+              {/* ═══ Recurrence section ═══ */}
+              <div style={{ marginTop: 18, paddingTop: 14, borderTop: "1px dashed " + C.cardBorder }}>
+                <div style={{ fontSize: 12, fontWeight: 800, color: C.gold, marginBottom: 10, display: "flex", alignItems: "center", gap: 6 }}>
+                  <span>🔁</span><span>مهمة دورية (اختياري)</span>
+                </div>
+                <div style={{ fontSize: 10, color: C.sub, marginBottom: 10 }}>تتكرر تلقائياً في الموعد المحدد</div>
+                <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginBottom: 10 }}>
+                  {[
+                    { id: "none",    label: "بدون تكرار", icon: "⚪" },
+                    { id: "daily",   label: "يومياً",     icon: "🌅" },
+                    { id: "weekly",  label: "أسبوعياً",   icon: "📆" },
+                    { id: "monthly", label: "شهرياً",     icon: "🗓" },
+                    { id: "yearly",  label: "سنوياً",     icon: "🎂" },
+                  ].map(function(p){
+                    var current = (form.recurrence && form.recurrence.pattern) || "none";
+                    var active = current === p.id;
+                    return (
+                      <button key={p.id} onClick={function(){
+                        if (p.id === "none") {
+                          updateForm({ recurrence: null });
+                        } else {
+                          updateForm({ recurrence: Object.assign({}, form.recurrence || {}, { pattern: p.id, interval: 1, weekdays: form.recurrence && form.recurrence.weekdays || [] }) });
+                        }
+                      }} style={{ padding: "7px 12px", borderRadius: 10, background: active ? C.gold : C.card, color: active ? "#fff" : C.text, border: "1.5px solid " + (active ? C.gold : C.cardBorder), fontSize: 11, fontWeight: 700, cursor: "pointer", fontFamily: "inherit", display: "inline-flex", alignItems: "center", gap: 4 }}>
+                        <span>{p.icon}</span>
+                        <span>{p.label}</span>
+                      </button>
+                    );
+                  })}
+                </div>
+
+                {/* Weekly: weekday picker */}
+                {form.recurrence && form.recurrence.pattern === "weekly" && (
+                  <div style={{ marginBottom: 10 }}>
+                    <div style={{ fontSize: 10, fontWeight: 700, color: C.sub, marginBottom: 6 }}>الأيام:</div>
+                    <div style={{ display: "flex", gap: 4, flexWrap: "wrap" }}>
+                      {["الأحد","الإثنين","الثلاثاء","الأربعاء","الخميس","الجمعة","السبت"].map(function(day, idx){
+                        var selected = (form.recurrence.weekdays || []).indexOf(idx) >= 0;
+                        return (
+                          <button key={idx} onClick={function(){
+                            var wd = (form.recurrence.weekdays || []).slice();
+                            if (selected) wd = wd.filter(function(x){ return x !== idx; });
+                            else wd.push(idx);
+                            updateForm({ recurrence: Object.assign({}, form.recurrence, { weekdays: wd }) });
+                          }} style={{ padding: "5px 10px", borderRadius: 8, background: selected ? C.hdr2 : C.card, color: selected ? "#fff" : C.text, border: "1px solid " + (selected ? C.hdr2 : C.cardBorder), fontSize: 10, fontWeight: 700, cursor: "pointer", fontFamily: "inherit" }}>
+                            {day.substring(0,3)}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+                )}
+
+                {/* End date */}
+                {form.recurrence && form.recurrence.pattern && form.recurrence.pattern !== "none" && (
+                  <div>
+                    <div style={{ fontSize: 10, fontWeight: 700, color: C.sub, marginBottom: 4 }}>تاريخ انتهاء التكرار (اختياري):</div>
+                    <input type="date" value={form.recurrence.endDate || ""} onChange={function(e){
+                      updateForm({ recurrence: Object.assign({}, form.recurrence, { endDate: e.target.value }) });
+                    }} style={{ ...inputStyle, fontSize: 11, padding: "8px 10px" }} />
+                  </div>
+                )}
+
+                {/* Summary hint */}
+                {form.recurrence && form.recurrence.pattern && form.recurrence.pattern !== "none" && form.deadline && (
+                  <div style={{ marginTop: 10, padding: "8px 10px", borderRadius: 8, background: "rgba(201,168,76,0.1)", border: "1px dashed " + C.gold, fontSize: 10, color: C.gold, fontWeight: 700 }}>
+                    💡 ستتكرر المهمة {form.recurrence.pattern === "daily" ? "كل يوم" : form.recurrence.pattern === "weekly" ? "أسبوعياً" : form.recurrence.pattern === "monthly" ? "شهرياً" : "سنوياً"} ابتداءً من الموعد المحدد
+                    {form.recurrence.endDate && " حتى " + form.recurrence.endDate}
+                  </div>
+                )}
+              </div>
             </div>
           )}
 
@@ -4622,6 +4702,19 @@ function TawasulPage({ user, allEmps }) {
         }, 3000);
       }
     } catch(e) {}
+    // Run recurring task check at most once per 30 minutes
+    try {
+      var lastRec = localStorage.getItem("basma_tawasul_rec_check");
+      var now2 = Date.now();
+      if (!lastRec || (now2 - parseInt(lastRec, 10)) > 1800000) {
+        setTimeout(function() {
+          fetch("/api/data?action=tawasul-check-recurring").then(function(r){ return r.json(); }).then(function(d){
+            if (d && d.generated > 0) setTimeout(function(){ loadData(true); }, 500);
+          }).catch(function(){});
+          try { localStorage.setItem("basma_tawasul_rec_check", String(now2)); } catch(e) {}
+        }, 5000);
+      }
+    } catch(e) {}
   }, []);
 
   // Play notif sound on increase of unread (new task arrived while on page)
@@ -5130,6 +5223,12 @@ function TawasulPage({ user, allEmps }) {
               <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 8, flexWrap: "wrap" }}>
                 <div style={{ display: "inline-flex", alignItems: "center", gap: 4, padding: "3px 9px", borderRadius: 10, background: m.color + "22", color: m.color, fontSize: 10, fontWeight: 800 }}><span>{m.icon}</span><span>{m.label}</span></div>
                 {isUrgent && <div style={{ padding: "3px 9px", borderRadius: 10, background: "rgba(239,68,68,0.15)", color: "#ef4444", fontSize: 10, fontWeight: 800 }}>🔴 عاجل</div>}
+                {r.recurrence && r.recurrence.pattern && (
+                  <div style={{ padding: "3px 9px", borderRadius: 10, background: "rgba(201,168,76,0.15)", color: C.gold, fontSize: 10, fontWeight: 800 }} title={"قالب متكرر — تم توليد " + (r.recurrence.generationCount || 0) + " نسخة"}>🔁 قالب</div>
+                )}
+                {r.recurrenceParentId && (
+                  <div style={{ padding: "3px 9px", borderRadius: 10, background: "rgba(201,168,76,0.1)", color: C.gold, fontSize: 9, fontWeight: 700 }} title={"مُولَّدة من #" + (r.recurrenceParentSerial || "")}>🔁 مُولَّدة</div>
+                )}
                 {deadlineStatus && (
                   <div style={{ padding: "3px 9px", borderRadius: 10, background: deadlineStatus.bg, color: deadlineStatus.color, fontSize: 10, fontWeight: 800, display: "inline-flex", alignItems: "center", gap: 3, animation: deadlineStatus.pulse ? "tawasulDeadlinePulse 1.5s ease-in-out infinite" : "none" }}>
                     <span>{deadlineStatus.icon}</span>
