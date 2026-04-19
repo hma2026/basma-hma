@@ -1421,10 +1421,12 @@ export default async function handler(req, res) {
           if (!reqData) return res.status(400).json({ error: 'request object required' });
 
           var now = new Date().toISOString();
-          var isNew = !reqData.id;
+          // Check if this is a new request by looking at the index
+          var idx = (await dbGet('twsl:idx')) || [];
+          var isNew = !reqData.id || idx.indexOf(reqData.id) < 0;
 
-          // Generate ID if new
-          if (isNew) reqData.id = 'twsl_' + Date.now() + '_' + Math.random().toString(36).slice(2, 8);
+          // Generate ID if new and missing
+          if (!reqData.id) reqData.id = 'twsl_' + Date.now() + '_' + Math.random().toString(36).slice(2, 8);
 
           // Generate serial if new
           if (!reqData.serial) {
@@ -1442,7 +1444,6 @@ export default async function handler(req, res) {
 
           // Update index if new
           if (isNew) {
-            var idx = (await dbGet('twsl:idx')) || [];
             if (idx.indexOf(reqData.id) < 0) {
               idx.push(reqData.id);
               await dbSet('twsl:idx', idx);
@@ -1467,7 +1468,7 @@ export default async function handler(req, res) {
             await dbSet('twsl:notifs', notifs);
           }
 
-          return res.json({ ok: true, request: reqData });
+          return res.json({ ok: true, request: reqData, isNew: isNew });
         } catch (e) {
           return res.status(500).json({ error: 'tawasul-save error: ' + (e.message || 'unknown') });
         }

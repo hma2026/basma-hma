@@ -10,7 +10,7 @@ import { ALL_VIOLATIONS_DEFAULT, PENALTY_TYPES, LAIHA_INFO, COMPLAINT_STATUS, VI
 
 /* ═══════════ APP CONFIG (إعدادات التطبيق) ═══════════ */
 const APP_CONFIG = {
-  VER: "5.01",
+  VER: "5.02",
   NAME: "بصمة HMA",
   FULL_NAME: "نظام الحضور والانصراف الذكي",
   COMPANY: "هاني محمد عسيري للاستشارات الهندسية",
@@ -2275,11 +2275,13 @@ function TawasulCreateModal({ user, allEmps, categories, projects, onClose, onSa
       // append log entry
       var logEntry = { text: isEdit ? "✎ تعديل المهمة" : "📨 إنشاء المهمة", by: form.requesterName || user.username, at: now };
       newReq.log = (form.log || []).concat([logEntry]);
-      await saveTawasul(newReq);
+      var result = await saveTawasul(newReq);
+      console.log("[Tawasul Save] Success:", result);
       setSaving(false);
       onSaved();
     } catch (e) {
-      setErr(e.message || "فشل الحفظ");
+      console.error("[Tawasul Save] Error:", e);
+      setErr("فشل الحفظ: " + (e.message || "خطأ غير معروف") + " — افتح console للتفاصيل");
       setSaving(false);
     }
   }
