@@ -1,9 +1,10 @@
 import { useState, useEffect, useRef } from "react";
 import { ALL_VIOLATIONS_DEFAULT, PENALTY_TYPES, LAIHA_INFO, COMPLAINT_STATUS, VIOLATION_STATUS, PROCEDURE_RULES } from "./laiha";
 import { generateAttendanceReport, generateEmployeeReport, generateMonthlySummary, generateViolationsReport, generateEmployeesListReport, generateBenefitsReport, generateAnnouncementsReport } from "./pdfReports";
+import { exportFormalWarning, exportInvestigationRecord, exportAffidavit } from "./formalPdfs";
 
 const APP = "بصمة HMA";
-const VER = "6.49";
+const VER = "6.51";
 const CO = "هاني محمد عسيري للإستشارات الهندسية";
 const B = { blue: "#2B5EA7", yellow: "#FDD800", red: "#E2192C", black: "#1A1A1A", blueDk: "#1E4478", blueLt: "#EDF3FB", gold: "#D4A017" };
 
@@ -5957,6 +5958,15 @@ function InvestigationsPanel({ t, B, emps }) {
                 </div>
               </div>
               <div style={{ fontSize: 11, color: t.tx2 }}>{inv.questions.length} سؤال</div>
+              {/* v6.51 — Investigation Record PDF */}
+              <div style={{ marginTop: 8, paddingTop: 8, borderTop: "1px dashed " + t.sep, display: "flex", justifyContent: "flex-end" }} onClick={function(e){ e.stopPropagation(); }}>
+                <button onClick={function(){
+                  var emp = (inv.empId ? { id: inv.empId, name: inv.empName, role: inv.empRole, department: inv.empDepartment } : { name: inv.empName });
+                  exportInvestigationRecord(inv, emp);
+                }} style={{ padding: "5px 10px", borderRadius: 6, border: "1px solid " + B.gold, background: B.gold + "15", color: B.gold, fontSize: 9, fontWeight: 800, cursor: "pointer" }}>
+                  📄 محضر تحقيق PDF
+                </button>
+              </div>
             </div>
           );
         })}
@@ -6157,6 +6167,15 @@ function ViolationsV2Panel({ t, B, emps }) {
               <div style={{ display: "flex", justifyContent: "space-between", fontSize: 10, color: t.tx2, marginTop: 6 }}>
                 <span>المصدر: {v.source === "manual" ? "يدوي" : v.source === "auto" ? "تلقائي" : v.source === "from_investigation" ? "من تحقيق" : v.source === "from_complaint" ? "من شكوى" : v.source}</span>
                 <span>{new Date(v.createdAt).toLocaleString("ar-SA")}</span>
+              </div>
+              {/* v6.51 — Formal warning PDF */}
+              <div style={{ marginTop: 10, paddingTop: 10, borderTop: "1px dashed " + t.sep, display: "flex", gap: 6, justifyContent: "flex-end" }}>
+                <button onClick={function(){
+                  var emp = emps.find(function(x){ return x.id === v.empId; }) || { id: v.empId, name: v.empName };
+                  exportFormalWarning(v, emp);
+                }} style={{ padding: "6px 12px", borderRadius: 6, border: "1px solid " + B.gold, background: B.gold + "15", color: B.gold, fontSize: 10, fontWeight: 800, cursor: "pointer" }}>
+                  📋 إنذار رسمي PDF
+                </button>
               </div>
             </div>
           );

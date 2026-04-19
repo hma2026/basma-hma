@@ -10,7 +10,7 @@ import { ALL_VIOLATIONS_DEFAULT, PENALTY_TYPES, LAIHA_INFO, COMPLAINT_STATUS, VI
 
 /* ═══════════ APP CONFIG (إعدادات التطبيق) ═══════════ */
 const APP_CONFIG = {
-  VER: "6.49",
+  VER: "6.51",
   NAME: "بصمة HMA",
   FULL_NAME: "نظام الحضور والانصراف الذكي",
   COMPANY: "هاني محمد عسيري للاستشارات الهندسية",
@@ -1927,6 +1927,7 @@ function ProfilePage({ user, branch, workType, onLogout, onTicket, myTickets, da
   ];
   var tabs = [
     { id: "info", icon: <Icons.user size={18} />, label: "بياناتي" },
+    { id: "requests", icon: <Icons.clipboard size={18} />, label: "طلباتي" },
     { id: "deps", icon: <Icons.user size={18} />, label: "المرافقين" },
     { id: "docs", icon: <Icons.clipboard size={18} />, label: "المرفقات" },
     { id: "custody", icon: <Icons.building size={18} />, label: "العهد" },
@@ -2063,6 +2064,7 @@ function ProfilePage({ user, branch, workType, onLogout, onTicket, myTickets, da
         {tab === "custody" && <Card><CustodyTab user={user} /></Card>}
         {tab === "record" && <EmployeeRecordTab user={user} />}
         {tab === "legal" && <LegalTab user={user} />}
+        {tab === "requests" && <MyRequestsTab user={user} />}
 
         {/* Manager panel button — hidden in desktop session (v6.47) */}
         {(user.isManager || user.isAssistant) && !(user && user._desktopSession) && (
@@ -4680,8 +4682,17 @@ function TawasulAIAssistant({ categories, employees, onFilled, onClose }) {
 function NotifEnableBanner({ user }) {
   var [state, setState] = useState("checking"); // checking | granted | default | denied | unsupported | subscribing
   var [dismissed, setDismissed] = useState(function(){
-    return localStorage.getItem("basma_notif_banner_dismissed") === "1";
+    // v6.51 — Banner resurfaces after 7 days instead of permanent dismissal
+    var d = localStorage.getItem("basma_notif_banner_dismissed_at");
+    if (!d) return false;
+    var age = Date.now() - parseInt(d, 10);
+    return age < 7 * 24 * 60 * 60 * 1000; // 7 days
   });
+
+  function dismiss() {
+    localStorage.setItem("basma_notif_banner_dismissed_at", String(Date.now()));
+    setDismissed(true);
+  }
 
   useEffect(function(){
     if (typeof Notification === "undefined" || !('serviceWorker' in navigator) || !('PushManager' in window)) {
@@ -4735,11 +4746,6 @@ function NotifEnableBanner({ user }) {
       alert("فشل التفعيل: " + (e.message || "خطأ"));
       setState(Notification.permission);
     }
-  }
-
-  function dismiss() {
-    localStorage.setItem("basma_notif_banner_dismissed", "1");
-    setDismissed(true);
   }
 
   if (dismissed) return null;
@@ -9578,6 +9584,180 @@ function exportViolationsRecord(user, violations) {
 }
 
 /* ═══════════ LEGAL TAB ═══════════ */
+function MyRequestsTab({ user }) {
+  var [leaves, setLeaves] = useState([]);
+  var [permissions, setPermissions] = useState([]);
+  var [preAbsences, setPreAbsences] = useState([]);
+  var [balance, setBalance] = useState(null);
+  var [loading, setLoading] = useState(true);
+  var [activeTab, setActiveTab] = useState("all"); // all | leaves | permissions | preabs
+  var [showLeave, setShowLeave] = useState(false);
+  var [showPerm, setShowPerm] = useState(false);
+  var [showPreAbs, setShowPreAbs] = useState(false);
+
+  async function loadAll() {
+    setLoading(true);
+    try {
+      var [lv, pm, pa, bl] = await Promise.all([
+        api("leaves").then(function(d){ return (Array.isArray(d) ? d : []).filter(function(x){ return x.empId === user.id; }); }).catch(function(){ return []; }),
+        api("permissions", { params: { empId: user.id } }).catch(function(){ return []; }),
+        api("pre_absence").then(function(d){ return (Array.isArray(d) ? d : []).filter(function(x){ return x.empId === user.id; }); }).catch(function(){ return []; }),
+        fetch("/api/data?action=leave-balance&empId=" + encodeURIComponent(user.id)).then(function(r){ return r.json(); }).catch(function(){ return null; }),
+      ]);
+      setLeaves(lv || []);
+      setPermissions(pm || []);
+      setPreAbsences(pa || []);
+      setBalance(bl && !bl.error ? bl : null);
+    } catch(e) {}
+    setLoading(false);
+  }
+
+  useEffect(function(){ loadAll(); }, [user.id]);
+
+  var statusMeta = {
+    pending: { label: "قيد المراجعة", color: "#D97706", bg: "rgba(217,119,6,0.15)", icon: "⏳" },
+    approved: { label: "معتمد", color: "#10B981", bg: "rgba(16,185,129,0.15)", icon: "✅" },
+    rejected: { label: "مرفوض", color: "#DC2626", bg: "rgba(220,38,38,0.15)", icon: "❌" },
+  };
+
+  var leaveTypesMeta = { annual: {l:"سنوية",i:"🏖️"}, sick:{l:"مرضية",i:"🏥"}, emergency:{l:"طارئة",i:"⚡"}, personal:{l:"شخصية",i:"👤"} };
+
+  var all = [];
+  (leaves || []).forEach(function(l){ all.push({ kind: "leave", ts: l.ts, data: l }); });
+  (permissions || []).forEach(function(p){ all.push({ kind: "permission", ts: p.ts, data: p }); });
+  (preAbsences || []).forEach(function(pa){ all.push({ kind: "preabs", ts: pa.ts, data: pa }); });
+  all.sort(function(a,b){ return (b.ts || "").localeCompare(a.ts || ""); });
+
+  var filtered = all;
+  if (activeTab === "leaves") filtered = all.filter(function(x){ return x.kind === "leave"; });
+  else if (activeTab === "permissions") filtered = all.filter(function(x){ return x.kind === "permission"; });
+  else if (activeTab === "preabs") filtered = all.filter(function(x){ return x.kind === "preabs"; });
+
+  var pendingCount = all.filter(function(x){ return x.data.status === "pending"; }).length;
+  var approvedCount = all.filter(function(x){ return x.data.status === "approved"; }).length;
+
+  function renderItem(x) {
+    var d = x.data;
+    var s = statusMeta[d.status] || { label: d.status, color: COLORS.textMuted, bg: COLORS.metallic, icon: "•" };
+    var title = "", sub = "", icon = "📋";
+    if (x.kind === "leave") {
+      var lm = leaveTypesMeta[d.type] || { l: d.type || "—", i: "📋" };
+      icon = lm.i;
+      title = "إجازة " + lm.l + " (" + (d.days || 1) + " يوم)";
+      sub = "من " + d.from + " إلى " + d.to + (d.reason ? " — " + d.reason : "");
+    } else if (x.kind === "permission") {
+      icon = "⏱";
+      title = "استئذان";
+      sub = (d.from_time ? d.from_time + " → " + (d.to_time || "—") : "") + (d.reason ? " — " + d.reason : "");
+    } else if (x.kind === "preabs") {
+      icon = "🏥";
+      title = "إفادة غياب بعذر";
+      sub = (d.date ? "بتاريخ " + d.date : "") + (d.reason ? " — " + d.reason : "");
+    }
+    return (
+      <div key={x.kind + "_" + (d.id || Math.random())} style={{ padding: 12, borderRadius: 12, background: COLORS.metallic, marginBottom: 8, border: "1px solid " + COLORS.metallicBorder }}>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 10, marginBottom: 6 }}>
+          <div style={{ display: "flex", gap: 8, alignItems: "center", flex: 1, minWidth: 0 }}>
+            <span style={{ fontSize: 18, flexShrink: 0 }}>{icon}</span>
+            <div style={{ flex: 1, minWidth: 0 }}>
+              <div style={{ ...TYPOGRAPHY.body, fontWeight: 800, color: COLORS.textPrimary, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{title}</div>
+              {sub && <div style={{ ...TYPOGRAPHY.tiny, color: COLORS.textMuted, marginTop: 2 }}>{sub}</div>}
+            </div>
+          </div>
+          <div style={{ padding: "4px 9px", borderRadius: 8, background: s.bg, color: s.color, fontSize: 10, fontWeight: 800, whiteSpace: "nowrap", flexShrink: 0 }}>
+            {s.icon} {s.label}
+          </div>
+        </div>
+        <div style={{ fontSize: 9, color: COLORS.textMuted, display: "flex", justifyContent: "space-between" }}>
+          <span>📅 قُدِّم: {d.ts ? new Date(d.ts).toLocaleDateString("ar-SA") : "—"}</span>
+          {d.decidedAt && <span>قُرِّر: {new Date(d.decidedAt).toLocaleDateString("ar-SA")}</span>}
+        </div>
+        {d.rejectReason && <div style={{ marginTop: 6, padding: 6, borderRadius: 6, background: "rgba(220,38,38,0.1)", color: "#DC2626", fontSize: 10, fontWeight: 600 }}>سبب الرفض: {d.rejectReason}</div>}
+      </div>
+    );
+  }
+
+  var filterTabs = [
+    { id: "all", label: "الكل", count: all.length },
+    { id: "leaves", label: "إجازات", count: leaves.length },
+    { id: "permissions", label: "استئذان", count: permissions.length },
+    { id: "preabs", label: "غياب بعذر", count: preAbsences.length },
+  ];
+
+  return (
+    <>
+      {/* Summary cards */}
+      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: SPACING.sm, marginBottom: SPACING.md }}>
+        <Card padding={SPACING.md}>
+          <div style={{ ...TYPOGRAPHY.tiny, color: COLORS.textMuted, fontWeight: 700 }}>⏳ قيد المراجعة</div>
+          <div style={{ ...TYPOGRAPHY.h1, color: "#D97706", marginTop: 4 }}>{pendingCount}</div>
+        </Card>
+        <Card padding={SPACING.md}>
+          <div style={{ ...TYPOGRAPHY.tiny, color: COLORS.textMuted, fontWeight: 700 }}>✅ معتمدة</div>
+          <div style={{ ...TYPOGRAPHY.h1, color: "#10B981", marginTop: 4 }}>{approvedCount}</div>
+        </Card>
+      </div>
+
+      {/* Leave balance widget */}
+      {balance && (
+        <Card padding={SPACING.md}>
+          <div style={{ ...TYPOGRAPHY.caption, fontWeight: 800, color: COLORS.textPrimary, marginBottom: 8 }}>📊 رصيد الإجازات (سنة {balance.year})</div>
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 6 }}>
+            {[{k:"annual",l:"سنوية",i:"🏖️",c:"#0891B2"},{k:"sick",l:"مرضية",i:"🏥",c:"#DC2626"},{k:"emergency",l:"طارئة",i:"⚡",c:"#D97706"},{k:"personal",l:"شخصية",i:"👤",c:"#7C3AED"}].map(function(b){
+              return (
+                <div key={b.k} style={{ textAlign: "center", padding: 8, borderRadius: 10, background: b.c + "15", border: "1px solid " + b.c + "40" }}>
+                  <div style={{ fontSize: 14 }}>{b.i}</div>
+                  <div style={{ fontSize: 17, fontWeight: 900, color: b.c }}>{balance[b.k] || 0}</div>
+                  <div style={{ fontSize: 8, color: COLORS.textMuted }}>{b.l}</div>
+                </div>
+              );
+            })}
+          </div>
+        </Card>
+      )}
+
+      {/* Quick action buttons */}
+      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 6, marginBottom: SPACING.md }}>
+        <button onClick={function(){ setShowLeave(true); }} style={{ padding: "10px 4px", borderRadius: 10, background: "rgba(8,145,178,0.15)", border: "1px solid rgba(8,145,178,0.4)", color: "#0891B2", fontWeight: 800, fontSize: 11, cursor: "pointer", fontFamily: TYPOGRAPHY.fontTajawal }}>🏖️ طلب إجازة</button>
+        <button onClick={function(){ setShowPerm(true); }} style={{ padding: "10px 4px", borderRadius: 10, background: "rgba(124,58,237,0.15)", border: "1px solid rgba(124,58,237,0.4)", color: "#7C3AED", fontWeight: 800, fontSize: 11, cursor: "pointer", fontFamily: TYPOGRAPHY.fontTajawal }}>⏱ استئذان</button>
+        <button onClick={function(){ setShowPreAbs(true); }} style={{ padding: "10px 4px", borderRadius: 10, background: "rgba(217,119,6,0.15)", border: "1px solid rgba(217,119,6,0.4)", color: "#D97706", fontWeight: 800, fontSize: 11, cursor: "pointer", fontFamily: TYPOGRAPHY.fontTajawal }}>🏥 إفادة غياب</button>
+      </div>
+
+      {/* Filter tabs */}
+      <div style={{ display: "flex", gap: 4, background: COLORS.metallic, borderRadius: 10, padding: 4, marginBottom: SPACING.md }}>
+        {filterTabs.map(function(ft){
+          var active = activeTab === ft.id;
+          return (
+            <button key={ft.id} onClick={function(){ setActiveTab(ft.id); }} style={{ flex: 1, padding: "7px 4px", borderRadius: 8, background: active ? COLORS.goldLight : "transparent", color: active ? "#000" : COLORS.textMuted, border: "none", fontWeight: 800, fontSize: 10, cursor: "pointer", fontFamily: TYPOGRAPHY.fontTajawal }}>
+              {ft.label} <span style={{ fontSize: 9, opacity: 0.7 }}>({ft.count})</span>
+            </button>
+          );
+        })}
+      </div>
+
+      {/* Items list */}
+      {loading ? (
+        <div style={{ padding: 30, textAlign: "center", color: COLORS.textMuted }}>جارِ التحميل...</div>
+      ) : filtered.length === 0 ? (
+        <Card padding={SPACING.lg}>
+          <div style={{ textAlign: "center", color: COLORS.textMuted, padding: 20 }}>
+            <div style={{ fontSize: 36, marginBottom: 8 }}>📭</div>
+            <div style={{ ...TYPOGRAPHY.body, fontWeight: 700 }}>لا توجد طلبات</div>
+            <div style={{ ...TYPOGRAPHY.tiny, marginTop: 4 }}>استخدم الأزرار أعلاه لتقديم طلب جديد</div>
+          </div>
+        </Card>
+      ) : (
+        <div>{filtered.map(renderItem)}</div>
+      )}
+
+      {/* Modals */}
+      {showLeave && <LeaveModal user={user} onClose={function(){ setShowLeave(false); }} onSubmit={async function(data){ try { await api("leaves", { method: "POST", body: Object.assign({ empId: user.id }, data) }); setShowLeave(false); loadAll(); } catch(e) {} }} />}
+      {showPerm && <PermissionModal user={user} branch={null} onClose={function(){ setShowPerm(false); }} onSubmit={async function(data){ try { await api("permissions", { method: "POST", body: Object.assign({ empId: user.id, date: todayStr() }, data) }); setShowPerm(false); loadAll(); } catch(e) {} }} />}
+      {showPreAbs && <PreAbsenceModal allEmps={[]} user={user} onClose={function(){ setShowPreAbs(false); }} onSubmit={async function(data){ try { await api("pre_absence", { method: "POST", body: Object.assign({ empId: user.id, reportedBy: user.id }, data) }); setShowPreAbs(false); loadAll(); } catch(e) {} }} />}
+    </>
+  );
+}
+
 function LegalTab({ user }) {
   var [subTab, setSubTab] = useState("summary");
   var [complaints, setComplaints] = useState([]);
