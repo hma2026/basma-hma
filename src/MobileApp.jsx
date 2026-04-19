@@ -10,7 +10,7 @@ import { ALL_VIOLATIONS_DEFAULT, PENALTY_TYPES, LAIHA_INFO, COMPLAINT_STATUS, VI
 
 /* ═══════════ APP CONFIG (إعدادات التطبيق) ═══════════ */
 const APP_CONFIG = {
-  VER: "6.47",
+  VER: "6.48",
   NAME: "بصمة HMA",
   FULL_NAME: "نظام الحضور والانصراف الذكي",
   COMPANY: "هاني محمد عسيري للاستشارات الهندسية",
@@ -4971,7 +4971,18 @@ function TawasulPage({ user, allEmps }) {
   // Returns a Set of string IDs — does NOT include myself
   var subordinatesSet = React.useMemo(function(){
     var result = new Set();
-    if (!myId || !hierarchy || Object.keys(hierarchy).length === 0) return result;
+    if (!myId || !hierarchy || Object.keys(hierarchy).length === 0) {
+      // v6.48 — diagnostic logging
+      try {
+        console.log("[Tawasul/إدارتي] subordinatesSet empty because:", {
+          myId: myId,
+          hasHierarchy: !!hierarchy,
+          hierarchyKeys: hierarchy ? Object.keys(hierarchy).length : 0,
+          hierarchySample: hierarchy ? Object.entries(hierarchy).slice(0, 3) : null,
+        });
+      } catch(e) {}
+      return result;
+    }
     var myStr = String(myId);
     // Build reverse index: manager -> [subordinates]
     var reverse = {};
@@ -4988,6 +4999,17 @@ function TawasulPage({ user, allEmps }) {
       result.add(cur);
       if (reverse[cur]) queue.push.apply(queue, reverse[cur]);
     }
+    // v6.48 — diagnostic
+    try {
+      console.log("[Tawasul/إدارتي] hierarchy analysis:", {
+        myId: myStr,
+        totalHierarchyEntries: Object.keys(hierarchy).length,
+        managersInHierarchy: Object.keys(reverse),
+        myDirectReports: reverse[myStr] || [],
+        mySubordinatesSetSize: result.size,
+        mySubordinates: Array.from(result),
+      });
+    } catch(e) {}
     return result;
   }, [myId, hierarchy]);
 
@@ -5414,6 +5436,24 @@ function TawasulPage({ user, allEmps }) {
       </div>
 
       {err && <div style={{ margin: "0 12px 12px", padding: "12px 14px", borderRadius: 12, background: "rgba(239,68,68,0.1)", border: "1px solid #EF4444", color: "#EF4444", fontSize: 12, fontWeight: 600, display: "flex", alignItems: "center", gap: 8 }}><span style={{ fontSize: 18 }}>⚠️</span><div style={{ flex: 1 }}>{err}</div><button onClick={function(){ loadData(true); }} style={{ background: "#EF4444", border: "none", borderRadius: 8, padding: "6px 12px", color: "#fff", fontSize: 11, fontWeight: 700, cursor: "pointer", fontFamily: "inherit" }}>إعادة</button></div>}
+
+      {/* v6.48 — Hierarchy diagnostic banner (shows only for managers/admins when subordinates set is empty) */}
+      {!err && (user && (user.isManager || user.isAdmin || isAdmin)) && !hasSubordinates && (
+        <div style={{ margin: "0 12px 12px", padding: "14px 16px", borderRadius: 12, background: "rgba(245,158,11,0.1)", border: "1px solid #F59E0B", color: "#B45309", fontSize: 12, lineHeight: 1.7 }}>
+          <div style={{ fontWeight: 800, marginBottom: 6, fontSize: 13 }}>📊 تبويبات "إدارتي" مخفية لأن الهرمية غير معرّفة</div>
+          <div style={{ fontSize: 11, marginBottom: 8 }}>
+            <strong>رقمك (myId):</strong> {String(myId)}<br/>
+            <strong>عدد العلاقات المحفوظة:</strong> {hierarchy ? Object.keys(hierarchy).length : 0}
+          </div>
+          <div style={{ fontSize: 11, marginBottom: 8 }}>
+            {hierarchy && Object.keys(hierarchy).length > 0
+              ? "الهرمية موجودة لكن لا أحد مُسند لك. تحقق أن الـ ID المحفوظ للمدير يطابق رقمك."
+              : "الهرمية فارغة. افتح لوحة الإدارة → الهيكل التنظيمي → عيّن مديراً لكل موظف."
+            }
+          </div>
+          <div style={{ fontSize: 10, color: "#78350F", fontStyle: "italic" }}>افتح Console (F12) لتفاصيل أكثر · أرسل النتيجة للمطور</div>
+        </div>
+      )}
 
       <div style={{ padding: "0 12px" }}>
         {tab === "calendar" ? (
