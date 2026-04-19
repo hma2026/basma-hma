@@ -3,7 +3,7 @@ import { ALL_VIOLATIONS_DEFAULT, PENALTY_TYPES, LAIHA_INFO, COMPLAINT_STATUS, VI
 import { generateAttendanceReport, generateEmployeeReport, generateMonthlySummary, generateViolationsReport, generateEmployeesListReport, generateBenefitsReport, generateAnnouncementsReport } from "./pdfReports";
 
 const APP = "بصمة HMA";
-const VER = "6.32";
+const VER = "6.35";
 const CO = "هاني محمد عسيري للإستشارات الهندسية";
 const B = { blue: "#2B5EA7", yellow: "#FDD800", red: "#E2192C", black: "#1A1A1A", blueDk: "#1E4478", blueLt: "#EDF3FB", gold: "#D4A017" };
 
@@ -1529,10 +1529,10 @@ function WorkTypesPanel({ t, B, emps }) {
   var [search, setSearch] = useState("");
 
   var defaults = {
-    full_time: { label: "موظف دوام كامل", workHours: 8, flexible: false, requireCheckin: true, allowRemote: false, breakMinutes: 30, lateAfterMin: 15, callOnLate: true },
-    full_time_flex: { label: "موظف دوام كامل مرن", workHours: 8, flexible: true, requireCheckin: true, allowRemote: true, breakMinutes: 30, lateAfterMin: 30, callOnLate: true },
-    flex_contract: { label: "عقد مرن", workHours: 6, flexible: true, requireCheckin: false, allowRemote: true, breakMinutes: 15, lateAfterMin: 60, callOnLate: false },
-    trainee: { label: "متدرب", workHours: 6, flexible: false, requireCheckin: true, allowRemote: false, breakMinutes: 30, lateAfterMin: 15, callOnLate: true },
+    full_time:      { label: "موظف دوام كامل",      workHours: 8, flexible: false, requireCheckin: true,  allowRemote: false, breakMinutes: 30, breakWindow: { start: "12:30", end: "13:00", mandatory: true }, lateAfterMin: 15, callOnLate: true  },
+    full_time_flex: { label: "موظف دوام كامل مرن",  workHours: 8, flexible: true,  requireCheckin: true,  allowRemote: true,  breakMinutes: 30, breakWindow: null,                                          lateAfterMin: 30, callOnLate: true  },
+    flex_contract:  { label: "عقد مرن",             workHours: 9, flexible: true,  requireCheckin: false, allowRemote: true,  breakMinutes: 30, breakWindow: null,                                          lateAfterMin: 60, callOnLate: false },
+    trainee:        { label: "متدرب",               workHours: 6, flexible: false, requireCheckin: true,  allowRemote: false, breakMinutes: 30, breakWindow: { start: "12:30", end: "13:00", mandatory: true }, lateAfterMin: 15, callOnLate: true  },
   };
 
   useEffect(function() {
@@ -1626,9 +1626,7 @@ function WorkTypesPanel({ t, B, emps }) {
           var label = wt ? wt.label : "دوام كامل";
           var initial = (e.name || "؟").trim().charAt(0);
           return (
-            <div key={e.id} onClick={function(){ setPickerEmp(e); }} style={{ display: "flex", alignItems: "center", gap: 12, padding: "12px 14px", borderRadius: 10, background: t.bg, marginBottom: 6, border: "1px solid " + t.sep, cursor: "pointer", transition: "transform 0.1s" }}
-              onMouseEnter={function(ev){ ev.currentTarget.style.transform = "translateX(-3px)"; }}
-              onMouseLeave={function(ev){ ev.currentTarget.style.transform = "translateX(0)"; }}>
+            <div key={e.id} onClick={function(){ setPickerEmp(e); }} style={{ display: "flex", alignItems: "center", gap: 12, padding: "12px 14px", borderRadius: 10, background: t.bg, marginBottom: 6, border: "1px solid " + t.sep, cursor: "pointer", WebkitTapHighlightColor: "rgba(43,94,167,0.1)", userSelect: "none" }}>
               <div style={{ width: 38, height: 38, borderRadius: 19, background: m.light, color: m.color, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 15, fontWeight: 800, flexShrink: 0 }}>{initial}</div>
               <div style={{ flex: 1, minWidth: 0 }}>
                 <div style={{ fontSize: 13, fontWeight: 700, color: t.tx, marginBottom: 4, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{e.name || "موظف بدون اسم"}</div>
@@ -1676,6 +1674,10 @@ function WorkTypeEditModal({ t, B, typeKey, workType, onClose, onSave }) {
   var [requireCheckin, setRequireCheckin] = useState(workType.requireCheckin);
   var [allowRemote, setAllowRemote] = useState(workType.allowRemote);
   var [callOnLate, setCallOnLate] = useState(workType.callOnLate);
+  // v6.35 — Break window (mandatory break time slot)
+  var [breakEnabled, setBreakEnabled] = useState(!!(workType.breakWindow && workType.breakWindow.mandatory));
+  var [breakStart, setBreakStart] = useState((workType.breakWindow && workType.breakWindow.start) || "12:30");
+  var [breakEnd, setBreakEnd] = useState((workType.breakWindow && workType.breakWindow.end) || "13:00");
   var [saving, setSaving] = useState(false);
 
   async function handleSave() {
@@ -1689,6 +1691,7 @@ function WorkTypeEditModal({ t, B, typeKey, workType, onClose, onSave }) {
       requireCheckin: requireCheckin,
       allowRemote: allowRemote,
       callOnLate: callOnLate,
+      breakWindow: breakEnabled ? { start: breakStart, end: breakEnd, mandatory: true } : null,
     });
     setSaving(false);
   }
@@ -1744,6 +1747,28 @@ function WorkTypeEditModal({ t, B, typeKey, workType, onClose, onSave }) {
           <Toggle icon="👆" label="يتطلب بصمة حضور" value={requireCheckin} setter={setRequireCheckin} />
           <Toggle icon="🏠" label="يسمح بالعمل عن بُعد" value={allowRemote} setter={setAllowRemote} />
           <Toggle icon="📞" label="اتصال تذكير عند التأخر" value={callOnLate} setter={setCallOnLate} />
+
+          {/* v6.35 — Mandatory break window */}
+          <div style={{ marginTop: 14, padding: 12, borderRadius: 12, border: "1px dashed " + t.sep, background: breakEnabled ? m.light : "transparent" }}>
+            <Toggle icon="☕" label="نافذة بريك إلزامية" value={breakEnabled} setter={setBreakEnabled} />
+            {breakEnabled && (
+              <>
+                <div style={{ fontSize: 10, color: t.txM, marginTop: 4, marginBottom: 10, lineHeight: 1.6 }}>
+                  البريك يُسمح به فقط بين الوقتين التاليين. أي بريك خارجهما سيُسجَّل كمخالفة تلقائياً.
+                </div>
+                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
+                  <div>
+                    <div style={{ fontSize: 11, fontWeight: 700, color: t.tx2, marginBottom: 6 }}>⏰ من</div>
+                    <input type="time" value={breakStart} onChange={function(e){ setBreakStart(e.target.value); }} style={inputStyle} />
+                  </div>
+                  <div>
+                    <div style={{ fontSize: 11, fontWeight: 700, color: t.tx2, marginBottom: 6 }}>⏰ إلى</div>
+                    <input type="time" value={breakEnd} onChange={function(e){ setBreakEnd(e.target.value); }} style={inputStyle} />
+                  </div>
+                </div>
+              </>
+            )}
+          </div>
         </div>
 
         <div style={{ padding: "14px 20px", borderTop: "1px solid " + t.sep, display: "flex", gap: 10 }}>
@@ -1761,16 +1786,30 @@ function WorkTypeEditModal({ t, B, typeKey, workType, onClose, onSave }) {
 function WorkTypePickerModal({ t, B, emp, workTypes, currentKey, onClose, onSelect }) {
   var [selected, setSelected] = useState(currentKey);
   var [saving, setSaving] = useState(false);
+  var [err, setErr] = useState(null);
+
+  // v6.34 — Lock body scroll while modal open (iOS fix)
+  useEffect(function(){
+    var prev = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    return function(){ document.body.style.overflow = prev; };
+  }, []);
 
   async function handleSave() {
     if (selected === currentKey) { onClose(); return; }
     setSaving(true);
-    await onSelect(selected);
+    setErr(null);
+    try {
+      await onSelect(selected);
+    } catch (e) {
+      setErr("فشل الحفظ — جرّب مرة أخرى");
+      setSaving(false);
+    }
   }
 
   return (
-    <div onClick={onClose} style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.55)", zIndex: 999, display: "flex", alignItems: "center", justifyContent: "center", padding: 12 }}>
-      <div onClick={function(e){ e.stopPropagation(); }} style={{ background: t.card, borderRadius: 18, maxWidth: 440, width: "100%", maxHeight: "92vh", overflowY: "auto", boxShadow: "0 10px 40px rgba(0,0,0,0.3)" }}>
+    <div onClick={onClose} style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.55)", zIndex: 9999, display: "flex", alignItems: "center", justifyContent: "center", padding: 12, WebkitOverflowScrolling: "touch" }}>
+      <div onClick={function(e){ e.stopPropagation(); }} style={{ background: t.card, borderRadius: 18, maxWidth: 440, width: "100%", maxHeight: "90vh", overflowY: "auto", boxShadow: "0 10px 40px rgba(0,0,0,0.3)", WebkitOverflowScrolling: "touch" }}>
         <div style={{ padding: "18px 20px", borderBottom: "1px solid " + t.sep }}>
           <div style={{ fontSize: 15, fontWeight: 800, color: t.tx }}>اختر نوع الدوام</div>
           <div style={{ fontSize: 11, color: t.txM, marginTop: 3, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{emp.name || "موظف"}</div>
@@ -1782,7 +1821,7 @@ function WorkTypePickerModal({ t, B, emp, workTypes, currentKey, onClose, onSele
             var m = getTypeMeta(key);
             var isSelected = selected === key;
             return (
-              <div key={key} onClick={function(){ setSelected(key); }} style={{ display: "flex", alignItems: "center", gap: 12, padding: 14, borderRadius: 12, marginBottom: 8, cursor: "pointer", background: isSelected ? m.light : t.bg, border: "2px solid " + (isSelected ? m.color : "transparent"), transition: "all 0.15s" }}>
+              <div key={key} onClick={function(){ setSelected(key); }} style={{ display: "flex", alignItems: "center", gap: 12, padding: 14, borderRadius: 12, marginBottom: 8, cursor: "pointer", background: isSelected ? m.light : t.bg, border: "2px solid " + (isSelected ? m.color : "transparent"), WebkitTapHighlightColor: "transparent", userSelect: "none" }}>
                 <div style={{ fontSize: 26, width: 46, height: 46, borderRadius: 12, background: isSelected ? "#fff" : m.light, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0, boxShadow: isSelected ? "0 2px 8px rgba(0,0,0,0.1)" : "none" }}>{m.icon}</div>
                 <div style={{ flex: 1, minWidth: 0 }}>
                   <div style={{ fontSize: 13, fontWeight: 800, color: isSelected ? m.color : t.tx, marginBottom: 3 }}>{wt.label}</div>
@@ -1794,11 +1833,12 @@ function WorkTypePickerModal({ t, B, emp, workTypes, currentKey, onClose, onSele
               </div>
             );
           })}
+          {err && <div style={{ padding: 10, borderRadius: 8, background: "rgba(239,68,68,0.1)", border: "1px solid rgba(239,68,68,0.3)", color: "#EF4444", fontSize: 11, fontWeight: 700, marginTop: 4 }}>{err}</div>}
         </div>
 
         <div style={{ padding: "14px 20px", borderTop: "1px solid " + t.sep, display: "flex", gap: 10 }}>
-          <button onClick={onClose} style={{ flex: 1, padding: 12, borderRadius: 10, background: t.bg, color: t.tx, border: "1px solid " + t.sep, fontSize: 13, fontWeight: 700, cursor: "pointer", fontFamily: "inherit" }}>إلغاء</button>
-          <button onClick={handleSave} disabled={saving} style={{ flex: 2, padding: 12, borderRadius: 10, background: saving ? t.sep : B.blue, color: "#fff", border: "none", fontSize: 13, fontWeight: 800, cursor: saving ? "default" : "pointer", fontFamily: "inherit" }}>
+          <button onClick={onClose} style={{ flex: 1, padding: 12, borderRadius: 10, background: t.bg, color: t.tx, border: "1px solid " + t.sep, fontSize: 13, fontWeight: 700, cursor: "pointer", fontFamily: "inherit", WebkitTapHighlightColor: "transparent" }}>إلغاء</button>
+          <button onClick={handleSave} disabled={saving} style={{ flex: 2, padding: 12, borderRadius: 10, background: saving ? t.sep : B.blue, color: "#fff", border: "none", fontSize: 13, fontWeight: 800, cursor: saving ? "default" : "pointer", fontFamily: "inherit", WebkitTapHighlightColor: "transparent" }}>
             {saving ? "جارِ الحفظ..." : "✓ حفظ"}
           </button>
         </div>

@@ -10,7 +10,7 @@ import { ALL_VIOLATIONS_DEFAULT, PENALTY_TYPES, LAIHA_INFO, COMPLAINT_STATUS, VI
 
 /* ═══════════ APP CONFIG (إعدادات التطبيق) ═══════════ */
 const APP_CONFIG = {
-  VER: "6.32",
+  VER: "6.35",
   NAME: "بصمة HMA",
   FULL_NAME: "نظام الحضور والانصراف الذكي",
   COMPANY: "هاني محمد عسيري للاستشارات الهندسية",
@@ -78,8 +78,83 @@ if (typeof document !== "undefined" && !document.getElementById("basma-css")) {
     ".basma-flip-back{transform:rotateX(180deg);position:absolute;top:0;left:0;right:0}",
     "input::placeholder{color:rgba(255,255,255,.4)!important}",
     "button:active{transform:scale(.96)!important}",
+    /* v6.34 — iOS modal scroll fix: lock body when any modal is open */
+    "body.basma-modal-open{overflow:hidden!important;position:fixed!important;width:100%!important;top:0;left:0;touch-action:none;overscroll-behavior:contain}",
+    ".basma-modal-content{-webkit-overflow-scrolling:touch;overscroll-behavior:contain;touch-action:pan-y}",
+    ".basma-modal-overlay{-webkit-tap-highlight-color:transparent;touch-action:none}",
   ].join("\n");
   document.head.appendChild(style);
+
+  /* v6.34 — Global modal observer: detect any fixed-position overlay
+     being added/removed from DOM and lock/unlock body scroll automatically.
+     Works for ALL modals in the app without touching each one individually. */
+  try {
+    var savedScrollY = 0;
+    function isModalOverlay(el) {
+      if (!(el instanceof HTMLElement)) return false;
+      var cs = window.getComputedStyle(el);
+      if (cs.position !== "fixed") return false;
+      // Accept if it fills viewport (inset 0 / top+left=0 and wide)
+      var rect = el.getBoundingClientRect();
+      if (rect.width < window.innerWidth * 0.8) return false;
+      if (rect.height < window.innerHeight * 0.6) return false;
+      // Skip pinned UI like the active-timer pill (small floating)
+      if (el.getAttribute("data-basma-no-lock") === "1") return false;
+      return true;
+    }
+    function countOpenModals() {
+      var total = 0;
+      var children = document.body.children;
+      for (var i = 0; i < children.length; i++) {
+        try { if (isModalOverlay(children[i])) total++; } catch(e) {}
+      }
+      return total;
+    }
+    function applyLock() {
+      var hasOpen = countOpenModals() > 0;
+      var isLocked = document.body.classList.contains("basma-modal-open");
+      if (hasOpen && !isLocked) {
+        savedScrollY = window.scrollY || window.pageYOffset || 0;
+        document.body.classList.add("basma-modal-open");
+        document.body.style.top = "-" + savedScrollY + "px";
+      } else if (!hasOpen && isLocked) {
+        document.body.classList.remove("basma-modal-open");
+        document.body.style.top = "";
+        window.scrollTo(0, savedScrollY);
+      }
+    }
+    var mo = new MutationObserver(function(){ applyLock(); });
+    // Start observing once DOM is ready
+    if (document.body) {
+      mo.observe(document.body, { childList: true });
+    } else {
+      document.addEventListener("DOMContentLoaded", function(){
+        mo.observe(document.body, { childList: true });
+      });
+    }
+  } catch(e) { /* silent — scroll lock is progressive enhancement */ }
+}
+
+/* v6.34 — React hook: lock body scroll while modal is open (iOS fix) */
+function useBodyScrollLock(isOpen) {
+  useEffect(function(){
+    if (!isOpen) return;
+    var prevOverflow = document.body.style.overflow;
+    var prevPosition = document.body.style.position;
+    var prevTop = document.body.style.top;
+    var prevWidth = document.body.style.width;
+    var scrollY = window.scrollY;
+    document.body.classList.add("basma-modal-open");
+    document.body.style.top = "-" + scrollY + "px";
+    return function(){
+      document.body.classList.remove("basma-modal-open");
+      document.body.style.overflow = prevOverflow;
+      document.body.style.position = prevPosition;
+      document.body.style.top = prevTop;
+      document.body.style.width = prevWidth;
+      window.scrollTo(0, scrollY);
+    };
+  }, [isOpen]);
 }
 
 /* ── API Helper ── */
@@ -324,6 +399,8 @@ function MobileAppInner() {
     return function() { window.removeEventListener("basma:goto-legal", handleGotoLegal); };
   }, []);
   const [branch, setBranch] = useState(null);
+  // v6.33 — workType config for current employee (from admin work_types + overrides)
+  const [workType, setWorkType] = useState(null);
   const [darkMode, setDarkMode] = useState(function(){ 
     var saved = localStorage.getItem("basma_dark");
     return saved === null ? true : saved === "1";
@@ -778,6 +855,21 @@ function MobileAppInner() {
       const branches = await api("branches");
       const b = branches.find(x => x.id === emp.branch);
       if (b) setBranch(b);
+
+      // v6.33 — Load work type config for this employee
+      // Structure: work_types = { types: {...}, overrides: { empId: typeKey } }
+      try {
+        const wtData = await api("work_types");
+        if (wtData && wtData.types) {
+          var overrideKey = (wtData.overrides && wtData.overrides[emp.id]) || emp.workType || "full_time";
+          var wtConfig = wtData.types[overrideKey] || wtData.types.full_time || null;
+          if (wtConfig) {
+            // Attach the key so downstream code can reference it
+            setWorkType(Object.assign({ key: overrideKey }, wtConfig));
+          }
+        }
+      } catch(wtErr) { /* silent — fallback to default behavior */ }
+
       const recs = await api("attendance", { params: { empId: emp.id } });
       setAllAtt(recs);
       setTodayAtt(recs.filter(r => r.date === todayStr()));
@@ -927,6 +1019,34 @@ function MobileAppInner() {
         try { await api("violations", { method: "POST", body: { empId: user.id, type: "geofence", details: "تسجيل من خارج النطاق (" + gpsDist + " م)", date: todayStr() } }); } catch(e) { /**/ }
       }
 
+      // v6.35 — Break window enforcement: if workType has mandatory breakWindow,
+      // any break_start/break_end outside that window records a violation.
+      if ((type === "break_start" || type === "break_end") && workType && workType.breakWindow && workType.breakWindow.mandatory) {
+        try {
+          var bw = workType.breakWindow;
+          var wStart = timeToMin(bw.start);
+          var wEnd = timeToMin(bw.end);
+          var nowMinBW = now.getHours() * 60 + now.getMinutes();
+          // Allow 5-minute grace on either side
+          var grace = 5;
+          var outsideWindow = (nowMinBW < (wStart - grace)) || (nowMinBW > (wEnd + grace));
+          if (outsideWindow) {
+            var actionLabel = type === "break_start" ? "بداية استراحة" : "عودة من استراحة";
+            await api("violations", {
+              method: "POST",
+              body: {
+                empId: user.id,
+                type: "break_window",
+                details: actionLabel + " خارج النافذة الإلزامية (" + bw.start + "-" + bw.end + ") — سُجِّلت الساعة " + now.getHours() + ":" + String(now.getMinutes()).padStart(2, "0"),
+                date: todayStr(),
+              },
+            });
+            // Warn user immediately (after check-in completes)
+            setTimeout(function(){ showToast("⚠️ بريك خارج النافذة الإلزامية (" + bw.start + "-" + bw.end + ") — تم تسجيل مخالفة", "warning"); }, 3500);
+          }
+        } catch(eBW) { /* silent — violation logging should not block the check-in */ }
+      }
+
       var checkinBody = { empId: user.id, type: type, lat: gps ? gps.lat : null, lng: gps ? gps.lng : null, facePhoto: facePhoto };
 
       // Offline support — تخزين محلي + رفع لاحق
@@ -1015,11 +1135,11 @@ function MobileAppInner() {
       {!online && <div style={{ background: C.red, color: "#fff", textAlign: "center", padding: "6px 0", fontSize: 11, fontWeight: 700 }}>⚠️ لا يوجد اتصال بالإنترنت</div>}
 
       <div key={page} style={{ flex: 1, display: "flex", flexDirection: "column", animation: "pageIn .3s ease" }}>
-        {page === "home" && <HomePage user={user} branch={branch} now={now} todayAtt={todayAtt} allAtt={allAtt} gps={gps} gpsDist={gpsDist} streak={streak} loading={loading} refreshing={refreshing} dayState={getDayState()} checkpoints={getCheckpoints()} isOffDay={isOffDay()} pendingCount={myLeaves.filter(function(l){ return l.status === "pending"; }).length + myTickets.filter(function(t){ return t.status === "pending"; }).length} teamToday={teamToday} pwaPrompt={pwaPrompt} onPwaInstall={async function(){ if(pwaPrompt){pwaPrompt.prompt();await pwaPrompt.userChoice;setPwaPrompt(null);} }} onCheckin={requestCheckin} onChallenge={function(pts) { var u = { ...user, points: (user.points||0)+pts }; setUser(u); localStorage.setItem("basma_user", JSON.stringify(u)); showToast("🎉 +" + pts + " نقطة!"); }} onLeave={() => setLeaveModal(true)} onRefresh={refresh} onPreAbsence={function(){ setPreAbsModal(true); }} onManualAtt={function(){ setManualAttModal(true); }} onPermission={function(){ setPermModal(true); }} kadwarNotifs={kadwarNotifs} darkMode={darkMode} announcements={announcements} banners={banners} fieldProjects={fieldProjects} onShowAnnouncements={function(){ setShowAnnModal(true); }} />}
+        {page === "home" && <HomePage user={user} branch={branch} workType={workType} now={now} todayAtt={todayAtt} allAtt={allAtt} gps={gps} gpsDist={gpsDist} streak={streak} loading={loading} refreshing={refreshing} dayState={getDayState()} checkpoints={getCheckpoints()} isOffDay={isOffDay()} pendingCount={myLeaves.filter(function(l){ return l.status === "pending"; }).length + myTickets.filter(function(t){ return t.status === "pending"; }).length} teamToday={teamToday} pwaPrompt={pwaPrompt} onPwaInstall={async function(){ if(pwaPrompt){pwaPrompt.prompt();await pwaPrompt.userChoice;setPwaPrompt(null);} }} onCheckin={requestCheckin} onChallenge={function(pts) { var u = { ...user, points: (user.points||0)+pts }; setUser(u); localStorage.setItem("basma_user", JSON.stringify(u)); showToast("🎉 +" + pts + " نقطة!"); }} onLeave={() => setLeaveModal(true)} onRefresh={refresh} onPreAbsence={function(){ setPreAbsModal(true); }} onManualAtt={function(){ setManualAttModal(true); }} onPermission={function(){ setPermModal(true); }} kadwarNotifs={kadwarNotifs} darkMode={darkMode} announcements={announcements} banners={banners} fieldProjects={fieldProjects} onShowAnnouncements={function(){ setShowAnnModal(true); }} />}
         {page === "report" && <ReportPage user={user} allAtt={allAtt} todayAtt={todayAtt} branch={branch} isOffDay={isOffDay()} myLeaves={myLeaves} allEmps={allEmps} />}
         {page === "benefits" && <BenefitsPage user={user} />}
         {page === "tawasul" && <TawasulPage user={user} allEmps={allEmps} />}
-        {page === "profile" && <ProfilePage user={user} branch={branch} onLogout={logout} onTicket={() => setTicketModal(true)} myTickets={myTickets} darkMode={darkMode} toggleDark={toggleDark} kadwarNotifs={kadwarNotifs} />}
+        {page === "profile" && <ProfilePage user={user} branch={branch} workType={workType} onLogout={logout} onTicket={() => setTicketModal(true)} myTickets={myTickets} darkMode={darkMode} toggleDark={toggleDark} kadwarNotifs={kadwarNotifs} />}
       </div>
 
       <BottomNav page={page} setPage={setPage} legalAlerts={legalAlerts} tawasulUnread={tawasulUnread} />
@@ -1189,7 +1309,7 @@ function LoginScreen({ onLogin, loading }) {
 }
 
 /* ═══════════ HOME ═══════════ */
-function HomePage({ user, branch, now, todayAtt, allAtt, gps, gpsDist, streak, loading, refreshing, dayState, checkpoints, isOffDay, pendingCount, teamToday, pwaPrompt, onPwaInstall, onCheckin, onChallenge, onLeave, onRefresh, onPreAbsence, onManualAtt, onPermission, kadwarNotifs, darkMode, announcements, banners, fieldProjects, onShowAnnouncements }) {
+function HomePage({ user, branch, workType, now, todayAtt, allAtt, gps, gpsDist, streak, loading, refreshing, dayState, checkpoints, isOffDay, pendingCount, teamToday, pwaPrompt, onPwaInstall, onCheckin, onChallenge, onLeave, onRefresh, onPreAbsence, onManualAtt, onPermission, kadwarNotifs, darkMode, announcements, banners, fieldProjects, onShowAnnouncements }) {
   const { time, sec, ampm } = formatTime(now);
   const badge = memberBadge(user.points || 0);
   const inRange = branch && gpsDist !== null && gpsDist <= (branch.radius || 150);
@@ -1441,6 +1561,18 @@ function HomePage({ user, branch, now, todayAtt, allAtt, gps, gpsDist, streak, l
           <span style={{ fontSize: 13, fontWeight: 700, color: gps ? (inAnyValidZone ? "#30D158" : "#EF4444") : COLORS.textMuted, fontFamily: "'Tajawal',sans-serif" }}>{zoneText}</span>
           {streak > 0 && <span style={{ fontSize: 13, fontWeight: 800, color: COLORS.goldLight, marginRight: 4 }}>{"🔥 " + streak}</span>}
         </div>
+
+        {/* v6.33 — Work Type badge (shows employee's work schedule type) */}
+        {workType && (
+          <div style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 6, margin: "6px auto 0", padding: "5px 14px", borderRadius: 16, background: workType.flexible ? "rgba(139,92,246,0.15)" : "rgba(201,168,76,0.18)", border: "1px solid " + (workType.flexible ? "rgba(139,92,246,0.35)" : "rgba(201,168,76,0.45)"), width: "fit-content", maxWidth: "90%" }}>
+            <span style={{ fontSize: 11 }}>{workType.flexible ? "🔄" : "⏰"}</span>
+            <span style={{ fontSize: 10, fontWeight: 800, color: workType.flexible ? "#8b5cf6" : COLORS.goldLight, fontFamily: "'Tajawal',sans-serif" }}>{workType.label}</span>
+            <span style={{ fontSize: 9, color: COLORS.textMuted, fontWeight: 600 }}>· {workType.workHours} س</span>
+            {workType.breakWindow && (
+              <span style={{ fontSize: 9, color: COLORS.textMuted, fontWeight: 600 }}>· ☕ {workType.breakWindow.start}-{workType.breakWindow.end}</span>
+            )}
+          </div>
+        )}
 
         {/* Home Banner — admin-managed rotating banners with image/link support */}
         <HomeBanner banners={banners} user={user} onShowAnnouncements={onShowAnnouncements} announcements={announcements} />
@@ -1699,7 +1831,7 @@ function ReportPage({ user, allAtt, todayAtt, branch, isOffDay, myLeaves, allEmp
 }
 
 /* ═══════════ PROFILE ═══════════ */
-function ProfilePage({ user, branch, onLogout, onTicket, myTickets, darkMode, toggleDark, kadwarNotifs }) {
+function ProfilePage({ user, branch, workType, onLogout, onTicket, myTickets, darkMode, toggleDark, kadwarNotifs }) {
   var [tab, setTab] = useState(function(){ return localStorage.getItem("basma_profile_tab") || "info"; });
   var [kadwarFlip, setKadwarFlip] = useState(false);
   var kn = kadwarNotifs || { tasks: 0, exams: 0, alerts: 0 };
@@ -1714,8 +1846,16 @@ function ProfilePage({ user, branch, onLogout, onTicket, myTickets, darkMode, to
   }, []);
   const typeMap = { office: "مكتبي", field: "ميداني", mixed: "مختلط", remote: "عن بعد" };
   const badge = memberBadge(user.points || 0);
+  // v6.33 — Work type display (with hours + break window if set)
+  var workTypeText = "—";
+  if (workType) {
+    workTypeText = workType.label + " · " + workType.workHours + " س";
+    if (workType.flexible) workTypeText += " · مرن";
+    if (workType.breakWindow && workType.breakWindow.mandatory) workTypeText += " · بريك " + workType.breakWindow.start + "-" + workType.breakWindow.end;
+  }
   const rows = [
     ["الفرع", branch ? branch.name : "—"],
+    ["نوع الدوام", workTypeText],
     ["المسمى", user.role || "—"],
     ["الرقم", user.id],
     ["التصنيف", typeMap[user.type] || user.type || "—"],
