@@ -1,4 +1,4 @@
-const CACHE_NAME = 'basma-hma-v621';
+const CACHE_NAME = 'basma-hma-v627';
 const STATIC_ASSETS = [
   '/',
   '/icon.svg',
@@ -97,7 +97,10 @@ self.addEventListener('notificationclick', function(event) {
   event.notification.close();
   var data = event.notification.data || {};
   var targetUrl = '/';
-  if (data.fakeCall || event.action === 'answer') {
+  // Tawasul task notification — navigate to tawasul tab
+  if (data.type === 'tawasul_new_task' || (data.tag && data.tag.indexOf('tawasul-') === 0)) {
+    targetUrl = '/?page=tawasul' + (data.taskId ? '&task=' + data.taskId : '');
+  } else if (data.fakeCall || event.action === 'answer') {
     targetUrl = '/?action=fake_call_answer&type=' + (data.callType || 'checkin');
   }
   event.waitUntil(
@@ -106,6 +109,7 @@ self.addEventListener('notificationclick', function(event) {
         if (clients[i].url.includes(self.location.origin)) {
           return clients[i].focus().then(function(client){
             if (data.fakeCall) client.postMessage({ type: 'fake_call', callType: data.callType || 'checkin' });
+            else if (data.type === 'tawasul_new_task') client.postMessage({ type: 'tawasul_new_task', taskId: data.taskId });
             return client;
           });
         }

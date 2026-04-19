@@ -10,7 +10,7 @@ import { ALL_VIOLATIONS_DEFAULT, PENALTY_TYPES, LAIHA_INFO, COMPLAINT_STATUS, VI
 
 /* ═══════════ APP CONFIG (إعدادات التطبيق) ═══════════ */
 const APP_CONFIG = {
-  VER: "6.25",
+  VER: "6.27",
   NAME: "بصمة HMA",
   FULL_NAME: "نظام الحضور والانصراف الذكي",
   COMPANY: "هاني محمد عسيري للاستشارات الهندسية",
@@ -4558,11 +4558,30 @@ function TawasulPage({ user, allEmps }) {
       var tmo = setTimeout(function(){ ctrl.abort(); }, 10000);
       var r = await fetch("/api/data?action=tawasul-list", { signal: ctrl.signal });
       clearTimeout(tmo);
-      var d = await r.json();
-      if (!r.ok || d.error) {
-        setErr(d.error || ("خطأ " + r.status));
-        // Don't wipe requests if we have cache
+      // Robust JSON parsing — handle non-JSON responses (Vercel error pages)
+      var d;
+      var rawText = await r.text();
+      try {
+        d = JSON.parse(rawText);
+      } catch(parseErr) {
+        // Server returned HTML/text error page
+        var snippet = rawText.substring(0, 80).replace(/\s+/g, ' ');
+        setErr("الخادم رجّع رد غير متوقع (" + r.status + "): " + snippet);
         if (!requests) setRequests([]);
+        setLoading(false);
+        setRefreshing(false);
+        return;
+      }
+      if (!r.ok || (d && d.error && d.ok === false)) {
+        setErr((d && d.error) || ("خطأ " + r.status));
+        if (!requests) setRequests([]);
+      } else if (d && d.error && d.ok !== false) {
+        // Server returned error but also has data (partial failure)
+        console.warn("[tawasul] partial error:", d.error);
+        setRequests(d.requests || []);
+        setCategories(d.categories || []);
+        setProjects(d.projects || []);
+        setHierarchy(d.hierarchy || {});
       } else {
         setRequests(d.requests || []);
         setCategories(d.categories || []);
@@ -4915,7 +4934,7 @@ function TawasulPage({ user, allEmps }) {
       {/* Row 1 — Personal tabs */}
       <div style={{ display: "flex", padding: "12px 12px 6px", gap: 6, background: C.bg, alignItems: "center" }}>
         <div style={{ fontSize: 9, fontWeight: 800, color: C.sub, minWidth: 28 }}>شخصي</div>
-        {[{id:"inbox",icon:"📥",label:"الوارد"},{id:"sent",icon:"📤",label:"المُرسَل"},{id:"done",icon:"✅",label:"المُنجَز"},{id:"calendar",icon:"📅",label:"التقويم"}].map(function(x){
+        {[{id:"inbox",icon:"📥",label:"الوارد"},{id:"sent",icon:"📤",label:"المُرسَل"},{id:"done",icon:"✅",label:"المُنجَز"},{id:"calendar",icon:"📅",label:"التقويم"},{id:"stats",icon:"📊",label:"إحصائيات"}].map(function(x){
           var active = tab === x.id;
           return (
             <button key={x.id} onClick={function(){ setTab(x.id); }} style={{ flex: 1, padding: "10px 6px", borderRadius: 12, background: active ? C.hdr2 : C.card, border: "1px solid " + (active ? C.hdr2 : C.cardBorder), color: active ? "#fff" : C.text, fontSize: 11, fontWeight: 800, cursor: "pointer", fontFamily: "inherit", display: "flex", alignItems: "center", justifyContent: "center", gap: 3 }}>
@@ -5078,6 +5097,8 @@ function TawasulPage({ user, allEmps }) {
       <div style={{ padding: "0 12px" }}>
         {tab === "calendar" ? (
           <TawasulCalendarView requests={filtered} onOpen={function(r){ setSelectedReq(r); }} />
+        ) : tab === "stats" ? (
+          <TawasulAnalytics requests={requests || []} myId={myId} user={user} hierarchy={hierarchy} subordinatesSet={subordinatesSet} nameOf={nameOf} />
         ) : (<>
         {filtered.length === 0 && !err && (
           <div style={{ textAlign: "center", padding: "60px 20px", color: C.sub }}>
@@ -5162,6 +5183,324 @@ function TawasulPage({ user, allEmps }) {
 }
 
 /* ═══════════ ATTACHMENTS PANEL — رفع/عرض/حذف المرفقات عبر R2 ═══════════ */
+/* ═══════════ TAWASUL ANALYTICS — لوحة إحصائيات بصرية ═══════════ */
+function TawasulAnalytics({ requests, myId, user, hierarchy, subordinatesSet, nameOf }) {
+  // All stats are computed from current loaded requests (no extra API calls)
+  var all = requests || [];
+
+  // My personal stats
+  var mine = all.filter(function(r){
+    var isReq = String(r.requesterId) === String(myId);
+    var isAsg = (r.assignees || []).some(function(a){ return String(a.id) === String(myId); });
+    return isReq || isAsg;
+  });
+
+  var myInbox = mine.filter(function(r){
+    var isAsg = (r.assignees || []).some(function(a){ return String(a.id) === String(myId); });
+    return isAsg && !["closed","evaluated","cancelled"].includes(r.status);
+  });
+  var mySent = mine.filter(function(r){
+    return String(r.requesterId) === String(myId) && !["closed","evaluated","cancelled"].includes(r.status);
+  });
+  var myDone = mine.filter(function(r){ return ["closed","evaluated"].includes(r.status); });
+
+  // Overdue calculation
+  var now = Date.now();
+  var myOverdue = mine.filter(function(r){
+    if (!r.deadline) return false;
+    if (["closed","evaluated","cancelled","delivered"].includes(r.status)) return false;
+    return new Date(r.deadline).getTime() < now;
+  });
+
+  var myUrgent = mine.filter(function(r){
+    return r.urgency === "urgent" && !["closed","evaluated","cancelled"].includes(r.status);
+  });
+
+  // Completion rate (mine)
+  var myCompletionRate = mine.length > 0 ? Math.round((myDone.length / mine.length) * 100) : 0;
+
+  // On-time delivery rate
+  var deliveredMine = mine.filter(function(r){ return r.deliveredAt && r.deadline; });
+  var onTimeMine = deliveredMine.filter(function(r){ return new Date(r.deliveredAt) <= new Date(r.deadline); });
+  var onTimeRate = deliveredMine.length > 0 ? Math.round((onTimeMine.length / deliveredMine.length) * 100) : null;
+
+  // Status distribution
+  var statusDist = {};
+  mine.forEach(function(r){
+    statusDist[r.status] = (statusDist[r.status] || 0) + 1;
+  });
+
+  // Top projects (mine)
+  var projectCounts = {};
+  mine.forEach(function(r){
+    if (r.projectName) {
+      projectCounts[r.projectName] = (projectCounts[r.projectName] || 0) + 1;
+    }
+  });
+  var topProjects = Object.keys(projectCounts)
+    .map(function(p){ return { name: p, count: projectCounts[p] }; })
+    .sort(function(a,b){ return b.count - a.count; })
+    .slice(0, 5);
+
+  // Top people I interact with
+  var peopleCounts = {};
+  mine.forEach(function(r){
+    // From me to others
+    if (String(r.requesterId) === String(myId)) {
+      (r.assignees || []).forEach(function(a){
+        var id = String(a.id);
+        if (id === String(myId)) return;
+        if (!peopleCounts[id]) peopleCounts[id] = { id: id, name: a.name || nameOf(id), sent: 0, received: 0 };
+        peopleCounts[id].sent++;
+      });
+    }
+    // From others to me
+    var isAsg = (r.assignees || []).some(function(a){ return String(a.id) === String(myId); });
+    if (isAsg && String(r.requesterId) !== String(myId)) {
+      var rid = String(r.requesterId);
+      if (!peopleCounts[rid]) peopleCounts[rid] = { id: rid, name: r.requesterName || nameOf(rid), sent: 0, received: 0 };
+      peopleCounts[rid].received++;
+    }
+  });
+  var topPeople = Object.values(peopleCounts)
+    .sort(function(a,b){ return (b.sent + b.received) - (a.sent + a.received); })
+    .slice(0, 5);
+
+  // Department stats (if user has subordinates)
+  var hasSubs = subordinatesSet && subordinatesSet.size > 0;
+  var deptStats = null;
+  if (hasSubs) {
+    var deptTasks = all.filter(function(r){
+      var reqIsSub = subordinatesSet.has(String(r.requesterId || ""));
+      var asgIsSub = (r.assignees || []).some(function(a){ return subordinatesSet.has(String(a.id)); });
+      return reqIsSub || asgIsSub;
+    });
+    var deptOpen = deptTasks.filter(function(r){ return !["closed","evaluated","cancelled"].includes(r.status); });
+    var deptOverdue = deptTasks.filter(function(r){
+      if (!r.deadline) return false;
+      if (["closed","evaluated","cancelled","delivered"].includes(r.status)) return false;
+      return new Date(r.deadline).getTime() < now;
+    });
+    var deptDone = deptTasks.filter(function(r){ return ["closed","evaluated"].includes(r.status); });
+    // Top subordinates by task load
+    var subCounts = {};
+    deptTasks.forEach(function(r){
+      (r.assignees || []).forEach(function(a){
+        var id = String(a.id);
+        if (subordinatesSet.has(id)) {
+          if (!subCounts[id]) subCounts[id] = { id: id, name: a.name || nameOf(id), total: 0, open: 0, done: 0, overdue: 0 };
+          subCounts[id].total++;
+          if (["closed","evaluated"].includes(r.status)) subCounts[id].done++;
+          else subCounts[id].open++;
+          if (r.deadline && !["closed","evaluated","cancelled","delivered"].includes(r.status) && new Date(r.deadline).getTime() < now) {
+            subCounts[id].overdue++;
+          }
+        }
+      });
+    });
+    var topSubs = Object.values(subCounts).sort(function(a,b){ return b.total - a.total; }).slice(0, 10);
+
+    deptStats = {
+      total: deptTasks.length,
+      open: deptOpen.length,
+      overdue: deptOverdue.length,
+      done: deptDone.length,
+      completionRate: deptTasks.length > 0 ? Math.round((deptDone.length / deptTasks.length) * 100) : 0,
+      topSubs: topSubs,
+    };
+  }
+
+  // Status meta for colors
+  var statusOrder = ["draft", "sent", "received", "accepted", "inprogress", "delivered", "evaluated", "closed", "rejected", "incomplete", "cancelled"];
+
+  // Helper to render a stat card
+  function StatCard(label, value, color, icon, sub) {
+    return (
+      <div style={{ background: C.card, borderRadius: 12, padding: "12px 14px", border: "1px solid " + C.cardBorder, textAlign: "center", position: "relative", overflow: "hidden" }}>
+        <div style={{ position: "absolute", top: 0, right: 0, width: 3, height: "100%", background: color }} />
+        <div style={{ fontSize: 22, marginBottom: 4 }}>{icon}</div>
+        <div style={{ fontSize: 24, fontWeight: 900, color: color, fontFamily: "'Cairo',sans-serif", lineHeight: 1 }}>{value}</div>
+        <div style={{ fontSize: 10, color: C.sub, marginTop: 4, fontWeight: 700 }}>{label}</div>
+        {sub && <div style={{ fontSize: 9, color: C.sub, marginTop: 2 }}>{sub}</div>}
+      </div>
+    );
+  }
+
+  function Bar({ label, value, max, color }) {
+    var pct = max > 0 ? Math.round((value / max) * 100) : 0;
+    return (
+      <div style={{ marginBottom: 8 }}>
+        <div style={{ display: "flex", justifyContent: "space-between", fontSize: 11, marginBottom: 3 }}>
+          <span style={{ color: C.text, fontWeight: 600 }}>{label}</span>
+          <span style={{ color: color, fontWeight: 800 }}>{value}</span>
+        </div>
+        <div style={{ height: 8, background: C.bg, borderRadius: 4, overflow: "hidden" }}>
+          <div style={{ width: pct + "%", height: "100%", background: color, transition: "width 0.3s" }} />
+        </div>
+      </div>
+    );
+  }
+
+  if (mine.length === 0 && !hasSubs) {
+    return (
+      <div style={{ textAlign: "center", padding: "60px 20px", color: C.sub }}>
+        <div style={{ fontSize: 48, marginBottom: 12 }}>📊</div>
+        <div style={{ fontSize: 14, fontWeight: 700, marginBottom: 4 }}>لا بيانات بعد</div>
+        <div style={{ fontSize: 11 }}>ستظهر الإحصائيات عند وجود مهام</div>
+      </div>
+    );
+  }
+
+  return (
+    <div style={{ padding: "0 4px" }}>
+      {/* ═══ Personal section ═══ */}
+      <div style={{ fontSize: 13, fontWeight: 800, color: C.text, marginBottom: 10, fontFamily: "'Cairo',sans-serif", display: "flex", alignItems: "center", gap: 6 }}>
+        <span>📊</span><span>إحصائياتي الشخصية</span>
+      </div>
+
+      {/* Summary cards */}
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(2, 1fr)", gap: 8, marginBottom: 14 }}>
+        {StatCard("إجمالي مهامي", mine.length, C.hdr2, "📁", "مُرسَلة + مستلمة")}
+        {StatCard("مفتوحة", myInbox.length + mySent.length, "#f59e0b", "📂", "تحتاج متابعة")}
+        {StatCard("متأخرة", myOverdue.length, myOverdue.length > 0 ? "#dc2626" : "#94a3b8", "🚨", myOverdue.length > 0 ? "تطلب إنجازاً فورياً" : "لا توجد")}
+        {StatCard("عاجلة", myUrgent.length, myUrgent.length > 0 ? "#ef4444" : "#94a3b8", "🔴", "أولوية قصوى")}
+      </div>
+
+      {/* Completion + On-time rates */}
+      <div style={{ background: C.card, borderRadius: 12, padding: 14, border: "1px solid " + C.cardBorder, marginBottom: 14 }}>
+        <div style={{ fontSize: 12, fontWeight: 700, marginBottom: 12, color: C.text }}>🎯 أدائي</div>
+        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
+          <div style={{ textAlign: "center" }}>
+            <div style={{ position: "relative", width: 80, height: 80, margin: "0 auto" }}>
+              <svg width="80" height="80" viewBox="0 0 80 80">
+                <circle cx="40" cy="40" r="34" fill="none" stroke={C.bg} strokeWidth="8" />
+                <circle cx="40" cy="40" r="34" fill="none" stroke={myCompletionRate >= 75 ? "#10b981" : myCompletionRate >= 50 ? "#f59e0b" : "#ef4444"} strokeWidth="8" strokeDasharray={(myCompletionRate * 213.6 / 100) + " 213.6"} strokeLinecap="round" transform="rotate(-90 40 40)" />
+              </svg>
+              <div style={{ position: "absolute", inset: 0, display: "flex", alignItems: "center", justifyContent: "center", flexDirection: "column" }}>
+                <div style={{ fontSize: 16, fontWeight: 900, color: C.text }}>{myCompletionRate}%</div>
+              </div>
+            </div>
+            <div style={{ fontSize: 10, color: C.sub, fontWeight: 700, marginTop: 4 }}>نسبة الإنجاز</div>
+            <div style={{ fontSize: 9, color: C.sub }}>{myDone.length} من {mine.length}</div>
+          </div>
+          <div style={{ textAlign: "center" }}>
+            {onTimeRate !== null ? (
+              <>
+                <div style={{ position: "relative", width: 80, height: 80, margin: "0 auto" }}>
+                  <svg width="80" height="80" viewBox="0 0 80 80">
+                    <circle cx="40" cy="40" r="34" fill="none" stroke={C.bg} strokeWidth="8" />
+                    <circle cx="40" cy="40" r="34" fill="none" stroke={onTimeRate >= 75 ? "#10b981" : onTimeRate >= 50 ? "#f59e0b" : "#ef4444"} strokeWidth="8" strokeDasharray={(onTimeRate * 213.6 / 100) + " 213.6"} strokeLinecap="round" transform="rotate(-90 40 40)" />
+                  </svg>
+                  <div style={{ position: "absolute", inset: 0, display: "flex", alignItems: "center", justifyContent: "center", flexDirection: "column" }}>
+                    <div style={{ fontSize: 16, fontWeight: 900, color: C.text }}>{onTimeRate}%</div>
+                  </div>
+                </div>
+                <div style={{ fontSize: 10, color: C.sub, fontWeight: 700, marginTop: 4 }}>التسليم في الموعد</div>
+                <div style={{ fontSize: 9, color: C.sub }}>{onTimeMine.length} من {deliveredMine.length}</div>
+              </>
+            ) : (
+              <div style={{ padding: "20px 0", color: C.sub, fontSize: 11 }}>
+                <div style={{ fontSize: 32, marginBottom: 6 }}>⏱</div>
+                <div>لم تسلّم مهام بمواعيد بعد</div>
+              </div>
+            )}
+          </div>
+        </div>
+      </div>
+
+      {/* Status distribution */}
+      {Object.keys(statusDist).length > 0 && (
+        <div style={{ background: C.card, borderRadius: 12, padding: 14, border: "1px solid " + C.cardBorder, marginBottom: 14 }}>
+          <div style={{ fontSize: 12, fontWeight: 700, marginBottom: 12, color: C.text }}>📈 توزيع حسب الحالة</div>
+          {statusOrder.filter(function(s){ return statusDist[s]; }).map(function(s){
+            var meta = getTawasulStatusMeta(s);
+            return <Bar key={s} label={meta.icon + " " + meta.label} value={statusDist[s]} max={mine.length} color={meta.color} />;
+          })}
+        </div>
+      )}
+
+      {/* Top projects */}
+      {topProjects.length > 0 && (
+        <div style={{ background: C.card, borderRadius: 12, padding: 14, border: "1px solid " + C.cardBorder, marginBottom: 14 }}>
+          <div style={{ fontSize: 12, fontWeight: 700, marginBottom: 10, color: C.text }}>🏗️ أكثر المشاريع نشاطاً</div>
+          {topProjects.map(function(p, i){
+            var maxC = topProjects[0].count;
+            return <Bar key={i} label={(i+1) + ". " + p.name} value={p.count} max={maxC} color={C.gold} />;
+          })}
+        </div>
+      )}
+
+      {/* Top people */}
+      {topPeople.length > 0 && (
+        <div style={{ background: C.card, borderRadius: 12, padding: 14, border: "1px solid " + C.cardBorder, marginBottom: 14 }}>
+          <div style={{ fontSize: 12, fontWeight: 700, marginBottom: 10, color: C.text }}>👥 أكثر من أتواصل معهم</div>
+          {topPeople.map(function(p, i){
+            var initial = (p.name || "?").charAt(0);
+            return (
+              <div key={i} style={{ display: "flex", alignItems: "center", gap: 10, padding: "8px 0", borderTop: i > 0 ? "1px solid " + C.cardBorder : "none" }}>
+                <div style={{ width: 32, height: 32, borderRadius: 16, background: C.hdr2, color: "#fff", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 13, fontWeight: 800, flexShrink: 0 }}>{initial}</div>
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div style={{ fontSize: 12, fontWeight: 700, color: C.text, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{p.name}</div>
+                  <div style={{ fontSize: 9, color: C.sub, marginTop: 2, display: "flex", gap: 8 }}>
+                    {p.sent > 0 && <span>📤 أرسلت {p.sent}</span>}
+                    {p.received > 0 && <span style={{ color: C.gold }}>📥 استلمت {p.received}</span>}
+                  </div>
+                </div>
+                <div style={{ padding: "3px 8px", borderRadius: 6, background: C.bg, fontSize: 11, fontWeight: 800, color: C.text, flexShrink: 0 }}>{p.sent + p.received}</div>
+              </div>
+            );
+          })}
+        </div>
+      )}
+
+      {/* ═══ Department section (only if manager) ═══ */}
+      {deptStats && (
+        <>
+          <div style={{ fontSize: 13, fontWeight: 800, color: "#7c3aed", marginBottom: 10, marginTop: 20, fontFamily: "'Cairo',sans-serif", display: "flex", alignItems: "center", gap: 6 }}>
+            <span>👔</span><span>إحصائيات إدارتي ({subordinatesSet.size} موظف)</span>
+          </div>
+
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(2, 1fr)", gap: 8, marginBottom: 14 }}>
+            {StatCard("إجمالي مهام الإدارة", deptStats.total, "#7c3aed", "📋")}
+            {StatCard("مفتوحة", deptStats.open, "#f59e0b", "📂")}
+            {StatCard("متأخرة", deptStats.overdue, deptStats.overdue > 0 ? "#dc2626" : "#94a3b8", "🚨")}
+            {StatCard("نسبة الإنجاز", deptStats.completionRate + "%", deptStats.completionRate >= 75 ? "#10b981" : "#f59e0b", "🎯", deptStats.done + " من " + deptStats.total)}
+          </div>
+
+          {/* Top subordinates by load */}
+          {deptStats.topSubs.length > 0 && (
+            <div style={{ background: C.card, borderRadius: 12, padding: 14, border: "1.5px solid rgba(124,58,237,0.3)", marginBottom: 14 }}>
+              <div style={{ fontSize: 12, fontWeight: 700, marginBottom: 10, color: "#7c3aed" }}>📊 توزيع المهام على الفريق</div>
+              {deptStats.topSubs.map(function(s, i){
+                var initial = (s.name || "?").charAt(0);
+                return (
+                  <div key={s.id} style={{ display: "flex", alignItems: "center", gap: 10, padding: "8px 0", borderTop: i > 0 ? "1px solid " + C.cardBorder : "none" }}>
+                    <div style={{ width: 32, height: 32, borderRadius: 16, background: "#7c3aed", color: "#fff", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 13, fontWeight: 800, flexShrink: 0 }}>{initial}</div>
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <div style={{ fontSize: 12, fontWeight: 700, color: C.text, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{s.name}</div>
+                      <div style={{ fontSize: 9, color: C.sub, marginTop: 2, display: "flex", gap: 8, flexWrap: "wrap" }}>
+                        <span>📂 مفتوحة {s.open}</span>
+                        <span style={{ color: "#10b981" }}>✅ منجز {s.done}</span>
+                        {s.overdue > 0 && <span style={{ color: "#dc2626" }}>🚨 متأخر {s.overdue}</span>}
+                      </div>
+                    </div>
+                    <div style={{ padding: "3px 10px", borderRadius: 6, background: "#7c3aed", color: "#fff", fontSize: 11, fontWeight: 800, flexShrink: 0 }}>{s.total}</div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </>
+      )}
+
+      {/* Footer note */}
+      <div style={{ textAlign: "center", fontSize: 10, color: C.sub, marginTop: 20, padding: 10, fontStyle: "italic" }}>
+        💡 الإحصائيات محسوبة من البيانات المحمّلة حالياً ({all.length} مهمة)
+      </div>
+    </div>
+  );
+}
+
 function AttachmentsPanel({ request, user, readOnly, canEdit, onUpdated }) {
   var r = request;
   var attachments = r.attachments || [];

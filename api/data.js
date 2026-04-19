@@ -42,16 +42,38 @@ async function redisGet(key) {
   try { return JSON.parse(val); } catch(e) { return val; }
 }
 
-/* MGET: fetch multiple keys in ONE round trip — huge speedup for batched reads */
+/* MGET: fetch multiple keys in chunks (Upstash has payload limits) */
 async function redisMget(keys) {
   if (!keys || keys.length === 0) return [];
-  var prefixedKeys = keys.map(function(k){ return PFX_REDIS + k; });
-  var vals = await redisRequest('MGET', ...prefixedKeys);
-  if (!Array.isArray(vals)) return keys.map(function(){ return null; });
-  return vals.map(function(v){
-    if (!v) return null;
-    try { return JSON.parse(v); } catch(e) { return v; }
-  });
+  var results = [];
+  var CHUNK = 25; // Safe chunk size for Upstash REST API
+  for (var i = 0; i < keys.length; i += CHUNK) {
+    var chunk = keys.slice(i, i + CHUNK);
+    var prefixedKeys = chunk.map(function(k){ return PFX_REDIS + k; });
+    try {
+      var vals = await redisRequest('MGET', ...prefixedKeys);
+      if (!Array.isArray(vals)) {
+        // Fallback for this chunk
+        for (var j = 0; j < chunk.length; j++) results.push(null);
+        continue;
+      }
+      for (var k = 0; k < vals.length; k++) {
+        var v = vals[k];
+        if (!v) { results.push(null); continue; }
+        try { results.push(JSON.parse(v)); } catch(e) { results.push(v); }
+      }
+    } catch(e) {
+      console.error('[redisMget chunk] failed:', e.message);
+      // Fallback: sequential GETs for this chunk
+      for (var m = 0; m < chunk.length; m++) {
+        try {
+          var single = await redisGet(chunk[m]);
+          results.push(single);
+        } catch(e2) { results.push(null); }
+      }
+    }
+  }
+  return results;
 }
 
 async function redisSet(key, data) {
@@ -1525,24 +1547,20 @@ export default async function handler(req, res) {
             { id: "other",       label: "أخرى",           icon: "📎", fixed: false },
           ];
           var projects = (await dbGet('twsl:projects')) || [];
-          var hierarchy = (await dbGet('org_hierarchy')) || {};
+          var hierarchy = {};
+          try { hierarchy = (await dbGet('org_hierarchy')) || {}; } catch(e) { hierarchy = {}; }
 
-          // SPEED: use MGET when Redis is available (one round-trip vs N)
-          var requests;
-          if (USE_REDIS && idx.length > 0) {
-            var keys = idx.map(function(id){ return 'twsl:' + id; });
+          // Fetch all requests — use reliable parallel GETs (proven path)
+          var requests = [];
+          if (idx.length > 0) {
             try {
-              requests = await redisMget(keys);
-            } catch(e) {
-              console.error('[tawasul-list] MGET failed, falling back to parallel GETs:', e.message);
               requests = await Promise.all(idx.map(function(id){
                 return dbGet('twsl:' + id).catch(function(){ return null; });
               }));
+            } catch(e) {
+              console.error('[tawasul-list] parallel fetch error:', e.message);
+              requests = [];
             }
-          } else {
-            requests = await Promise.all(idx.map(function(id){
-              return dbGet('twsl:' + id).catch(function(){ return null; });
-            }));
           }
           requests = (requests || []).filter(function(r){ return r && r.id; });
 
@@ -1556,7 +1574,12 @@ export default async function handler(req, res) {
             syncDate: new Date().toISOString(),
           });
         } catch (e) {
-          return res.status(500).json({ error: 'tawasul-list error: ' + (e.message || 'unknown'), requests: [], categories: [], projects: [], hierarchy: {} });
+          console.error('[tawasul-list] FATAL:', e);
+          return res.status(200).json({
+            ok: false,
+            error: 'tawasul-list error: ' + (e.message || 'unknown'),
+            requests: [], categories: [], projects: [], hierarchy: {},
+          });
         }
       }
 
@@ -3361,4 +3384,83 @@ export default async function handler(req, res) {
           return { type: 'array', count: Array.isArray(idx) ? idx.length : 0 };
         });
         dataChecks['tawasul'] = { label: 'مهام التواصل', ok: twslR.ok, ms: twslR.ms, value: twslR.value, error: twslR.error };
-        report.sections.data = dat
+        report.sections.data = dataChecks;
+
+        // ══════════ CONFIGURATION ══════════
+        var config = {};
+        var settings = await dbGet('settings') || {};
+        config.has_admin_email = { ok: !!(settings.adminEmail || settings.admin_email), value: settings.adminEmail || settings.admin_email || 'not set' };
+        config.has_custom_questions = { ok: Array.isArray(settings.questions) && settings.questions.length > 0, value: Array.isArray(settings.questions) ? settings.questions.length + ' أسئلة' : 'none (uses defaults)' };
+        config.email_lists = { ok: !!settings.emailLists, value: settings.emailLists ? Object.keys(settings.emailLists).length + ' lists' : 'none' };
+        config.observed_employees = { ok: true, value: Array.isArray(settings.observed) ? settings.observed.length + ' موظف تحت الملاحظة' : '0' };
+        // Laiha
+        var laiha = await dbGet('laiha_settings') || {};
+        config.laiha_auto_enabled = { ok: laiha.autoViolations !== false, value: laiha.autoViolations === false ? 'DISABLED' : 'ENABLED (3pm UTC cron)' };
+        // Branches
+        var branches = await dbGet('branches') || [];
+        config.branches_count = { ok: branches.length > 0, value: branches.length + ' فروع' };
+        config.branches_have_geofence = { ok: branches.every(function(b){ return b.lat && b.lng && b.radius; }), value: branches.filter(function(b){ return b.lat && b.lng && b.radius; }).length + '/' + branches.length + ' بنطاق جغرافي' };
+        report.sections.config = config;
+
+        // ══════════ INTEGRATIONS ══════════
+        var integrations = {};
+        // Push notifications (VAPID)
+        integrations.vapid_public = { ok: !!process.env.VAPID_PUBLIC_KEY, value: process.env.VAPID_PUBLIC_KEY ? 'VAPID_PUBLIC_KEY set' : 'missing' };
+        integrations.vapid_private = { ok: !!process.env.VAPID_PRIVATE_KEY, value: process.env.VAPID_PRIVATE_KEY ? 'VAPID_PRIVATE_KEY set' : 'missing' };
+        integrations.vapid_email = { ok: !!process.env.VAPID_CONTACT_EMAIL, value: process.env.VAPID_CONTACT_EMAIL || 'not set' };
+        // Push subscriptions
+        var subs = await safeTime(async function(){ var s = await dbGet('push_subscriptions') || {}; return Object.keys(s).length + ' مشترك'; });
+        integrations.push_subscriptions = { ok: subs.ok, value: subs.value, error: subs.error };
+        // GitHub token (for update tool)
+        integrations.github_token = { ok: !!process.env.GITHUB_TOKEN, value: process.env.GITHUB_TOKEN ? 'GITHUB_TOKEN present (update tool OK)' : 'missing — update tool disabled' };
+        // Kadwar sync
+        var kadwarR = await safeTime(async function(){
+          var kd = await dbGet('kadwar_data');
+          return kd ? 'synced (' + (Array.isArray(kd.employees) ? kd.employees.length : 0) + ' موظف من كوادر)' : 'no kadwar data';
+        });
+        integrations.kadwar_sync = { ok: kadwarR.ok, value: kadwarR.value, error: kadwarR.error };
+        report.sections.integrations = integrations;
+
+        // ══════════ TAWASUL SYSTEM ══════════
+        var tawasul = {};
+        tawasul.task_index = await safeTime(async function(){
+          var idx = await dbGet('twsl:idx') || [];
+          return idx.length + ' مهمة مفهرسة';
+        });
+        tawasul.categories = await safeTime(async function(){
+          var c = await dbGet('twsl:categories') || [];
+          return c.length + ' تصنيف';
+        });
+        tawasul.projects = await safeTime(async function(){
+          var p = await dbGet('twsl:projects') || [];
+          return p.length + ' مشروع';
+        });
+        tawasul.notifs = await safeTime(async function(){
+          var n = await dbGet('twsl:notifs') || [];
+          return n.length + ' إشعار';
+        });
+        tawasul.serial_counter = await safeTime(async function(){
+          var s = await dbGet('twsl:serial') || 0;
+          return 'CB' + String(s).padStart(4, '0') + ' (تالي: CB' + String(s+1).padStart(4,'0') + ')';
+        });
+        report.sections.tawasul = tawasul;
+
+        // ══════════ COMPUTE OVERALL ══════════
+        var failed = [];
+        Object.keys(report.sections).forEach(function(sec){
+          Object.keys(report.sections[sec]).forEach(function(key){
+            var item = report.sections[sec][key];
+            if (item && item.ok === false) failed.push(sec + '.' + key);
+          });
+        });
+        report.overall = failed.length === 0 ? 'ok' : failed.length <= 2 ? 'warning' : 'error';
+        report.failed_checks = failed;
+        report.total_checks = Object.keys(report.sections).reduce(function(sum, sec){ return sum + Object.keys(report.sections[sec]).length; }, 0);
+
+        return res.json(report);
+      }
+
+      default: return res.status(400).json({ error: 'unknown action' });
+    }
+  } catch (err) { return res.status(500).json({ error: err.message }); }
+}
