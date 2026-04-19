@@ -2286,6 +2286,11 @@ export default async function handler(req, res) {
             else if (typeof data === 'object') sizes[tbl] = { count: Object.keys(data).length, type: 'object' };
             else sizes[tbl] = { count: 1, type: typeof data };
           }
+          // Special: count tawasul tasks from twsl:idx
+          try {
+            var twslIdx = await dbGet('twsl:idx');
+            sizes['tawasul'] = { count: Array.isArray(twslIdx) ? twslIdx.length : 0, type: 'tawasul' };
+          } catch(e) { sizes['tawasul'] = { count: 0, type: 'tawasul' }; }
           return res.json({ tables: sizes });
         }
         if (req.method === 'POST') {
@@ -2302,32 +2307,62 @@ export default async function handler(req, res) {
           var dateTables = ['attendance','violations_v2','complaints','investigations','appeals','notifications','leaves','permissions','pre_absences','tickets','gps_log'];
 
           async function cleanTable(tbl) {
+            // Special case: tawasul tasks stored as twsl:<id> + twsl:idx
+            if (tbl === 'tawasul') {
+              var idx = await dbGet('twsl:idx') || [];
+              var beforeT = idx.length;
+              if (cleanupAction === 'delete_all') {
+                for (var i = 0; i < idx.length; i++) {
+                  try { await dbSet('twsl:' + idx[i], null); } catch(e) {}
+                }
+                await dbSet('twsl:idx', []);
+                try { await dbSet('twsl:notifs', []); } catch(e) {}
+                return { before: beforeT, after: 0, deleted: beforeT };
+              }
+              // Date-based cleanup for tasks
+              var keep = [];
+              var deleteIds = [];
+              for (var j = 0; j < idx.length; j++) {
+                var tsk = await dbGet('twsl:' + idx[j]);
+                if (!tsk) { continue; }
+                var dStr = (tsk.createdAt || tsk.updatedAt || '').split('T')[0];
+                var shouldKeep = true;
+                if (cleanupAction === 'delete_older') shouldKeep = dStr >= cutoff;
+                else if (cleanupAction === 'delete_recent') shouldKeep = dStr < cutoff;
+                else if (cleanupAction === 'keep_recent') shouldKeep = dStr >= cutoff;
+                if (shouldKeep) keep.push(idx[j]);
+                else deleteIds.push(idx[j]);
+              }
+              for (var k = 0; k < deleteIds.length; k++) {
+                try { await dbSet('twsl:' + deleteIds[k], null); } catch(e) {}
+              }
+              await dbSet('twsl:idx', keep);
+              return { before: beforeT, after: keep.length, deleted: deleteIds.length };
+            }
+
             var data = await dbGet(tbl);
             if (!data) return { before: 0, after: 0 };
             var before = Array.isArray(data) ? data.length : Object.keys(data).length;
 
             if (cleanupAction === 'delete_all') {
               await dbSet(tbl, Array.isArray(data) ? [] : {});
-              return { before: before, after: 0 };
+              return { before: before, after: 0, deleted: before };
             }
 
             if (!Array.isArray(data)) return { before: before, after: before, skipped: 'not array' };
 
             var filtered;
             if (cleanupAction === 'delete_older') {
-              // Delete records OLDER than X days (keep recent)
               filtered = data.filter(function(r) {
                 var d = r.date || (r.createdAt ? r.createdAt.split('T')[0] : '') || (r.ts ? r.ts.split('T')[0] : '');
                 return d >= cutoff;
               });
             } else if (cleanupAction === 'delete_recent') {
-              // Delete records from the LAST X days (keep older)
               filtered = data.filter(function(r) {
                 var d = r.date || (r.createdAt ? r.createdAt.split('T')[0] : '') || (r.ts ? r.ts.split('T')[0] : '');
                 return d < cutoff;
               });
             } else if (cleanupAction === 'keep_recent') {
-              // Keep ONLY the last X days
               filtered = data.filter(function(r) {
                 var d = r.date || (r.createdAt ? r.createdAt.split('T')[0] : '') || (r.ts ? r.ts.split('T')[0] : '');
                 return d >= cutoff;
@@ -2343,6 +2378,7 @@ export default async function handler(req, res) {
             for (var tbl of dateTables) {
               results[tbl] = await cleanTable(tbl);
             }
+            results['tawasul'] = await cleanTable('tawasul');
           } else {
             results[target] = await cleanTable(target);
           }

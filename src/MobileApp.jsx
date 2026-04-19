@@ -10,7 +10,7 @@ import { ALL_VIOLATIONS_DEFAULT, PENALTY_TYPES, LAIHA_INFO, COMPLAINT_STATUS, VI
 
 /* ═══════════ APP CONFIG (إعدادات التطبيق) ═══════════ */
 const APP_CONFIG = {
-  VER: "5.08",
+  VER: "5.11",
   NAME: "بصمة HMA",
   FULL_NAME: "نظام الحضور والانصراف الذكي",
   COMPANY: "هاني محمد عسيري للاستشارات الهندسية",
@@ -2730,6 +2730,106 @@ function TawasulCreateModal({ user, allEmps, categories, projects, onClose, onSa
   );
 }
 
+/* ═══════════ SIMPLE CONFIRM MODAL (للاستلام وغيره) ═══════════ */
+function SimpleConfirmModal({ title, message, icon, confirmLabel, confirmColor, onConfirm, onClose }) {
+  var [busy, setBusy] = useState(false);
+  var mainColor = confirmColor || "#0f766e";
+
+  async function handle() {
+    setBusy(true);
+    try { await onConfirm(); } catch(e) { setBusy(false); alert("فشل: " + (e.message||"خطأ")); return; }
+    setBusy(false);
+  }
+
+  return (
+    <div onClick={onClose} style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.72)", zIndex: 1150, display: "flex", alignItems: "center", justifyContent: "center", padding: 16, fontFamily: "'Tajawal',sans-serif" }}>
+      <div onClick={function(e){ e.stopPropagation(); }} style={{ background: C.bg, borderRadius: 18, maxWidth: 380, width: "100%", direction: "rtl", color: C.text, overflow: "hidden" }}>
+        <div style={{ background: "linear-gradient(135deg, " + mainColor + ", " + mainColor + "cc)", padding: "20px 18px", color: "#fff", textAlign: "center" }}>
+          <div style={{ fontSize: 42, marginBottom: 6 }}>{icon || "❓"}</div>
+          <div style={{ fontSize: 18, fontWeight: 900, fontFamily: "'Cairo',sans-serif" }}>{title}</div>
+        </div>
+        <div style={{ padding: "20px 18px", fontSize: 14, color: C.text, lineHeight: 1.7, textAlign: "center" }}>{message}</div>
+        <div style={{ padding: "0 18px 16px", display: "flex", gap: 10 }}>
+          <button onClick={onClose} disabled={busy} style={{ flex: 1, padding: 13, borderRadius: 12, background: C.card, color: C.text, border: "1px solid " + C.cardBorder, fontSize: 13, fontWeight: 700, cursor: busy ? "default" : "pointer", fontFamily: "inherit" }}>إلغاء</button>
+          <button onClick={handle} disabled={busy} style={{ flex: 2, padding: 13, borderRadius: 12, background: busy ? C.cardBorder : mainColor, color: "#fff", border: "none", fontSize: 14, fontWeight: 900, cursor: busy ? "default" : "pointer", fontFamily: "'Cairo',sans-serif" }}>
+            {busy ? "⏳ ..." : (confirmLabel || "موافق")}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/* ═══════════ HMA CONFIRM MODAL (كتابة HMA للتأكيد — للتسليم/التصعيد) ═══════════ */
+function HMAConfirmModal({ title, subtitle, icon, confirmLabel, confirmColor, warningText, onConfirm, onClose }) {
+  var [text, setText] = useState("");
+  var [busy, setBusy] = useState(false);
+  var mainColor = confirmColor || "#b8960c";
+  var ok = text.trim().toUpperCase() === "HMA";
+
+  async function handle() {
+    if (!ok) { alert("⚠️ اكتب HMA للتأكيد"); return; }
+    setBusy(true);
+    try { await onConfirm(); } catch(e) { setBusy(false); alert("فشل: " + (e.message||"خطأ")); return; }
+    setBusy(false);
+  }
+
+  return (
+    <div onClick={onClose} style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.78)", zIndex: 1200, display: "flex", alignItems: "center", justifyContent: "center", padding: 16, fontFamily: "'Tajawal',sans-serif" }}>
+      <div onClick={function(e){ e.stopPropagation(); }} style={{ background: C.bg, borderRadius: 18, maxWidth: 420, width: "100%", direction: "rtl", color: C.text, overflow: "hidden" }}>
+        <div style={{ background: "linear-gradient(135deg, " + mainColor + ", " + mainColor + "cc)", padding: "22px 18px", color: "#fff", textAlign: "center", position: "relative" }}>
+          <button onClick={onClose} style={{ position: "absolute", top: 12, left: 12, background: "rgba(255,255,255,0.22)", border: "none", borderRadius: 8, width: 30, height: 30, fontSize: 18, color: "#fff", cursor: "pointer", fontFamily: "inherit" }}>×</button>
+          <div style={{ fontSize: 42, marginBottom: 6 }}>{icon || "🔒"}</div>
+          <div style={{ fontSize: 18, fontWeight: 900, fontFamily: "'Cairo',sans-serif", marginBottom: 4 }}>{title}</div>
+          {subtitle && <div style={{ fontSize: 12, opacity: 0.9 }}>{subtitle}</div>}
+        </div>
+        <div style={{ padding: "18px" }}>
+          {warningText && (
+            <div style={{ padding: "12px 14px", background: mainColor + "12", border: "1px solid " + mainColor + "40", borderRadius: 10, fontSize: 12, color: C.text, lineHeight: 1.7, marginBottom: 14 }}>
+              ⚠️ {warningText}
+            </div>
+          )}
+          <div style={{ fontSize: 13, fontWeight: 800, color: C.text, marginBottom: 10, textAlign: "center" }}>
+            اكتب <span style={{ color: mainColor, fontFamily: "monospace", letterSpacing: 2 }}>HMA</span> للتأكيد
+          </div>
+          <input
+            type="text"
+            value={text}
+            onChange={function(e){ setText(e.target.value); }}
+            placeholder="HMA"
+            autoFocus
+            style={{
+              width: "100%",
+              padding: "16px 14px",
+              borderRadius: 12,
+              border: "2px solid " + (ok ? "#10b981" : C.cardBorder),
+              background: ok ? "rgba(16,185,129,0.08)" : C.card,
+              color: C.text,
+              fontSize: 22,
+              fontWeight: 900,
+              textAlign: "center",
+              letterSpacing: 4,
+              fontFamily: "monospace",
+              outline: "none",
+              boxSizing: "border-box",
+              textTransform: "uppercase",
+            }}
+          />
+          <div style={{ fontSize: 10, color: C.sub, textAlign: "center", marginTop: 6 }}>
+            {ok ? "✓ جاهز للتأكيد" : "غير حساس لحالة الأحرف (hma أو HMA)"}
+          </div>
+        </div>
+        <div style={{ padding: "0 18px 16px", display: "flex", gap: 10 }}>
+          <button onClick={onClose} disabled={busy} style={{ flex: 1, padding: 13, borderRadius: 12, background: C.card, color: C.text, border: "1px solid " + C.cardBorder, fontSize: 13, fontWeight: 700, cursor: busy ? "default" : "pointer", fontFamily: "inherit" }}>إلغاء</button>
+          <button onClick={handle} disabled={busy || !ok} style={{ flex: 2, padding: 13, borderRadius: 12, background: (busy || !ok) ? C.cardBorder : mainColor, color: "#fff", border: "none", fontSize: 14, fontWeight: 900, cursor: (busy || !ok) ? "default" : "pointer", fontFamily: "'Cairo',sans-serif", boxShadow: (busy || !ok) ? "none" : "0 4px 12px " + mainColor + "66" }}>
+            {busy ? "⏳ ..." : (confirmLabel || "تأكيد")}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 /* ═══════════ TAWASUL REASON MODAL (reject/return/escalate) ═══════════ */
 function TawasulReasonModal({ title, reasons, requireLegal, onConfirm, onClose, confirmColor, confirmLabel }) {
   var [reasonId, setReasonId] = useState("");
@@ -4233,11 +4333,12 @@ function TawasulPage({ user, allEmps }) {
     var isRequester = String(r.requesterId) === String(myId) || r.requesterId === (user && user.username);
     var isAssignee = (r.assignees || []).some(function(a){ return String(a.id) === String(myId) || a.id === (user && user.username); });
     var isDone = r.status === "closed" || r.status === "evaluated" || r.status === "cancelled";
-    // Requirement: when I create a task, I also see it in my inbox (as a personal copy)
-    if (tab === "inbox") return isAdmin ? !isDone : ((isAssignee || isRequester) && !isDone);
-    if (tab === "sent") return isAdmin ? (!isDone && isRequester) || !isDone : (isRequester && !isDone);
-    if (tab === "done") return isAdmin ? isDone : (isDone && (isRequester || isAssignee));
-    if (tab === "calendar") return isAdmin ? true : (isRequester || isAssignee);
+    // Privacy: even admins only see their OWN tasks in the mobile app (admin overview is in AdminApp)
+    // Inbox = tasks addressed to me (not tasks I sent — those are in "sent")
+    if (tab === "inbox") return isAssignee && !isDone;
+    if (tab === "sent") return isRequester && !isDone;
+    if (tab === "done") return isDone && (isRequester || isAssignee);
+    if (tab === "calendar") return isRequester || isAssignee;
     return true;
   }
 
@@ -4446,6 +4547,15 @@ function TawasulDetailModal({ request, user, allEmps, onClose, nameOf, onUpdated
   var [showReject, setShowReject] = useState(false);
   var [showReturn, setShowReturn] = useState(false);
   var [showEscalate, setShowEscalate] = useState(false);
+  var [showEscalateHMA, setShowEscalateHMA] = useState(false); // phase 2 of escalate (HMA confirm)
+  var [pendingEscData, setPendingEscData] = useState(null);
+  var [showReceiveConfirm, setShowReceiveConfirm] = useState(false);
+  var [showDeliverConfirm, setShowDeliverConfirm] = useState(false);
+  var [showStartConfirm, setShowStartConfirm] = useState(false);
+  var [showResent, setShowResent] = useState(false);   // resend to same engineer after rejection
+  var [showTransfer, setShowTransfer] = useState(false); // transfer rejected task to another engineer
+  var [showCollab, setShowCollab] = useState(false);     // request collaborator (by assignee)
+  var [showCollabApprove, setShowCollabApprove] = useState(null); // requester approves pending collab
 
   var deadlineText = "";
   if (r.deadline) {
@@ -4473,14 +4583,24 @@ function TawasulDetailModal({ request, user, allEmps, onClose, nameOf, onUpdated
     }
   }
 
-  async function applyBigAction() {
+  // Click on big button — route to appropriate confirmation modal
+  function applyBigAction() {
+    var btn = BIG_BTN_MAP[r.status];
+    if (!btn || !btn.next) return;
+    if (btn.next === "received") { setShowReceiveConfirm(true); return; }
+    if (btn.next === "inprogress") { setShowStartConfirm(true); return; }
+    if (btn.next === "delivered") { setShowDeliverConfirm(true); return; }
+    // All other transitions (e.g. resent from incomplete) — execute directly
+    executeBigAction();
+  }
+
+  async function executeBigAction() {
     var btn = BIG_BTN_MAP[r.status];
     if (!btn || !btn.next) return;
     var patch = { status: btn.next };
     var logMsg = btn.label;
     if (btn.next === "received") {
       patch.receivedAt = new Date().toISOString();
-      // Update assignee's acceptedAt if I am one
       var assignees = (r.assignees || []).map(function(a){
         if (String(a.id) === String(myId) && !a.acceptedAt) return Object.assign({}, a, { acceptedAt: new Date().toISOString() });
         return a;
@@ -4500,6 +4620,9 @@ function TawasulDetailModal({ request, user, allEmps, onClose, nameOf, onUpdated
       patch.resentAt = new Date().toISOString();
     }
     await addLogAndSave(patch, logMsg);
+    setShowReceiveConfirm(false);
+    setShowStartConfirm(false);
+    setShowDeliverConfirm(false);
   }
 
   async function doReject(data) {
@@ -4508,7 +4631,9 @@ function TawasulDetailModal({ request, user, allEmps, onClose, nameOf, onUpdated
       rejectedAt: new Date().toISOString(),
       rejectionReasonId: data.reasonId,
       rejectionReason: data.reasonText,
-    }, "❌ رفض: " + data.reasonLabel + " — " + data.reasonText);
+      rejectedCount: (r.rejectedCount || 0) + 1,
+      previousStatusBeforeRejection: r.status,
+    }, "❌ رفض (مرة #" + ((r.rejectedCount || 0) + 1) + "): " + data.reasonLabel + " — " + data.reasonText);
     setShowReject(false);
   }
   async function doReturn(data) {
@@ -4519,18 +4644,126 @@ function TawasulDetailModal({ request, user, allEmps, onClose, nameOf, onUpdated
       returnReasonId: data.reasonId,
       returnReason: data.reasonText,
       returnCount: (r.returnCount || 0) + 1,
-    }, "📋 إرجاع للاستكمال: " + data.reasonLabel + " — " + data.reasonText);
+    }, "📋 إرجاع للاستكمال (مرة #" + ((r.returnCount || 0) + 1) + "): " + data.reasonLabel + " — " + data.reasonText);
     setShowReturn(false);
   }
-  async function doEscalate(data) {
+  // Phase 1: collect reason; Phase 2: HMA confirm
+  function doEscalateReason(data) {
+    setPendingEscData(data);
+    setShowEscalate(false);
+    setShowEscalateHMA(true);
+  }
+  async function doEscalateFinal() {
+    var data = pendingEscData || {};
     await addLogAndSave({
       escalation: "yellow",
       escalatedAt: new Date().toISOString(),
       issueAt: r.issueAt || new Date().toISOString(),
       escalationReason: data.reasonText,
-    }, "⬆️ تصعيد أصفر: " + data.reasonLabel + " — " + data.reasonText);
-    setShowEscalate(false);
+      escalationReasonId: data.reasonId,
+    }, "⬆️ تصعيد أصفر (HMA): " + (data.reasonLabel || "") + " — " + (data.reasonText || ""));
+    setShowEscalateHMA(false);
+    setPendingEscData(null);
   }
+
+  // RESEND rejected task to same assignee(s) — increment attempt, preserve history
+  async function doResend() {
+    await addLogAndSave({
+      status: "sent",
+      rejectionReason: null,
+      rejectionReasonId: null,
+      resentAt: new Date().toISOString(),
+      resendCount: (r.resendCount || 0) + 1,
+    }, "🔄 إعادة إرسال بعد الرفض (مرة #" + ((r.resendCount || 0) + 1) + ")");
+    setShowResent(false);
+  }
+
+  // TRANSFER rejected task to a different assignee — new task, linked to original
+  async function doTransfer(newAssignee, note) {
+    setBusy(true);
+    try {
+      var now = new Date().toISOString();
+      var newReq = Object.assign({}, r, {
+        id: "twsl_" + Date.now() + "_" + Math.random().toString(36).slice(2, 6),
+        serial: null, // backend will generate
+        status: "sent",
+        createdAt: now,
+        updatedAt: now,
+        assignees: [{ id: newAssignee.id, name: newAssignee.name || newAssignee.username, acceptedAt: null, deliveredAt: null, returns: 0, objected: false }],
+        rejectionReason: null,
+        rejectionReasonId: null,
+        rejectedAt: null,
+        rejectedCount: 0,
+        returnCount: 0,
+        resendCount: 0,
+        escalation: null,
+        escalatedAt: null,
+        deliveredAt: null,
+        receivedAt: null,
+        startedAt: null,
+        evaluations: [],
+        log: [{ text: "📋 أُنشئت كتحويل من مهمة مرفوضة #" + (r.serial || r.id) + (note ? " — " + note : ""), by: myName, at: now }],
+        linkedFromId: r.id,
+        linkedFromSerial: r.serial,
+      });
+      await saveTawasul(newReq);
+      // Mark original as transferred
+      var now2 = new Date().toISOString();
+      var original = Object.assign({}, r, {
+        status: "cancelled",
+        closedAt: now2,
+        updatedAt: now2,
+        transferredTo: newAssignee.id,
+        transferredToName: newAssignee.name || newAssignee.username,
+      });
+      original.log = (r.log || []).concat([{ text: "↪️ تم التحويل إلى " + (newAssignee.name || newAssignee.username) + (note ? " — " + note : ""), by: myName, at: now2 }]);
+      await saveTawasul(original);
+      setBusy(false);
+      setShowTransfer(false);
+      onUpdated();
+    } catch (e) {
+      setBusy(false);
+      alert("فشل التحويل: " + (e.message || "خطأ"));
+    }
+  }
+
+  // ASSIGNEE requests to add a collaborator (goes pending; requester must approve)
+  async function doRequestCollab(newEmp, reason) {
+    var now = new Date().toISOString();
+    var pending = (r.pendingCollabRequests || []).concat([{
+      id: "pc_" + Date.now(),
+      empId: newEmp.id || newEmp.username,
+      empName: newEmp.name || newEmp.username,
+      requestedBy: myId,
+      requestedByName: myName,
+      reason: reason || "",
+      at: now,
+      status: "pending",
+    }]);
+    await addLogAndSave({ pendingCollabRequests: pending },
+      "👥 طلب إضافة متعاون: " + (newEmp.name || newEmp.username) + (reason ? " — " + reason : ""));
+    setShowCollab(false);
+  }
+
+  // REQUESTER approves/rejects a pending collaborator request
+  async function doCollabDecision(pc, approve) {
+    var now = new Date().toISOString();
+    var pending = (r.pendingCollabRequests || []).map(function(x){
+      if (x.id === pc.id) return Object.assign({}, x, { status: approve ? "approved" : "rejected", decidedAt: now, decidedBy: myName });
+      return x;
+    });
+    var patch = { pendingCollabRequests: pending };
+    if (approve) {
+      var already = (r.assignees || []).some(function(a){ return String(a.id) === String(pc.empId); });
+      if (!already) {
+        patch.assignees = (r.assignees || []).concat([{ id: pc.empId, name: pc.empName, acceptedAt: null, deliveredAt: null, returns: 0, objected: false, addedAsCollab: true, addedAt: now }]);
+      }
+    }
+    await addLogAndSave(patch,
+      (approve ? "✅ موافقة على طلب تعاون: " : "❌ رفض طلب تعاون: ") + pc.empName);
+    setShowCollabApprove(null);
+  }
+
   async function doCancel() {
     if (!confirm("إلغاء هذه المهمة؟\n" + (r.title || ""))) return;
     await addLogAndSave({ status: "cancelled", closedAt: new Date().toISOString() }, "🚫 إلغاء المهمة");
@@ -4564,10 +4797,23 @@ function TawasulDetailModal({ request, user, allEmps, onClose, nameOf, onUpdated
 
   var canReject = canActAsAssignee && (r.status === "sent" || r.status === "received");
   var canReturn = canActAsAssignee && ["sent","received","inprogress","accepted"].indexOf(r.status) >= 0;
-  var canEscalate = (canActAsAssignee || canActAsRequester) && !r.escalation && !["closed","cancelled","evaluated"].includes(r.status);
+  // NEW escalation rule: only after 2+ rejections or 1+ returns (no first-time escalation)
+  var returnCount = r.returnCount || 0;
+  var rejectedCount = r.rejectedCount || 0;
+  var escalationAllowedByRule = returnCount >= 1 || rejectedCount >= 2;
+  var canEscalate = (canActAsAssignee || canActAsRequester) && !r.escalation && !["closed","cancelled","evaluated"].includes(r.status) && escalationAllowedByRule;
   var canCancel = isRequester && !["closed","cancelled","evaluated","delivered"].includes(r.status);
-  var canDelete = (isAdmin || isRequester) && r.status === "draft";
+  // Admins can delete any task, requesters can delete drafts
+  var canDelete = isAdmin || (isRequester && r.status === "draft");
   var canEdit = (isRequester || isAdmin) && ["draft","incomplete"].includes(r.status);
+  // Resend or transfer rejected task — requester only
+  var canResendRejected = isRequester && r.status === "rejected";
+  var canTransferRejected = isRequester && r.status === "rejected";
+  // Assignee can request a collaborator on an active task
+  var canRequestCollab = isAssignee && ["sent","received","accepted","inprogress"].indexOf(r.status) >= 0;
+  // Requester approves pending collab requests
+  var pendingCollabs = (r.pendingCollabRequests || []).filter(function(x){ return x.status === "pending"; });
+  var hasPendingCollabForMe = isRequester && pendingCollabs.length > 0;
 
   // Evaluation eligibility (spec section 12)
   var hasMyEval = (r.evaluations || []).some(function(e){ return String(e.by) === String(myId); });
@@ -4635,37 +4881,110 @@ function TawasulDetailModal({ request, user, allEmps, onClose, nameOf, onUpdated
             </div>
           )}
 
-          {/* Action buttons — organized by priority */}
-          {/* Row 1: Decision actions for assignee (reject/return) */}
-          {(canReject || canReturn) && (
-            <div style={{ display: "flex", gap: 8, marginBottom: 8 }}>
-              {canReject && (
-                <button onClick={function(){ setShowReject(true); }} style={{ flex: 1, padding: "12px 10px", borderRadius: 12, background: "rgba(239,68,68,0.1)", color: "#ef4444", border: "1.5px solid rgba(239,68,68,0.4)", fontSize: 13, fontWeight: 800, cursor: "pointer", fontFamily: "inherit", display: "flex", flexDirection: "column", alignItems: "center", gap: 2 }}>
-                  <span style={{ fontSize: 18 }}>❌</span>
-                  <span>رفض المهمة</span>
-                  <span style={{ fontSize: 9, opacity: 0.7, fontWeight: 500 }}>مع تحذير قانوني</span>
-                </button>
-              )}
-              {canReturn && (
-                <button onClick={function(){ setShowReturn(true); }} style={{ flex: 1, padding: "12px 10px", borderRadius: 12, background: "rgba(245,158,11,0.1)", color: "#f59e0b", border: "1.5px solid rgba(245,158,11,0.4)", fontSize: 13, fontWeight: 800, cursor: "pointer", fontFamily: "inherit", display: "flex", flexDirection: "column", alignItems: "center", gap: 2 }}>
-                  <span style={{ fontSize: 18 }}>📋</span>
-                  <span>إرجاع للاستكمال</span>
-                  <span style={{ fontSize: 9, opacity: 0.7, fontWeight: 500 }}>نواقص أو تعديلات</span>
-                </button>
-              )}
+          {/* Action buttons — uniform grid (all same size) */}
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(80px, 1fr))", gap: 6, marginBottom: 14 }}>
+            {canReject && (
+              <button onClick={function(){ setShowReject(true); }} title="رفض المهمة" style={{ padding: "10px 6px", borderRadius: 10, background: "rgba(239,68,68,0.1)", color: "#ef4444", border: "1.5px solid rgba(239,68,68,0.4)", fontSize: 11, fontWeight: 700, cursor: "pointer", fontFamily: "inherit", display: "flex", flexDirection: "column", alignItems: "center", gap: 2 }}>
+                <span style={{ fontSize: 15 }}>❌</span>
+                <span>رفض</span>
+              </button>
+            )}
+            {canReturn && (
+              <button onClick={function(){ setShowReturn(true); }} title="إرجاع للاستكمال" style={{ padding: "10px 6px", borderRadius: 10, background: "rgba(245,158,11,0.1)", color: "#f59e0b", border: "1.5px solid rgba(245,158,11,0.4)", fontSize: 11, fontWeight: 700, cursor: "pointer", fontFamily: "inherit", display: "flex", flexDirection: "column", alignItems: "center", gap: 2 }}>
+                <span style={{ fontSize: 15 }}>📋</span>
+                <span>إرجاع</span>
+              </button>
+            )}
+            {canEscalate && (
+              <button onClick={function(){ setShowEscalate(true); }} title="تصعيد — متاح بعد رفض مرتين أو إرجاع" style={{ padding: "10px 6px", borderRadius: 10, background: "rgba(251,191,36,0.15)", color: "#fbbf24", border: "1.5px solid rgba(251,191,36,0.4)", fontSize: 11, fontWeight: 700, cursor: "pointer", fontFamily: "inherit", display: "flex", flexDirection: "column", alignItems: "center", gap: 2 }}>
+                <span style={{ fontSize: 15 }}>⬆️</span>
+                <span>تصعيد</span>
+              </button>
+            )}
+            {canRequestCollab && (
+              <button onClick={function(){ setShowCollab(true); }} title="طلب إضافة متعاون" style={{ padding: "10px 6px", borderRadius: 10, background: "rgba(59,130,246,0.12)", color: "#3b82f6", border: "1.5px solid rgba(59,130,246,0.4)", fontSize: 11, fontWeight: 700, cursor: "pointer", fontFamily: "inherit", display: "flex", flexDirection: "column", alignItems: "center", gap: 2 }}>
+                <span style={{ fontSize: 15 }}>👥</span>
+                <span>متعاون</span>
+              </button>
+            )}
+            {canEvaluate && (
+              <button onClick={function(){ setShowEval(true); }} title="تقييم" style={{ padding: "10px 6px", borderRadius: 10, background: "rgba(201,168,76,0.2)", color: C.gold, border: "1.5px solid " + C.gold, fontSize: 11, fontWeight: 700, cursor: "pointer", fontFamily: "inherit", display: "flex", flexDirection: "column", alignItems: "center", gap: 2 }}>
+                <span style={{ fontSize: 15 }}>⭐</span>
+                <span>تقييم</span>
+              </button>
+            )}
+            {canHR && (
+              <button onClick={function(){ setShowHR(true); }} title="إجراء HR" style={{ padding: "10px 6px", borderRadius: 10, background: "rgba(124,58,237,0.15)", color: "#7c3aed", border: "1.5px solid rgba(124,58,237,0.4)", fontSize: 11, fontWeight: 700, cursor: "pointer", fontFamily: "inherit", display: "flex", flexDirection: "column", alignItems: "center", gap: 2 }}>
+                <span style={{ fontSize: 15 }}>👔</span>
+                <span>HR</span>
+              </button>
+            )}
+            {canCancel && (
+              <button onClick={doCancel} disabled={busy} title="إلغاء" style={{ padding: "10px 6px", borderRadius: 10, background: C.card, color: C.text, border: "1.5px solid " + C.cardBorder, fontSize: 11, fontWeight: 700, cursor: "pointer", fontFamily: "inherit", display: "flex", flexDirection: "column", alignItems: "center", gap: 2 }}>
+                <span style={{ fontSize: 15 }}>🚫</span>
+                <span>إلغاء</span>
+              </button>
+            )}
+            {canEdit && (
+              <button onClick={function(){ onEdit(r); }} title="تعديل" style={{ padding: "10px 6px", borderRadius: 10, background: C.hdr2, color: "#fff", border: "none", fontSize: 11, fontWeight: 700, cursor: "pointer", fontFamily: "inherit", display: "flex", flexDirection: "column", alignItems: "center", gap: 2 }}>
+                <span style={{ fontSize: 15 }}>✎</span>
+                <span>تعديل</span>
+              </button>
+            )}
+            {canDelete && (
+              <button onClick={doDelete} disabled={busy} title="حذف نهائي" style={{ padding: "10px 6px", borderRadius: 10, background: "rgba(239,68,68,0.2)", color: "#ef4444", border: "1.5px solid #ef4444", fontSize: 11, fontWeight: 700, cursor: "pointer", fontFamily: "inherit", display: "flex", flexDirection: "column", alignItems: "center", gap: 2 }}>
+                <span style={{ fontSize: 15 }}>🗑</span>
+                <span>حذف</span>
+              </button>
+            )}
+            <button onClick={function(){ exportTawasulPDF(r, nameOf); }} title="PDF" style={{ padding: "10px 6px", borderRadius: 10, background: C.card, color: C.text, border: "1.5px solid " + C.cardBorder, fontSize: 11, fontWeight: 700, cursor: "pointer", fontFamily: "inherit", display: "flex", flexDirection: "column", alignItems: "center", gap: 2 }}>
+              <span style={{ fontSize: 15 }}>🖨️</span>
+              <span>PDF</span>
+            </button>
+          </div>
+
+          {/* Hint when escalation is gated */}
+          {!r.escalation && !escalationAllowedByRule && (canActAsAssignee || canActAsRequester) && !["closed","cancelled","evaluated","draft"].includes(r.status) && (
+            <div style={{ padding: "8px 12px", borderRadius: 10, background: "rgba(148,163,184,0.1)", border: "1px dashed " + C.cardBorder, fontSize: 10, color: C.sub, marginBottom: 10, textAlign: "center" }}>
+              ⬆️ التصعيد متاح بعد رفض المهمة مرتين أو إرجاعها للاستكمال (رفض: {rejectedCount}، إرجاع: {returnCount})
             </div>
           )}
 
-          {/* Row 2: Secondary actions */}
-          <div style={{ display: "flex", flexWrap: "wrap", gap: 6, marginBottom: 14 }}>
-            {canEvaluate && <button onClick={function(){ setShowEval(true); }} style={{ flex: "1 1 auto", minWidth: 90, padding: "10px 12px", borderRadius: 10, background: "rgba(201,168,76,0.2)", color: C.gold, border: "1px solid " + C.gold, fontSize: 12, fontWeight: 700, cursor: "pointer", fontFamily: "inherit" }}>⭐ تقييم</button>}
-            {canHR && <button onClick={function(){ setShowHR(true); }} style={{ flex: "1 1 auto", minWidth: 90, padding: "10px 12px", borderRadius: 10, background: "rgba(124,58,237,0.15)", color: "#7c3aed", border: "1px solid rgba(124,58,237,0.4)", fontSize: 12, fontWeight: 700, cursor: "pointer", fontFamily: "inherit" }}>👔 إجراء HR</button>}
-            {canEscalate && <button onClick={function(){ setShowEscalate(true); }} style={{ flex: "1 1 auto", minWidth: 90, padding: "10px 12px", borderRadius: 10, background: "rgba(251,191,36,0.15)", color: "#fbbf24", border: "1px solid rgba(251,191,36,0.4)", fontSize: 12, fontWeight: 700, cursor: "pointer", fontFamily: "inherit" }}>⬆️ تصعيد</button>}
-            {canCancel && <button onClick={doCancel} disabled={busy} style={{ flex: "1 1 auto", minWidth: 90, padding: "10px 12px", borderRadius: 10, background: C.card, color: C.text, border: "1px solid " + C.cardBorder, fontSize: 12, fontWeight: 700, cursor: "pointer", fontFamily: "inherit" }}>🚫 إلغاء</button>}
-            {canEdit && <button onClick={function(){ onEdit(r); }} style={{ flex: "1 1 auto", minWidth: 90, padding: "10px 12px", borderRadius: 10, background: C.hdr2, color: "#fff", border: "none", fontSize: 12, fontWeight: 700, cursor: "pointer", fontFamily: "inherit" }}>✎ تعديل</button>}
-            {canDelete && <button onClick={doDelete} disabled={busy} style={{ flex: "1 1 auto", minWidth: 90, padding: "10px 12px", borderRadius: 10, background: "rgba(239,68,68,0.2)", color: "#ef4444", border: "1px solid #ef4444", fontSize: 12, fontWeight: 700, cursor: "pointer", fontFamily: "inherit" }}>🗑 حذف</button>}
-            <button onClick={function(){ exportTawasulPDF(r, nameOf); }} style={{ flex: "1 1 auto", minWidth: 90, padding: "10px 12px", borderRadius: 10, background: C.card, color: C.text, border: "1px solid " + C.cardBorder, fontSize: 12, fontWeight: 700, cursor: "pointer", fontFamily: "inherit" }}>🖨️ PDF</button>
-          </div>
+          {/* Resend / Transfer actions after rejection (requester only) */}
+          {(canResendRejected || canTransferRejected) && (
+            <div style={{ background: "rgba(239,68,68,0.06)", border: "1.5px solid rgba(239,68,68,0.3)", borderRadius: 14, padding: 14, marginBottom: 12 }}>
+              <div style={{ fontSize: 13, fontWeight: 800, color: "#ef4444", marginBottom: 4, display: "flex", alignItems: "center", gap: 6 }}>❌ المهمة مرفوضة</div>
+              <div style={{ fontSize: 11, color: C.sub, marginBottom: 10 }}>لم تُحذف — يمكنك إعادة إرسالها لنفس المهندس أو تحويلها لمهندس آخر</div>
+              <div style={{ display: "flex", gap: 8 }}>
+                {canResendRejected && (
+                  <button onClick={function(){ setShowResent(true); }} style={{ flex: 1, padding: "10px 8px", borderRadius: 10, background: "#0f766e", color: "#fff", border: "none", fontSize: 12, fontWeight: 800, cursor: "pointer", fontFamily: "inherit" }}>🔄 إعادة إرسال</button>
+                )}
+                {canTransferRejected && (
+                  <button onClick={function(){ setShowTransfer(true); }} style={{ flex: 1, padding: "10px 8px", borderRadius: 10, background: "#7c3aed", color: "#fff", border: "none", fontSize: 12, fontWeight: 800, cursor: "pointer", fontFamily: "inherit" }}>↪️ تحويل لمهندس آخر</button>
+                )}
+              </div>
+            </div>
+          )}
+
+          {/* Pending collaborator requests (requester approves) */}
+          {hasPendingCollabForMe && (
+            <div style={{ background: "rgba(59,130,246,0.08)", border: "1.5px solid rgba(59,130,246,0.35)", borderRadius: 14, padding: 14, marginBottom: 12 }}>
+              <div style={{ fontSize: 13, fontWeight: 800, color: "#3b82f6", marginBottom: 8 }}>👥 طلب إضافة متعاون ({pendingCollabs.length})</div>
+              {pendingCollabs.map(function(pc){
+                return (
+                  <div key={pc.id} style={{ padding: 10, borderRadius: 10, background: C.card, border: "1px solid " + C.cardBorder, marginBottom: 6 }}>
+                    <div style={{ fontSize: 12, fontWeight: 700, color: C.text, marginBottom: 2 }}>إضافة: {pc.empName}</div>
+                    <div style={{ fontSize: 10, color: C.sub, marginBottom: 4 }}>طلب من: {pc.requestedByName}</div>
+                    {pc.reason && <div style={{ fontSize: 11, color: C.text, marginBottom: 8, padding: "6px 8px", background: C.bg, borderRadius: 6 }}>{pc.reason}</div>}
+                    <div style={{ display: "flex", gap: 6 }}>
+                      <button onClick={function(){ doCollabDecision(pc, true); }} disabled={busy} style={{ flex: 1, padding: "6px 8px", borderRadius: 8, background: "#10b981", color: "#fff", border: "none", fontSize: 11, fontWeight: 800, cursor: "pointer", fontFamily: "inherit" }}>✅ قبول</button>
+                      <button onClick={function(){ doCollabDecision(pc, false); }} disabled={busy} style={{ flex: 1, padding: "6px 8px", borderRadius: 8, background: "#ef4444", color: "#fff", border: "none", fontSize: 11, fontWeight: 800, cursor: "pointer", fontFamily: "inherit" }}>❌ رفض</button>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
 
           {/* Pipeline */}
           {!["cancelled","rejected"].includes(r.status) && (
@@ -4697,13 +5016,26 @@ function TawasulDetailModal({ request, user, allEmps, onClose, nameOf, onUpdated
               { label: "تاريخ الإنشاء", value: r.createdAt ? new Date(r.createdAt).toLocaleString("ar-SA") : "—", icon: "📅" },
               r.deadline ? { label: "الموعد النهائي", value: new Date(r.deadline).toLocaleString("ar-SA"), icon: "⏰" } : null,
               r.deliveredAt ? { label: "تاريخ التسليم", value: new Date(r.deliveredAt).toLocaleString("ar-SA"), icon: "📦" } : null,
+              r.linkedFromSerial ? { label: "محوّلة من", value: "#" + r.linkedFromSerial, icon: "↪️" } : null,
+              rejectedCount > 0 ? { label: "عدد الرفضات", value: String(rejectedCount), icon: "❌" } : null,
+              returnCount > 0 ? { label: "عدد الإرجاعات", value: String(returnCount), icon: "📋" } : null,
               { label: "آخر تحديث", value: tawasulTimeAgo(r.updatedAt || r.createdAt), icon: "🔄" },
             ].filter(Boolean).map(function(row, idx, arr){
               return <div key={idx} style={{ display: "flex", justifyContent: "space-between", padding: "8px 0", borderBottom: idx < arr.length - 1 ? "1px solid " + C.cardBorder : "none", fontSize: 12, gap: 8 }}><div style={{ color: C.sub, fontWeight: 600, flexShrink: 0 }}><span style={{ marginLeft: 5 }}>{row.icon}</span>{row.label}</div><div style={{ color: C.text, fontWeight: 700, textAlign: "left", flex: 1, minWidth: 0, wordBreak: "break-word" }}>{row.value}</div></div>;
             })}
           </div>
 
-          {r.description && <div style={{ background: C.card, borderRadius: 12, padding: 14, border: "1px solid " + C.cardBorder, marginBottom: 12 }}><div style={{ fontSize: 11, fontWeight: 800, color: C.sub, marginBottom: 8 }}>📝 الوصف</div><div style={{ fontSize: 13, color: C.text, lineHeight: 1.7, whiteSpace: "pre-wrap" }}>{r.description}</div></div>}
+          {r.description && (
+            <div style={{ position: "relative", background: C.card, borderRadius: 12, padding: "14px 14px 14px 18px", border: "1px solid " + C.cardBorder, marginBottom: 12, overflow: "hidden" }}>
+              {/* Gold accent bar on the right (RTL) */}
+              <div style={{ position: "absolute", top: 0, bottom: 0, right: 0, width: 5, background: "linear-gradient(180deg, " + C.gold + ", " + C.gold + "aa)" }} />
+              <div style={{ fontSize: 13, fontWeight: 900, color: C.gold, marginBottom: 10, display: "flex", alignItems: "center", gap: 8, fontFamily: "'Cairo',sans-serif" }}>
+                <span style={{ fontSize: 16 }}>📝</span>
+                <span>وصف المهمة</span>
+              </div>
+              <div style={{ fontSize: 14, color: C.text, lineHeight: 1.85, whiteSpace: "pre-wrap", fontWeight: 500 }}>{r.description}</div>
+            </div>
+          )}
 
           {r.deliveryMethods && r.deliveryMethods.length > 0 && (
             <div style={{ background: C.card, borderRadius: 12, padding: 14, border: "1px solid " + C.cardBorder, marginBottom: 12 }}>
@@ -4752,9 +5084,176 @@ function TawasulDetailModal({ request, user, allEmps, onClose, nameOf, onUpdated
 
         {showReject && <TawasulReasonModal title="❌ رفض المهمة" reasons={TAWASUL_REJECT_REASONS} requireLegal={true} confirmColor="#ef4444" confirmLabel="تأكيد الرفض" onConfirm={doReject} onClose={function(){ setShowReject(false); }} />}
         {showReturn && <TawasulReasonModal title="📋 إرجاع للاستكمال" reasons={TAWASUL_RETURN_REASONS} requireLegal={false} confirmColor="#f59e0b" confirmLabel="تأكيد الإرجاع" onConfirm={doReturn} onClose={function(){ setShowReturn(false); }} />}
-        {showEscalate && <TawasulReasonModal title="⬆️ تصعيد المهمة" reasons={[{id:"delay",label:"تأخر عن الموعد"},{id:"no_response",label:"عدم استجابة"},{id:"quality",label:"مشكلة في الجودة"},{id:"other",label:"أخرى"}]} requireLegal={true} confirmColor="#fbbf24" confirmLabel="تأكيد التصعيد" onConfirm={doEscalate} onClose={function(){ setShowEscalate(false); }} />}
+        {showEscalate && <TawasulReasonModal title="⬆️ تصعيد المهمة" reasons={[{id:"delay",label:"تأخر عن الموعد"},{id:"no_response",label:"عدم استجابة"},{id:"quality",label:"مشكلة في الجودة"},{id:"other",label:"أخرى"}]} requireLegal={true} confirmColor="#fbbf24" confirmLabel="متابعة →" onConfirm={doEscalateReason} onClose={function(){ setShowEscalate(false); }} />}
+        {showEscalateHMA && <HMAConfirmModal title="تأكيد التصعيد" subtitle="خطوة لا رجعة فيها — اكتب HMA" icon="⬆️" confirmLabel="⬆️ تصعيد نهائي" confirmColor="#fbbf24" warningText="التصعيد يسجّل في السجل الرسمي ويتم إشعار الإدارة والموارد البشرية. تأكد من السبب قبل المتابعة." onConfirm={doEscalateFinal} onClose={function(){ setShowEscalateHMA(false); setPendingEscData(null); }} />}
+
+        {showReceiveConfirm && <SimpleConfirmModal title="استلام المهمة" icon="📥" confirmLabel="✅ موافق — استلمتها" confirmColor="#0f766e" message={<span>هل أنت متأكد أنك استلمت المهمة <b style={{ color: C.gold }}>{r.serial ? "#"+r.serial : ""}</b>؟<br/><span style={{ fontSize: 12, color: C.sub }}>بعد الاستلام تصبح مسؤولاً عن التنفيذ</span></span>} onConfirm={executeBigAction} onClose={function(){ setShowReceiveConfirm(false); }} />}
+        {showStartConfirm && <SimpleConfirmModal title="بدء التنفيذ" icon="⚡" confirmLabel="✅ ابدأ الآن" confirmColor="#7c3aed" message={<span>هل ستبدأ تنفيذ المهمة الآن؟<br/><span style={{ fontSize: 12, color: C.sub }}>سيُسجَّل وقت البدء في السجل</span></span>} onConfirm={executeBigAction} onClose={function(){ setShowStartConfirm(false); }} />}
+        {showDeliverConfirm && <HMAConfirmModal title="تسليم المهمة" subtitle="التسليم نهائي — اكتب HMA للتأكيد" icon="📦" confirmLabel="📦 تسليم نهائي" confirmColor="#b8960c" warningText="بعد التسليم تنتقل المهمة لمرحلة التقييم. لا يمكن التراجع عن التسليم. تأكد من إنجاز كل المتطلبات." onConfirm={executeBigAction} onClose={function(){ setShowDeliverConfirm(false); }} />}
+
+        {showResent && <SimpleConfirmModal title="إعادة إرسال المهمة" icon="🔄" confirmLabel="🔄 إعادة الإرسال" confirmColor="#0f766e" message={<span>سيتم إعادة المهمة لنفس المهندس ({(r.assignees||[]).map(function(a){return a.name;}).join("، ")}) بعد أن رفضها.<br/><span style={{ fontSize: 12, color: C.sub }}>يُحسب كمحاولة جديدة (#{(r.resendCount||0)+1})</span></span>} onConfirm={doResend} onClose={function(){ setShowResent(false); }} />}
+        {showTransfer && <TransferModal request={r} allEmps={allEmps} currentAssignees={r.assignees || []} onConfirm={doTransfer} onClose={function(){ setShowTransfer(false); }} />}
+        {showCollab && <CollabRequestModal allEmps={allEmps} currentAssignees={r.assignees || []} onConfirm={doRequestCollab} onClose={function(){ setShowCollab(false); }} />}
+
         {showEval && <TawasulEvalModal request={r} user={user} role={evalRole} onClose={function(){ setShowEval(false); }} onSaved={function(){ setShowEval(false); onUpdated(); }} />}
         {showHR && <TawasulHRActionsModal request={r} user={user} allEmps={allEmps} onClose={function(){ setShowHR(false); }} onSaved={function(){ setShowHR(false); onUpdated(); }} />}
+      </div>
+    </div>
+  );
+}
+
+/* ═══════════ TRANSFER MODAL — تحويل مهمة مرفوضة لمهندس آخر ═══════════ */
+function TransferModal({ request, allEmps, currentAssignees, onConfirm, onClose }) {
+  var [selectedId, setSelectedId] = useState("");
+  var [note, setNote] = useState("");
+  var [search, setSearch] = useState("");
+  var [busy, setBusy] = useState(false);
+
+  var excluded = new Set((currentAssignees || []).map(function(a){ return String(a.id); }));
+  var filtered = (allEmps || []).filter(function(e){
+    var id = String(e.id || e.username || "");
+    if (excluded.has(id)) return false;
+    if (!search.trim()) return true;
+    var q = search.trim().toLowerCase();
+    return ((e.name||"") + " " + (e.username||"") + " " + (e.position||"")).toLowerCase().indexOf(q) >= 0;
+  }).slice(0, 30);
+
+  var selected = (allEmps || []).find(function(e){ return String(e.id || e.username) === String(selectedId); });
+
+  async function handle() {
+    if (!selected) { alert("⚠️ اختر المهندس الجديد"); return; }
+    setBusy(true);
+    try {
+      await onConfirm({ id: selected.id || selected.username, name: selected.name || selected.username }, note.trim());
+    } catch(e) {
+      setBusy(false);
+      alert("فشل: " + (e.message || "خطأ"));
+    }
+  }
+
+  return (
+    <div onClick={onClose} style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.75)", zIndex: 1180, display: "flex", alignItems: "center", justifyContent: "center", padding: 12, fontFamily: "'Tajawal',sans-serif" }}>
+      <div onClick={function(e){ e.stopPropagation(); }} style={{ background: C.bg, borderRadius: 18, maxWidth: 440, width: "100%", maxHeight: "92vh", overflowY: "auto", direction: "rtl", color: C.text, overflow: "hidden" }}>
+        <div style={{ background: "linear-gradient(135deg, #7c3aed, #5b21b6)", padding: "20px 18px", color: "#fff", position: "relative" }}>
+          <button onClick={onClose} style={{ position: "absolute", top: 12, left: 12, background: "rgba(255,255,255,0.22)", border: "none", borderRadius: 8, width: 30, height: 30, fontSize: 18, color: "#fff", cursor: "pointer", fontFamily: "inherit" }}>×</button>
+          <div style={{ fontSize: 32, marginBottom: 6 }}>↪️</div>
+          <div style={{ fontSize: 18, fontWeight: 900, fontFamily: "'Cairo',sans-serif", marginBottom: 4 }}>تحويل المهمة لمهندس آخر</div>
+          <div style={{ fontSize: 12, opacity: 0.92 }}>سيتم إنشاء مهمة جديدة مرتبطة بالأصلية</div>
+        </div>
+        <div style={{ padding: 18 }}>
+          <div style={{ padding: 10, borderRadius: 10, background: "rgba(124,58,237,0.08)", border: "1px solid rgba(124,58,237,0.3)", fontSize: 11, color: C.text, lineHeight: 1.7, marginBottom: 14 }}>
+            📝 ستُنشأ مهمة جديدة بتاريخ اليوم مع بيان واضح في السجل بأنها <b>"منشأة من مهمة"</b> رقم #{request.serial || request.id}. الأصلية ستُغلق كـ"محوّلة".
+          </div>
+
+          <div style={{ fontSize: 12, fontWeight: 800, color: C.text, marginBottom: 8 }}>ابحث واختر المهندس *</div>
+          <input type="text" value={search} onChange={function(e){ setSearch(e.target.value); }} placeholder="اكتب اسم المهندس..." style={{ width: "100%", padding: "10px 12px", borderRadius: 10, border: "1px solid " + C.cardBorder, background: C.card, color: C.text, fontSize: 13, fontFamily: "inherit", outline: "none", boxSizing: "border-box", marginBottom: 8 }} />
+
+          <div style={{ maxHeight: 220, overflowY: "auto", border: "1px solid " + C.cardBorder, borderRadius: 10, marginBottom: 14, background: C.card }}>
+            {filtered.length === 0 ? (
+              <div style={{ padding: 16, textAlign: "center", color: C.sub, fontSize: 12 }}>{search ? "لا نتائج" : "ابدأ بالكتابة للبحث"}</div>
+            ) : filtered.map(function(e){
+              var id = String(e.id || e.username || "");
+              var active = String(selectedId) === id;
+              return (
+                <button key={id} onClick={function(){ setSelectedId(id); }} style={{ display: "flex", alignItems: "center", gap: 10, width: "100%", padding: "10px 12px", border: "none", borderBottom: "1px solid " + C.cardBorder, background: active ? "#7c3aed22" : "transparent", cursor: "pointer", fontFamily: "inherit", textAlign: "right" }}>
+                  <span style={{ width: 18, height: 18, borderRadius: 9, border: "2px solid " + (active ? "#7c3aed" : C.cardBorder), background: active ? "#7c3aed" : "transparent", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>{active && <span style={{ color: "#fff", fontSize: 10 }}>✓</span>}</span>
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div style={{ fontSize: 13, fontWeight: 700, color: C.text }}>{e.name || e.username}</div>
+                    {e.position && <div style={{ fontSize: 10, color: C.sub }}>{e.position}</div>}
+                  </div>
+                </button>
+              );
+            })}
+          </div>
+
+          <div style={{ fontSize: 12, fontWeight: 800, color: C.text, marginBottom: 6 }}>ملاحظة (اختيارية)</div>
+          <textarea value={note} onChange={function(e){ setNote(e.target.value); }} rows={3} placeholder="سبب التحويل أو تفاصيل للمهندس الجديد..." style={{ width: "100%", padding: "10px 12px", borderRadius: 10, border: "1px solid " + C.cardBorder, background: C.card, color: C.text, fontSize: 12, fontFamily: "inherit", outline: "none", boxSizing: "border-box", resize: "vertical", minHeight: 70 }} />
+        </div>
+        <div style={{ padding: "14px 18px", borderTop: "1px solid " + C.cardBorder, display: "flex", gap: 10, background: C.bg }}>
+          <button onClick={onClose} disabled={busy} style={{ flex: 1, padding: 13, borderRadius: 12, background: C.card, color: C.text, border: "1px solid " + C.cardBorder, fontSize: 13, fontWeight: 700, cursor: busy ? "default" : "pointer", fontFamily: "inherit" }}>إلغاء</button>
+          <button onClick={handle} disabled={busy || !selectedId} style={{ flex: 2, padding: 13, borderRadius: 12, background: (busy || !selectedId) ? C.cardBorder : "#7c3aed", color: "#fff", border: "none", fontSize: 14, fontWeight: 900, cursor: (busy || !selectedId) ? "default" : "pointer", fontFamily: "'Cairo',sans-serif", boxShadow: (busy || !selectedId) ? "none" : "0 4px 12px rgba(124,58,237,0.5)" }}>
+            {busy ? "⏳ ..." : "↪️ تحويل المهمة"}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/* ═══════════ COLLAB REQUEST MODAL — طلب إضافة متعاون ═══════════ */
+function CollabRequestModal({ allEmps, currentAssignees, onConfirm, onClose }) {
+  var [selectedId, setSelectedId] = useState("");
+  var [reason, setReason] = useState("");
+  var [search, setSearch] = useState("");
+  var [busy, setBusy] = useState(false);
+
+  var excluded = new Set((currentAssignees || []).map(function(a){ return String(a.id); }));
+  var filtered = (allEmps || []).filter(function(e){
+    var id = String(e.id || e.username || "");
+    if (excluded.has(id)) return false;
+    if (!search.trim()) return true;
+    var q = search.trim().toLowerCase();
+    return ((e.name||"") + " " + (e.username||"") + " " + (e.position||"")).toLowerCase().indexOf(q) >= 0;
+  }).slice(0, 30);
+
+  var selected = (allEmps || []).find(function(e){ return String(e.id || e.username) === String(selectedId); });
+
+  async function handle() {
+    if (!selected) { alert("⚠️ اختر الشخص المطلوب إضافته"); return; }
+    if (!reason.trim()) { alert("⚠️ اكتب سبب طلب المتعاون"); return; }
+    setBusy(true);
+    try {
+      await onConfirm({ id: selected.id || selected.username, name: selected.name || selected.username }, reason.trim());
+    } catch(e) {
+      setBusy(false);
+      alert("فشل: " + (e.message || "خطأ"));
+    }
+  }
+
+  return (
+    <div onClick={onClose} style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.75)", zIndex: 1180, display: "flex", alignItems: "center", justifyContent: "center", padding: 12, fontFamily: "'Tajawal',sans-serif" }}>
+      <div onClick={function(e){ e.stopPropagation(); }} style={{ background: C.bg, borderRadius: 18, maxWidth: 440, width: "100%", maxHeight: "92vh", overflowY: "auto", direction: "rtl", color: C.text, overflow: "hidden" }}>
+        <div style={{ background: "linear-gradient(135deg, #3b82f6, #1e40af)", padding: "20px 18px", color: "#fff", position: "relative" }}>
+          <button onClick={onClose} style={{ position: "absolute", top: 12, left: 12, background: "rgba(255,255,255,0.22)", border: "none", borderRadius: 8, width: 30, height: 30, fontSize: 18, color: "#fff", cursor: "pointer", fontFamily: "inherit" }}>×</button>
+          <div style={{ fontSize: 32, marginBottom: 6 }}>👥</div>
+          <div style={{ fontSize: 18, fontWeight: 900, fontFamily: "'Cairo',sans-serif", marginBottom: 4 }}>طلب إضافة متعاون</div>
+          <div style={{ fontSize: 12, opacity: 0.92 }}>الطلب يحتاج موافقة المُرسِل</div>
+        </div>
+        <div style={{ padding: 18 }}>
+          <div style={{ padding: 10, borderRadius: 10, background: "rgba(59,130,246,0.08)", border: "1px solid rgba(59,130,246,0.3)", fontSize: 11, color: C.text, lineHeight: 1.7, marginBottom: 14 }}>
+            ℹ️ سيُرسَل طلبك للمُرسِل ليوافق على إضافة المتعاون. بعد الموافقة يصبح المتعاون شريكاً في المهمة.
+          </div>
+
+          <div style={{ fontSize: 12, fontWeight: 800, color: C.text, marginBottom: 8 }}>ابحث واختر الشخص *</div>
+          <input type="text" value={search} onChange={function(e){ setSearch(e.target.value); }} placeholder="اكتب اسم الشخص..." style={{ width: "100%", padding: "10px 12px", borderRadius: 10, border: "1px solid " + C.cardBorder, background: C.card, color: C.text, fontSize: 13, fontFamily: "inherit", outline: "none", boxSizing: "border-box", marginBottom: 8 }} />
+
+          <div style={{ maxHeight: 220, overflowY: "auto", border: "1px solid " + C.cardBorder, borderRadius: 10, marginBottom: 14, background: C.card }}>
+            {filtered.length === 0 ? (
+              <div style={{ padding: 16, textAlign: "center", color: C.sub, fontSize: 12 }}>{search ? "لا نتائج" : "ابدأ بالكتابة للبحث"}</div>
+            ) : filtered.map(function(e){
+              var id = String(e.id || e.username || "");
+              var active = String(selectedId) === id;
+              return (
+                <button key={id} onClick={function(){ setSelectedId(id); }} style={{ display: "flex", alignItems: "center", gap: 10, width: "100%", padding: "10px 12px", border: "none", borderBottom: "1px solid " + C.cardBorder, background: active ? "#3b82f622" : "transparent", cursor: "pointer", fontFamily: "inherit", textAlign: "right" }}>
+                  <span style={{ width: 18, height: 18, borderRadius: 9, border: "2px solid " + (active ? "#3b82f6" : C.cardBorder), background: active ? "#3b82f6" : "transparent", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>{active && <span style={{ color: "#fff", fontSize: 10 }}>✓</span>}</span>
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div style={{ fontSize: 13, fontWeight: 700, color: C.text }}>{e.name || e.username}</div>
+                    {e.position && <div style={{ fontSize: 10, color: C.sub }}>{e.position}</div>}
+                  </div>
+                </button>
+              );
+            })}
+          </div>
+
+          <div style={{ fontSize: 12, fontWeight: 800, color: C.text, marginBottom: 6 }}>سبب طلب المتعاون *</div>
+          <textarea value={reason} onChange={function(e){ setReason(e.target.value); }} rows={3} placeholder="مثال: المهمة تتطلب خبرة إنشائية، أحتاج مساعدة في التصميم، ..." style={{ width: "100%", padding: "10px 12px", borderRadius: 10, border: "1px solid " + C.cardBorder, background: C.card, color: C.text, fontSize: 12, fontFamily: "inherit", outline: "none", boxSizing: "border-box", resize: "vertical", minHeight: 70 }} />
+        </div>
+        <div style={{ padding: "14px 18px", borderTop: "1px solid " + C.cardBorder, display: "flex", gap: 10, background: C.bg }}>
+          <button onClick={onClose} disabled={busy} style={{ flex: 1, padding: 13, borderRadius: 12, background: C.card, color: C.text, border: "1px solid " + C.cardBorder, fontSize: 13, fontWeight: 700, cursor: busy ? "default" : "pointer", fontFamily: "inherit" }}>إلغاء</button>
+          <button onClick={handle} disabled={busy || !selectedId || !reason.trim()} style={{ flex: 2, padding: 13, borderRadius: 12, background: (busy || !selectedId || !reason.trim()) ? C.cardBorder : "#3b82f6", color: "#fff", border: "none", fontSize: 14, fontWeight: 900, cursor: (busy || !selectedId || !reason.trim()) ? "default" : "pointer", fontFamily: "'Cairo',sans-serif", boxShadow: (busy || !selectedId || !reason.trim()) ? "none" : "0 4px 12px rgba(59,130,246,0.5)" }}>
+            {busy ? "⏳ ..." : "📤 إرسال الطلب"}
+          </button>
+        </div>
       </div>
     </div>
   );
