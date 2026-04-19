@@ -1401,6 +1401,38 @@ export default async function handler(req, res) {
         }
       }
 
+      case 'tawasul-save': {
+        if (req.method !== 'POST') return res.status(405).json({ error: 'POST required' });
+        try {
+          var kr = await fetch('https://hma.engineer/api/basma-sync?action=tawasul-save', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(req.body || {}),
+          });
+          var kd = await kr.json();
+          if (!kr.ok) return res.status(kr.status).json({ error: kd.error || 'kadwar error ' + kr.status });
+          return res.json(kd);
+        } catch (e) {
+          return res.status(502).json({ error: 'تعذر الحفظ على كوادر: ' + (e.message || 'unknown') });
+        }
+      }
+
+      case 'tawasul-delete': {
+        if (req.method !== 'POST') return res.status(405).json({ error: 'POST required' });
+        try {
+          var kr = await fetch('https://hma.engineer/api/basma-sync?action=tawasul-delete', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(req.body || {}),
+          });
+          var kd = await kr.json();
+          if (!kr.ok) return res.status(kr.status).json({ error: kd.error || 'kadwar error ' + kr.status });
+          return res.json(kd);
+        } catch (e) {
+          return res.status(502).json({ error: 'تعذر الحذف على كوادر: ' + (e.message || 'unknown') });
+        }
+      }
+
       /* ═══ BANNERS — بنر الصفحة الرئيسية ═══ */
       case 'banners': {
         if (req.method === 'POST') {

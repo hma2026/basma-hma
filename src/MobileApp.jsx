@@ -10,7 +10,7 @@ import { ALL_VIOLATIONS_DEFAULT, PENALTY_TYPES, LAIHA_INFO, COMPLAINT_STATUS, VI
 
 /* ═══════════ APP CONFIG (إعدادات التطبيق) ═══════════ */
 const APP_CONFIG = {
-  VER: "4.90",
+  VER: "4.91",
   NAME: "بصمة HMA",
   FULL_NAME: "نظام الحضور والانصراف الذكي",
   COMPANY: "هاني محمد عسيري للاستشارات الهندسية",
@@ -1969,10 +1969,634 @@ function stageIndex(status) {
   return map[status] !== undefined ? map[status] : 0;
 }
 
+/* ═══════════ TAWASUL HELPERS (Phase 2) ═══════════ */
+var TAWASUL_CATEGORIES_DEFAULT = [
+  { id: "supervision", label: "أعمال الإشراف", icon: "🏗️" },
+  { id: "design",      label: "أعمال التصميم", icon: "✏️" },
+  { id: "survey",      label: "أعمال المساحة", icon: "📐" },
+  { id: "clients",     label: "علاقات العملاء", icon: "👥" },
+  { id: "admin",       label: "إداري",          icon: "📋" },
+  { id: "other",       label: "أخرى",           icon: "📎" },
+];
+var TAWASUL_NATURES = [
+  { id: "technical", label: "🔧 فني" },
+  { id: "admin",     label: "📋 إداري" },
+  { id: "other",     label: "📎 أخرى" },
+];
+var TAWASUL_DELIVERY = [
+  { id: "email",    label: "📧 بريد إلكتروني", kind: "email",    ph: "أدخل البريد الإلكتروني" },
+  { id: "whatsapp", label: "💬 واتساب",        kind: "phone",    ph: "رقم الواتساب" },
+  { id: "phone",    label: "📞 اتصال",         kind: "phone",    ph: "رقم الهاتف" },
+  { id: "link",     label: "🔗 رابط",          kind: "url",      ph: "أدخل الرابط (URL)" },
+  { id: "location", label: "📍 موقع / فرع",    kind: "text",     ph: "الموقع / العنوان" },
+  { id: "handover", label: "🤝 تسليم يدوي",    kind: "text",     ph: "وصف التسليم" },
+  { id: "paper",    label: "📄 ورقي",          kind: "text",     ph: "تفاصيل التسليم الورقي" },
+];
+var TAWASUL_REJECT_REASONS = [
+  { id: "wrong_specialty",  label: "خارج نطاق التخصص" },
+  { id: "duplicate_task",   label: "المهمة مكررة" },
+  { id: "wrong_department", label: "المهمة لا تتبع جهة المُستلِم" },
+  { id: "other",            label: "أخرى" },
+];
+var TAWASUL_RETURN_REASONS = [
+  { id: "missing_docs",      label: "نقص مستندات أو ملفات أو أدوات" },
+  { id: "insufficient_time", label: "الوقت المحدد غير كافٍ" },
+  { id: "new_requirements",  label: "نواقص مستحدثة أثناء التنفيذ" },
+  { id: "priority_conflict", label: "تعارض مع مهام أولوية" },
+  { id: "incomplete_data",   label: "بيانات غير مكتملة أو تحتاج توضيح" },
+  { id: "other",             label: "أخرى" },
+];
+var LEGAL_WARNING_TEXT = "وفقاً للمادة (65) من نظام العمل الصادر بالمرسوم الملكي رقم (م/51) وتاريخ 1426/08/23هـ، يلتزم العامل بحسن السلوك والأخلاق أثناء العمل، وعدم إساءة استخدام الصلاحيات الممنوحة له. في حال ثبت أن هذا الإجراء غير مبرر أو كيدي، فإنه يحق لصاحب العمل اتخاذ الإجراءات التأديبية المنصوص عليها في لائحة تنظيم العمل الداخلية، وذلك استناداً للمادة (66) من نظام العمل.";
+var LEGAL_ACK_TEXT = "أقر بعلمي واطلاعي على ما ورد أعلاه، وأتحمل المسؤولية الكاملة عن هذا الإجراء، وأوافق على حق الإدارة في تطبيق الجزاءات التأديبية المقررة نظاماً في حال ثبت عدم مشروعيته.";
+
+/* Big button logic per spec 7.2 */
+var BIG_BTN_MAP = {
+  sent:       { label: "📥 استلام المهمة",  sub: "اضغط لتأكيد الاستلام",     color: "#0f766e", next: "received",   who: "assignee" },
+  received:   { label: "⚡ بدء التنفيذ",     sub: "ابدأ العمل على المهمة",    color: "#7c3aed", next: "inprogress", who: "assignee" },
+  accepted:   { label: "⚡ بدء التنفيذ",     sub: "ابدأ العمل على المهمة",    color: "#7c3aed", next: "inprogress", who: "assignee" },
+  inprogress: { label: "📦 تسليم المهمة",    sub: "أنهيت المهمة — جاهز للتسليم", color: "#b8960c", next: "delivered",  who: "assignee" },
+  delivered:  { label: "⏳ بانتظار التقييم", sub: "4 ساعات للتقييم المتبادل", color: "#94a3b8", next: null,         who: "requester" },
+  incomplete: { label: "🔄 استكمال وإعادة الإرسال", sub: "المُرسِل يستكمل النواقص", color: "#f59e0b", next: "sent",       who: "requester" },
+};
+
+/* Saves tawasul request via proxy to kadwar */
+async function saveTawasul(request) {
+  var r = await fetch("/api/data?action=tawasul-save", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ request: request }),
+  });
+  var d = await r.json();
+  if (!r.ok || d.error) throw new Error(d.error || ("خطأ " + r.status));
+  return d;
+}
+async function deleteTawasul(id) {
+  var r = await fetch("/api/data?action=tawasul-delete", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ id: id }),
+  });
+  var d = await r.json();
+  if (!r.ok || d.error) throw new Error(d.error || ("خطأ " + r.status));
+  return d;
+}
+
+/* LocalStorage favorites for delivery methods */
+function tawasulFavsKey(username) { return "hma_twsl_favs_" + (username || "_"); }
+function loadFavs(username) {
+  try { return JSON.parse(localStorage.getItem(tawasulFavsKey(username)) || "[]"); } catch(e) { return []; }
+}
+function saveFavs(username, favs) {
+  try { localStorage.setItem(tawasulFavsKey(username), JSON.stringify(favs)); } catch(e) {}
+}
+
+/* ═══════════ TAWASUL CREATE MODAL (9-step wizard per spec section 6) ═══════════ */
+function TawasulCreateModal({ user, allEmps, categories, projects, onClose, onSaved, existing }) {
+  var myId = user && (user.id || user.username);
+  var myEmail = user && user.email;
+  var isEdit = !!existing;
+  var cats = (categories && categories.length > 0) ? categories : TAWASUL_CATEGORIES_DEFAULT;
+
+  var initialForm = existing ? Object.assign({}, existing) : {
+    id: null,
+    serial: null,
+    urgency: "normal",
+    timed: false,
+    deadline: "",
+    requesterId: myId,
+    requesterName: (user && user.name) || (user && user.username) || "",
+    assignees: [],
+    assignMode: "each",
+    category: "",
+    department: "",
+    nature: [],
+    projectId: "",
+    projectName: "",
+    projectClient: "",
+    projectClientPhone: "",
+    projectBranch: "",
+    title: "",
+    description: "",
+    deliveryMethods: [],
+    priorDelivery: false,
+    priorDeliveryDate: "",
+    priorDeliveryDesc: "",
+    extraContacts: [],
+    attachments: [],
+    status: "draft",
+    createdAt: "",
+    updatedAt: "",
+    log: [],
+  };
+  var [form, setForm] = useState(initialForm);
+  var [step, setStep] = useState(1);
+  var [saving, setSaving] = useState(false);
+  var [err, setErr] = useState("");
+
+  function updateForm(patch) { setForm(function(prev){ return Object.assign({}, prev, patch); }); }
+
+  // Quick-duration buttons (step 2)
+  function setQuickDuration(days) {
+    var target = new Date(Date.now() + days * 86400000);
+    var val = target.toISOString().slice(0, 16);
+    updateForm({ timed: true, deadline: val });
+  }
+
+  // Group employees per spec 6.3
+  var empGroups = (function(){
+    var myEmp = (allEmps || []).find(function(e){ return String(e.id) === String(myId) || e.username === user.username; }) || {};
+    var managers = [];
+    var peers = [];
+    var subordinates = [];
+    var others = [];
+    (allEmps || []).forEach(function(e){
+      if (String(e.id) === String(myId) || e.username === user.username) return;
+      var isManager = e.id === myEmp.managerId || e.role === "admin" || e.role === "hr_manager" || e.isAdmin;
+      var isSubordinate = (myEmp.id && (e.managerId === myEmp.id || e.supervisorId === myEmp.id));
+      var isPeer = myEmp.department && e.department === myEmp.department;
+      if (isManager) managers.push(e);
+      else if (isSubordinate) subordinates.push(e);
+      else if (isPeer) peers.push(e);
+      else others.push(e);
+    });
+    return { managers: managers, peers: peers, subordinates: subordinates, others: others };
+  })();
+
+  function toggleAssignee(emp) {
+    var eid = emp.id || emp.username;
+    if (String(eid) === String(myId) || eid === user.username) { setErr("لا يمكنك تكليف نفسك بالمهمة"); return; }
+    setErr("");
+    var list = form.assignees || [];
+    var idx = list.findIndex(function(a){ return String(a.id) === String(eid); });
+    if (idx >= 0) {
+      updateForm({ assignees: list.filter(function(_, i){ return i !== idx; }) });
+    } else {
+      updateForm({ assignees: list.concat([{ id: eid, name: emp.name || emp.username, acceptedAt: null, deliveredAt: null, returns: 0, objected: false }]) });
+    }
+  }
+
+  // Dept list (unique)
+  var allDepts = (function(){
+    var set = {};
+    (allEmps || []).forEach(function(e){ if (e.department) set[e.department] = true; });
+    return Object.keys(set).sort();
+  })();
+
+  // Delivery favorites
+  var [favs, setFavsState] = useState(loadFavs(user.username));
+  function addFav(dmItem) {
+    if (!dmItem.value || !dmItem.value.trim()) return;
+    var newFav = { id: "fav_" + Date.now(), type: dmItem.type, value: dmItem.value, label: dmItem.label };
+    var updated = favs.concat([newFav]);
+    setFavsState(updated); saveFavs(user.username, updated);
+  }
+  function removeFav(favId) {
+    var updated = favs.filter(function(f){ return f.id !== favId; });
+    setFavsState(updated); saveFavs(user.username, updated);
+  }
+
+  function addDeliveryMethod(type) {
+    var def = TAWASUL_DELIVERY.find(function(d){ return d.id === type; });
+    if (!def) return;
+    var exists = (form.deliveryMethods || []).some(function(dm){ return dm.type === type; });
+    if (exists) return;
+    updateForm({ deliveryMethods: (form.deliveryMethods || []).concat([{ type: type, value: "", label: def.label, favId: null }]) });
+  }
+  function applyFav(fav) {
+    var exists = (form.deliveryMethods || []).some(function(dm){ return dm.type === fav.type && dm.value === fav.value; });
+    if (exists) return;
+    updateForm({ deliveryMethods: (form.deliveryMethods || []).concat([{ type: fav.type, value: fav.value, label: fav.label, favId: fav.id }]) });
+  }
+  function updateDelivery(idx, patch) {
+    var list = (form.deliveryMethods || []).slice();
+    list[idx] = Object.assign({}, list[idx], patch);
+    updateForm({ deliveryMethods: list });
+  }
+  function removeDelivery(idx) {
+    updateForm({ deliveryMethods: (form.deliveryMethods || []).filter(function(_, i){ return i !== idx; }) });
+  }
+
+  // Extra contacts
+  function addExtra(type) {
+    updateForm({ extraContacts: (form.extraContacts || []).concat([{ type: type, name: "", phone: "" }]) });
+  }
+  function updateExtra(idx, patch) {
+    var list = (form.extraContacts || []).slice();
+    list[idx] = Object.assign({}, list[idx], patch);
+    updateForm({ extraContacts: list });
+  }
+  function removeExtra(idx) {
+    updateForm({ extraContacts: (form.extraContacts || []).filter(function(_, i){ return i !== idx; }) });
+  }
+
+  // Validation per step
+  function canNext() {
+    if (step === 1 && !form.urgency) return false;
+    if (step === 2 && form.timed && !form.deadline) return false;
+    if (step === 3 && (form.assignees || []).length === 0) return false;
+    if (step === 4 && !form.category) return false;
+    if (step === 5 && !form.department) return false;
+    if (step === 6 && !(form.projectName || "").trim()) return false;
+    if (step === 7 && !(form.title || "").trim()) return false;
+    if (step === 8 && (form.deliveryMethods || []).length === 0) return false;
+    return true;
+  }
+
+  async function submit(status) {
+    setSaving(true); setErr("");
+    try {
+      var now = new Date().toISOString();
+      var newReq = Object.assign({}, form, {
+        id: form.id || ("twsl_" + Date.now()),
+        status: status,
+        createdAt: form.createdAt || now,
+        updatedAt: now,
+        requesterId: myId,
+        requesterName: form.requesterName,
+      });
+      // append log entry
+      var logEntry = { text: isEdit ? "✎ تعديل المهمة" : "📨 إنشاء المهمة", by: form.requesterName || user.username, at: now };
+      newReq.log = (form.log || []).concat([logEntry]);
+      await saveTawasul(newReq);
+      setSaving(false);
+      onSaved();
+    } catch (e) {
+      setErr(e.message || "فشل الحفظ");
+      setSaving(false);
+    }
+  }
+
+  var inputStyle = { width: "100%", padding: "12px 14px", borderRadius: 12, border: "1px solid " + C.cardBorder, background: C.card, color: C.text, fontSize: 14, fontFamily: "'Tajawal',sans-serif", outline: "none", boxSizing: "border-box" };
+
+  function chip(label, active, onClick, color) {
+    var c = color || C.hdr2;
+    return <button onClick={onClick} style={{ padding: "8px 14px", borderRadius: 12, background: active ? c : C.card, border: "1.5px solid " + (active ? c : C.cardBorder), color: active ? "#fff" : C.text, fontSize: 12, fontWeight: 700, cursor: "pointer", fontFamily: "inherit" }}>{label}</button>;
+  }
+
+  function EmployeeCard(emp) {
+    var eid = emp.id || emp.username;
+    var selected = (form.assignees || []).some(function(a){ return String(a.id) === String(eid); });
+    var initial = ((emp.name || emp.username || "?").trim().charAt(0)) || "?";
+    return (
+      <div key={eid} onClick={function(){ toggleAssignee(emp); }} style={{ minWidth: 78, padding: 8, borderRadius: 12, background: selected ? "rgba(34,197,94,0.15)" : C.card, border: "2px solid " + (selected ? "#22c55e" : C.cardBorder), cursor: "pointer", textAlign: "center", flexShrink: 0, position: "relative" }}>
+        <div style={{ width: 44, height: 44, borderRadius: 22, background: selected ? "#22c55e" : C.bg, color: selected ? "#fff" : C.text, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 16, fontWeight: 800, margin: "0 auto 6px" }}>{initial}</div>
+        <div style={{ fontSize: 9, fontWeight: 700, color: C.text, lineHeight: 1.3, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{emp.name || emp.username}</div>
+        {selected && <div style={{ position: "absolute", top: 4, right: 4, width: 18, height: 18, borderRadius: 9, background: "#22c55e", color: "#fff", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 10, fontWeight: 900 }}>✓</div>}
+      </div>
+    );
+  }
+
+  var stepTitles = ["نوع الطلب","المدة","الأطراف","طبيعة المهام","الإدارة","المشروع","التفاصيل","طريقة التسليم","ملخص"];
+
+  return (
+    <div onClick={onClose} style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.65)", zIndex: 1001, display: "flex", alignItems: "flex-end", justifyContent: "center", fontFamily: "'Tajawal',sans-serif" }}>
+      <div onClick={function(e){ e.stopPropagation(); }} style={{ background: C.bg, borderRadius: "20px 20px 0 0", maxWidth: 430, width: "100%", maxHeight: "96vh", overflowY: "auto", direction: "rtl", color: C.text, paddingBottom: 16 }}>
+        {/* Header */}
+        <div style={{ position: "sticky", top: 0, background: C.bg, zIndex: 5, padding: "12px 16px 8px", borderBottom: "1px solid " + C.cardBorder }}>
+          <div style={{ display: "flex", justifyContent: "center", marginBottom: 8 }}>
+            <div style={{ width: 40, height: 4, borderRadius: 2, background: C.cardBorder }} />
+          </div>
+          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 10 }}>
+            <div style={{ fontSize: 16, fontWeight: 900, color: C.text, fontFamily: "'Cairo',sans-serif" }}>{isEdit ? "✎ تعديل مهمة" : "➕ مهمة جديدة"}</div>
+            <button onClick={onClose} style={{ background: "none", border: "none", fontSize: 22, color: C.sub, cursor: "pointer", padding: 0 }}>×</button>
+          </div>
+          {/* Progress */}
+          <div style={{ display: "flex", alignItems: "center", gap: 3, marginBottom: 6 }}>
+            {[1,2,3,4,5,6,7,8,9].map(function(n){
+              var done = n < step;
+              var active = n === step;
+              return (
+                <div key={n} style={{ flex: active ? 2 : 1, height: 4, borderRadius: 2, background: done || active ? C.gold : C.cardBorder, transition: "all 0.2s" }} />
+              );
+            })}
+          </div>
+          <div style={{ fontSize: 11, color: C.sub, textAlign: "center", fontWeight: 700 }}>المرحلة {step} / 9 — {stepTitles[step-1]}</div>
+        </div>
+
+        <div style={{ padding: 16 }}>
+          {/* Step 1: urgency */}
+          {step === 1 && (
+            <div>
+              <div style={{ fontSize: 14, fontWeight: 700, color: C.sub, marginBottom: 14 }}>ما أولوية هذه المهمة؟</div>
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
+                <button onClick={function(){ updateForm({ urgency: "urgent" }); }} style={{ padding: "20px 12px", borderRadius: 14, background: form.urgency === "urgent" ? "#ef4444" : C.card, color: form.urgency === "urgent" ? "#fff" : C.text, border: "2px solid " + (form.urgency === "urgent" ? "#ef4444" : C.cardBorder), fontSize: 14, fontWeight: 800, cursor: "pointer", fontFamily: "inherit" }}>🔴<br/>عاجل</button>
+                <button onClick={function(){ updateForm({ urgency: "normal" }); }} style={{ padding: "20px 12px", borderRadius: 14, background: form.urgency === "normal" ? "#f59e0b" : C.card, color: form.urgency === "normal" ? "#fff" : C.text, border: "2px solid " + (form.urgency === "normal" ? "#f59e0b" : C.cardBorder), fontSize: 14, fontWeight: 800, cursor: "pointer", fontFamily: "inherit" }}>🟡<br/>عادي</button>
+              </div>
+            </div>
+          )}
+
+          {/* Step 2: duration */}
+          {step === 2 && (
+            <div>
+              <div style={{ fontSize: 14, fontWeight: 700, color: C.sub, marginBottom: 14 }}>ما مدة التنفيذ؟</div>
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10, marginBottom: 14 }}>
+                <button onClick={function(){ updateForm({ timed: true }); }} style={{ padding: "14px 10px", borderRadius: 12, background: form.timed ? C.gold : C.card, color: form.timed ? "#fff" : C.text, border: "2px solid " + (form.timed ? C.gold : C.cardBorder), fontSize: 12, fontWeight: 800, cursor: "pointer", fontFamily: "inherit" }}>⏰ محدد بوقت</button>
+                <button onClick={function(){ updateForm({ timed: false, deadline: "" }); }} style={{ padding: "14px 10px", borderRadius: 12, background: !form.timed ? C.gold : C.card, color: !form.timed ? "#fff" : C.text, border: "2px solid " + (!form.timed ? C.gold : C.cardBorder), fontSize: 12, fontWeight: 800, cursor: "pointer", fontFamily: "inherit" }}>📅 غير محدد (30 يوم)</button>
+              </div>
+              {form.timed && (
+                <div>
+                  <div style={{ fontSize: 11, fontWeight: 700, color: C.sub, marginBottom: 6 }}>مدة سريعة:</div>
+                  <div style={{ display: "flex", flexWrap: "wrap", gap: 6, marginBottom: 10 }}>
+                    {[{d:1,l:"يوم"},{d:2,l:"يومين"},{d:3,l:"3 أيام"},{d:4,l:"4 أيام"},{d:7,l:"أسبوع"},{d:14,l:"أسبوعين"},{d:21,l:"3 أسابيع"},{d:30,l:"شهر"}].map(function(p){
+                      return <button key={p.d} onClick={function(){ setQuickDuration(p.d); }} style={{ padding: "6px 12px", borderRadius: 10, background: C.card, color: C.text, border: "1px solid " + C.cardBorder, fontSize: 11, fontWeight: 700, cursor: "pointer", fontFamily: "inherit" }}>{p.l}</button>;
+                    })}
+                  </div>
+                  <div style={{ fontSize: 11, fontWeight: 700, color: C.sub, marginBottom: 6 }}>أو حدد يدوياً:</div>
+                  <input type="datetime-local" value={form.deadline} onChange={function(e){ updateForm({ deadline: e.target.value }); }} style={inputStyle} />
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* Step 3: assignees */}
+          {step === 3 && (
+            <div>
+              <div style={{ fontSize: 14, fontWeight: 700, color: C.sub, marginBottom: 12 }}>اختر المستلمين ({(form.assignees||[]).length} مُحدد)</div>
+              {err && <div style={{ fontSize: 11, color: "#ef4444", marginBottom: 10, padding: 8, background: "rgba(239,68,68,0.1)", borderRadius: 8 }}>⚠️ {err}</div>}
+              {empGroups.managers.length > 0 && (
+                <div style={{ marginBottom: 12 }}>
+                  <div style={{ fontSize: 11, fontWeight: 800, color: C.sub, marginBottom: 6 }}>👔 المدراء والمشرفون</div>
+                  <div style={{ display: "flex", gap: 8, overflowX: "auto", paddingBottom: 6 }}>{empGroups.managers.map(EmployeeCard)}</div>
+                </div>
+              )}
+              {empGroups.peers.length > 0 && (
+                <div style={{ marginBottom: 12 }}>
+                  <div style={{ fontSize: 11, fontWeight: 800, color: C.sub, marginBottom: 6 }}>🤝 زملاء العمل</div>
+                  <div style={{ display: "flex", gap: 8, overflowX: "auto", paddingBottom: 6 }}>{empGroups.peers.map(EmployeeCard)}</div>
+                </div>
+              )}
+              {empGroups.subordinates.length > 0 && (
+                <div style={{ marginBottom: 12 }}>
+                  <div style={{ fontSize: 11, fontWeight: 800, color: C.sub, marginBottom: 6 }}>👥 تحت إدارتي</div>
+                  <div style={{ display: "flex", gap: 8, overflowX: "auto", paddingBottom: 6 }}>{empGroups.subordinates.map(EmployeeCard)}</div>
+                </div>
+              )}
+              {empGroups.others.length > 0 && (
+                <div style={{ marginBottom: 12 }}>
+                  <div style={{ fontSize: 11, fontWeight: 800, color: C.sub, marginBottom: 6 }}>📋 آخرون</div>
+                  <div style={{ display: "flex", gap: 8, overflowX: "auto", paddingBottom: 6 }}>{empGroups.others.map(EmployeeCard)}</div>
+                </div>
+              )}
+              {(form.assignees || []).length > 1 && (
+                <div style={{ marginTop: 14, padding: 12, background: C.card, borderRadius: 12, border: "1px solid " + C.cardBorder }}>
+                  <div style={{ fontSize: 11, fontWeight: 800, color: C.sub, marginBottom: 8 }}>طريقة التسليم بين المستلمين</div>
+                  <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
+                    {chip("🎯 مسؤول ينسّق", form.assignMode === "coordinator", function(){ updateForm({ assignMode: "coordinator" }); })}
+                    {chip("👥 كل طرف مستقل", form.assignMode === "each", function(){ updateForm({ assignMode: "each" }); })}
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* Step 4: category (nature) */}
+          {step === 4 && (
+            <div>
+              <div style={{ fontSize: 14, fontWeight: 700, color: C.sub, marginBottom: 14 }}>طبيعة المهام</div>
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8, marginBottom: 16 }}>
+                {cats.map(function(cat){
+                  var id = cat.id || cat.label;
+                  var active = form.category === id;
+                  return <button key={id} onClick={function(){ updateForm({ category: id }); }} style={{ padding: "14px 10px", borderRadius: 12, background: active ? C.hdr2 : C.card, color: active ? "#fff" : C.text, border: "2px solid " + (active ? C.hdr2 : C.cardBorder), fontSize: 12, fontWeight: 700, cursor: "pointer", fontFamily: "inherit" }}>{cat.icon || ""} {cat.label || id}</button>;
+                })}
+              </div>
+              <div style={{ fontSize: 11, fontWeight: 700, color: C.sub, marginBottom: 6 }}>طبيعة العمل (اختياري — متعدد):</div>
+              <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+                {TAWASUL_NATURES.map(function(n){
+                  var active = (form.nature || []).includes(n.id);
+                  return <button key={n.id} onClick={function(){ var cur = form.nature || []; updateForm({ nature: active ? cur.filter(function(x){ return x !== n.id; }) : cur.concat([n.id]) }); }} style={{ padding: "6px 12px", borderRadius: 10, background: active ? C.gold : C.card, color: active ? "#fff" : C.text, border: "1px solid " + (active ? C.gold : C.cardBorder), fontSize: 11, fontWeight: 700, cursor: "pointer", fontFamily: "inherit" }}>{n.label}</button>;
+                })}
+              </div>
+            </div>
+          )}
+
+          {/* Step 5: department */}
+          {step === 5 && (
+            <div>
+              <div style={{ fontSize: 14, fontWeight: 700, color: C.sub, marginBottom: 14 }}>اختر الإدارة المعنية</div>
+              <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+                {allDepts.length === 0 ? (
+                  <input type="text" value={form.department} onChange={function(e){ updateForm({ department: e.target.value }); }} placeholder="أدخل اسم الإدارة" style={inputStyle} />
+                ) : allDepts.map(function(d){
+                  var active = form.department === d;
+                  return <button key={d} onClick={function(){ updateForm({ department: d }); }} style={{ padding: "12px 14px", borderRadius: 10, background: active ? C.hdr2 : C.card, color: active ? "#fff" : C.text, border: "1.5px solid " + (active ? C.hdr2 : C.cardBorder), fontSize: 13, fontWeight: 700, cursor: "pointer", fontFamily: "inherit", textAlign: "right" }}>🏢 {d}</button>;
+                })}
+              </div>
+              <div style={{ fontSize: 11, color: C.sub, marginTop: 10 }}>أو اكتب إدارة غير موجودة:</div>
+              <input type="text" value={form.department && !allDepts.includes(form.department) ? form.department : ""} onChange={function(e){ updateForm({ department: e.target.value }); }} placeholder="اكتب اسم الإدارة" style={Object.assign({}, inputStyle, { marginTop: 6 })} />
+            </div>
+          )}
+
+          {/* Step 6: project */}
+          {step === 6 && (
+            <div>
+              <div style={{ fontSize: 14, fontWeight: 700, color: C.sub, marginBottom: 14 }}>🏗️ المشروع / العميل</div>
+              {(projects && projects.length > 0) && (
+                <div style={{ marginBottom: 10 }}>
+                  <div style={{ fontSize: 11, fontWeight: 700, color: C.sub, marginBottom: 6 }}>اختر من المكتبة:</div>
+                  <select value={form.projectId || ""} onChange={function(e){
+                    var id = e.target.value;
+                    var prj = projects.find(function(p){ return p.id === id; });
+                    if (prj) updateForm({ projectId: prj.id, projectName: prj.name, projectClient: prj.client || "", projectBranch: prj.branch || "" });
+                    else updateForm({ projectId: "" });
+                  }} style={Object.assign({}, inputStyle, { background: C.card })}>
+                    <option value="">-- اختر مشروع --</option>
+                    {projects.map(function(p){ return <option key={p.id} value={p.id}>{p.name} {p.client ? "— " + p.client : ""}</option>; })}
+                  </select>
+                </div>
+              )}
+              <div style={{ fontSize: 11, fontWeight: 700, color: C.sub, marginBottom: 6 }}>اسم المشروع *:</div>
+              <input type="text" value={form.projectName} onChange={function(e){ updateForm({ projectName: e.target.value, projectId: "" }); }} placeholder="مثال: فيلا المرجان" style={inputStyle} />
+              <div style={{ fontSize: 11, fontWeight: 700, color: C.sub, marginBottom: 6, marginTop: 10 }}>رقم العميل (اختياري):</div>
+              <input type="tel" value={form.projectClientPhone} onChange={function(e){ updateForm({ projectClientPhone: e.target.value }); }} placeholder="05xxxxxxxx" style={inputStyle} />
+            </div>
+          )}
+
+          {/* Step 7: title + description */}
+          {step === 7 && (
+            <div>
+              <div style={{ fontSize: 14, fontWeight: 700, color: C.sub, marginBottom: 14 }}>📝 تفاصيل الطلب</div>
+              <div style={{ fontSize: 11, fontWeight: 700, color: C.sub, marginBottom: 6 }}>عنوان المهمة *:</div>
+              <input type="text" value={form.title} onChange={function(e){ updateForm({ title: e.target.value }); }} placeholder="جملة توضح المطلوب" style={inputStyle} />
+              <div style={{ fontSize: 11, fontWeight: 700, color: C.sub, marginBottom: 6, marginTop: 12 }}>الوصف التفصيلي:</div>
+              <textarea value={form.description} onChange={function(e){ updateForm({ description: e.target.value }); }} placeholder="اشرح التفاصيل: ما المطلوب بالضبط؟" rows={5} style={Object.assign({}, inputStyle, { resize: "vertical", minHeight: 110 })} />
+            </div>
+          )}
+
+          {/* Step 8: delivery methods */}
+          {step === 8 && (
+            <div>
+              <div style={{ fontSize: 14, fontWeight: 700, color: C.sub, marginBottom: 10 }}>📦 طرق التسليم (يمكن اختيار أكثر من طريقة)</div>
+              {favs.length > 0 && (
+                <div style={{ marginBottom: 12 }}>
+                  <div style={{ fontSize: 11, fontWeight: 700, color: C.gold, marginBottom: 6 }}>⭐ المفضلات (اضغط للاختيار):</div>
+                  <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+                    {favs.map(function(f){
+                      return (
+                        <div key={f.id} style={{ display: "inline-flex", alignItems: "center", gap: 4, padding: "6px 10px", borderRadius: 10, background: "rgba(201,168,76,0.15)", border: "1px solid " + C.gold, fontSize: 10, fontWeight: 700 }}>
+                          <span onClick={function(){ applyFav(f); }} style={{ cursor: "pointer", color: C.gold }}>⭐ {f.value}</span>
+                          <span onClick={function(){ removeFav(f.id); }} style={{ cursor: "pointer", color: "#ef4444", fontWeight: 900 }}>✕</span>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
+              <div style={{ display: "flex", flexWrap: "wrap", gap: 6, marginBottom: 14 }}>
+                {TAWASUL_DELIVERY.map(function(d){
+                  var picked = (form.deliveryMethods || []).some(function(dm){ return dm.type === d.id; });
+                  return <button key={d.id} onClick={function(){ addDeliveryMethod(d.id); }} disabled={picked} style={{ padding: "8px 12px", borderRadius: 10, background: picked ? "rgba(34,197,94,0.15)" : C.card, color: picked ? "#22c55e" : C.text, border: "1px solid " + (picked ? "#22c55e" : C.cardBorder), fontSize: 11, fontWeight: 700, cursor: picked ? "default" : "pointer", fontFamily: "inherit", opacity: picked ? 0.7 : 1 }}>{d.label}{picked ? " ✓" : ""}</button>;
+                })}
+              </div>
+              {(form.deliveryMethods || []).map(function(dm, idx){
+                var def = TAWASUL_DELIVERY.find(function(d){ return d.id === dm.type; });
+                return (
+                  <div key={idx} style={{ background: C.card, borderRadius: 12, padding: 12, border: "1px solid " + C.cardBorder, marginBottom: 8 }}>
+                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 6 }}>
+                      <div style={{ fontSize: 12, fontWeight: 800, color: C.text }}>{dm.label}</div>
+                      <button onClick={function(){ removeDelivery(idx); }} style={{ background: "none", border: "none", fontSize: 16, color: "#ef4444", cursor: "pointer" }}>✕</button>
+                    </div>
+                    <input type={def ? def.kind : "text"} value={dm.value} onChange={function(e){ updateDelivery(idx, { value: e.target.value }); }} placeholder={def ? def.ph : ""} style={inputStyle} />
+                    <div style={{ marginTop: 6 }}>
+                      <button onClick={function(){ addFav(dm); }} style={{ background: "none", border: "none", fontSize: 11, color: C.gold, cursor: "pointer", fontWeight: 700, fontFamily: "inherit" }}>⭐ حفظ في المفضلات</button>
+                    </div>
+                  </div>
+                );
+              })}
+              <div style={{ marginTop: 12, padding: 12, background: C.card, borderRadius: 12, border: "1px solid " + C.cardBorder }}>
+                <label style={{ display: "flex", alignItems: "center", gap: 8, cursor: "pointer" }}>
+                  <input type="checkbox" checked={form.priorDelivery} onChange={function(e){ updateForm({ priorDelivery: e.target.checked }); }} />
+                  <span style={{ fontSize: 12, fontWeight: 700 }}>تم تسليم جزء مسبقاً</span>
+                </label>
+                {form.priorDelivery && (
+                  <div style={{ marginTop: 8 }}>
+                    <input type="date" value={form.priorDeliveryDate} onChange={function(e){ updateForm({ priorDeliveryDate: e.target.value }); }} style={Object.assign({}, inputStyle, { marginBottom: 8 })} />
+                    <textarea value={form.priorDeliveryDesc} onChange={function(e){ updateForm({ priorDeliveryDesc: e.target.value }); }} placeholder="وصف ما تم تسليمه مسبقاً" rows={2} style={Object.assign({}, inputStyle, { resize: "vertical" })} />
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
+
+          {/* Step 9: extra contacts + summary */}
+          {step === 9 && (
+            <div>
+              <div style={{ fontSize: 14, fontWeight: 700, color: C.sub, marginBottom: 10 }}>أطراف إضافية للمعلومات (اختياري)</div>
+              {(form.extraContacts || []).map(function(ec, idx){
+                return (
+                  <div key={idx} style={{ background: C.card, borderRadius: 10, padding: 10, border: "1px solid " + C.cardBorder, marginBottom: 6 }}>
+                    <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
+                      <select value={ec.type} onChange={function(e){ updateExtra(idx, { type: e.target.value }); }} style={Object.assign({}, inputStyle, { width: "auto", padding: "8px 10px", fontSize: 11 })}>
+                        <option value="internal">👤 داخلي</option>
+                        <option value="external">🌐 خارجي</option>
+                      </select>
+                      <button onClick={function(){ removeExtra(idx); }} style={{ background: "none", border: "none", fontSize: 16, color: "#ef4444", cursor: "pointer", marginRight: "auto" }}>✕</button>
+                    </div>
+                    <input type="text" value={ec.name} onChange={function(e){ updateExtra(idx, { name: e.target.value }); }} placeholder="الاسم" style={Object.assign({}, inputStyle, { marginTop: 6, fontSize: 12, padding: "8px 10px" })} />
+                    {ec.type === "external" && <input type="tel" value={ec.phone} onChange={function(e){ updateExtra(idx, { phone: e.target.value }); }} placeholder="الجوال" style={Object.assign({}, inputStyle, { marginTop: 6, fontSize: 12, padding: "8px 10px" })} />}
+                  </div>
+                );
+              })}
+              <div style={{ display: "flex", gap: 6, marginBottom: 14 }}>
+                <button onClick={function(){ addExtra("internal"); }} style={{ flex: 1, padding: "8px", borderRadius: 10, background: C.card, color: C.text, border: "1px dashed " + C.cardBorder, fontSize: 11, fontWeight: 700, cursor: "pointer", fontFamily: "inherit" }}>➕ طرف داخلي</button>
+                <button onClick={function(){ addExtra("external"); }} style={{ flex: 1, padding: "8px", borderRadius: 10, background: C.card, color: C.text, border: "1px dashed " + C.cardBorder, fontSize: 11, fontWeight: 700, cursor: "pointer", fontFamily: "inherit" }}>➕ طرف خارجي</button>
+              </div>
+
+              {/* Summary */}
+              <div style={{ background: "linear-gradient(135deg, rgba(201,168,76,0.15), rgba(201,168,76,0.05))", borderRadius: 14, padding: 14, border: "1px solid " + C.gold }}>
+                <div style={{ fontSize: 13, fontWeight: 900, color: C.gold, marginBottom: 10 }}>📋 ملخص الطلب</div>
+                <div style={{ fontSize: 11, lineHeight: 1.8, color: C.text }}>
+                  <div><strong>{form.urgency === "urgent" ? "🔴 عاجل" : "🟡 عادي"}</strong> {form.timed && form.deadline ? " · ⏰ " + new Date(form.deadline).toLocaleDateString("ar-SA") : " · 📅 غير محدد"}</div>
+                  <div>إلى: {(form.assignees || []).map(function(a){ return a.name; }).join("، ") || "—"}</div>
+                  <div>🏢 {form.department || "—"} · 🏷 {(cats.find(function(c){ return c.id === form.category; }) || {}).label || form.category || "—"}</div>
+                  <div>🏗️ {form.projectName || "—"}</div>
+                  <div style={{ fontWeight: 700, marginTop: 4 }}>📝 {form.title || "—"}</div>
+                  {form.deliveryMethods && form.deliveryMethods.length > 0 && (
+                    <div style={{ marginTop: 4 }}>📦 {form.deliveryMethods.map(function(dm){ return dm.label; }).join("، ")}</div>
+                  )}
+                </div>
+              </div>
+
+              {err && <div style={{ color: "#ef4444", fontSize: 12, marginTop: 10, padding: 10, background: "rgba(239,68,68,0.1)", borderRadius: 8, fontWeight: 700 }}>⚠️ {err}</div>}
+            </div>
+          )}
+        </div>
+
+        {/* Footer nav */}
+        <div style={{ position: "sticky", bottom: 0, background: C.bg, borderTop: "1px solid " + C.cardBorder, padding: "12px 16px", display: "flex", gap: 8 }}>
+          {step > 1 && <button onClick={function(){ setStep(step - 1); setErr(""); }} style={{ flex: 1, padding: 12, borderRadius: 12, background: C.card, color: C.text, border: "1px solid " + C.cardBorder, fontSize: 13, fontWeight: 700, cursor: "pointer", fontFamily: "inherit" }}>← السابق</button>}
+          {step < 9 && <button onClick={function(){ if (canNext()) setStep(step + 1); else setErr("يرجى إكمال الحقول المطلوبة"); }} disabled={!canNext()} style={{ flex: 2, padding: 12, borderRadius: 12, background: canNext() ? C.hdr2 : C.cardBorder, color: "#fff", border: "none", fontSize: 13, fontWeight: 800, cursor: canNext() ? "pointer" : "default", fontFamily: "inherit" }}>التالي ←</button>}
+          {step === 9 && (
+            <>
+              <button onClick={function(){ submit("draft"); }} disabled={saving} style={{ flex: 1, padding: 12, borderRadius: 12, background: C.card, color: C.text, border: "1px solid " + C.cardBorder, fontSize: 12, fontWeight: 700, cursor: "pointer", fontFamily: "inherit" }}>💾 حفظ مسودة</button>
+              <button onClick={function(){ submit("sent"); }} disabled={saving} style={{ flex: 2, padding: 12, borderRadius: 12, background: saving ? C.cardBorder : "#22c55e", color: "#fff", border: "none", fontSize: 13, fontWeight: 800, cursor: saving ? "default" : "pointer", fontFamily: "inherit" }}>{saving ? "جارِ الإرسال..." : "🚀 إرسال الطلب"}</button>
+            </>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/* ═══════════ TAWASUL REASON MODAL (reject/return) ═══════════ */
+function TawasulReasonModal({ title, reasons, requireLegal, onConfirm, onClose, confirmColor, confirmLabel }) {
+  var [reasonId, setReasonId] = useState("");
+  var [reasonText, setReasonText] = useState("");
+  var [legalAck, setLegalAck] = useState(false);
+  var [busy, setBusy] = useState(false);
+  var inputStyle = { width: "100%", padding: "10px 12px", borderRadius: 10, border: "1px solid " + C.cardBorder, background: C.card, color: C.text, fontSize: 13, fontFamily: "'Tajawal',sans-serif", outline: "none", boxSizing: "border-box" };
+
+  function handleConfirm() {
+    if (!reasonId) return alert("اختر سبباً");
+    if (!reasonText.trim()) return alert("اكتب تفصيلاً");
+    if (requireLegal && !legalAck) return alert("يجب الإقرار بالتحذير القانوني");
+    setBusy(true);
+    onConfirm({ reasonId: reasonId, reasonText: reasonText.trim(), reasonLabel: (reasons.find(function(r){ return r.id === reasonId; }) || {}).label });
+  }
+
+  return (
+    <div onClick={onClose} style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.7)", zIndex: 1100, display: "flex", alignItems: "center", justifyContent: "center", padding: 14, fontFamily: "'Tajawal',sans-serif" }}>
+      <div onClick={function(e){ e.stopPropagation(); }} style={{ background: C.bg, borderRadius: 16, maxWidth: 420, width: "100%", maxHeight: "90vh", overflowY: "auto", direction: "rtl", color: C.text }}>
+        <div style={{ padding: 16, borderBottom: "1px solid " + C.cardBorder, display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+          <div style={{ fontSize: 15, fontWeight: 900 }}>{title}</div>
+          <button onClick={onClose} style={{ background: "none", border: "none", fontSize: 22, color: C.sub, cursor: "pointer" }}>×</button>
+        </div>
+        <div style={{ padding: 16 }}>
+          <div style={{ fontSize: 11, fontWeight: 700, color: C.sub, marginBottom: 6 }}>السبب *:</div>
+          <div style={{ display: "flex", flexDirection: "column", gap: 6, marginBottom: 12 }}>
+            {reasons.map(function(r){
+              var active = reasonId === r.id;
+              return <button key={r.id} onClick={function(){ setReasonId(r.id); }} style={{ padding: "10px 12px", borderRadius: 10, background: active ? C.hdr2 : C.card, color: active ? "#fff" : C.text, border: "1.5px solid " + (active ? C.hdr2 : C.cardBorder), fontSize: 12, fontWeight: 700, cursor: "pointer", fontFamily: "inherit", textAlign: "right" }}>{r.label}</button>;
+            })}
+          </div>
+          <div style={{ fontSize: 11, fontWeight: 700, color: C.sub, marginBottom: 6 }}>تفصيل نصي *:</div>
+          <textarea value={reasonText} onChange={function(e){ setReasonText(e.target.value); }} placeholder="اشرح السبب بالتفصيل..." rows={3} style={Object.assign({}, inputStyle, { resize: "vertical" })} />
+
+          {requireLegal && (
+            <div style={{ marginTop: 14, padding: 12, background: "rgba(239,68,68,0.08)", borderRadius: 10, border: "1px solid rgba(239,68,68,0.3)" }}>
+              <div style={{ fontSize: 11, fontWeight: 900, color: "#ef4444", marginBottom: 6 }}>⚠️ تحذير قانوني</div>
+              <div style={{ fontSize: 10, color: C.text, lineHeight: 1.7, marginBottom: 10 }}>{LEGAL_WARNING_TEXT}</div>
+              <label style={{ display: "flex", alignItems: "flex-start", gap: 8, cursor: "pointer" }}>
+                <input type="checkbox" checked={legalAck} onChange={function(e){ setLegalAck(e.target.checked); }} style={{ marginTop: 2, flexShrink: 0 }} />
+                <span style={{ fontSize: 10, color: C.text, lineHeight: 1.6, fontWeight: 600 }}>{LEGAL_ACK_TEXT}</span>
+              </label>
+            </div>
+          )}
+        </div>
+        <div style={{ padding: "12px 16px", borderTop: "1px solid " + C.cardBorder, display: "flex", gap: 8 }}>
+          <button onClick={onClose} style={{ flex: 1, padding: 12, borderRadius: 10, background: C.card, color: C.text, border: "1px solid " + C.cardBorder, fontSize: 13, fontWeight: 700, cursor: "pointer", fontFamily: "inherit" }}>إلغاء</button>
+          <button onClick={handleConfirm} disabled={busy} style={{ flex: 2, padding: 12, borderRadius: 10, background: busy ? C.cardBorder : (confirmColor || "#ef4444"), color: "#fff", border: "none", fontSize: 13, fontWeight: 800, cursor: busy ? "default" : "pointer", fontFamily: "inherit" }}>{busy ? "..." : (confirmLabel || "تأكيد")}</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function TawasulPage({ user, allEmps }) {
-  var [tab, setTab] = useState("inbox"); // inbox | sent | done
+  var [tab, setTab] = useState("inbox");
   var [requests, setRequests] = useState(null);
   var [categories, setCategories] = useState([]);
+  var [projects, setProjects] = useState([]);
   var [loading, setLoading] = useState(true);
   var [err, setErr] = useState(null);
   var [search, setSearch] = useState("");
@@ -1982,6 +2606,8 @@ function TawasulPage({ user, allEmps }) {
   var [selectedReq, setSelectedReq] = useState(null);
   var [refreshing, setRefreshing] = useState(false);
   var [showFilters, setShowFilters] = useState(false);
+  var [showCreate, setShowCreate] = useState(false);
+  var [editingReq, setEditingReq] = useState(null);
 
   var isAdmin = user && (user.role === "admin" || user.role === "hr_manager" || user.isAdmin || user.username === "admin");
   var myId = user && (user.id || user.username);
@@ -1998,6 +2624,7 @@ function TawasulPage({ user, allEmps }) {
       } else {
         setRequests(d.requests || []);
         setCategories(d.categories || []);
+        setProjects(d.projects || []);
       }
     } catch (e) {
       setErr("تعذر تحميل البيانات: " + (e.message || "اتصال"));
@@ -2020,7 +2647,6 @@ function TawasulPage({ user, allEmps }) {
     var isRequester = String(r.requesterId) === String(myId) || r.requesterId === (user && user.username);
     var isAssignee = (r.assignees || []).some(function(a){ return String(a.id) === String(myId) || a.id === (user && user.username); });
     var isDone = r.status === "closed" || r.status === "evaluated" || r.status === "cancelled";
-
     if (tab === "inbox") return isAdmin ? !isDone : (isAssignee && !isDone);
     if (tab === "sent") return isAdmin ? (!isDone && isRequester) || !isDone : (isRequester && !isDone);
     if (tab === "done") return isAdmin ? isDone : (isDone && (isRequester || isAssignee));
@@ -2039,7 +2665,6 @@ function TawasulPage({ user, allEmps }) {
     }
     return true;
   }).sort(function(a,b){
-    // red escalation → yellow → urgent → newest
     var aEsc = a.escalation === "red" ? 2 : a.escalation === "yellow" ? 1 : 0;
     var bEsc = b.escalation === "red" ? 2 : b.escalation === "yellow" ? 1 : 0;
     if (aEsc !== bEsc) return bEsc - aEsc;
@@ -2047,7 +2672,6 @@ function TawasulPage({ user, allEmps }) {
     return new Date(b.updatedAt || b.createdAt || 0).getTime() - new Date(a.updatedAt || a.createdAt || 0).getTime();
   });
 
-  // Count per tab
   function tabCount(tabId) {
     return (requests || []).filter(function(r){
       var isR = String(r.requesterId) === String(myId);
@@ -2062,126 +2686,81 @@ function TawasulPage({ user, allEmps }) {
 
   var counts = { inbox: tabCount("inbox"), sent: tabCount("sent"), done: tabCount("done") };
   var activeFilters = (filterStatus !== "all" ? 1 : 0) + (filterCategory !== "all" ? 1 : 0) + (filterUrgency !== "all" ? 1 : 0);
-
   var pageBg = C.bg;
 
   if (loading) {
     return (
       <div style={{ minHeight: "100vh", background: pageBg, color: C.text, paddingBottom: 80, display: "flex", alignItems: "center", justifyContent: "center", fontFamily: "'Tajawal',sans-serif" }}>
-        <div style={{ textAlign: "center" }}>
-          <div style={{ fontSize: 40, marginBottom: 10 }}>🤝</div>
-          <div style={{ fontSize: 14, color: C.sub }}>جارِ تحميل المهام...</div>
-        </div>
+        <div style={{ textAlign: "center" }}><div style={{ fontSize: 40, marginBottom: 10 }}>🤝</div><div style={{ fontSize: 14, color: C.sub }}>جارِ تحميل المهام...</div></div>
       </div>
     );
   }
 
   return (
     <div style={{ minHeight: "100vh", background: pageBg, color: C.text, paddingBottom: 80, fontFamily: "'Tajawal',sans-serif", direction: "rtl" }}>
-      {/* Header */}
       <div style={{ background: "linear-gradient(135deg, " + C.hdr1 + " 0%, " + C.hdr2 + " 100%)", padding: "16px 16px 18px", color: "#fff" }}>
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 4 }}>
           <div style={{ fontSize: 22, fontWeight: 900, fontFamily: "'Cairo',sans-serif" }}>🤝 تواصل</div>
-          <button onClick={function(){ loadData(true); }} disabled={refreshing} style={{ background: "rgba(255,255,255,.15)", border: "1px solid rgba(255,255,255,.25)", borderRadius: 10, padding: "6px 12px", color: "#fff", fontSize: 11, fontWeight: 700, cursor: "pointer", fontFamily: "inherit" }}>
-            {refreshing ? "⟳..." : "⟳ تحديث"}
-          </button>
+          <div style={{ display: "flex", gap: 6 }}>
+            <button onClick={function(){ loadData(true); }} disabled={refreshing} style={{ background: "rgba(255,255,255,.15)", border: "1px solid rgba(255,255,255,.25)", borderRadius: 10, padding: "6px 12px", color: "#fff", fontSize: 11, fontWeight: 700, cursor: "pointer", fontFamily: "inherit" }}>{refreshing ? "⟳..." : "⟳"}</button>
+            <button onClick={function(){ setShowCreate(true); }} style={{ background: "#22c55e", border: "none", borderRadius: 10, padding: "6px 14px", color: "#fff", fontSize: 12, fontWeight: 800, cursor: "pointer", fontFamily: "inherit" }}>➕ جديد</button>
+          </div>
         </div>
         <div style={{ fontSize: 11, opacity: 0.85 }}>إدارة المهام الداخلية — {(requests || []).length} مهمة</div>
       </div>
 
-      {/* Tabs */}
       <div style={{ display: "flex", padding: "12px", gap: 8, background: C.bg }}>
-        {[
-          { id: "inbox", icon: "📥", label: "الوارد" },
-          { id: "sent",  icon: "📤", label: "المُرسَل" },
-          { id: "done",  icon: "✅", label: "المُنجَز" },
-        ].map(function(x){
+        {[{id:"inbox",icon:"📥",label:"الوارد"},{id:"sent",icon:"📤",label:"المُرسَل"},{id:"done",icon:"✅",label:"المُنجَز"}].map(function(x){
           var active = tab === x.id;
           return (
-            <button key={x.id} onClick={function(){ setTab(x.id); }} style={{ flex: 1, padding: "10px 8px", borderRadius: 12, background: active ? C.hdr2 : C.card, border: "1px solid " + (active ? C.hdr2 : C.cardBorder), color: active ? "#fff" : C.text, fontSize: 12, fontWeight: 800, cursor: "pointer", fontFamily: "inherit", position: "relative", display: "flex", alignItems: "center", justifyContent: "center", gap: 4 }}>
+            <button key={x.id} onClick={function(){ setTab(x.id); }} style={{ flex: 1, padding: "10px 8px", borderRadius: 12, background: active ? C.hdr2 : C.card, border: "1px solid " + (active ? C.hdr2 : C.cardBorder), color: active ? "#fff" : C.text, fontSize: 12, fontWeight: 800, cursor: "pointer", fontFamily: "inherit", display: "flex", alignItems: "center", justifyContent: "center", gap: 4 }}>
               <span>{x.icon}</span><span>{x.label}</span>
-              {counts[x.id] > 0 && (
-                <span style={{ minWidth: 18, height: 18, padding: "0 5px", borderRadius: 9, background: active ? "#fff" : C.hdr2, color: active ? C.hdr2 : "#fff", fontSize: 10, fontWeight: 900, display: "flex", alignItems: "center", justifyContent: "center", marginRight: 3 }}>{counts[x.id]}</span>
-              )}
+              {counts[x.id] > 0 && <span style={{ minWidth: 18, height: 18, padding: "0 5px", borderRadius: 9, background: active ? "#fff" : C.hdr2, color: active ? C.hdr2 : "#fff", fontSize: 10, fontWeight: 900, display: "flex", alignItems: "center", justifyContent: "center", marginRight: 3 }}>{counts[x.id]}</span>}
             </button>
           );
         })}
       </div>
 
-      {/* Search + filters toggle */}
       <div style={{ padding: "0 12px 10px", display: "flex", flexDirection: "column", gap: 8 }}>
         <div style={{ display: "flex", gap: 8 }}>
-          <input type="text" value={search} onChange={function(e){ setSearch(e.target.value); }} placeholder="🔍 بحث (عنوان، رقم، مشروع...)" style={{ flex: 1, padding: "11px 14px", borderRadius: 12, border: "1px solid " + C.cardBorder, background: C.card, color: C.text, fontSize: 13, fontFamily: "inherit", outline: "none", boxSizing: "border-box" }} />
-          <button onClick={function(){ setShowFilters(!showFilters); }} style={{ padding: "11px 14px", borderRadius: 12, background: activeFilters > 0 ? C.hdr2 : C.card, color: activeFilters > 0 ? "#fff" : C.text, border: "1px solid " + (activeFilters > 0 ? C.hdr2 : C.cardBorder), fontSize: 12, fontWeight: 700, cursor: "pointer", fontFamily: "inherit", whiteSpace: "nowrap" }}>
-            🔽 فلاتر{activeFilters > 0 ? " (" + activeFilters + ")" : ""}
-          </button>
+          <input type="text" value={search} onChange={function(e){ setSearch(e.target.value); }} placeholder="🔍 بحث..." style={{ flex: 1, padding: "11px 14px", borderRadius: 12, border: "1px solid " + C.cardBorder, background: C.card, color: C.text, fontSize: 13, fontFamily: "inherit", outline: "none", boxSizing: "border-box" }} />
+          <button onClick={function(){ setShowFilters(!showFilters); }} style={{ padding: "11px 14px", borderRadius: 12, background: activeFilters > 0 ? C.hdr2 : C.card, color: activeFilters > 0 ? "#fff" : C.text, border: "1px solid " + (activeFilters > 0 ? C.hdr2 : C.cardBorder), fontSize: 12, fontWeight: 700, cursor: "pointer", fontFamily: "inherit", whiteSpace: "nowrap" }}>🔽 فلاتر{activeFilters > 0 ? " (" + activeFilters + ")" : ""}</button>
         </div>
-
         {showFilters && (
           <div style={{ background: C.card, borderRadius: 12, padding: 12, border: "1px solid " + C.cardBorder, display: "flex", flexDirection: "column", gap: 10 }}>
-            {/* Urgency */}
             <div>
               <div style={{ fontSize: 10, fontWeight: 700, color: C.sub, marginBottom: 5 }}>الأولوية</div>
               <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
-                {[
-                  { id: "all", label: "الكل", color: C.hdr2 },
-                  { id: "urgent", label: "🔴 عاجل", color: "#ef4444" },
-                  { id: "normal", label: "🟡 عادي", color: "#f59e0b" },
-                ].map(function(f){
+                {[{id:"all",label:"الكل",color:C.hdr2},{id:"urgent",label:"🔴 عاجل",color:"#ef4444"},{id:"normal",label:"🟡 عادي",color:"#f59e0b"}].map(function(f){
                   var active = filterUrgency === f.id;
                   return <button key={f.id} onClick={function(){ setFilterUrgency(f.id); }} style={{ padding: "6px 12px", borderRadius: 10, background: active ? f.color : C.bg, border: "1px solid " + (active ? f.color : C.cardBorder), color: active ? "#fff" : C.text, fontSize: 11, fontWeight: 700, cursor: "pointer", fontFamily: "inherit" }}>{f.label}</button>;
                 })}
               </div>
             </div>
-            {/* Status */}
             <div>
               <div style={{ fontSize: 10, fontWeight: 700, color: C.sub, marginBottom: 5 }}>الحالة</div>
               <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
                 <button onClick={function(){ setFilterStatus("all"); }} style={{ padding: "5px 10px", borderRadius: 10, background: filterStatus === "all" ? C.hdr2 : C.bg, border: "1px solid " + (filterStatus === "all" ? C.hdr2 : C.cardBorder), color: filterStatus === "all" ? "#fff" : C.text, fontSize: 10, fontWeight: 700, cursor: "pointer", fontFamily: "inherit" }}>الكل</button>
                 {Object.keys(TAWASUL_STATUS).map(function(key){
-                  var m = TAWASUL_STATUS[key];
-                  var active = filterStatus === key;
+                  var m = TAWASUL_STATUS[key]; var active = filterStatus === key;
                   return <button key={key} onClick={function(){ setFilterStatus(key); }} style={{ padding: "5px 10px", borderRadius: 10, background: active ? m.color : C.bg, border: "1px solid " + (active ? m.color : C.cardBorder), color: active ? "#fff" : C.text, fontSize: 10, fontWeight: 700, cursor: "pointer", fontFamily: "inherit" }}>{m.icon} {m.label}</button>;
                 })}
               </div>
             </div>
-            {/* Category */}
-            {categories.length > 0 && (
-              <div>
-                <div style={{ fontSize: 10, fontWeight: 700, color: C.sub, marginBottom: 5 }}>الفئة</div>
-                <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
-                  <button onClick={function(){ setFilterCategory("all"); }} style={{ padding: "5px 10px", borderRadius: 10, background: filterCategory === "all" ? C.hdr2 : C.bg, border: "1px solid " + (filterCategory === "all" ? C.hdr2 : C.cardBorder), color: filterCategory === "all" ? "#fff" : C.text, fontSize: 10, fontWeight: 700, cursor: "pointer", fontFamily: "inherit" }}>الكل</button>
-                  {categories.map(function(cat){
-                    var id = cat.id || cat.label;
-                    var active = filterCategory === id;
-                    return <button key={id} onClick={function(){ setFilterCategory(id); }} style={{ padding: "5px 10px", borderRadius: 10, background: active ? C.hdr2 : C.bg, border: "1px solid " + (active ? C.hdr2 : C.cardBorder), color: active ? "#fff" : C.text, fontSize: 10, fontWeight: 700, cursor: "pointer", fontFamily: "inherit" }}>{cat.icon || ""} {cat.label || id}</button>;
-                  })}
-                </div>
-              </div>
-            )}
-            {activeFilters > 0 && (
-              <button onClick={function(){ setFilterStatus("all"); setFilterCategory("all"); setFilterUrgency("all"); }} style={{ padding: "6px 10px", borderRadius: 8, background: "rgba(239,68,68,0.1)", border: "1px solid rgba(239,68,68,0.3)", color: "#EF4444", fontSize: 10, fontWeight: 700, cursor: "pointer", fontFamily: "inherit" }}>✕ مسح كل الفلاتر</button>
-            )}
+            {activeFilters > 0 && <button onClick={function(){ setFilterStatus("all"); setFilterCategory("all"); setFilterUrgency("all"); }} style={{ padding: "6px 10px", borderRadius: 8, background: "rgba(239,68,68,0.1)", border: "1px solid rgba(239,68,68,0.3)", color: "#EF4444", fontSize: 10, fontWeight: 700, cursor: "pointer", fontFamily: "inherit" }}>✕ مسح الفلاتر</button>}
           </div>
         )}
       </div>
 
-      {/* Error */}
-      {err && (
-        <div style={{ margin: "0 12px 12px", padding: "12px 14px", borderRadius: 12, background: "rgba(239,68,68,0.1)", border: "1px solid #EF4444", color: "#EF4444", fontSize: 12, fontWeight: 600, display: "flex", alignItems: "center", gap: 8 }}>
-          <span style={{ fontSize: 18 }}>⚠️</span>
-          <div style={{ flex: 1 }}>{err}</div>
-          <button onClick={function(){ loadData(true); }} style={{ background: "#EF4444", border: "none", borderRadius: 8, padding: "6px 12px", color: "#fff", fontSize: 11, fontWeight: 700, cursor: "pointer", fontFamily: "inherit" }}>إعادة</button>
-        </div>
-      )}
+      {err && <div style={{ margin: "0 12px 12px", padding: "12px 14px", borderRadius: 12, background: "rgba(239,68,68,0.1)", border: "1px solid #EF4444", color: "#EF4444", fontSize: 12, fontWeight: 600, display: "flex", alignItems: "center", gap: 8 }}><span style={{ fontSize: 18 }}>⚠️</span><div style={{ flex: 1 }}>{err}</div><button onClick={function(){ loadData(true); }} style={{ background: "#EF4444", border: "none", borderRadius: 8, padding: "6px 12px", color: "#fff", fontSize: 11, fontWeight: 700, cursor: "pointer", fontFamily: "inherit" }}>إعادة</button></div>}
 
-      {/* List */}
       <div style={{ padding: "0 12px" }}>
         {filtered.length === 0 && !err && (
           <div style={{ textAlign: "center", padding: "60px 20px", color: C.sub }}>
             <div style={{ fontSize: 48, marginBottom: 12 }}>📭</div>
             <div style={{ fontSize: 14, fontWeight: 700, marginBottom: 4 }}>لا توجد مهام</div>
-            <div style={{ fontSize: 11 }}>{search || activeFilters > 0 ? "جرّب تغيير البحث أو الفلاتر" : (tab === "inbox" ? "لا مهام واصلة لك" : tab === "sent" ? "لم ترسل أي مهام بعد" : "لا مهام منجزة")}</div>
+            <div style={{ fontSize: 11, marginBottom: 16 }}>{search || activeFilters > 0 ? "جرّب تغيير البحث" : (tab === "inbox" ? "لا مهام واصلة لك" : tab === "sent" ? "لم ترسل أي مهام بعد" : "لا مهام منجزة")}</div>
+            {tab === "sent" && !search && activeFilters === 0 && <button onClick={function(){ setShowCreate(true); }} style={{ padding: "10px 20px", borderRadius: 12, background: "#22c55e", color: "#fff", border: "none", fontSize: 13, fontWeight: 800, cursor: "pointer", fontFamily: "inherit" }}>➕ إنشاء مهمة جديدة</button>}
           </div>
         )}
         {filtered.map(function(r){
@@ -2191,49 +2770,21 @@ function TawasulPage({ user, allEmps }) {
           var assigneeNames = (r.assignees || []).map(function(a){ return nameOf(a.id); }).join("، ") || "—";
           var requesterName = r.requesterName || nameOf(r.requesterId);
           var hasEval = r.finalScore !== undefined && r.finalScore !== null;
-
           return (
-            <div key={r.id} onClick={function(){ setSelectedReq(r); }} style={{ background: C.card, borderRadius: 14, padding: 14, marginBottom: 10, border: "1px solid " + C.cardBorder, borderRight: "4px solid " + m.color, cursor: "pointer", boxShadow: C === DARK ? "none" : "0 1px 3px rgba(0,0,0,0.06)", position: "relative" }}>
-              {/* Top row: status + urgency + escalation + time */}
+            <div key={r.id} onClick={function(){ setSelectedReq(r); }} style={{ background: C.card, borderRadius: 14, padding: 14, marginBottom: 10, border: "1px solid " + C.cardBorder, borderRight: "4px solid " + m.color, cursor: "pointer" }}>
               <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 8, flexWrap: "wrap" }}>
-                <div style={{ display: "inline-flex", alignItems: "center", gap: 4, padding: "3px 9px", borderRadius: 10, background: m.color + "22", color: m.color, fontSize: 10, fontWeight: 800 }}>
-                  <span>{m.icon}</span><span>{m.label}</span>
-                </div>
-                {isUrgent && (
-                  <div style={{ padding: "3px 9px", borderRadius: 10, background: "rgba(239,68,68,0.15)", color: "#ef4444", fontSize: 10, fontWeight: 800 }}>🔴 عاجل</div>
-                )}
-                {escColor && (
-                  <div style={{ padding: "3px 9px", borderRadius: 10, background: escColor + "22", color: escColor, fontSize: 10, fontWeight: 800 }}>
-                    {r.escalation === "red" ? "🔴 تصعيد أحمر" : "🟡 تصعيد"}
-                  </div>
-                )}
+                <div style={{ display: "inline-flex", alignItems: "center", gap: 4, padding: "3px 9px", borderRadius: 10, background: m.color + "22", color: m.color, fontSize: 10, fontWeight: 800 }}><span>{m.icon}</span><span>{m.label}</span></div>
+                {isUrgent && <div style={{ padding: "3px 9px", borderRadius: 10, background: "rgba(239,68,68,0.15)", color: "#ef4444", fontSize: 10, fontWeight: 800 }}>🔴 عاجل</div>}
+                {escColor && <div style={{ padding: "3px 9px", borderRadius: 10, background: escColor + "22", color: escColor, fontSize: 10, fontWeight: 800 }}>{r.escalation === "red" ? "🔴 تصعيد أحمر" : "🟡 تصعيد"}</div>}
                 {r.serial && <div style={{ fontSize: 10, color: C.sub, fontWeight: 700, background: C.bg, padding: "2px 7px", borderRadius: 6, fontFamily: "monospace" }}>#{r.serial}</div>}
                 <div style={{ flex: 1 }} />
                 <div style={{ fontSize: 10, color: C.sub }}>{tawasulTimeAgo(r.updatedAt || r.createdAt)}</div>
               </div>
-
-              {/* Category + project */}
-              {(r.category || r.projectName) && (
-                <div style={{ fontSize: 10, color: C.sub, marginBottom: 4, fontWeight: 600 }}>
-                  {r.category && <span>🏷 {r.category}</span>}
-                  {r.category && r.projectName && <span style={{ margin: "0 5px" }}>•</span>}
-                  {r.projectName && <span>🏗️ {r.projectName}</span>}
-                </div>
-              )}
-
-              {/* Title */}
+              {(r.category || r.projectName) && <div style={{ fontSize: 10, color: C.sub, marginBottom: 4, fontWeight: 600 }}>{r.category && <span>🏷 {r.category}</span>}{r.category && r.projectName && <span style={{ margin: "0 5px" }}>•</span>}{r.projectName && <span>🏗️ {r.projectName}</span>}</div>}
               <div style={{ fontSize: 14, fontWeight: 800, color: C.text, marginBottom: 6, lineHeight: 1.4 }}>{r.title || "(بدون عنوان)"}</div>
-
-              {/* Description */}
-              {r.description && (
-                <div style={{ fontSize: 11, color: C.sub, marginBottom: 8, lineHeight: 1.5, overflow: "hidden", display: "-webkit-box", WebkitLineClamp: 2, WebkitBoxOrient: "vertical" }}>{r.description}</div>
-              )}
-
-              {/* Footer */}
+              {r.description && <div style={{ fontSize: 11, color: C.sub, marginBottom: 8, lineHeight: 1.5, overflow: "hidden", display: "-webkit-box", WebkitLineClamp: 2, WebkitBoxOrient: "vertical" }}>{r.description}</div>}
               <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", fontSize: 10, color: C.sub, borderTop: "1px solid " + C.cardBorder, paddingTop: 8, gap: 8, flexWrap: "wrap" }}>
-                <div style={{ minWidth: 0, flex: 1 }}>
-                  <span style={{ fontWeight: 600 }}>من:</span> {requesterName} <span style={{ margin: "0 4px" }}>•</span> <span style={{ fontWeight: 600 }}>إلى:</span> {assigneeNames}
-                </div>
+                <div style={{ minWidth: 0, flex: 1 }}><span style={{ fontWeight: 600 }}>من:</span> {requesterName} <span style={{ margin: "0 4px" }}>•</span> <span style={{ fontWeight: 600 }}>إلى:</span> {assigneeNames}</div>
                 <div style={{ display: "flex", gap: 8, flexShrink: 0 }}>
                   {hasEval && <span style={{ fontWeight: 700, color: C.gold }}>⭐ {r.finalScore}</span>}
                   {(r.log && r.log.length > 0) && <span style={{ fontWeight: 700, color: C.sub }}>💬 {r.log.length}</span>}
@@ -2245,22 +2796,20 @@ function TawasulPage({ user, allEmps }) {
         })}
       </div>
 
-      {/* Phase 1 note */}
-      {!err && filtered.length > 0 && (
-        <div style={{ padding: "20px 16px 24px", textAlign: "center", fontSize: 10, color: C.sub }}>
-          📖 وضع القراءة فقط — الإنشاء والتفاعل قادمان في المرحلة 2
-        </div>
-      )}
+      {selectedReq && <TawasulDetailModal request={selectedReq} user={user} allEmps={allEmps} onClose={function(){ setSelectedReq(null); }} nameOf={nameOf} onUpdated={function(){ setSelectedReq(null); loadData(true); }} onEdit={function(r){ setSelectedReq(null); setEditingReq(r); }} />}
 
-      {/* Detail modal */}
-      {selectedReq && <TawasulDetailModal request={selectedReq} user={user} allEmps={allEmps} onClose={function(){ setSelectedReq(null); }} nameOf={nameOf} />}
+      {showCreate && <TawasulCreateModal user={user} allEmps={allEmps} categories={categories} projects={projects} onClose={function(){ setShowCreate(false); }} onSaved={function(){ setShowCreate(false); loadData(true); }} />}
+
+      {editingReq && <TawasulCreateModal user={user} allEmps={allEmps} categories={categories} projects={projects} existing={editingReq} onClose={function(){ setEditingReq(null); }} onSaved={function(){ setEditingReq(null); loadData(true); }} />}
     </div>
   );
 }
 
-/* ═══════════ TAWASUL DETAIL MODAL (read-only per spec 7.1) ═══════════ */
-function TawasulDetailModal({ request, user, allEmps, onClose, nameOf }) {
+/* ═══════════ TAWASUL DETAIL MODAL — with Phase 2 actions (big button + secondary + comment) ═══════════ */
+function TawasulDetailModal({ request, user, allEmps, onClose, nameOf, onUpdated, onEdit }) {
   var r = request;
+  var myId = user && (user.id || user.username);
+  var myName = (user && (user.name || user.username)) || "";
   var m = getTawasulStatusMeta(r.status);
   var isUrgent = r.urgency === "urgent";
   var requesterName = r.requesterName || nameOf(r.requesterId);
@@ -2269,7 +2818,18 @@ function TawasulDetailModal({ request, user, allEmps, onClose, nameOf }) {
   var evals = r.evaluations || [];
   var curStage = stageIndex(r.status);
 
-  // Deadline countdown
+  var isAdmin = user && (user.role === "admin" || user.role === "hr_manager" || user.isAdmin || user.username === "admin");
+  var isRequester = String(r.requesterId) === String(myId);
+  var isAssignee = (r.assignees || []).some(function(a){ return String(a.id) === String(myId); });
+  var canActAsAssignee = isAssignee || (isAdmin && !isRequester);
+  var canActAsRequester = isRequester || isAdmin;
+
+  var [commentText, setCommentText] = useState("");
+  var [busy, setBusy] = useState(false);
+  var [showReject, setShowReject] = useState(false);
+  var [showReturn, setShowReturn] = useState(false);
+  var [showEscalate, setShowEscalate] = useState(false);
+
   var deadlineText = "";
   if (r.deadline) {
     try {
@@ -2281,39 +2841,162 @@ function TawasulDetailModal({ request, user, allEmps, onClose, nameOf }) {
     } catch(e) {}
   }
 
-  return (
-    <div onClick={onClose} style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.6)", zIndex: 1000, display: "flex", alignItems: "flex-end", justifyContent: "center", padding: 0, fontFamily: "'Tajawal',sans-serif" }}>
-      <div onClick={function(e){ e.stopPropagation(); }} style={{ background: C.bg, borderRadius: "20px 20px 0 0", maxWidth: 430, width: "100%", maxHeight: "94vh", overflowY: "auto", direction: "rtl", color: C.text, paddingBottom: 20 }}>
-        {/* Drag handle */}
-        <div style={{ display: "flex", justifyContent: "center", padding: "10px 0 4px", position: "sticky", top: 0, background: C.bg, zIndex: 2 }}>
-          <div style={{ width: 40, height: 4, borderRadius: 2, background: C.cardBorder }} />
-        </div>
+  async function addLogAndSave(patch, logText) {
+    setBusy(true);
+    try {
+      var now = new Date().toISOString();
+      var updated = Object.assign({}, r, patch, { updatedAt: now });
+      updated.log = (r.log || []).concat([{ text: logText, by: myName, at: now }]);
+      await saveTawasul(updated);
+      setBusy(false);
+      onUpdated();
+    } catch (e) {
+      setBusy(false);
+      alert("فشل الحفظ: " + (e.message || "خطأ"));
+    }
+  }
 
-        {/* Header with serial + close */}
+  async function applyBigAction() {
+    var btn = BIG_BTN_MAP[r.status];
+    if (!btn || !btn.next) return;
+    var patch = { status: btn.next };
+    var logMsg = btn.label;
+    if (btn.next === "received") {
+      patch.receivedAt = new Date().toISOString();
+      // Update assignee's acceptedAt if I am one
+      var assignees = (r.assignees || []).map(function(a){
+        if (String(a.id) === String(myId) && !a.acceptedAt) return Object.assign({}, a, { acceptedAt: new Date().toISOString() });
+        return a;
+      });
+      patch.assignees = assignees;
+    } else if (btn.next === "inprogress") {
+      patch.startedAt = new Date().toISOString();
+    } else if (btn.next === "delivered") {
+      patch.deliveredAt = new Date().toISOString();
+      var assignees2 = (r.assignees || []).map(function(a){
+        if (String(a.id) === String(myId) && !a.deliveredAt) return Object.assign({}, a, { deliveredAt: new Date().toISOString() });
+        return a;
+      });
+      patch.assignees = assignees2;
+    } else if (btn.next === "sent") {
+      // resent after incomplete
+      patch.resentAt = new Date().toISOString();
+    }
+    await addLogAndSave(patch, logMsg);
+  }
+
+  async function doReject(data) {
+    await addLogAndSave({
+      status: "rejected",
+      rejectedAt: new Date().toISOString(),
+      rejectionReasonId: data.reasonId,
+      rejectionReason: data.reasonText,
+    }, "❌ رفض: " + data.reasonLabel + " — " + data.reasonText);
+    setShowReject(false);
+  }
+  async function doReturn(data) {
+    await addLogAndSave({
+      status: "incomplete",
+      previousStatus: r.status,
+      incompleteAt: new Date().toISOString(),
+      returnReasonId: data.reasonId,
+      returnReason: data.reasonText,
+      returnCount: (r.returnCount || 0) + 1,
+    }, "📋 إرجاع للاستكمال: " + data.reasonLabel + " — " + data.reasonText);
+    setShowReturn(false);
+  }
+  async function doEscalate(data) {
+    await addLogAndSave({
+      escalation: "yellow",
+      escalatedAt: new Date().toISOString(),
+      issueAt: r.issueAt || new Date().toISOString(),
+      escalationReason: data.reasonText,
+    }, "⬆️ تصعيد أصفر: " + data.reasonLabel + " — " + data.reasonText);
+    setShowEscalate(false);
+  }
+  async function doCancel() {
+    if (!confirm("إلغاء هذه المهمة؟\n" + (r.title || ""))) return;
+    await addLogAndSave({ status: "cancelled", closedAt: new Date().toISOString() }, "🚫 إلغاء المهمة");
+  }
+  async function doDelete() {
+    if (!confirm("⚠️ حذف نهائي — لا يمكن التراجع!\n\n" + (r.title || ""))) return;
+    setBusy(true);
+    try {
+      await deleteTawasul(r.id);
+      setBusy(false);
+      onUpdated();
+    } catch (e) {
+      setBusy(false);
+      alert("فشل الحذف: " + (e.message || "خطأ"));
+    }
+  }
+  async function sendComment() {
+    var txt = commentText.trim();
+    if (!txt) return;
+    await addLogAndSave({}, "💬 " + txt);
+    setCommentText("");
+  }
+
+  // Determine big button visibility
+  var bigBtn = BIG_BTN_MAP[r.status];
+  var canPressBig = false;
+  if (bigBtn && bigBtn.next) {
+    if (bigBtn.who === "assignee") canPressBig = canActAsAssignee;
+    else if (bigBtn.who === "requester") canPressBig = canActAsRequester;
+  }
+
+  var canReject = canActAsAssignee && (r.status === "sent" || r.status === "received");
+  var canReturn = canActAsAssignee && ["sent","received","inprogress","accepted"].indexOf(r.status) >= 0;
+  var canEscalate = (canActAsAssignee || canActAsRequester) && !r.escalation && !["closed","cancelled","evaluated"].includes(r.status);
+  var canCancel = isRequester && !["closed","cancelled","evaluated","delivered"].includes(r.status);
+  var canDelete = (isAdmin || isRequester) && r.status === "draft";
+  var canEdit = (isRequester || isAdmin) && ["draft","incomplete"].includes(r.status);
+
+  return (
+    <div onClick={onClose} style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.6)", zIndex: 1000, display: "flex", alignItems: "flex-end", justifyContent: "center", fontFamily: "'Tajawal',sans-serif" }}>
+      <div onClick={function(e){ e.stopPropagation(); }} style={{ background: C.bg, borderRadius: "20px 20px 0 0", maxWidth: 430, width: "100%", maxHeight: "94vh", overflowY: "auto", direction: "rtl", color: C.text, paddingBottom: 20 }}>
+        <div style={{ display: "flex", justifyContent: "center", padding: "10px 0 4px", position: "sticky", top: 0, background: C.bg, zIndex: 2 }}><div style={{ width: 40, height: 4, borderRadius: 2, background: C.cardBorder }} /></div>
+
         <div style={{ padding: "12px 18px 18px", borderBottom: "1px solid " + C.cardBorder }}>
           <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 10, flexWrap: "wrap" }}>
             {r.serial && <div style={{ fontSize: 13, fontWeight: 900, color: C.gold, fontFamily: "monospace" }}>#{r.serial}</div>}
-            <div style={{ display: "inline-flex", alignItems: "center", gap: 5, padding: "4px 10px", borderRadius: 10, background: m.color + "22", color: m.color, fontSize: 11, fontWeight: 800 }}>
-              <span>{m.icon}</span><span>{m.label}</span>
-            </div>
+            <div style={{ display: "inline-flex", alignItems: "center", gap: 5, padding: "4px 10px", borderRadius: 10, background: m.color + "22", color: m.color, fontSize: 11, fontWeight: 800 }}><span>{m.icon}</span><span>{m.label}</span></div>
             {isUrgent && <div style={{ padding: "4px 10px", borderRadius: 10, background: "rgba(239,68,68,0.15)", color: "#ef4444", fontSize: 11, fontWeight: 800 }}>🔴 عاجل</div>}
             {escColor && <div style={{ padding: "4px 10px", borderRadius: 10, background: escColor + "22", color: escColor, fontSize: 11, fontWeight: 800 }}>{r.escalation === "red" ? "🔴 أحمر" : "🟡 أصفر"}</div>}
             <div style={{ flex: 1 }} />
             <button onClick={onClose} style={{ background: "none", border: "none", fontSize: 22, color: C.sub, cursor: "pointer", padding: 0, lineHeight: 1 }}>×</button>
           </div>
-          <div style={{ fontSize: 11, color: C.sub, marginBottom: 4, fontWeight: 600 }}>
-            {r.category && <span>🏷 {r.category}</span>}
-            {r.department && <span>{r.category ? " • " : ""}🏢 {r.department}</span>}
-            {r.projectName && <span>{(r.category || r.department) ? " • " : ""}🏗️ {r.projectName}</span>}
-          </div>
+          <div style={{ fontSize: 11, color: C.sub, marginBottom: 4, fontWeight: 600 }}>{r.category && <span>🏷 {r.category}</span>}{r.department && <span>{r.category ? " • " : ""}🏢 {r.department}</span>}{r.projectName && <span>{(r.category || r.department) ? " • " : ""}🏗️ {r.projectName}</span>}</div>
           <div style={{ fontSize: 17, fontWeight: 900, color: C.text, lineHeight: 1.4, fontFamily: "'Cairo',sans-serif", marginBottom: deadlineText ? 6 : 0 }}>{r.title || "(بدون عنوان)"}</div>
-          {deadlineText && (
-            <div style={{ fontSize: 11, fontWeight: 700, color: (r.deadline && new Date(r.deadline) < new Date()) ? "#ef4444" : C.gold }}>{deadlineText}</div>
-          )}
+          {deadlineText && <div style={{ fontSize: 11, fontWeight: 700, color: (r.deadline && new Date(r.deadline) < new Date()) ? "#ef4444" : C.gold }}>{deadlineText}</div>}
         </div>
 
         <div style={{ padding: 16 }}>
-          {/* Pipeline stages */}
+          {/* Big button */}
+          {bigBtn && canPressBig && (
+            <button onClick={applyBigAction} disabled={busy} style={{ width: "100%", padding: "18px 20px", borderRadius: 16, background: busy ? C.cardBorder : bigBtn.color, color: "#fff", border: "none", fontSize: 18, fontWeight: 900, cursor: busy ? "default" : "pointer", fontFamily: "'Cairo',sans-serif", marginBottom: 10, boxShadow: "0 4px 12px rgba(0,0,0,0.15)" }}>
+              {busy ? "جارِ الحفظ..." : bigBtn.label}
+              <div style={{ fontSize: 11, fontWeight: 600, opacity: 0.9, marginTop: 4 }}>{bigBtn.sub}</div>
+            </button>
+          )}
+          {bigBtn && !canPressBig && bigBtn.who === "requester" && (
+            <div style={{ padding: 14, borderRadius: 12, background: C.card, border: "1px dashed " + C.cardBorder, textAlign: "center", marginBottom: 10 }}>
+              <div style={{ fontSize: 13, fontWeight: 800, color: bigBtn.color, marginBottom: 3 }}>{bigBtn.label}</div>
+              <div style={{ fontSize: 11, color: C.sub }}>{bigBtn.sub}</div>
+            </div>
+          )}
+
+          {/* Secondary actions */}
+          <div style={{ display: "flex", flexWrap: "wrap", gap: 6, marginBottom: 12 }}>
+            {canReject && <button onClick={function(){ setShowReject(true); }} style={{ flex: "1 1 auto", minWidth: 90, padding: "10px 12px", borderRadius: 10, background: "rgba(239,68,68,0.1)", color: "#ef4444", border: "1px solid rgba(239,68,68,0.3)", fontSize: 12, fontWeight: 700, cursor: "pointer", fontFamily: "inherit" }}>❌ رفض</button>}
+            {canReturn && <button onClick={function(){ setShowReturn(true); }} style={{ flex: "1 1 auto", minWidth: 90, padding: "10px 12px", borderRadius: 10, background: "rgba(245,158,11,0.1)", color: "#f59e0b", border: "1px solid rgba(245,158,11,0.3)", fontSize: 12, fontWeight: 700, cursor: "pointer", fontFamily: "inherit" }}>📋 إرجاع</button>}
+            {canEscalate && <button onClick={function(){ setShowEscalate(true); }} style={{ flex: "1 1 auto", minWidth: 90, padding: "10px 12px", borderRadius: 10, background: "rgba(251,191,36,0.15)", color: "#fbbf24", border: "1px solid rgba(251,191,36,0.4)", fontSize: 12, fontWeight: 700, cursor: "pointer", fontFamily: "inherit" }}>⬆️ تصعيد</button>}
+            {canCancel && <button onClick={doCancel} disabled={busy} style={{ flex: "1 1 auto", minWidth: 90, padding: "10px 12px", borderRadius: 10, background: C.card, color: C.text, border: "1px solid " + C.cardBorder, fontSize: 12, fontWeight: 700, cursor: "pointer", fontFamily: "inherit" }}>🚫 إلغاء</button>}
+            {canEdit && <button onClick={function(){ onEdit(r); }} style={{ flex: "1 1 auto", minWidth: 90, padding: "10px 12px", borderRadius: 10, background: C.hdr2, color: "#fff", border: "none", fontSize: 12, fontWeight: 700, cursor: "pointer", fontFamily: "inherit" }}>✎ تعديل</button>}
+            {canDelete && <button onClick={doDelete} disabled={busy} style={{ flex: "1 1 auto", minWidth: 90, padding: "10px 12px", borderRadius: 10, background: "rgba(239,68,68,0.2)", color: "#ef4444", border: "1px solid #ef4444", fontSize: 12, fontWeight: 700, cursor: "pointer", fontFamily: "inherit" }}>🗑 حذف</button>}
+          </div>
+
+          {/* Pipeline */}
           {!["cancelled","rejected"].includes(r.status) && (
             <div style={{ background: C.card, borderRadius: 12, padding: 14, border: "1px solid " + C.cardBorder, marginBottom: 12 }}>
               <div style={{ fontSize: 11, fontWeight: 800, color: C.sub, marginBottom: 10 }}>📈 مراحل المهمة</div>
@@ -2323,14 +3006,10 @@ function TawasulDetailModal({ request, user, allEmps, onClose, nameOf }) {
                   return (
                     <React.Fragment key={st.key}>
                       <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 4, flex: "0 0 auto" }}>
-                        <div style={{ width: 32, height: 32, borderRadius: 16, background: active ? C.gold : C.bg, border: "2px solid " + (active ? C.gold : C.cardBorder), display: "flex", alignItems: "center", justifyContent: "center", fontSize: 14, color: active ? "#fff" : C.sub, transition: "all 0.2s" }}>
-                          {st.icon}
-                        </div>
+                        <div style={{ width: 32, height: 32, borderRadius: 16, background: active ? C.gold : C.bg, border: "2px solid " + (active ? C.gold : C.cardBorder), display: "flex", alignItems: "center", justifyContent: "center", fontSize: 14, color: active ? "#fff" : C.sub }}>{st.icon}</div>
                         <div style={{ fontSize: 9, fontWeight: 700, color: active ? C.text : C.sub, textAlign: "center", maxWidth: 60 }}>{st.label}</div>
                       </div>
-                      {idx < TAWASUL_STAGES.length - 1 && (
-                        <div style={{ flex: 1, height: 2, background: idx < curStage ? C.gold : C.cardBorder, margin: "0 4px", marginBottom: 18 }} />
-                      )}
+                      {idx < TAWASUL_STAGES.length - 1 && <div style={{ flex: 1, height: 2, background: idx < curStage ? C.gold : C.cardBorder, margin: "0 4px", marginBottom: 18 }} />}
                     </React.Fragment>
                   );
                 })}
@@ -2349,112 +3028,60 @@ function TawasulDetailModal({ request, user, allEmps, onClose, nameOf }) {
               r.deliveredAt ? { label: "تاريخ التسليم", value: new Date(r.deliveredAt).toLocaleString("ar-SA"), icon: "📦" } : null,
               { label: "آخر تحديث", value: tawasulTimeAgo(r.updatedAt || r.createdAt), icon: "🔄" },
             ].filter(Boolean).map(function(row, idx, arr){
-              return (
-                <div key={idx} style={{ display: "flex", justifyContent: "space-between", padding: "8px 0", borderBottom: idx < arr.length - 1 ? "1px solid " + C.cardBorder : "none", fontSize: 12, gap: 8 }}>
-                  <div style={{ color: C.sub, fontWeight: 600, flexShrink: 0 }}><span style={{ marginLeft: 5 }}>{row.icon}</span>{row.label}</div>
-                  <div style={{ color: C.text, fontWeight: 700, textAlign: "left", flex: 1, minWidth: 0, wordBreak: "break-word" }}>{row.value}</div>
-                </div>
-              );
+              return <div key={idx} style={{ display: "flex", justifyContent: "space-between", padding: "8px 0", borderBottom: idx < arr.length - 1 ? "1px solid " + C.cardBorder : "none", fontSize: 12, gap: 8 }}><div style={{ color: C.sub, fontWeight: 600, flexShrink: 0 }}><span style={{ marginLeft: 5 }}>{row.icon}</span>{row.label}</div><div style={{ color: C.text, fontWeight: 700, textAlign: "left", flex: 1, minWidth: 0, wordBreak: "break-word" }}>{row.value}</div></div>;
             })}
           </div>
 
-          {/* Description */}
-          {r.description && (
-            <div style={{ background: C.card, borderRadius: 12, padding: 14, border: "1px solid " + C.cardBorder, marginBottom: 12 }}>
-              <div style={{ fontSize: 11, fontWeight: 800, color: C.sub, marginBottom: 8 }}>📝 الوصف</div>
-              <div style={{ fontSize: 13, color: C.text, lineHeight: 1.7, whiteSpace: "pre-wrap" }}>{r.description}</div>
-            </div>
-          )}
+          {r.description && <div style={{ background: C.card, borderRadius: 12, padding: 14, border: "1px solid " + C.cardBorder, marginBottom: 12 }}><div style={{ fontSize: 11, fontWeight: 800, color: C.sub, marginBottom: 8 }}>📝 الوصف</div><div style={{ fontSize: 13, color: C.text, lineHeight: 1.7, whiteSpace: "pre-wrap" }}>{r.description}</div></div>}
 
-          {/* Delivery methods */}
           {r.deliveryMethods && r.deliveryMethods.length > 0 && (
             <div style={{ background: C.card, borderRadius: 12, padding: 14, border: "1px solid " + C.cardBorder, marginBottom: 12 }}>
               <div style={{ fontSize: 11, fontWeight: 800, color: C.sub, marginBottom: 8 }}>📦 طرق التسليم</div>
-              {r.deliveryMethods.map(function(dm, idx){
-                return (
-                  <div key={idx} style={{ padding: "8px 10px", borderRadius: 8, background: C.bg, marginBottom: 6, fontSize: 12 }}>
-                    <div style={{ fontWeight: 700, color: C.text, marginBottom: 2 }}>{dm.label || dm.type}</div>
-                    {dm.value && <div style={{ fontSize: 11, color: C.sub, wordBreak: "break-all" }}>{dm.value}</div>}
-                  </div>
-                );
-              })}
+              {r.deliveryMethods.map(function(dm, idx){ return <div key={idx} style={{ padding: "8px 10px", borderRadius: 8, background: C.bg, marginBottom: 6, fontSize: 12 }}><div style={{ fontWeight: 700, color: C.text, marginBottom: 2 }}>{dm.label || dm.type}</div>{dm.value && <div style={{ fontSize: 11, color: C.sub, wordBreak: "break-all" }}>{dm.value}</div>}</div>; })}
             </div>
           )}
 
-          {/* Attachments */}
           {r.attachments && r.attachments.length > 0 && (
             <div style={{ background: C.card, borderRadius: 12, padding: 14, border: "1px solid " + C.cardBorder, marginBottom: 12 }}>
               <div style={{ fontSize: 11, fontWeight: 800, color: C.sub, marginBottom: 8 }}>📎 المرفقات ({r.attachments.length})</div>
-              {r.attachments.map(function(a, idx){
-                return (
-                  <div key={idx} style={{ display: "flex", alignItems: "center", gap: 8, padding: "6px 0", fontSize: 12 }}>
-                    <span>📄</span>
-                    <a href={a.url || a.href || "#"} target="_blank" rel="noopener noreferrer" style={{ color: C.gold, textDecoration: "none", fontWeight: 700, flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{a.name || a.filename || "ملف " + (idx+1)}</a>
-                    {a.size && <span style={{ fontSize: 10, color: C.sub }}>{Math.round(a.size/1024)}KB</span>}
-                  </div>
-                );
-              })}
+              {r.attachments.map(function(a, idx){ return <div key={idx} style={{ display: "flex", alignItems: "center", gap: 8, padding: "6px 0", fontSize: 12 }}><span>📄</span><a href={a.url || a.href || "#"} target="_blank" rel="noopener noreferrer" style={{ color: C.gold, textDecoration: "none", fontWeight: 700, flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{a.name || a.filename || "ملف " + (idx+1)}</a></div>; })}
             </div>
           )}
 
-          {/* Evaluations */}
           {evals.length > 0 && (
             <div style={{ background: C.card, borderRadius: 12, padding: 14, border: "1px solid " + C.cardBorder, marginBottom: 12 }}>
-              <div style={{ fontSize: 11, fontWeight: 800, color: C.sub, marginBottom: 8, display: "flex", alignItems: "center", justifyContent: "space-between" }}>
-                <span>⭐ التقييمات ({evals.length})</span>
-                {r.finalScore !== undefined && r.finalScore !== null && (
-                  <span style={{ fontSize: 13, color: C.gold, fontWeight: 900 }}>{r.finalScore}/100</span>
-                )}
-              </div>
-              {evals.map(function(ev, idx){
-                return (
-                  <div key={idx} style={{ padding: "8px 10px", borderRadius: 8, background: C.bg, marginBottom: 6, fontSize: 12 }}>
-                    <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 4 }}>
-                      <span style={{ fontWeight: 700, color: C.text }}>{ev.byName || nameOf(ev.by)}</span>
-                      <span style={{ color: C.gold, fontWeight: 800 }}>{ev.avgScore || "-"}/100</span>
-                    </div>
-                    {ev.scores && (
-                      <div style={{ fontSize: 10, color: C.sub, display: "flex", gap: 8, flexWrap: "wrap" }}>
-                        {Object.keys(ev.scores).map(function(k){ return <span key={k}>{k}: {ev.scores[k]}⭐</span>; })}
-                      </div>
-                    )}
-                  </div>
-                );
-              })}
+              <div style={{ fontSize: 11, fontWeight: 800, color: C.sub, marginBottom: 8, display: "flex", alignItems: "center", justifyContent: "space-between" }}><span>⭐ التقييمات ({evals.length})</span>{r.finalScore !== undefined && r.finalScore !== null && <span style={{ fontSize: 13, color: C.gold, fontWeight: 900 }}>{r.finalScore}/100</span>}</div>
+              {evals.map(function(ev, idx){ return <div key={idx} style={{ padding: "8px 10px", borderRadius: 8, background: C.bg, marginBottom: 6, fontSize: 12 }}><div style={{ display: "flex", justifyContent: "space-between", marginBottom: 4 }}><span style={{ fontWeight: 700, color: C.text }}>{ev.byName || nameOf(ev.by)}</span><span style={{ color: C.gold, fontWeight: 800 }}>{ev.avgScore || "-"}/100</span></div></div>; })}
             </div>
           )}
 
-          {/* Log / Timeline */}
+          {/* Log + comment input */}
           <div style={{ background: C.card, borderRadius: 12, padding: 14, border: "1px solid " + C.cardBorder, marginBottom: 12 }}>
             <div style={{ fontSize: 11, fontWeight: 800, color: C.sub, marginBottom: 12 }}>📜 السجل والتعليقات ({log.length})</div>
-            {log.length === 0 ? (
-              <div style={{ fontSize: 11, color: C.sub, textAlign: "center", padding: 10 }}>لا يوجد سجل بعد</div>
-            ) : log.map(function(entry, idx){
-              return (
-                <div key={idx} style={{ display: "flex", gap: 8, padding: "8px 0", fontSize: 11, alignItems: "flex-start", borderBottom: idx < log.length - 1 ? "1px solid " + C.cardBorder : "none" }}>
-                  <div style={{ width: 6, height: 6, borderRadius: 3, background: C.gold, marginTop: 7, flexShrink: 0 }} />
-                  <div style={{ flex: 1, minWidth: 0 }}>
-                    <div style={{ color: C.text, fontWeight: 600, lineHeight: 1.5, wordBreak: "break-word" }}>{entry.text || entry.action || "تحديث"}</div>
-                    <div style={{ fontSize: 10, color: C.sub, marginTop: 2 }}>{entry.by || nameOf(entry.userId)} • {tawasulTimeAgo(entry.at)}</div>
-                  </div>
-                </div>
-              );
+            {log.length === 0 ? <div style={{ fontSize: 11, color: C.sub, textAlign: "center", padding: 10 }}>لا يوجد سجل بعد</div> : log.map(function(entry, idx){
+              return <div key={idx} style={{ display: "flex", gap: 8, padding: "8px 0", fontSize: 11, alignItems: "flex-start", borderBottom: idx < log.length - 1 ? "1px solid " + C.cardBorder : "none" }}><div style={{ width: 6, height: 6, borderRadius: 3, background: C.gold, marginTop: 7, flexShrink: 0 }} /><div style={{ flex: 1, minWidth: 0 }}><div style={{ color: C.text, fontWeight: 600, lineHeight: 1.5, wordBreak: "break-word" }}>{entry.text || entry.action || "تحديث"}</div><div style={{ fontSize: 10, color: C.sub, marginTop: 2 }}>{entry.by || nameOf(entry.userId)} • {tawasulTimeAgo(entry.at)}</div></div></div>;
             })}
+
+            {/* Comment input */}
+            {!["closed","cancelled"].includes(r.status) && (isRequester || isAssignee || isAdmin) && (
+              <div style={{ marginTop: 10, display: "flex", gap: 6 }}>
+                <input type="text" value={commentText} onChange={function(e){ setCommentText(e.target.value); }} placeholder="أضف تعليقاً..." onKeyDown={function(e){ if(e.key === "Enter") sendComment(); }} style={{ flex: 1, padding: "10px 12px", borderRadius: 10, border: "1px solid " + C.cardBorder, background: C.bg, color: C.text, fontSize: 12, fontFamily: "inherit", outline: "none" }} />
+                <button onClick={sendComment} disabled={busy || !commentText.trim()} style={{ padding: "10px 14px", borderRadius: 10, background: commentText.trim() ? C.hdr2 : C.cardBorder, color: "#fff", border: "none", fontSize: 12, fontWeight: 700, cursor: commentText.trim() ? "pointer" : "default", fontFamily: "inherit" }}>📤</button>
+              </div>
+            )}
           </div>
 
-          {/* Rejection / return reason */}
           {(r.rejectionReason || r.returnReason) && (
             <div style={{ background: "rgba(239,68,68,0.08)", borderRadius: 12, padding: 14, border: "1px solid rgba(239,68,68,0.3)", marginBottom: 12 }}>
               <div style={{ fontSize: 11, fontWeight: 800, color: "#ef4444", marginBottom: 6 }}>{r.rejectionReason ? "❌ سبب الرفض" : "↩️ سبب الإرجاع"}</div>
               <div style={{ fontSize: 12, color: C.text, lineHeight: 1.6 }}>{r.rejectionReason || r.returnReason}</div>
             </div>
           )}
-
-          {/* Phase 1 note */}
-          <div style={{ textAlign: "center", padding: 12, fontSize: 11, color: C.sub, background: C.card, borderRadius: 12, border: "1px dashed " + C.cardBorder }}>
-            📖 وضع القراءة فقط — الإجراءات (استلام، تسليم، تقييم) قادمة في المرحلة 2
-          </div>
         </div>
+
+        {showReject && <TawasulReasonModal title="❌ رفض المهمة" reasons={TAWASUL_REJECT_REASONS} requireLegal={true} confirmColor="#ef4444" confirmLabel="تأكيد الرفض" onConfirm={doReject} onClose={function(){ setShowReject(false); }} />}
+        {showReturn && <TawasulReasonModal title="📋 إرجاع للاستكمال" reasons={TAWASUL_RETURN_REASONS} requireLegal={false} confirmColor="#f59e0b" confirmLabel="تأكيد الإرجاع" onConfirm={doReturn} onClose={function(){ setShowReturn(false); }} />}
+        {showEscalate && <TawasulReasonModal title="⬆️ تصعيد المهمة" reasons={[{id:"delay",label:"تأخر عن الموعد"},{id:"no_response",label:"عدم استجابة"},{id:"quality",label:"مشكلة في الجودة"},{id:"other",label:"أخرى"}]} requireLegal={true} confirmColor="#fbbf24" confirmLabel="تأكيد التصعيد" onConfirm={doEscalate} onClose={function(){ setShowEscalate(false); }} />}
       </div>
     </div>
   );
