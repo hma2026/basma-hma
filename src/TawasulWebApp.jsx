@@ -314,10 +314,13 @@ function PairingSplash({ onAuthorized }) {
 function DesktopFrame({ session, onLogout }) {
   var [logoutBusy, setLogoutBusy] = useState(false);
 
-  // Inject session into localStorage in the same shape MobileApp expects.
-  // MobileApp reads basma_user from localStorage. We populate it from the authorized session.
-  // If userData (full profile) was transferred from mobile, use it; otherwise fall back to minimal fields.
-  useEffect(function(){
+  // v6.39 — CRITICAL FIX: synchronously populate localStorage BEFORE rendering MobileApp.
+  // Previously done in useEffect which created race condition: MobileApp's useEffect
+  // reads localStorage BEFORE DesktopFrame's useEffect writes to it (children run first).
+  // Solution: write in component body via useRef guard so it runs before any child mount.
+  var initedRef = React.useRef(false);
+  if (!initedRef.current) {
+    initedRef.current = true;
     try {
       var existing = null;
       try { existing = JSON.parse(localStorage.getItem("basma_user") || "null"); } catch(e) {}
@@ -334,10 +337,33 @@ function DesktopFrame({ session, onLogout }) {
           };
         }
         localStorage.setItem("basma_user", JSON.stringify(u));
+      } else if (existing && !existing._desktopSession) {
+        // Mark existing session as desktop
+        existing._desktopSession = true;
+        localStorage.setItem("basma_user", JSON.stringify(existing));
       }
-      // v6.38 — Desktop defaults to tawasul page
+      // Desktop defaults to tawasul page
       try { localStorage.setItem("basma_page", "tawasul"); } catch(e) {}
       try { localStorage.setItem("basma_active_tab", "tawasul"); } catch(e) {}
+    } catch(e) {
+      console.error("[DesktopFrame] localStorage init failed:", e);
+    }
+  }
+
+  // Keep effect too for the case where session changes (logout then re-login)
+  useEffect(function(){
+    try {
+      var existing = null;
+      try { existing = JSON.parse(localStorage.getItem("basma_user") || "null"); } catch(e) {}
+      if (!existing || String(existing.id || existing.username) !== String(session.userId)) {
+        var u;
+        if (session.userData && typeof session.userData === "object") {
+          u = Object.assign({}, session.userData, { _desktopSession: true });
+        } else {
+          u = { id: session.userId, username: session.userId, name: session.userName, _desktopSession: true };
+        }
+        localStorage.setItem("basma_user", JSON.stringify(u));
+      }
     } catch(e) {}
   }, [session.userId]);
 
