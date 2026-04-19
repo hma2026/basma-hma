@@ -436,24 +436,21 @@ function DesktopFrame({ session, onLogout }) {
         </div>
       </div>
 
-      {/* Phone-frame container — v6.38 wider for desktop use */}
+      {/* Desktop-native container — v6.40 (no phone frame, full desktop experience) */}
       <div style={{
         flex: 1,
         display: "flex",
-        alignItems: "flex-start",
+        alignItems: "stretch",
         justifyContent: "center",
-        padding: "20px 20px 40px",
-        overflow: "auto",
+        padding: "0",
+        overflow: "hidden",
       }}>
         <div style={{
           width: "100%",
-          maxWidth: 900,
-          minHeight: "calc(100vh - 120px)",
-          background: "#000",
-          borderRadius: 24,
-          boxShadow: "0 20px 60px rgba(0,0,0,0.5), 0 0 0 6px #0b1526, 0 0 0 8px rgba(255,255,255,0.06)",
-          overflow: "hidden",
+          maxWidth: 1400,
+          background: "#0a1325",
           position: "relative",
+          overflow: "auto",
         }}>
           <MobileApp />
         </div>

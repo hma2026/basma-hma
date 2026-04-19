@@ -10,7 +10,7 @@ import { ALL_VIOLATIONS_DEFAULT, PENALTY_TYPES, LAIHA_INFO, COMPLAINT_STATUS, VI
 
 /* ═══════════ APP CONFIG (إعدادات التطبيق) ═══════════ */
 const APP_CONFIG = {
-  VER: "6.39",
+  VER: "6.40",
   NAME: "بصمة HMA",
   FULL_NAME: "نظام الحضور والانصراف الذكي",
   COMPANY: "هاني محمد عسيري للاستشارات الهندسية",
@@ -383,10 +383,21 @@ export default function MobileApp() {
 
 function MobileAppInner() {
   const [user, setUser] = useState(null);
-  const [page, setPage] = useState(function(){ return localStorage.getItem("basma_page") || "home"; });
+  // v6.40 — Desktop mode detection: when wrapped in DesktopFrame, force tawasul-only
+  const isDesktopSession = (function(){
+    try {
+      var u = JSON.parse(localStorage.getItem("basma_user") || "null");
+      return !!(u && u._desktopSession);
+    } catch(e) { return false; }
+  })();
 
-  // Persist page across refresh
-  useEffect(function(){ localStorage.setItem("basma_page", page); }, [page]);
+  const [page, setPage] = useState(function(){
+    if (isDesktopSession) return "tawasul";
+    return localStorage.getItem("basma_page") || "home";
+  });
+
+  // Persist page across refresh (skip in desktop mode to always force tawasul)
+  useEffect(function(){ if (!isDesktopSession) localStorage.setItem("basma_page", page); }, [page, isDesktopSession]);
 
   // Listen for "go to legal" event from InvestigationBanner
   useEffect(function() {
@@ -1159,7 +1170,7 @@ function MobileAppInner() {
         {page === "profile" && <ProfilePage user={user} branch={branch} workType={workType} onLogout={logout} onTicket={() => setTicketModal(true)} myTickets={myTickets} darkMode={darkMode} toggleDark={toggleDark} kadwarNotifs={kadwarNotifs} />}
       </div>
 
-      <BottomNav page={page} setPage={setPage} legalAlerts={legalAlerts} tawasulUnread={tawasulUnread} />
+      {!isDesktopSession && <BottomNav page={page} setPage={setPage} legalAlerts={legalAlerts} tawasulUnread={tawasulUnread} />}
 
       {/* Notification Bell — floating */}
       {user && unreadCount > 0 && !showNotifs && (
