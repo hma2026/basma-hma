@@ -3,7 +3,7 @@ import { ALL_VIOLATIONS_DEFAULT, PENALTY_TYPES, LAIHA_INFO, COMPLAINT_STATUS, VI
 import { generateAttendanceReport, generateEmployeeReport, generateMonthlySummary, generateViolationsReport, generateEmployeesListReport, generateBenefitsReport, generateAnnouncementsReport } from "./pdfReports";
 
 const APP = "بصمة HMA";
-const VER = "4.88";
+const VER = "4.90";
 const CO = "هاني محمد عسيري للإستشارات الهندسية";
 const B = { blue: "#2B5EA7", yellow: "#FDD800", red: "#E2192C", black: "#1A1A1A", blueDk: "#1E4478", blueLt: "#EDF3FB", gold: "#D4A017" };
 
@@ -248,8 +248,10 @@ function Login({ onLogin }) {
             <div style={{ marginTop: 24, paddingTop: 18, borderTop: "1px solid " + t.sep, textAlign: "center" }}>
               <div style={{ fontSize: 11, color: t.txM, marginBottom: 10 }}>هل أنت موظف؟</div>
               <button onClick={function() {
+                localStorage.setItem("basma_explicit_employee", "1");
+                localStorage.setItem("basma_last_mode", "app");
                 window.location.hash = "";
-                window.location.reload();
+                window.location.href = window.location.pathname;
               }} style={{ width: "100%", padding: "11px 14px", borderRadius: 12, background: "none", border: "1.5px solid " + B.blue, color: B.blue, fontSize: 13, fontWeight: 700, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", gap: 8, transition: "all 0.2s" }} onMouseEnter={function(e){ e.currentTarget.style.background = B.blue; e.currentTarget.style.color = "#fff"; }} onMouseLeave={function(e){ e.currentTarget.style.background = "none"; e.currentTarget.style.color = B.blue; }}>
                 <span style={{ fontSize: 18 }}>📱</span>
                 <span>دخول تطبيق الموظفين</span>

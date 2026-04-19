@@ -10,7 +10,7 @@ import { ALL_VIOLATIONS_DEFAULT, PENALTY_TYPES, LAIHA_INFO, COMPLAINT_STATUS, VI
 
 /* ═══════════ APP CONFIG (إعدادات التطبيق) ═══════════ */
 const APP_CONFIG = {
-  VER: "4.88",
+  VER: "4.90",
   NAME: "بصمة HMA",
   FULL_NAME: "نظام الحضور والانصراف الذكي",
   COMPANY: "هاني محمد عسيري للاستشارات الهندسية",
@@ -380,6 +380,7 @@ function MobileAppInner() {
   const [autoCheckinPrompt, setAutoCheckinPrompt] = useState(null); // { type, label } — auto-triggered checkin
   const [faceVerifyModal, setFaceVerifyModal] = useState(null); // { type, label, source }
   const [initDone, setInitDone] = useState(false);
+  const [tawasulUnread, setTawasulUnread] = useState(0);
 
   // Apply dark mode
   useEffect(function() {
@@ -770,6 +771,21 @@ function MobileAppInner() {
         var bnrD = await bnrR.json();
         if (bnrD && Array.isArray(bnrD.banners)) setBanners(bnrD.banners);
       } catch(e) { /**/ }
+      // Fetch tawasul unread count (read-only badge)
+      try {
+        var tR = await fetch("/api/data?action=tawasul-list");
+        var tD = await tR.json();
+        if (tD && Array.isArray(tD.requests)) {
+          var myId = emp.id || emp.username;
+          var isAdmin = emp.role === "admin" || emp.role === "hr_manager" || emp.username === "admin";
+          var unread = tD.requests.filter(function(r){
+            var isAssignee = (r.assignees || []).some(function(a){ return String(a.id) === String(myId); });
+            var notDone = r.status !== "closed" && r.status !== "evaluated" && r.status !== "cancelled";
+            return notDone && (isAdmin ? true : isAssignee) && (r.status === "sent" || r.status === "received");
+          }).length;
+          setTawasulUnread(unread);
+        }
+      } catch(e) { /**/ }
       // Fetch notifications
       try {
         var allNotifs = await api("notifications", { params: { empId: emp.id } });
@@ -915,7 +931,7 @@ function MobileAppInner() {
         {page === "profile" && <ProfilePage user={user} branch={branch} onLogout={logout} onTicket={() => setTicketModal(true)} myTickets={myTickets} darkMode={darkMode} toggleDark={toggleDark} />}
       </div>
 
-      <BottomNav page={page} setPage={setPage} legalAlerts={legalAlerts} />
+      <BottomNav page={page} setPage={setPage} legalAlerts={legalAlerts} tawasulUnread={tawasulUnread} />
 
       {/* Notification Bell — floating */}
       {user && unreadCount > 0 && !showNotifs && (
@@ -1908,18 +1924,23 @@ function BenefitsPage({ user }) {
   );
 }
 
-/* ═══════════ TAWASUL — تبادل المهام الإدارية (Phase 1: Read-only) ═══════════ */
+/* ═══════════ TAWASUL — نظام تبادل المهام (Phase 1: Read-only — per full spec) ═══════════ */
+/* Status metadata matches spec section 10 + 20.1 */
 var TAWASUL_STATUS = {
-  draft:       { icon: "📝", label: "مسودة",       color: "#6B7280" },
-  sent:        { icon: "📨", label: "مُرسَل",       color: "#3B82F6" },
-  accepted:    { icon: "✅", label: "مقبول",        color: "#10B981" },
-  objected:    { icon: "⚠️", label: "معترض",        color: "#F59E0B" },
-  rescheduled: { icon: "🔄", label: "إعادة جدولة",  color: "#EAB308" },
-  inprogress:  { icon: "🔨", label: "قيد التنفيذ",  color: "#8B5CF6" },
-  delivered:   { icon: "📦", label: "تم التسليم",   color: "#06B6D4" },
-  closed:      { icon: "✅", label: "مغلق",         color: "#4B5563" },
-  returned:    { icon: "↩️", label: "مُرجَع",       color: "#EF4444" },
-  cancelled:   { icon: "🚫", label: "ملغي",         color: "#991B1B" },
+  draft:       { icon: "📝", label: "مسودة",       color: "#94a3b8" },
+  sent:        { icon: "📨", label: "مُرسَلة",      color: "#3b82f6" },
+  received:    { icon: "📥", label: "مستلمة",      color: "#22c55e" },
+  accepted:    { icon: "✅", label: "مقبولة",      color: "#22c55e" },
+  inprogress:  { icon: "🔨", label: "قيد التنفيذ", color: "#7c3aed" },
+  delivered:   { icon: "📦", label: "تم التسليم",  color: "#b8960c" },
+  evaluated:   { icon: "⭐", label: "مُقيَّمة",     color: "#10b981" },
+  closed:      { icon: "✅", label: "مغلقة",       color: "#10b981" },
+  rejected:    { icon: "❌", label: "مرفوضة",      color: "#ef4444" },
+  incomplete:  { icon: "📋", label: "بحاجة استكمال", color: "#f59e0b" },
+  cancelled:   { icon: "🚫", label: "ملغاة",       color: "#64748b" },
+  objected:    { icon: "⚠️", label: "معترض عليها",  color: "#ef4444" },
+  rescheduled: { icon: "🔄", label: "إعادة جدولة",  color: "#f59e0b" },
+  returned:    { icon: "↩️", label: "مُرجَعة",      color: "#ef4444" },
 };
 function getTawasulStatusMeta(s) {
   return TAWASUL_STATUS[s] || { icon: "❓", label: s || "غير محدد", color: "#6B7280" };
@@ -1936,6 +1957,17 @@ function tawasulTimeAgo(iso) {
     return d.toLocaleDateString("ar-SA");
   } catch(e) { return ""; }
 }
+/* Stages for pipeline (spec 7.5) */
+var TAWASUL_STAGES = [
+  { key: "sent",       label: "جديدة",        icon: "📥" },
+  { key: "inprogress", label: "قيد التنفيذ",   icon: "🏗️" },
+  { key: "delivered",  label: "تم التسليم",    icon: "📤" },
+  { key: "evaluated",  label: "مُقيَّمة",       icon: "⭐" },
+];
+function stageIndex(status) {
+  var map = { draft: 0, sent: 0, received: 0, accepted: 0, inprogress: 1, delivered: 2, evaluated: 3, closed: 3, incomplete: 0, rejected: 0, cancelled: 0 };
+  return map[status] !== undefined ? map[status] : 0;
+}
 
 function TawasulPage({ user, allEmps }) {
   var [tab, setTab] = useState("inbox"); // inbox | sent | done
@@ -1945,11 +1977,13 @@ function TawasulPage({ user, allEmps }) {
   var [err, setErr] = useState(null);
   var [search, setSearch] = useState("");
   var [filterStatus, setFilterStatus] = useState("all");
+  var [filterCategory, setFilterCategory] = useState("all");
   var [filterUrgency, setFilterUrgency] = useState("all");
   var [selectedReq, setSelectedReq] = useState(null);
   var [refreshing, setRefreshing] = useState(false);
+  var [showFilters, setShowFilters] = useState(false);
 
-  var isAdmin = user && (user.role === "admin" || user.role === "hr_manager" || user.isAdmin);
+  var isAdmin = user && (user.role === "admin" || user.role === "hr_manager" || user.isAdmin || user.username === "admin");
   var myId = user && (user.id || user.username);
 
   async function loadData(isRefresh) {
@@ -1975,19 +2009,17 @@ function TawasulPage({ user, allEmps }) {
 
   useEffect(function(){ loadData(false); }, []);
 
-  // Helper: resolve name from id
   function nameOf(id) {
     if (!id) return "—";
     if (String(id) === String(myId)) return "أنت";
     var found = (allEmps || []).find(function(e){ return String(e.id) === String(id) || e.username === id; });
-    return found ? (found.name || found.username || id) : id;
+    return found ? (found.name || found.username || id) : String(id);
   }
 
-  // Filter requests based on tab + user role
   function matchesTab(r) {
     var isRequester = String(r.requesterId) === String(myId) || r.requesterId === (user && user.username);
     var isAssignee = (r.assignees || []).some(function(a){ return String(a.id) === String(myId) || a.id === (user && user.username); });
-    var isDone = r.status === "closed" || r.status === "delivered" || r.status === "cancelled";
+    var isDone = r.status === "closed" || r.status === "evaluated" || r.status === "cancelled";
 
     if (tab === "inbox") return isAdmin ? !isDone : (isAssignee && !isDone);
     if (tab === "sent") return isAdmin ? (!isDone && isRequester) || !isDone : (isRequester && !isDone);
@@ -1995,29 +2027,41 @@ function TawasulPage({ user, allEmps }) {
     return true;
   }
 
-  // Apply filters
   var filtered = (requests || []).filter(function(r){
     if (!matchesTab(r)) return false;
     if (filterStatus !== "all" && r.status !== filterStatus) return false;
+    if (filterCategory !== "all" && r.category !== filterCategory) return false;
     if (filterUrgency !== "all" && r.urgency !== filterUrgency) return false;
     if (search.trim()) {
       var q = search.trim().toLowerCase();
-      var text = ((r.title || "") + " " + (r.description || "") + " " + (r.category || "")).toLowerCase();
+      var text = ((r.title || "") + " " + (r.description || "") + " " + (r.serial || "") + " " + (r.projectName || "")).toLowerCase();
       if (text.indexOf(q) === -1) return false;
     }
     return true;
   }).sort(function(a,b){
-    // urgent first, then newest
+    // red escalation → yellow → urgent → newest
+    var aEsc = a.escalation === "red" ? 2 : a.escalation === "yellow" ? 1 : 0;
+    var bEsc = b.escalation === "red" ? 2 : b.escalation === "yellow" ? 1 : 0;
+    if (aEsc !== bEsc) return bEsc - aEsc;
     if ((a.urgency === "urgent") !== (b.urgency === "urgent")) return a.urgency === "urgent" ? -1 : 1;
     return new Date(b.updatedAt || b.createdAt || 0).getTime() - new Date(a.updatedAt || a.createdAt || 0).getTime();
   });
 
-  // Count per tab (for badges)
-  var counts = {
-    inbox: (requests || []).filter(function(r){ var isA = (r.assignees||[]).some(function(a){ return String(a.id)===String(myId); }); var nd = r.status !== "closed" && r.status !== "delivered" && r.status !== "cancelled"; return isAdmin ? nd : (isA && nd); }).length,
-    sent:  (requests || []).filter(function(r){ var isR = String(r.requesterId)===String(myId); var nd = r.status !== "closed" && r.status !== "delivered" && r.status !== "cancelled"; return isAdmin ? nd : (isR && nd); }).length,
-    done:  (requests || []).filter(function(r){ var isD = r.status==="closed"||r.status==="delivered"||r.status==="cancelled"; var mine = String(r.requesterId)===String(myId) || (r.assignees||[]).some(function(a){ return String(a.id)===String(myId); }); return isAdmin ? isD : (isD && mine); }).length,
-  };
+  // Count per tab
+  function tabCount(tabId) {
+    return (requests || []).filter(function(r){
+      var isR = String(r.requesterId) === String(myId);
+      var isA = (r.assignees || []).some(function(a){ return String(a.id) === String(myId); });
+      var isDone = r.status === "closed" || r.status === "evaluated" || r.status === "cancelled";
+      if (tabId === "inbox") return isAdmin ? !isDone : (isA && !isDone);
+      if (tabId === "sent") return isAdmin ? !isDone : (isR && !isDone);
+      if (tabId === "done") return isAdmin ? isDone : (isDone && (isR || isA));
+      return false;
+    }).length;
+  }
+
+  var counts = { inbox: tabCount("inbox"), sent: tabCount("sent"), done: tabCount("done") };
+  var activeFilters = (filterStatus !== "all" ? 1 : 0) + (filterCategory !== "all" ? 1 : 0) + (filterUrgency !== "all" ? 1 : 0);
 
   var pageBg = C.bg;
 
@@ -2026,7 +2070,7 @@ function TawasulPage({ user, allEmps }) {
       <div style={{ minHeight: "100vh", background: pageBg, color: C.text, paddingBottom: 80, display: "flex", alignItems: "center", justifyContent: "center", fontFamily: "'Tajawal',sans-serif" }}>
         <div style={{ textAlign: "center" }}>
           <div style={{ fontSize: 40, marginBottom: 10 }}>🤝</div>
-          <div style={{ fontSize: 14, color: C.sub }}>جارِ تحميل الطلبات...</div>
+          <div style={{ fontSize: 14, color: C.sub }}>جارِ تحميل المهام...</div>
         </div>
       </div>
     );
@@ -2034,7 +2078,7 @@ function TawasulPage({ user, allEmps }) {
 
   return (
     <div style={{ minHeight: "100vh", background: pageBg, color: C.text, paddingBottom: 80, fontFamily: "'Tajawal',sans-serif", direction: "rtl" }}>
-      {/* Gradient header */}
+      {/* Header */}
       <div style={{ background: "linear-gradient(135deg, " + C.hdr1 + " 0%, " + C.hdr2 + " 100%)", padding: "16px 16px 18px", color: "#fff" }}>
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 4 }}>
           <div style={{ fontSize: 22, fontWeight: 900, fontFamily: "'Cairo',sans-serif" }}>🤝 تواصل</div>
@@ -2042,7 +2086,7 @@ function TawasulPage({ user, allEmps }) {
             {refreshing ? "⟳..." : "⟳ تحديث"}
           </button>
         </div>
-        <div style={{ fontSize: 11, opacity: 0.85 }}>تبادل المهام الإدارية بين الأقسام</div>
+        <div style={{ fontSize: 11, opacity: 0.85 }}>إدارة المهام الداخلية — {(requests || []).length} مهمة</div>
       </div>
 
       {/* Tabs */}
@@ -2064,24 +2108,65 @@ function TawasulPage({ user, allEmps }) {
         })}
       </div>
 
-      {/* Search + filters */}
+      {/* Search + filters toggle */}
       <div style={{ padding: "0 12px 10px", display: "flex", flexDirection: "column", gap: 8 }}>
-        <input type="text" value={search} onChange={function(e){ setSearch(e.target.value); }} placeholder="🔍 بحث..." style={{ width: "100%", padding: "11px 14px", borderRadius: 12, border: "1px solid " + C.cardBorder, background: C.card, color: C.text, fontSize: 13, fontFamily: "inherit", outline: "none", boxSizing: "border-box" }} />
-        <div style={{ display: "flex", gap: 6, overflowX: "auto", paddingBottom: 4 }}>
-          {[
-            { id: "all", label: "الكل", color: C.hdr2 },
-            { id: "urgent", label: "🔴 عاجل", color: "#EF4444" },
-            { id: "normal", label: "🟡 عادي", color: "#F59E0B" },
-          ].map(function(f){
-            var active = filterUrgency === f.id;
-            return (
-              <button key={f.id} onClick={function(){ setFilterUrgency(f.id); }} style={{ padding: "6px 12px", borderRadius: 10, background: active ? f.color : C.card, border: "1px solid " + (active ? f.color : C.cardBorder), color: active ? "#fff" : C.text, fontSize: 11, fontWeight: 700, cursor: "pointer", fontFamily: "inherit", whiteSpace: "nowrap", flexShrink: 0 }}>{f.label}</button>
-            );
-          })}
+        <div style={{ display: "flex", gap: 8 }}>
+          <input type="text" value={search} onChange={function(e){ setSearch(e.target.value); }} placeholder="🔍 بحث (عنوان، رقم، مشروع...)" style={{ flex: 1, padding: "11px 14px", borderRadius: 12, border: "1px solid " + C.cardBorder, background: C.card, color: C.text, fontSize: 13, fontFamily: "inherit", outline: "none", boxSizing: "border-box" }} />
+          <button onClick={function(){ setShowFilters(!showFilters); }} style={{ padding: "11px 14px", borderRadius: 12, background: activeFilters > 0 ? C.hdr2 : C.card, color: activeFilters > 0 ? "#fff" : C.text, border: "1px solid " + (activeFilters > 0 ? C.hdr2 : C.cardBorder), fontSize: 12, fontWeight: 700, cursor: "pointer", fontFamily: "inherit", whiteSpace: "nowrap" }}>
+            🔽 فلاتر{activeFilters > 0 ? " (" + activeFilters + ")" : ""}
+          </button>
         </div>
+
+        {showFilters && (
+          <div style={{ background: C.card, borderRadius: 12, padding: 12, border: "1px solid " + C.cardBorder, display: "flex", flexDirection: "column", gap: 10 }}>
+            {/* Urgency */}
+            <div>
+              <div style={{ fontSize: 10, fontWeight: 700, color: C.sub, marginBottom: 5 }}>الأولوية</div>
+              <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+                {[
+                  { id: "all", label: "الكل", color: C.hdr2 },
+                  { id: "urgent", label: "🔴 عاجل", color: "#ef4444" },
+                  { id: "normal", label: "🟡 عادي", color: "#f59e0b" },
+                ].map(function(f){
+                  var active = filterUrgency === f.id;
+                  return <button key={f.id} onClick={function(){ setFilterUrgency(f.id); }} style={{ padding: "6px 12px", borderRadius: 10, background: active ? f.color : C.bg, border: "1px solid " + (active ? f.color : C.cardBorder), color: active ? "#fff" : C.text, fontSize: 11, fontWeight: 700, cursor: "pointer", fontFamily: "inherit" }}>{f.label}</button>;
+                })}
+              </div>
+            </div>
+            {/* Status */}
+            <div>
+              <div style={{ fontSize: 10, fontWeight: 700, color: C.sub, marginBottom: 5 }}>الحالة</div>
+              <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+                <button onClick={function(){ setFilterStatus("all"); }} style={{ padding: "5px 10px", borderRadius: 10, background: filterStatus === "all" ? C.hdr2 : C.bg, border: "1px solid " + (filterStatus === "all" ? C.hdr2 : C.cardBorder), color: filterStatus === "all" ? "#fff" : C.text, fontSize: 10, fontWeight: 700, cursor: "pointer", fontFamily: "inherit" }}>الكل</button>
+                {Object.keys(TAWASUL_STATUS).map(function(key){
+                  var m = TAWASUL_STATUS[key];
+                  var active = filterStatus === key;
+                  return <button key={key} onClick={function(){ setFilterStatus(key); }} style={{ padding: "5px 10px", borderRadius: 10, background: active ? m.color : C.bg, border: "1px solid " + (active ? m.color : C.cardBorder), color: active ? "#fff" : C.text, fontSize: 10, fontWeight: 700, cursor: "pointer", fontFamily: "inherit" }}>{m.icon} {m.label}</button>;
+                })}
+              </div>
+            </div>
+            {/* Category */}
+            {categories.length > 0 && (
+              <div>
+                <div style={{ fontSize: 10, fontWeight: 700, color: C.sub, marginBottom: 5 }}>الفئة</div>
+                <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+                  <button onClick={function(){ setFilterCategory("all"); }} style={{ padding: "5px 10px", borderRadius: 10, background: filterCategory === "all" ? C.hdr2 : C.bg, border: "1px solid " + (filterCategory === "all" ? C.hdr2 : C.cardBorder), color: filterCategory === "all" ? "#fff" : C.text, fontSize: 10, fontWeight: 700, cursor: "pointer", fontFamily: "inherit" }}>الكل</button>
+                  {categories.map(function(cat){
+                    var id = cat.id || cat.label;
+                    var active = filterCategory === id;
+                    return <button key={id} onClick={function(){ setFilterCategory(id); }} style={{ padding: "5px 10px", borderRadius: 10, background: active ? C.hdr2 : C.bg, border: "1px solid " + (active ? C.hdr2 : C.cardBorder), color: active ? "#fff" : C.text, fontSize: 10, fontWeight: 700, cursor: "pointer", fontFamily: "inherit" }}>{cat.icon || ""} {cat.label || id}</button>;
+                  })}
+                </div>
+              </div>
+            )}
+            {activeFilters > 0 && (
+              <button onClick={function(){ setFilterStatus("all"); setFilterCategory("all"); setFilterUrgency("all"); }} style={{ padding: "6px 10px", borderRadius: 8, background: "rgba(239,68,68,0.1)", border: "1px solid rgba(239,68,68,0.3)", color: "#EF4444", fontSize: 10, fontWeight: 700, cursor: "pointer", fontFamily: "inherit" }}>✕ مسح كل الفلاتر</button>
+            )}
+          </div>
+        )}
       </div>
 
-      {/* Error state */}
+      {/* Error */}
       {err && (
         <div style={{ margin: "0 12px 12px", padding: "12px 14px", borderRadius: 12, background: "rgba(239,68,68,0.1)", border: "1px solid #EF4444", color: "#EF4444", fontSize: 12, fontWeight: 600, display: "flex", alignItems: "center", gap: 8 }}>
           <span style={{ fontSize: 18 }}>⚠️</span>
@@ -2095,53 +2180,75 @@ function TawasulPage({ user, allEmps }) {
         {filtered.length === 0 && !err && (
           <div style={{ textAlign: "center", padding: "60px 20px", color: C.sub }}>
             <div style={{ fontSize: 48, marginBottom: 12 }}>📭</div>
-            <div style={{ fontSize: 14, fontWeight: 700, marginBottom: 4 }}>لا توجد طلبات</div>
-            <div style={{ fontSize: 11 }}>{search || filterUrgency !== "all" ? "جرّب تغيير البحث أو الفلتر" : (tab === "inbox" ? "لا طلبات واصلة لك" : tab === "sent" ? "لم ترسل أي طلبات بعد" : "لا يوجد طلبات منجزة")}</div>
+            <div style={{ fontSize: 14, fontWeight: 700, marginBottom: 4 }}>لا توجد مهام</div>
+            <div style={{ fontSize: 11 }}>{search || activeFilters > 0 ? "جرّب تغيير البحث أو الفلاتر" : (tab === "inbox" ? "لا مهام واصلة لك" : tab === "sent" ? "لم ترسل أي مهام بعد" : "لا مهام منجزة")}</div>
           </div>
         )}
         {filtered.map(function(r){
           var m = getTawasulStatusMeta(r.status);
           var isUrgent = r.urgency === "urgent";
+          var escColor = r.escalation === "red" ? "#ef4444" : r.escalation === "yellow" ? "#fbbf24" : null;
           var assigneeNames = (r.assignees || []).map(function(a){ return nameOf(a.id); }).join("، ") || "—";
-          var requesterName = nameOf(r.requesterId);
+          var requesterName = r.requesterName || nameOf(r.requesterId);
+          var hasEval = r.finalScore !== undefined && r.finalScore !== null;
+
           return (
-            <div key={r.id} onClick={function(){ setSelectedReq(r); }} style={{ background: C.card, borderRadius: 14, padding: 14, marginBottom: 10, border: "1px solid " + C.cardBorder, borderRight: "4px solid " + m.color, cursor: "pointer", boxShadow: C === DARK ? "none" : "0 1px 3px rgba(0,0,0,0.06)", transition: "transform 0.1s" }}>
-              <div style={{ display: "flex", alignItems: "start", gap: 10, marginBottom: 8 }}>
-                <div style={{ display: "inline-flex", alignItems: "center", gap: 5, padding: "3px 9px", borderRadius: 10, background: m.color + "22", color: m.color, fontSize: 10, fontWeight: 800, flexShrink: 0 }}>
+            <div key={r.id} onClick={function(){ setSelectedReq(r); }} style={{ background: C.card, borderRadius: 14, padding: 14, marginBottom: 10, border: "1px solid " + C.cardBorder, borderRight: "4px solid " + m.color, cursor: "pointer", boxShadow: C === DARK ? "none" : "0 1px 3px rgba(0,0,0,0.06)", position: "relative" }}>
+              {/* Top row: status + urgency + escalation + time */}
+              <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 8, flexWrap: "wrap" }}>
+                <div style={{ display: "inline-flex", alignItems: "center", gap: 4, padding: "3px 9px", borderRadius: 10, background: m.color + "22", color: m.color, fontSize: 10, fontWeight: 800 }}>
                   <span>{m.icon}</span><span>{m.label}</span>
                 </div>
                 {isUrgent && (
-                  <div style={{ padding: "3px 9px", borderRadius: 10, background: "rgba(239,68,68,0.15)", color: "#EF4444", fontSize: 10, fontWeight: 800, display: "flex", alignItems: "center", gap: 4, flexShrink: 0 }}>
-                    🔴 عاجل
+                  <div style={{ padding: "3px 9px", borderRadius: 10, background: "rgba(239,68,68,0.15)", color: "#ef4444", fontSize: 10, fontWeight: 800 }}>🔴 عاجل</div>
+                )}
+                {escColor && (
+                  <div style={{ padding: "3px 9px", borderRadius: 10, background: escColor + "22", color: escColor, fontSize: 10, fontWeight: 800 }}>
+                    {r.escalation === "red" ? "🔴 تصعيد أحمر" : "🟡 تصعيد"}
                   </div>
                 )}
+                {r.serial && <div style={{ fontSize: 10, color: C.sub, fontWeight: 700, background: C.bg, padding: "2px 7px", borderRadius: 6, fontFamily: "monospace" }}>#{r.serial}</div>}
                 <div style={{ flex: 1 }} />
-                <div style={{ fontSize: 10, color: C.sub, flexShrink: 0 }}>{tawasulTimeAgo(r.updatedAt || r.createdAt)}</div>
+                <div style={{ fontSize: 10, color: C.sub }}>{tawasulTimeAgo(r.updatedAt || r.createdAt)}</div>
               </div>
-              {r.category && (
-                <div style={{ fontSize: 10, color: C.sub, marginBottom: 4, fontWeight: 600 }}>{r.category}{r.project ? " • " + r.project : ""}</div>
+
+              {/* Category + project */}
+              {(r.category || r.projectName) && (
+                <div style={{ fontSize: 10, color: C.sub, marginBottom: 4, fontWeight: 600 }}>
+                  {r.category && <span>🏷 {r.category}</span>}
+                  {r.category && r.projectName && <span style={{ margin: "0 5px" }}>•</span>}
+                  {r.projectName && <span>🏗️ {r.projectName}</span>}
+                </div>
               )}
+
+              {/* Title */}
               <div style={{ fontSize: 14, fontWeight: 800, color: C.text, marginBottom: 6, lineHeight: 1.4 }}>{r.title || "(بدون عنوان)"}</div>
+
+              {/* Description */}
               {r.description && (
                 <div style={{ fontSize: 11, color: C.sub, marginBottom: 8, lineHeight: 1.5, overflow: "hidden", display: "-webkit-box", WebkitLineClamp: 2, WebkitBoxOrient: "vertical" }}>{r.description}</div>
               )}
-              <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", fontSize: 10, color: C.sub, borderTop: "1px solid " + C.cardBorder, paddingTop: 8 }}>
-                <div>
+
+              {/* Footer */}
+              <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", fontSize: 10, color: C.sub, borderTop: "1px solid " + C.cardBorder, paddingTop: 8, gap: 8, flexWrap: "wrap" }}>
+                <div style={{ minWidth: 0, flex: 1 }}>
                   <span style={{ fontWeight: 600 }}>من:</span> {requesterName} <span style={{ margin: "0 4px" }}>•</span> <span style={{ fontWeight: 600 }}>إلى:</span> {assigneeNames}
                 </div>
-                {(r.comments && r.comments.length > 0) && (
-                  <span style={{ fontWeight: 700, color: C.gold }}>💬 {r.comments.length}</span>
-                )}
+                <div style={{ display: "flex", gap: 8, flexShrink: 0 }}>
+                  {hasEval && <span style={{ fontWeight: 700, color: C.gold }}>⭐ {r.finalScore}</span>}
+                  {(r.log && r.log.length > 0) && <span style={{ fontWeight: 700, color: C.sub }}>💬 {r.log.length}</span>}
+                  {(r.attachments && r.attachments.length > 0) && <span style={{ fontWeight: 700, color: C.sub }}>📎 {r.attachments.length}</span>}
+                </div>
               </div>
             </div>
           );
         })}
       </div>
 
-      {/* Footer info — phase 1 note */}
+      {/* Phase 1 note */}
       {!err && filtered.length > 0 && (
         <div style={{ padding: "20px 16px 24px", textAlign: "center", fontSize: 10, color: C.sub }}>
-          📖 وضع القراءة فقط — الإنشاء والتعديل قريباً
+          📖 وضع القراءة فقط — الإنشاء والتفاعل قادمان في المرحلة 2
         </div>
       )}
 
@@ -2151,59 +2258,101 @@ function TawasulPage({ user, allEmps }) {
   );
 }
 
-/* ═══════════ TAWASUL DETAIL MODAL (read-only phase 1) ═══════════ */
+/* ═══════════ TAWASUL DETAIL MODAL (read-only per spec 7.1) ═══════════ */
 function TawasulDetailModal({ request, user, allEmps, onClose, nameOf }) {
   var r = request;
   var m = getTawasulStatusMeta(r.status);
   var isUrgent = r.urgency === "urgent";
-  var requesterName = nameOf(r.requesterId);
+  var requesterName = r.requesterName || nameOf(r.requesterId);
+  var escColor = r.escalation === "red" ? "#ef4444" : r.escalation === "yellow" ? "#fbbf24" : null;
+  var log = (r.log || []).slice().sort(function(a,b){ return new Date(a.at || 0) - new Date(b.at || 0); });
+  var evals = r.evaluations || [];
+  var curStage = stageIndex(r.status);
 
-  // Sort comments chronologically
-  var comments = (r.comments || []).slice().sort(function(a,b){ return new Date(a.at || 0) - new Date(b.at || 0); });
-  var history = (r.history || []).slice().sort(function(a,b){ return new Date(a.at || 0) - new Date(b.at || 0); });
+  // Deadline countdown
+  var deadlineText = "";
+  if (r.deadline) {
+    try {
+      var dl = new Date(r.deadline).getTime();
+      var diff = dl - Date.now();
+      if (diff < 0) deadlineText = "⏰ تجاوز الموعد بـ " + Math.floor(Math.abs(diff) / 86400000) + " يوم";
+      else if (diff < 86400000) deadlineText = "⏰ متبقي أقل من يوم";
+      else deadlineText = "⏰ متبقي " + Math.floor(diff / 86400000) + " يوم";
+    } catch(e) {}
+  }
 
   return (
     <div onClick={onClose} style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.6)", zIndex: 1000, display: "flex", alignItems: "flex-end", justifyContent: "center", padding: 0, fontFamily: "'Tajawal',sans-serif" }}>
-      <div onClick={function(e){ e.stopPropagation(); }} style={{ background: C.bg, borderRadius: "20px 20px 0 0", maxWidth: 430, width: "100%", maxHeight: "92vh", overflowY: "auto", direction: "rtl", color: C.text, paddingBottom: 20 }}>
+      <div onClick={function(e){ e.stopPropagation(); }} style={{ background: C.bg, borderRadius: "20px 20px 0 0", maxWidth: 430, width: "100%", maxHeight: "94vh", overflowY: "auto", direction: "rtl", color: C.text, paddingBottom: 20 }}>
         {/* Drag handle */}
-        <div style={{ display: "flex", justifyContent: "center", padding: "10px 0 4px" }}>
+        <div style={{ display: "flex", justifyContent: "center", padding: "10px 0 4px", position: "sticky", top: 0, background: C.bg, zIndex: 2 }}>
           <div style={{ width: 40, height: 4, borderRadius: 2, background: C.cardBorder }} />
         </div>
 
-        {/* Header */}
+        {/* Header with serial + close */}
         <div style={{ padding: "12px 18px 18px", borderBottom: "1px solid " + C.cardBorder }}>
           <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 10, flexWrap: "wrap" }}>
+            {r.serial && <div style={{ fontSize: 13, fontWeight: 900, color: C.gold, fontFamily: "monospace" }}>#{r.serial}</div>}
             <div style={{ display: "inline-flex", alignItems: "center", gap: 5, padding: "4px 10px", borderRadius: 10, background: m.color + "22", color: m.color, fontSize: 11, fontWeight: 800 }}>
               <span>{m.icon}</span><span>{m.label}</span>
             </div>
-            {isUrgent && (
-              <div style={{ padding: "4px 10px", borderRadius: 10, background: "rgba(239,68,68,0.15)", color: "#EF4444", fontSize: 11, fontWeight: 800 }}>
-                🔴 عاجل
-              </div>
-            )}
+            {isUrgent && <div style={{ padding: "4px 10px", borderRadius: 10, background: "rgba(239,68,68,0.15)", color: "#ef4444", fontSize: 11, fontWeight: 800 }}>🔴 عاجل</div>}
+            {escColor && <div style={{ padding: "4px 10px", borderRadius: 10, background: escColor + "22", color: escColor, fontSize: 11, fontWeight: 800 }}>{r.escalation === "red" ? "🔴 أحمر" : "🟡 أصفر"}</div>}
             <div style={{ flex: 1 }} />
             <button onClick={onClose} style={{ background: "none", border: "none", fontSize: 22, color: C.sub, cursor: "pointer", padding: 0, lineHeight: 1 }}>×</button>
           </div>
-          {r.category && (
-            <div style={{ fontSize: 11, color: C.sub, marginBottom: 4, fontWeight: 600 }}>{r.category}{r.project ? " • " + r.project : ""}</div>
+          <div style={{ fontSize: 11, color: C.sub, marginBottom: 4, fontWeight: 600 }}>
+            {r.category && <span>🏷 {r.category}</span>}
+            {r.department && <span>{r.category ? " • " : ""}🏢 {r.department}</span>}
+            {r.projectName && <span>{(r.category || r.department) ? " • " : ""}🏗️ {r.projectName}</span>}
+          </div>
+          <div style={{ fontSize: 17, fontWeight: 900, color: C.text, lineHeight: 1.4, fontFamily: "'Cairo',sans-serif", marginBottom: deadlineText ? 6 : 0 }}>{r.title || "(بدون عنوان)"}</div>
+          {deadlineText && (
+            <div style={{ fontSize: 11, fontWeight: 700, color: (r.deadline && new Date(r.deadline) < new Date()) ? "#ef4444" : C.gold }}>{deadlineText}</div>
           )}
-          <div style={{ fontSize: 17, fontWeight: 900, color: C.text, lineHeight: 1.4, fontFamily: "'Cairo',sans-serif" }}>{r.title || "(بدون عنوان)"}</div>
         </div>
 
-        {/* Meta rows */}
         <div style={{ padding: 16 }}>
+          {/* Pipeline stages */}
+          {!["cancelled","rejected"].includes(r.status) && (
+            <div style={{ background: C.card, borderRadius: 12, padding: 14, border: "1px solid " + C.cardBorder, marginBottom: 12 }}>
+              <div style={{ fontSize: 11, fontWeight: 800, color: C.sub, marginBottom: 10 }}>📈 مراحل المهمة</div>
+              <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+                {TAWASUL_STAGES.map(function(st, idx){
+                  var active = idx <= curStage;
+                  return (
+                    <React.Fragment key={st.key}>
+                      <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 4, flex: "0 0 auto" }}>
+                        <div style={{ width: 32, height: 32, borderRadius: 16, background: active ? C.gold : C.bg, border: "2px solid " + (active ? C.gold : C.cardBorder), display: "flex", alignItems: "center", justifyContent: "center", fontSize: 14, color: active ? "#fff" : C.sub, transition: "all 0.2s" }}>
+                          {st.icon}
+                        </div>
+                        <div style={{ fontSize: 9, fontWeight: 700, color: active ? C.text : C.sub, textAlign: "center", maxWidth: 60 }}>{st.label}</div>
+                      </div>
+                      {idx < TAWASUL_STAGES.length - 1 && (
+                        <div style={{ flex: 1, height: 2, background: idx < curStage ? C.gold : C.cardBorder, margin: "0 4px", marginBottom: 18 }} />
+                      )}
+                    </React.Fragment>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+
+          {/* Meta */}
           <div style={{ background: C.card, borderRadius: 12, padding: 14, border: "1px solid " + C.cardBorder, marginBottom: 12 }}>
             {[
               { label: "من", value: requesterName, icon: "👤" },
-              { label: "إلى", value: (r.assignees || []).map(function(a){ return nameOf(a.id); }).join("، ") || "—", icon: "📬" },
+              { label: "إلى", value: (r.assignees || []).map(function(a){ return a.name || nameOf(a.id); }).join("، ") || "—", icon: "📬" },
+              r.assignMode ? { label: "نمط التكليف", value: r.assignMode === "coordinator" ? "مسؤول ينسّق" : "كل طرف مستقل", icon: "🎯" } : null,
               { label: "تاريخ الإنشاء", value: r.createdAt ? new Date(r.createdAt).toLocaleString("ar-SA") : "—", icon: "📅" },
-              r.dueDate ? { label: "الاستحقاق", value: new Date(r.dueDate).toLocaleDateString("ar-SA"), icon: "⏰" } : null,
+              r.deadline ? { label: "الموعد النهائي", value: new Date(r.deadline).toLocaleString("ar-SA"), icon: "⏰" } : null,
+              r.deliveredAt ? { label: "تاريخ التسليم", value: new Date(r.deliveredAt).toLocaleString("ar-SA"), icon: "📦" } : null,
               { label: "آخر تحديث", value: tawasulTimeAgo(r.updatedAt || r.createdAt), icon: "🔄" },
             ].filter(Boolean).map(function(row, idx, arr){
               return (
-                <div key={idx} style={{ display: "flex", justifyContent: "space-between", padding: "8px 0", borderBottom: idx < arr.length - 1 ? "1px solid " + C.cardBorder : "none", fontSize: 12 }}>
-                  <div style={{ color: C.sub, fontWeight: 600 }}><span style={{ marginLeft: 5 }}>{row.icon}</span>{row.label}</div>
-                  <div style={{ color: C.text, fontWeight: 700, textAlign: "left", maxWidth: "60%", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{row.value}</div>
+                <div key={idx} style={{ display: "flex", justifyContent: "space-between", padding: "8px 0", borderBottom: idx < arr.length - 1 ? "1px solid " + C.cardBorder : "none", fontSize: 12, gap: 8 }}>
+                  <div style={{ color: C.sub, fontWeight: 600, flexShrink: 0 }}><span style={{ marginLeft: 5 }}>{row.icon}</span>{row.label}</div>
+                  <div style={{ color: C.text, fontWeight: 700, textAlign: "left", flex: 1, minWidth: 0, wordBreak: "break-word" }}>{row.value}</div>
                 </div>
               );
             })}
@@ -2212,8 +2361,23 @@ function TawasulDetailModal({ request, user, allEmps, onClose, nameOf }) {
           {/* Description */}
           {r.description && (
             <div style={{ background: C.card, borderRadius: 12, padding: 14, border: "1px solid " + C.cardBorder, marginBottom: 12 }}>
-              <div style={{ fontSize: 11, fontWeight: 800, color: C.sub, marginBottom: 8, display: "flex", alignItems: "center", gap: 5 }}>📝 الوصف</div>
+              <div style={{ fontSize: 11, fontWeight: 800, color: C.sub, marginBottom: 8 }}>📝 الوصف</div>
               <div style={{ fontSize: 13, color: C.text, lineHeight: 1.7, whiteSpace: "pre-wrap" }}>{r.description}</div>
+            </div>
+          )}
+
+          {/* Delivery methods */}
+          {r.deliveryMethods && r.deliveryMethods.length > 0 && (
+            <div style={{ background: C.card, borderRadius: 12, padding: 14, border: "1px solid " + C.cardBorder, marginBottom: 12 }}>
+              <div style={{ fontSize: 11, fontWeight: 800, color: C.sub, marginBottom: 8 }}>📦 طرق التسليم</div>
+              {r.deliveryMethods.map(function(dm, idx){
+                return (
+                  <div key={idx} style={{ padding: "8px 10px", borderRadius: 8, background: C.bg, marginBottom: 6, fontSize: 12 }}>
+                    <div style={{ fontWeight: 700, color: C.text, marginBottom: 2 }}>{dm.label || dm.type}</div>
+                    {dm.value && <div style={{ fontSize: 11, color: C.sub, wordBreak: "break-all" }}>{dm.value}</div>}
+                  </div>
+                );
+              })}
             </div>
           )}
 
@@ -2225,52 +2389,70 @@ function TawasulDetailModal({ request, user, allEmps, onClose, nameOf }) {
                 return (
                   <div key={idx} style={{ display: "flex", alignItems: "center", gap: 8, padding: "6px 0", fontSize: 12 }}>
                     <span>📄</span>
-                    <a href={a.url || a.href || "#"} target="_blank" rel="noopener" style={{ color: C.gold, textDecoration: "none", fontWeight: 700, flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{a.name || a.filename || "ملف " + (idx+1)}</a>
+                    <a href={a.url || a.href || "#"} target="_blank" rel="noopener noreferrer" style={{ color: C.gold, textDecoration: "none", fontWeight: 700, flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{a.name || a.filename || "ملف " + (idx+1)}</a>
+                    {a.size && <span style={{ fontSize: 10, color: C.sub }}>{Math.round(a.size/1024)}KB</span>}
                   </div>
                 );
               })}
             </div>
           )}
 
-          {/* Comments */}
+          {/* Evaluations */}
+          {evals.length > 0 && (
+            <div style={{ background: C.card, borderRadius: 12, padding: 14, border: "1px solid " + C.cardBorder, marginBottom: 12 }}>
+              <div style={{ fontSize: 11, fontWeight: 800, color: C.sub, marginBottom: 8, display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+                <span>⭐ التقييمات ({evals.length})</span>
+                {r.finalScore !== undefined && r.finalScore !== null && (
+                  <span style={{ fontSize: 13, color: C.gold, fontWeight: 900 }}>{r.finalScore}/100</span>
+                )}
+              </div>
+              {evals.map(function(ev, idx){
+                return (
+                  <div key={idx} style={{ padding: "8px 10px", borderRadius: 8, background: C.bg, marginBottom: 6, fontSize: 12 }}>
+                    <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 4 }}>
+                      <span style={{ fontWeight: 700, color: C.text }}>{ev.byName || nameOf(ev.by)}</span>
+                      <span style={{ color: C.gold, fontWeight: 800 }}>{ev.avgScore || "-"}/100</span>
+                    </div>
+                    {ev.scores && (
+                      <div style={{ fontSize: 10, color: C.sub, display: "flex", gap: 8, flexWrap: "wrap" }}>
+                        {Object.keys(ev.scores).map(function(k){ return <span key={k}>{k}: {ev.scores[k]}⭐</span>; })}
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          )}
+
+          {/* Log / Timeline */}
           <div style={{ background: C.card, borderRadius: 12, padding: 14, border: "1px solid " + C.cardBorder, marginBottom: 12 }}>
-            <div style={{ fontSize: 11, fontWeight: 800, color: C.sub, marginBottom: 12 }}>💬 التعليقات ({comments.length})</div>
-            {comments.length === 0 ? (
-              <div style={{ fontSize: 11, color: C.sub, textAlign: "center", padding: 10 }}>لا توجد تعليقات بعد</div>
-            ) : comments.map(function(c, idx){
-              var isMine = String(c.by) === String(user && (user.id || user.username));
+            <div style={{ fontSize: 11, fontWeight: 800, color: C.sub, marginBottom: 12 }}>📜 السجل والتعليقات ({log.length})</div>
+            {log.length === 0 ? (
+              <div style={{ fontSize: 11, color: C.sub, textAlign: "center", padding: 10 }}>لا يوجد سجل بعد</div>
+            ) : log.map(function(entry, idx){
               return (
-                <div key={idx} style={{ marginBottom: 10, display: "flex", flexDirection: "column", alignItems: isMine ? "flex-start" : "flex-end" }}>
-                  <div style={{ maxWidth: "85%", padding: "8px 12px", borderRadius: 12, background: isMine ? C.hdr2 + "22" : C.bg, border: "1px solid " + C.cardBorder }}>
-                    <div style={{ fontSize: 10, color: C.sub, marginBottom: 3, fontWeight: 600 }}>{nameOf(c.by)} • {tawasulTimeAgo(c.at)}</div>
-                    <div style={{ fontSize: 12, color: C.text, lineHeight: 1.5, whiteSpace: "pre-wrap" }}>{c.text || ""}</div>
+                <div key={idx} style={{ display: "flex", gap: 8, padding: "8px 0", fontSize: 11, alignItems: "flex-start", borderBottom: idx < log.length - 1 ? "1px solid " + C.cardBorder : "none" }}>
+                  <div style={{ width: 6, height: 6, borderRadius: 3, background: C.gold, marginTop: 7, flexShrink: 0 }} />
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div style={{ color: C.text, fontWeight: 600, lineHeight: 1.5, wordBreak: "break-word" }}>{entry.text || entry.action || "تحديث"}</div>
+                    <div style={{ fontSize: 10, color: C.sub, marginTop: 2 }}>{entry.by || nameOf(entry.userId)} • {tawasulTimeAgo(entry.at)}</div>
                   </div>
                 </div>
               );
             })}
           </div>
 
-          {/* History */}
-          {history.length > 0 && (
-            <div style={{ background: C.card, borderRadius: 12, padding: 14, border: "1px solid " + C.cardBorder, marginBottom: 12 }}>
-              <div style={{ fontSize: 11, fontWeight: 800, color: C.sub, marginBottom: 10 }}>📜 السجل ({history.length})</div>
-              {history.map(function(h, idx){
-                return (
-                  <div key={idx} style={{ display: "flex", gap: 8, padding: "6px 0", fontSize: 11, alignItems: "flex-start" }}>
-                    <div style={{ width: 6, height: 6, borderRadius: 3, background: C.gold, marginTop: 5, flexShrink: 0 }} />
-                    <div style={{ flex: 1 }}>
-                      <div style={{ color: C.text, fontWeight: 600 }}>{h.action || "تغيير"}{h.from && h.to ? ": " + (getTawasulStatusMeta(h.from).label) + " ← " + (getTawasulStatusMeta(h.to).label) : ""}</div>
-                      <div style={{ fontSize: 10, color: C.sub }}>{nameOf(h.by)} • {tawasulTimeAgo(h.at)}</div>
-                    </div>
-                  </div>
-                );
-              })}
+          {/* Rejection / return reason */}
+          {(r.rejectionReason || r.returnReason) && (
+            <div style={{ background: "rgba(239,68,68,0.08)", borderRadius: 12, padding: 14, border: "1px solid rgba(239,68,68,0.3)", marginBottom: 12 }}>
+              <div style={{ fontSize: 11, fontWeight: 800, color: "#ef4444", marginBottom: 6 }}>{r.rejectionReason ? "❌ سبب الرفض" : "↩️ سبب الإرجاع"}</div>
+              <div style={{ fontSize: 12, color: C.text, lineHeight: 1.6 }}>{r.rejectionReason || r.returnReason}</div>
             </div>
           )}
 
           {/* Phase 1 note */}
           <div style={{ textAlign: "center", padding: 12, fontSize: 11, color: C.sub, background: C.card, borderRadius: 12, border: "1px dashed " + C.cardBorder }}>
-            📖 وضع القراءة فقط — إضافة التعليقات وتغيير الحالة قادم في المرحلة 2
+            📖 وضع القراءة فقط — الإجراءات (استلام، تسليم، تقييم) قادمة في المرحلة 2
           </div>
         </div>
       </div>

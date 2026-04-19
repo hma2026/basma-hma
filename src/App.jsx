@@ -12,6 +12,13 @@ function getInitialMode() {
       return "admin";
     }
     if (h === "#update" || s.get("sec") === "sys_update") return "update";
+
+    // If user explicitly chose to switch to employee view, respect that
+    var explicitEmployee = localStorage.getItem("basma_explicit_employee") === "1";
+    if (explicitEmployee) {
+      return "app";
+    }
+
     // Persist admin mode across F5
     var savedAdminEmail = localStorage.getItem("basma_admin_email");
     var lastMode = localStorage.getItem("basma_last_mode");
@@ -81,11 +88,18 @@ export default function App() {
       // ═══ Normal routing (on hashchange) ═══
       if (h === "#admin") {
         localStorage.setItem("basma_last_mode", "admin");
+        localStorage.removeItem("basma_explicit_employee");
         return setMode("admin");
       }
       if (h === "#update" || s.get("sec") === "sys_update") return setMode("update");
 
-      // If user explicitly navigated to root (no hash) and they are not admin, go to app
+      // If user explicitly chose employee view, respect it
+      if (localStorage.getItem("basma_explicit_employee") === "1") {
+        localStorage.setItem("basma_last_mode", "app");
+        return setMode("app");
+      }
+
+      // If user explicitly navigated to root (no hash) and they are admin, go to admin
       var savedAdminEmail = localStorage.getItem("basma_admin_email");
       var lastMode = localStorage.getItem("basma_last_mode");
       if (lastMode === "admin" && savedAdminEmail && !h) {
