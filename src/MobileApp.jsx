@@ -10,7 +10,7 @@ import { ALL_VIOLATIONS_DEFAULT, PENALTY_TYPES, LAIHA_INFO, COMPLAINT_STATUS, VI
 
 /* ═══════════ APP CONFIG (إعدادات التطبيق) ═══════════ */
 const APP_CONFIG = {
-  VER: "6.31",
+  VER: "6.30",
   NAME: "بصمة HMA",
   FULL_NAME: "نظام الحضور والانصراف الذكي",
   COMPANY: "هاني محمد عسيري للاستشارات الهندسية",
@@ -1807,7 +1807,6 @@ function ProfilePage({ user, branch, onLogout, onTicket, myTickets, darkMode, to
               <ToggleRow label="تذكير بالحضور" storeKey="remind_in" border={true} />
               <ToggleRow label="تذكير بالانصراف" storeKey="remind_out" border={true} />
               <FaceResetRow empId={user.id} />
-              <DesktopPairRow user={user} />
               <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: SPACING.sm + "px 0", borderTop: "1px solid " + COLORS.cardBorder }}>
                 <span style={{ ...TYPOGRAPHY.bodySm, fontWeight: 600, color: COLORS.textPrimary }}>إصدار التطبيق</span>
                 <span style={{ ...TYPOGRAPHY.caption, fontWeight: 800, color: COLORS.goldLight }}>{"v" + VER}</span>
@@ -4601,7 +4600,6 @@ function TawasulPage({ user, allEmps }) {
   var [editingReq, setEditingReq] = useState(null);
   var [showReports, setShowReports] = useState(false);
   var [showHRAssistant, setShowHRAssistant] = useState(false);
-  var [showDesktopPair, setShowDesktopPair] = useState(false); // v6.31
 
   var isAdmin = user && (user.role === "admin" || user.role === "hr_manager" || user.isAdmin || user.username === "admin");
   var myId = user && (user.id || user.username);
@@ -5022,7 +5020,6 @@ function TawasulPage({ user, allEmps }) {
           <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
             <button onClick={function(){ loadData(true); }} disabled={refreshing} style={{ background: "rgba(255,255,255,.15)", border: "1px solid rgba(255,255,255,.25)", borderRadius: 10, padding: "6px 10px", color: "#fff", fontSize: 11, fontWeight: 700, cursor: "pointer", fontFamily: "inherit" }}>{refreshing ? "⟳..." : "⟳"}</button>
             <button onClick={function(){ exportTawasulICS(requests, myId); }} title="تصدير إلى التقويم (.ics)" style={{ background: "rgba(255,255,255,.15)", border: "1px solid rgba(255,255,255,.25)", borderRadius: 10, padding: "6px 10px", color: "#fff", fontSize: 11, fontWeight: 700, cursor: "pointer", fontFamily: "inherit" }}>📆</button>
-            <button onClick={function(){ setShowDesktopPair(true); }} title="سطح المكتب (v6.31)" style={{ background: "rgba(255,255,255,.15)", border: "1px solid rgba(255,255,255,.25)", borderRadius: 10, padding: "6px 10px", color: "#fff", fontSize: 11, fontWeight: 700, cursor: "pointer", fontFamily: "inherit" }}>🖥</button>
             <button onClick={function(){ setShowReports(true); }} style={{ background: "rgba(255,255,255,.15)", border: "1px solid rgba(255,255,255,.25)", borderRadius: 10, padding: "6px 10px", color: "#fff", fontSize: 11, fontWeight: 700, cursor: "pointer", fontFamily: "inherit" }}>📊</button>
             <button onClick={function(){ setShowCreate(true); }} style={{ background: "#22c55e", border: "none", borderRadius: 10, padding: "6px 12px", color: "#fff", fontSize: 12, fontWeight: 800, cursor: "pointer", fontFamily: "inherit" }}>➕ جديد</button>
           </div>
@@ -5296,7 +5293,6 @@ function TawasulPage({ user, allEmps }) {
 
       {showReports && <TawasulReportsModal user={user} onClose={function(){ setShowReports(false); }} />}
       {showHRAssistant && <TawasulHRAssistant user={user} onClose={function(){ setShowHRAssistant(false); }} />}
-      {showDesktopPair && <DesktopPairModal user={user} onClose={function(){ setShowDesktopPair(false); }} />}
     </div>
   );
 }
@@ -8755,121 +8751,6 @@ function FaceResetRow({ empId }) {
       <button onClick={reset} disabled={resetting || done} style={{ padding: "6px 14px", borderRadius: RADIUS.sm, border: "1px solid " + (done ? COLORS.goldLight : COLORS.textDanger), background: COLORS.metallic, color: done ? COLORS.goldLight : COLORS.textDanger, ...TYPOGRAPHY.caption, fontWeight: 700, cursor: resetting || done ? "default" : "pointer", fontFamily: TYPOGRAPHY.fontTajawal }}>
         {done ? "✓ تم الحذف" : resetting ? "جارِ..." : "إعادة تعيين"}
       </button>
-    </div>
-  );
-}
-
-/* ═══════════ DESKTOP PAIRING ROW (v6.31) — تواصل على سطح المكتب ═══════════ */
-function DesktopPairRow({ user }) {
-  var [open, setOpen] = useState(false);
-  return (
-    <>
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: SPACING.sm + "px 0", borderBottom: "1px solid " + COLORS.cardRowBorder }}>
-        <div>
-          <div style={{ ...TYPOGRAPHY.bodySm, fontWeight: 600, color: COLORS.textPrimary }}>🖥 تواصل على سطح المكتب</div>
-          <div style={{ ...TYPOGRAPHY.tiny, color: COLORS.textMuted, marginTop: 2 }}>ربط جهاز سطح مكتب برمز 6 خانات</div>
-        </div>
-        <button onClick={function(){ setOpen(true); }} style={{ padding: "6px 14px", borderRadius: RADIUS.sm, border: "1px solid " + COLORS.goldLight, background: COLORS.metallic, color: COLORS.goldLight, ...TYPOGRAPHY.caption, fontWeight: 700, cursor: "pointer", fontFamily: TYPOGRAPHY.fontTajawal }}>
-          ربط
-        </button>
-      </div>
-      {open && <DesktopPairModal user={user} onClose={function(){ setOpen(false); }} />}
-    </>
-  );
-}
-
-function DesktopPairModal({ user, onClose }) {
-  var [code, setCode] = useState("");
-  var [busy, setBusy] = useState(false);
-  var [err, setErr] = useState(null);
-  var [done, setDone] = useState(false);
-
-  function onCodeChange(e) {
-    // Normalize: uppercase, alphanumeric only, cap 6 chars
-    var v = String(e.target.value || "").toUpperCase().replace(/[^A-Z0-9]/g, "").slice(0, 6);
-    setCode(v);
-    setErr(null);
-  }
-
-  async function submit() {
-    if (code.length !== 6) { setErr("الرمز يجب أن يكون 6 خانات"); return; }
-    setBusy(true); setErr(null);
-    try {
-      var res = await fetch("/api/data?action=tawasul-web-authorize", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          pairCode: code,
-          userId: user.id || user.username,
-          userName: user.name || user.username || "",
-          userData: { id: user.id || user.username, name: user.name, username: user.username, role: user.role },
-        }),
-      });
-      var d = await res.json();
-      if (!res.ok) throw new Error(d.error || "فشل الإقران");
-      setDone(true);
-      setTimeout(function(){ onClose(); }, 1800);
-    } catch(e) {
-      setErr(e.message || "خطأ غير متوقع");
-    }
-    setBusy(false);
-  }
-
-  return (
-    <div onClick={onClose} style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.65)", zIndex: 9000, display: "flex", alignItems: "center", justifyContent: "center", padding: 16 }}>
-      <div onClick={function(e){ e.stopPropagation(); }} style={{ background: COLORS.bg1, borderRadius: RADIUS.xl, padding: 20, width: "100%", maxWidth: 360, border: "1px solid " + COLORS.metallicBorder, boxShadow: "0 12px 40px rgba(0,0,0,0.6)" }}>
-        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 14 }}>
-          <div style={{ ...TYPOGRAPHY.h3, color: COLORS.textPrimary }}>🖥 ربط سطح المكتب</div>
-          <button onClick={onClose} style={{ background: "none", border: "none", color: COLORS.textMuted, fontSize: 22, cursor: "pointer", padding: 0 }}>×</button>
-        </div>
-
-        {done ? (
-          <div style={{ textAlign: "center", padding: "24px 10px" }}>
-            <div style={{ fontSize: 48, marginBottom: 10 }}>✅</div>
-            <div style={{ ...TYPOGRAPHY.body, fontWeight: 800, color: COLORS.goldLight, marginBottom: 4 }}>تم الربط بنجاح</div>
-            <div style={{ ...TYPOGRAPHY.caption, color: COLORS.textMuted }}>سطح المكتب الآن متصل برمز حسابك</div>
-          </div>
-        ) : (
-          <>
-            <div style={{ ...TYPOGRAPHY.caption, color: COLORS.textMuted, marginBottom: 12, lineHeight: 1.7 }}>
-              افتح <b style={{ color: COLORS.goldLight }}>b.hma.engineer/#desktop</b> على سطح المكتب، ستحصل على رمز من 6 خانات. أدخله هنا للربط.
-            </div>
-            <div style={{ marginBottom: 8, ...TYPOGRAPHY.tiny, color: COLORS.textMuted }}>رمز الإقران</div>
-            <input
-              type="text"
-              inputMode="latin"
-              autoFocus
-              value={code}
-              onChange={onCodeChange}
-              placeholder="ABCD12"
-              maxLength={6}
-              style={{
-                width: "100%",
-                padding: "14px 16px",
-                borderRadius: RADIUS.md,
-                background: COLORS.metallic,
-                border: "2px solid " + (err ? COLORS.textDanger : COLORS.metallicBorder),
-                color: COLORS.textPrimary,
-                fontSize: 24,
-                fontWeight: 900,
-                fontFamily: "'Menlo','Courier New',monospace",
-                letterSpacing: 8,
-                textAlign: "center",
-                boxSizing: "border-box",
-                outline: "none",
-              }}
-            />
-            {err && <div style={{ marginTop: 10, padding: 8, borderRadius: RADIUS.sm, background: "rgba(255,59,48,0.1)", border: "1px solid rgba(255,59,48,0.3)", color: COLORS.textDanger, ...TYPOGRAPHY.caption, fontWeight: 600 }}>❌ {err}</div>}
-
-            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8, marginTop: 16 }}>
-              <button onClick={onClose} disabled={busy} style={{ padding: "11px 10px", borderRadius: RADIUS.sm, background: COLORS.metallic, color: COLORS.textPrimary, border: "1px solid " + COLORS.metallicBorder, ...TYPOGRAPHY.caption, fontWeight: 700, cursor: "pointer", fontFamily: TYPOGRAPHY.fontTajawal }}>إلغاء</button>
-              <button onClick={submit} disabled={busy || code.length !== 6} style={{ padding: "11px 10px", borderRadius: RADIUS.sm, background: code.length === 6 ? COLORS.goldLight : COLORS.metallic, color: code.length === 6 ? "#000" : COLORS.textMuted, border: "none", ...TYPOGRAPHY.caption, fontWeight: 800, cursor: busy || code.length !== 6 ? "wait" : "pointer", fontFamily: TYPOGRAPHY.fontTajawal }}>
-                {busy ? "⏳ جارِ الربط..." : "🔗 ربط"}
-              </button>
-            </div>
-          </>
-        )}
-      </div>
     </div>
   );
 }
