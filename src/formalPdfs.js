@@ -261,3 +261,169 @@ export function exportAffidavit(data, employee) {
 
   openPrintWindow("إفادة — " + (e.name || ''), body);
 }
+
+/* ════════════ 4. إفادة تعريف بموظف (employment verification) ════════════ */
+export function exportEmploymentLetter(employee, options) {
+  var e = employee || {};
+  var opt = options || {};
+  var ref = "EMP-" + (e.id || Date.now());
+  var toEntity = opt.toEntity || 'لمن يهمه الأمر';
+
+  var body =
+    '<div class="doc-ref">' +
+      '<div><strong>رقم المستند:</strong> ' + ref + '</div>' +
+      '<div><strong>التاريخ:</strong> ' + fmtDateAr(new Date()) + '</div>' +
+    '</div>' +
+
+    '<div class="doc-title">📄 إفادة تعريف بموظف</div>' +
+    '<div class="doc-subtitle">' + toEntity + '</div>' +
+
+    '<div class="section"><h3>نص الإفادة</h3>' +
+      '<div class="statement">' +
+        'تشهد إدارة الموارد البشرية بمكتب هاني محمد عسيري للاستشارات الهندسية بأن:<br/><br/>' +
+        '<strong>' + (e.name || '—') + '</strong>' +
+        ' يحمل الرقم الوظيفي <strong>' + (e.id || '—') + '</strong>' +
+        '، ويعمل لدينا بوظيفة <strong>' + (e.role || '—') + '</strong>' +
+        (e.department ? ' بإدارة <strong>' + e.department + '</strong>' : '') +
+        (e.joinDate ? '، وذلك منذ تاريخ <strong>' + fmtDateAr(e.joinDate) + '</strong>' : '') +
+        '، وهو على رأس العمل حتى تاريخه.<br/><br/>' +
+        'وقد أُعطيت له هذه الإفادة بناءً على طلبه دون أدنى مسؤولية على المكتب.<br/><br/>' +
+        'تحريراً في: ' + fmtDateAr(new Date()) +
+      '</div>' +
+    '</div>' +
+
+    '<div class="sig-section">' +
+      '<div class="sig-box"><div class="title">ختم وتوقيع المكتب</div><div class="name">إدارة الموارد البشرية</div><div class="date">التاريخ: ' + fmtDateAr(new Date()) + '</div></div>' +
+      '<div class="sig-box"><div class="title">المسؤول</div><div class="name">' + (opt.signedBy || 'مدير الموارد البشرية') + '</div><div class="date">ختم رسمي: ............</div></div>' +
+    '</div>' +
+
+    '<div class="doc-footer">' +
+      '<div>مكتب هاني محمد عسيري للاستشارات الهندسية</div>' +
+      '<div>جدة — المملكة العربية السعودية</div>' +
+    '</div>';
+
+  openPrintWindow("إفادة تعريف — " + (e.name || ''), body);
+}
+
+/* ════════════ 5. إفادة راتب (salary certificate — HR only) ════════════ */
+export function exportSalaryLetter(employee, options) {
+  var e = employee || {};
+  var opt = options || {};
+  var ref = "SAL-" + (e.id || Date.now());
+  var toEntity = opt.toEntity || 'لمن يهمه الأمر';
+  var salary = opt.salary || e.salary || e.basicSalary || '—';
+  var allowances = opt.allowances || '—';
+  var total = opt.total || e.totalSalary || '—';
+
+  var body =
+    '<div class="doc-ref">' +
+      '<div><strong>رقم المستند:</strong> ' + ref + '</div>' +
+      '<div><strong>التاريخ:</strong> ' + fmtDateAr(new Date()) + '</div>' +
+    '</div>' +
+
+    '<div class="doc-title">💵 شهادة راتب</div>' +
+    '<div class="doc-subtitle">' + toEntity + '</div>' +
+
+    '<div class="emp-box"><h3>بيانات الموظف</h3>' +
+      '<div class="emp-grid">' +
+        '<div class="label">الاسم:</div><div class="value">' + (e.name || '—') + '</div>' +
+        '<div class="label">الرقم الوظيفي:</div><div class="value">' + (e.id || '—') + '</div>' +
+        '<div class="label">المسمى الوظيفي:</div><div class="value">' + (e.role || '—') + '</div>' +
+        '<div class="label">تاريخ المباشرة:</div><div class="value">' + fmtDateAr(e.joinDate) + '</div>' +
+      '</div>' +
+    '</div>' +
+
+    '<div class="section"><h3>تفاصيل الراتب</h3>' +
+      '<table class="penalty-table">' +
+        '<thead><tr><th>البيان</th><th>المبلغ (ر.س)</th></tr></thead>' +
+        '<tbody>' +
+          '<tr><td>الراتب الأساسي</td><td>' + salary + '</td></tr>' +
+          '<tr><td>البدلات</td><td>' + allowances + '</td></tr>' +
+          '<tr class="highlight"><td><strong>الإجمالي</strong></td><td><strong>' + total + '</strong></td></tr>' +
+        '</tbody>' +
+      '</table>' +
+    '</div>' +
+
+    '<div class="section"><h3>نص الشهادة</h3>' +
+      '<div class="statement">' +
+        'تشهد إدارة الموارد البشرية بمكتب هاني محمد عسيري للاستشارات الهندسية بأن الموظف المذكور أعلاه يعمل لدينا ويتقاضى الراتب المبيّن في الجدول.<br/><br/>' +
+        'وقد أُعطيت له هذه الشهادة بناءً على طلبه لاستخدامها في الأغراض النظامية، دون أدنى مسؤولية على المكتب.<br/><br/>' +
+        'تحريراً في: ' + fmtDateAr(new Date()) +
+      '</div>' +
+    '</div>' +
+
+    '<div class="sig-section">' +
+      '<div class="sig-box"><div class="title">ختم وتوقيع المكتب</div><div class="name">إدارة الموارد البشرية</div><div class="date">التاريخ: ' + fmtDateAr(new Date()) + '</div></div>' +
+      '<div class="sig-box"><div class="title">المدير المالي</div><div class="name">' + (opt.signedBy || '—') + '</div><div class="date">ختم رسمي: ............</div></div>' +
+    '</div>' +
+
+    '<div class="doc-footer">' +
+      '<div>مكتب هاني محمد عسيري للاستشارات الهندسية</div>' +
+      '<div>شهادة سرية — للمستفيد فقط</div>' +
+    '</div>';
+
+  openPrintWindow("شهادة راتب — " + (e.name || ''), body);
+}
+
+/* ════════════ 6. إفادة إجازة (leave confirmation) ════════════ */
+export function exportLeaveLetter(employee, leave, options) {
+  var e = employee || {};
+  var l = leave || {};
+  var opt = options || {};
+  var ref = "LV-" + (l.id || Date.now());
+  var toEntity = opt.toEntity || 'لمن يهمه الأمر';
+
+  var leaveTypes = { annual: 'سنوية', sick: 'مرضية', emergency: 'طارئة', personal: 'شخصية' };
+  var typeLabel = leaveTypes[l.type] || l.type || '—';
+
+  var body =
+    '<div class="doc-ref">' +
+      '<div><strong>رقم المستند:</strong> ' + ref + '</div>' +
+      '<div><strong>التاريخ:</strong> ' + fmtDateAr(new Date()) + '</div>' +
+    '</div>' +
+
+    '<div class="doc-title">✈️ إفادة إجازة</div>' +
+    '<div class="doc-subtitle">' + toEntity + '</div>' +
+
+    '<div class="emp-box"><h3>بيانات الموظف</h3>' +
+      '<div class="emp-grid">' +
+        '<div class="label">الاسم:</div><div class="value">' + (e.name || '—') + '</div>' +
+        '<div class="label">الرقم الوظيفي:</div><div class="value">' + (e.id || '—') + '</div>' +
+        '<div class="label">المسمى الوظيفي:</div><div class="value">' + (e.role || '—') + '</div>' +
+        '<div class="label">الإدارة:</div><div class="value">' + (e.department || '—') + '</div>' +
+      '</div>' +
+    '</div>' +
+
+    '<div class="section"><h3>تفاصيل الإجازة</h3>' +
+      '<div class="info-box">' +
+        '<strong>نوع الإجازة:</strong> ' + typeLabel + '<br/>' +
+        '<strong>من تاريخ:</strong> ' + fmtDateAr(l.from) + '<br/>' +
+        '<strong>إلى تاريخ:</strong> ' + fmtDateAr(l.to) + '<br/>' +
+        '<strong>عدد الأيام:</strong> ' + (l.days || 1) + ' يوم' +
+        (l.reason ? '<br/><strong>السبب:</strong> ' + l.reason : '') +
+      '</div>' +
+    '</div>' +
+
+    '<div class="section"><h3>نص الإفادة</h3>' +
+      '<div class="statement">' +
+        'تشهد إدارة الموارد البشرية بمكتب هاني محمد عسيري للاستشارات الهندسية بأن الموظف المذكور أعلاه حاصل على إجازة ' + typeLabel +
+        ' اعتباراً من <strong>' + fmtDateAr(l.from) + '</strong>' +
+        ' وحتى <strong>' + fmtDateAr(l.to) + '</strong>' +
+        '، بمجموع <strong>' + (l.days || 1) + '</strong> يوم.<br/><br/>' +
+        'وقد أُعطيت له هذه الإفادة بناءً على طلبه لاستخدامها عند الحاجة.<br/><br/>' +
+        'تحريراً في: ' + fmtDateAr(new Date()) +
+      '</div>' +
+    '</div>' +
+
+    '<div class="sig-section">' +
+      '<div class="sig-box"><div class="title">ختم وتوقيع المكتب</div><div class="name">إدارة الموارد البشرية</div><div class="date">التاريخ: ' + fmtDateAr(new Date()) + '</div></div>' +
+      '<div class="sig-box"><div class="title">المسؤول المباشر</div><div class="name">' + (opt.signedBy || 'مدير الإدارة') + '</div><div class="date">التاريخ: ............</div></div>' +
+    '</div>' +
+
+    '<div class="doc-footer">' +
+      '<div>مكتب هاني محمد عسيري للاستشارات الهندسية</div>' +
+      '<div>إفادة رسمية مُعتمدة</div>' +
+    '</div>';
+
+  openPrintWindow("إفادة إجازة — " + (e.name || ''), body);
+}

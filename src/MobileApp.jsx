@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef, useCallback } from "react";
 import { COLORS, SPACING, TYPOGRAPHY, RADIUS, SHADOWS, Button, Card, Section, Icons, setTheme } from "./theme";
 import { ALL_VIOLATIONS_DEFAULT, PENALTY_TYPES, LAIHA_INFO, COMPLAINT_STATUS, VIOLATION_STATUS } from "./laiha";
+import { exportEmploymentLetter, exportLeaveLetter } from "./formalPdfs";
 
 /* ═══════════════════════════════════════════
    بصمة HMA v4.51 — Mobile App
@@ -10,7 +11,7 @@ import { ALL_VIOLATIONS_DEFAULT, PENALTY_TYPES, LAIHA_INFO, COMPLAINT_STATUS, VI
 
 /* ═══════════ APP CONFIG (إعدادات التطبيق) ═══════════ */
 const APP_CONFIG = {
-  VER: "6.51",
+  VER: "6.53",
   NAME: "بصمة HMA",
   FULL_NAME: "نظام الحضور والانصراف الذكي",
   COMPANY: "هاني محمد عسيري للاستشارات الهندسية",
@@ -9673,6 +9674,14 @@ function MyRequestsTab({ user }) {
           {d.decidedAt && <span>قُرِّر: {new Date(d.decidedAt).toLocaleDateString("ar-SA")}</span>}
         </div>
         {d.rejectReason && <div style={{ marginTop: 6, padding: 6, borderRadius: 6, background: "rgba(220,38,38,0.1)", color: "#DC2626", fontSize: 10, fontWeight: 600 }}>سبب الرفض: {d.rejectReason}</div>}
+        {/* v6.52 — Print leave confirmation letter after approval */}
+        {x.kind === "leave" && d.status === "approved" && (
+          <div style={{ marginTop: 8, display: "flex", justifyContent: "flex-end" }}>
+            <button onClick={function(){ exportLeaveLetter(user, d, {}); }} style={{ padding: "5px 10px", borderRadius: 6, border: "1px solid " + COLORS.goldLight, background: COLORS.goldLight + "15", color: COLORS.goldLight, fontSize: 10, fontWeight: 800, cursor: "pointer", fontFamily: TYPOGRAPHY.fontTajawal }}>
+              📄 طباعة إفادة إجازة PDF
+            </button>
+          </div>
+        )}
       </div>
     );
   }
@@ -9717,10 +9726,16 @@ function MyRequestsTab({ user }) {
       )}
 
       {/* Quick action buttons */}
-      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 6, marginBottom: SPACING.md }}>
+      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 6, marginBottom: 8 }}>
         <button onClick={function(){ setShowLeave(true); }} style={{ padding: "10px 4px", borderRadius: 10, background: "rgba(8,145,178,0.15)", border: "1px solid rgba(8,145,178,0.4)", color: "#0891B2", fontWeight: 800, fontSize: 11, cursor: "pointer", fontFamily: TYPOGRAPHY.fontTajawal }}>🏖️ طلب إجازة</button>
         <button onClick={function(){ setShowPerm(true); }} style={{ padding: "10px 4px", borderRadius: 10, background: "rgba(124,58,237,0.15)", border: "1px solid rgba(124,58,237,0.4)", color: "#7C3AED", fontWeight: 800, fontSize: 11, cursor: "pointer", fontFamily: TYPOGRAPHY.fontTajawal }}>⏱ استئذان</button>
         <button onClick={function(){ setShowPreAbs(true); }} style={{ padding: "10px 4px", borderRadius: 10, background: "rgba(217,119,6,0.15)", border: "1px solid rgba(217,119,6,0.4)", color: "#D97706", fontWeight: 800, fontSize: 11, cursor: "pointer", fontFamily: TYPOGRAPHY.fontTajawal }}>🏥 إفادة غياب</button>
+      </div>
+      {/* v6.52 — Employment letter self-service */}
+      <div style={{ marginBottom: SPACING.md }}>
+        <button onClick={function(){ exportEmploymentLetter(user, {}); }} style={{ width: "100%", padding: "10px 14px", borderRadius: 10, background: "linear-gradient(135deg, " + COLORS.goldLight + ", " + COLORS.gold + ")", border: "none", color: "#000", fontWeight: 800, fontSize: 12, cursor: "pointer", fontFamily: TYPOGRAPHY.fontTajawal, display: "flex", alignItems: "center", justifyContent: "center", gap: 6 }}>
+          📄 اطبع إفادة تعريف بالعمل (PDF)
+        </button>
       </div>
 
       {/* Filter tabs */}

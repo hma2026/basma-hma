@@ -1,10 +1,10 @@
 import { useState, useEffect, useRef } from "react";
 import { ALL_VIOLATIONS_DEFAULT, PENALTY_TYPES, LAIHA_INFO, COMPLAINT_STATUS, VIOLATION_STATUS, PROCEDURE_RULES } from "./laiha";
 import { generateAttendanceReport, generateEmployeeReport, generateMonthlySummary, generateViolationsReport, generateEmployeesListReport, generateBenefitsReport, generateAnnouncementsReport } from "./pdfReports";
-import { exportFormalWarning, exportInvestigationRecord, exportAffidavit } from "./formalPdfs";
+import { exportFormalWarning, exportInvestigationRecord, exportAffidavit, exportEmploymentLetter, exportSalaryLetter, exportLeaveLetter } from "./formalPdfs";
 
 const APP = "بصمة HMA";
-const VER = "6.51";
+const VER = "6.53";
 const CO = "هاني محمد عسيري للإستشارات الهندسية";
 const B = { blue: "#2B5EA7", yellow: "#FDD800", red: "#E2192C", black: "#1A1A1A", blueDk: "#1E4478", blueLt: "#EDF3FB", gold: "#D4A017" };
 
@@ -517,6 +517,8 @@ export default function AdminApp() {
         { id: "org_hierarchy", icon: "🏢", label: "الهيكل التنظيمي" },
         { id: "leaves", icon: "📋", label: "الإجازات", badge: pending },
         { id: "leave_balances", icon: "💰", label: "أرصدة الإجازات" },
+        { id: "letters", icon: "📄", label: "الإفادات" },
+        { id: "branches", icon: "🏢", label: "الفروع" },
         { id: "admin_requests", icon: "📝", label: "الطلبات" },
         { id: "complaints", icon: "📣", label: "الشكاوى", badge: badgeCounts.complaints },
         { id: "investigations", icon: "🔍", label: "التحقيقات", badge: badgeCounts.investigations },
@@ -1461,6 +1463,8 @@ export default function AdminApp() {
       {/* ═══ ADMIN PROFILE — تعديل حساب المدير العام ═══ */}
       {tab === "work_types" && <WorkTypesPanel t={t} B={B} emps={safeEmps} />}
       {tab === "leave_balances" && <LeaveBalancesPanel t={t} B={B} emps={safeEmps} />}
+      {tab === "letters" && <LettersPanel t={t} B={B} emps={safeEmps} />}
+      {tab === "branches" && <BranchesPanel t={t} B={B} />}
       {tab === "benefits" && <BenefitsPanel t={t} B={B} />}
       {tab === "announcements" && <AnnouncementsPanel t={t} B={B} emps={safeEmps} branches={branches} />}
       {tab === "banners" && <BannersPanel t={t} B={B} />}
@@ -2192,6 +2196,429 @@ function LeaveHistoryModal({ t, B, emp, leaves, onClose }) {
           )}
         </div>
       </div>
+    </div>
+  );
+}
+
+/* ═══ BRANCHES PANEL — إدارة الفروع (v6.53) ═══ */
+function BranchesPanel({ t, B }) {
+  var [branches, setBranches] = useState([]);
+  var [loading, setLoading] = useState(true);
+  var [editing, setEditing] = useState(null); // index being edited
+  var [draft, setDraft] = useState(null);
+  var [adding, setAdding] = useState(false);
+  var [saving, setSaving] = useState(false);
+  var [locating, setLocating] = useState(false);
+
+  async function load() {
+    setLoading(true);
+    try {
+      var r = await fetch("/api/data?action=branches");
+      var d = await r.json();
+      setBranches(Array.isArray(d) ? d : []);
+    } catch(e) {}
+    setLoading(false);
+  }
+
+  useEffect(function(){ load(); }, []);
+
+  async function saveAll(newList) {
+    setSaving(true);
+    try {
+      var r = await fetch("/api/data?action=branches", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(newList),
+      });
+      var d = await r.json();
+      if (d && d.ok) {
+        setBranches(newList);
+        return true;
+      }
+    } catch(e) {}
+    setSaving(false);
+    return false;
+  }
+
+  function openEdit(b, idx) {
+    setEditing(idx);
+    setDraft(Object.assign({}, b));
+    setAdding(false);
+  }
+
+  function openAdd() {
+    var id = "br" + Date.now();
+    setDraft({ id: id, name: "", start: "08:30", end: "17:00", breakS: "12:30", breakE: "13:00", offDay: "friday", tz: "Asia/Riyadh", radius: 150, lat: 21.5433, lng: 39.1728 });
+    setAdding(true);
+    setEditing(branches.length);
+  }
+
+  function close() { setEditing(null); setDraft(null); setAdding(false); }
+
+  async function save() {
+    if (!draft.name || !draft.id) { alert("الاسم ومعرف الفرع مطلوبان"); return; }
+    var list;
+    if (adding) list = branches.concat([draft]);
+    else { list = branches.slice(); list[editing] = draft; }
+    if (await saveAll(list)) close();
+    else alert("فشل الحفظ");
+  }
+
+  async function remove(idx) {
+    if (!window.confirm("حذف الفرع " + branches[idx].name + "؟")) return;
+    var list = branches.filter(function(_, i){ return i !== idx; });
+    await saveAll(list);
+  }
+
+  function useMyLocation() {
+    if (!navigator.geolocation) { alert("المتصفح لا يدعم GPS"); return; }
+    setLocating(true);
+    navigator.geolocation.getCurrentPosition(function(pos){
+      setDraft(Object.assign({}, draft, { lat: +pos.coords.latitude.toFixed(6), lng: +pos.coords.longitude.toFixed(6) }));
+      setLocating(false);
+    }, function(err){
+      alert("تعذّر جلب الموقع: " + (err.message || ""));
+      setLocating(false);
+    }, { enableHighAccuracy: true, timeout: 10000 });
+  }
+
+  var dayOptions = [
+    { v: "friday", l: "الجمعة" },
+    { v: "saturday", l: "السبت" },
+    { v: "sunday", l: "الأحد" },
+  ];
+  var tzOptions = [
+    { v: "Asia/Riyadh", l: "الرياض (UTC+3)" },
+    { v: "Europe/Istanbul", l: "اسطنبول (UTC+3)" },
+    { v: "Asia/Dubai", l: "دبي (UTC+4)" },
+    { v: "Africa/Cairo", l: "القاهرة (UTC+2)" },
+  ];
+
+  var inputStyle = { width: "100%", padding: "10px 12px", borderRadius: 8, border: "1px solid " + t.sep, background: t.inp, color: t.tx, fontSize: 13, outline: "none", boxSizing: "border-box", fontFamily: "inherit" };
+
+  if (loading) return <div style={{ padding: 30, textAlign: "center", color: t.txM }}>جارِ التحميل...</div>;
+
+  return (
+    <div style={{ maxWidth: 1000 }}>
+      {/* Header */}
+      <div style={{ background: "linear-gradient(135deg, " + B.blue + " 0%, " + B.blueDk + " 100%)", borderRadius: 16, padding: "20px 22px", marginBottom: 16, color: "#fff", boxShadow: "0 4px 20px rgba(43,94,167,0.25)", display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 12 }}>
+        <div>
+          <div style={{ fontSize: 20, fontWeight: 800, marginBottom: 4 }}>🏢 إدارة الفروع</div>
+          <div style={{ fontSize: 11, opacity: 0.9 }}>{branches.length} فرع · إعدادات GPS وساعات العمل</div>
+        </div>
+        <button onClick={openAdd} style={{ padding: "10px 16px", borderRadius: 10, background: B.gold, color: "#000", border: "none", fontSize: 12, fontWeight: 800, cursor: "pointer", fontFamily: "inherit" }}>+ فرع جديد</button>
+      </div>
+
+      {/* Branches list */}
+      <div style={{ display: "grid", gap: 12 }}>
+        {branches.map(function(b, idx){
+          return (
+            <div key={b.id + idx} style={{ background: t.card, borderRadius: 14, padding: 16, border: "1px solid " + t.sep, boxShadow: "0 2px 8px rgba(0,0,0,0.04)" }}>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 12 }}>
+                <div>
+                  <div style={{ fontSize: 16, fontWeight: 800, color: t.tx, marginBottom: 4 }}>{b.name}</div>
+                  <div style={{ fontSize: 10, color: t.txM, fontFamily: "monospace" }}>{b.id} · {b.tz}</div>
+                </div>
+                <div style={{ display: "flex", gap: 6 }}>
+                  <button onClick={function(){ openEdit(b, idx); }} style={{ padding: "6px 12px", borderRadius: 6, background: B.blue + "15", color: B.blue, border: "1px solid " + B.blue + "40", fontSize: 11, fontWeight: 700, cursor: "pointer", fontFamily: "inherit" }}>✎ تعديل</button>
+                  <button onClick={function(){ remove(idx); }} style={{ padding: "6px 12px", borderRadius: 6, background: "#FEE", color: "#DC2626", border: "1px solid #DC2626", fontSize: 11, fontWeight: 700, cursor: "pointer", fontFamily: "inherit" }}>🗑 حذف</button>
+                </div>
+              </div>
+              <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(130px, 1fr))", gap: 8 }}>
+                <div style={{ padding: 10, borderRadius: 8, background: t.bg, border: "1px solid " + t.sep }}>
+                  <div style={{ fontSize: 9, color: t.txM, fontWeight: 700 }}>⏰ ساعات العمل</div>
+                  <div style={{ fontSize: 13, fontWeight: 800, color: t.tx, marginTop: 4 }}>{b.start} → {b.end}</div>
+                </div>
+                <div style={{ padding: 10, borderRadius: 8, background: t.bg, border: "1px solid " + t.sep }}>
+                  <div style={{ fontSize: 9, color: t.txM, fontWeight: 700 }}>☕ الاستراحة</div>
+                  <div style={{ fontSize: 13, fontWeight: 800, color: t.tx, marginTop: 4 }}>{b.breakS} → {b.breakE}</div>
+                </div>
+                <div style={{ padding: 10, borderRadius: 8, background: t.bg, border: "1px solid " + t.sep }}>
+                  <div style={{ fontSize: 9, color: t.txM, fontWeight: 700 }}>📅 يوم العطلة</div>
+                  <div style={{ fontSize: 13, fontWeight: 800, color: t.tx, marginTop: 4 }}>{dayOptions.find(function(d){ return d.v === b.offDay; }) ? dayOptions.find(function(d){ return d.v === b.offDay; }).l : b.offDay}</div>
+                </div>
+                <div style={{ padding: 10, borderRadius: 8, background: t.bg, border: "1px solid " + t.sep }}>
+                  <div style={{ fontSize: 9, color: t.txM, fontWeight: 700 }}>📍 نطاق GPS</div>
+                  <div style={{ fontSize: 13, fontWeight: 800, color: t.tx, marginTop: 4 }}>{b.radius} متر</div>
+                </div>
+                <div style={{ padding: 10, borderRadius: 8, background: t.bg, border: "1px solid " + t.sep, gridColumn: "span 2" }}>
+                  <div style={{ fontSize: 9, color: t.txM, fontWeight: 700 }}>🗺️ الإحداثيات</div>
+                  <div style={{ fontSize: 11, fontWeight: 800, color: t.tx, marginTop: 4, fontFamily: "monospace" }}>{b.lat}, {b.lng}</div>
+                  <a href={"https://maps.google.com/?q=" + b.lat + "," + b.lng} target="_blank" rel="noreferrer" style={{ fontSize: 9, color: B.blue, textDecoration: "none", fontWeight: 700 }}>📍 افتح في Google Maps</a>
+                </div>
+              </div>
+            </div>
+          );
+        })}
+      </div>
+
+      {/* Edit / Add Modal */}
+      {draft && (
+        <div onClick={close} style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.55)", zIndex: 9999, display: "flex", alignItems: "center", justifyContent: "center", padding: 12 }}>
+          <div onClick={function(e){ e.stopPropagation(); }} style={{ background: t.card, borderRadius: 18, maxWidth: 540, width: "100%", maxHeight: "92vh", overflowY: "auto" }}>
+            <div style={{ padding: "18px 22px", borderBottom: "1px solid " + t.sep, display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+              <div style={{ fontSize: 16, fontWeight: 800, color: t.tx }}>{adding ? "🏢 فرع جديد" : "🏢 تعديل فرع"}</div>
+              <button onClick={close} style={{ background: "none", border: "none", fontSize: 22, color: t.txM, cursor: "pointer" }}>×</button>
+            </div>
+            <div style={{ padding: 18 }}>
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10, marginBottom: 10 }}>
+                <div>
+                  <div style={{ fontSize: 10, color: t.txM, fontWeight: 700, marginBottom: 4 }}>الاسم</div>
+                  <input type="text" value={draft.name} onChange={function(e){ setDraft(Object.assign({}, draft, { name: e.target.value })); }} placeholder="مثال: المكتب الرئيسي - جدة" style={inputStyle} />
+                </div>
+                <div>
+                  <div style={{ fontSize: 10, color: t.txM, fontWeight: 700, marginBottom: 4 }}>المعرف (ID)</div>
+                  <input type="text" value={draft.id} onChange={function(e){ setDraft(Object.assign({}, draft, { id: e.target.value })); }} disabled={!adding} style={Object.assign({}, inputStyle, { fontFamily: "monospace", opacity: adding ? 1 : 0.6 })} />
+                </div>
+              </div>
+
+              <div style={{ fontSize: 11, fontWeight: 800, color: B.blue, marginTop: 14, marginBottom: 8 }}>⏰ ساعات العمل والاستراحة</div>
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10, marginBottom: 10 }}>
+                <div>
+                  <div style={{ fontSize: 10, color: t.txM, fontWeight: 700, marginBottom: 4 }}>بداية الدوام</div>
+                  <input type="time" value={draft.start} onChange={function(e){ setDraft(Object.assign({}, draft, { start: e.target.value })); }} style={inputStyle} />
+                </div>
+                <div>
+                  <div style={{ fontSize: 10, color: t.txM, fontWeight: 700, marginBottom: 4 }}>نهاية الدوام</div>
+                  <input type="time" value={draft.end} onChange={function(e){ setDraft(Object.assign({}, draft, { end: e.target.value })); }} style={inputStyle} />
+                </div>
+                <div>
+                  <div style={{ fontSize: 10, color: t.txM, fontWeight: 700, marginBottom: 4 }}>بداية الاستراحة</div>
+                  <input type="time" value={draft.breakS} onChange={function(e){ setDraft(Object.assign({}, draft, { breakS: e.target.value })); }} style={inputStyle} />
+                </div>
+                <div>
+                  <div style={{ fontSize: 10, color: t.txM, fontWeight: 700, marginBottom: 4 }}>نهاية الاستراحة</div>
+                  <input type="time" value={draft.breakE} onChange={function(e){ setDraft(Object.assign({}, draft, { breakE: e.target.value })); }} style={inputStyle} />
+                </div>
+              </div>
+
+              <div style={{ fontSize: 11, fontWeight: 800, color: B.blue, marginTop: 14, marginBottom: 8 }}>📅 التقويم</div>
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10, marginBottom: 10 }}>
+                <div>
+                  <div style={{ fontSize: 10, color: t.txM, fontWeight: 700, marginBottom: 4 }}>يوم العطلة</div>
+                  <select value={draft.offDay} onChange={function(e){ setDraft(Object.assign({}, draft, { offDay: e.target.value })); }} style={Object.assign({}, inputStyle, { background: "#fff", color: "#000" })}>
+                    {dayOptions.map(function(d){ return <option key={d.v} value={d.v}>{d.l}</option>; })}
+                  </select>
+                </div>
+                <div>
+                  <div style={{ fontSize: 10, color: t.txM, fontWeight: 700, marginBottom: 4 }}>المنطقة الزمنية</div>
+                  <select value={draft.tz} onChange={function(e){ setDraft(Object.assign({}, draft, { tz: e.target.value })); }} style={Object.assign({}, inputStyle, { background: "#fff", color: "#000" })}>
+                    {tzOptions.map(function(z){ return <option key={z.v} value={z.v}>{z.l}</option>; })}
+                  </select>
+                </div>
+              </div>
+
+              <div style={{ fontSize: 11, fontWeight: 800, color: B.blue, marginTop: 14, marginBottom: 8 }}>📍 الموقع الجغرافي (GPS)</div>
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 10, marginBottom: 10 }}>
+                <div>
+                  <div style={{ fontSize: 10, color: t.txM, fontWeight: 700, marginBottom: 4 }}>خط العرض (lat)</div>
+                  <input type="number" step="0.000001" value={draft.lat} onChange={function(e){ setDraft(Object.assign({}, draft, { lat: parseFloat(e.target.value) || 0 })); }} style={Object.assign({}, inputStyle, { fontFamily: "monospace" })} />
+                </div>
+                <div>
+                  <div style={{ fontSize: 10, color: t.txM, fontWeight: 700, marginBottom: 4 }}>خط الطول (lng)</div>
+                  <input type="number" step="0.000001" value={draft.lng} onChange={function(e){ setDraft(Object.assign({}, draft, { lng: parseFloat(e.target.value) || 0 })); }} style={Object.assign({}, inputStyle, { fontFamily: "monospace" })} />
+                </div>
+                <div>
+                  <div style={{ fontSize: 10, color: t.txM, fontWeight: 700, marginBottom: 4 }}>النطاق (متر)</div>
+                  <input type="number" min="30" max="1000" step="10" value={draft.radius} onChange={function(e){ setDraft(Object.assign({}, draft, { radius: parseInt(e.target.value, 10) || 100 })); }} style={inputStyle} />
+                </div>
+              </div>
+              <div style={{ display: "flex", gap: 8, marginBottom: 10 }}>
+                <button onClick={useMyLocation} disabled={locating} style={{ flex: 1, padding: 10, borderRadius: 8, background: B.gold + "20", color: B.gold, border: "1px solid " + B.gold, fontSize: 11, fontWeight: 800, cursor: "pointer", fontFamily: "inherit" }}>
+                  {locating ? "⏳ جارِ التحديد..." : "📍 استخدم موقعي الحالي"}
+                </button>
+                <a href={"https://maps.google.com/?q=" + draft.lat + "," + draft.lng} target="_blank" rel="noreferrer" style={{ flex: 1, padding: 10, borderRadius: 8, background: B.blue + "20", color: B.blue, border: "1px solid " + B.blue, fontSize: 11, fontWeight: 800, cursor: "pointer", fontFamily: "inherit", textAlign: "center", textDecoration: "none" }}>
+                  🗺️ معاينة على Google Maps
+                </a>
+              </div>
+
+              <div style={{ padding: 10, borderRadius: 8, background: "rgba(217,119,6,0.1)", border: "1px solid rgba(217,119,6,0.3)", fontSize: 10, color: "#D97706", fontWeight: 600, lineHeight: 1.7 }}>
+                💡 نصيحة: افتح التطبيق في موقع الفرع واضغط "استخدم موقعي الحالي" — سيُسجَّل الإحداثيات بدقة تلقائياً.
+              </div>
+            </div>
+            <div style={{ padding: "14px 22px", borderTop: "1px solid " + t.sep, display: "flex", gap: 10 }}>
+              <button onClick={close} style={{ flex: 1, padding: 12, borderRadius: 10, background: t.bg, color: t.tx, border: "1px solid " + t.sep, fontSize: 13, fontWeight: 700, cursor: "pointer", fontFamily: "inherit" }}>إلغاء</button>
+              <button onClick={save} disabled={saving} style={{ flex: 2, padding: 12, borderRadius: 10, background: saving ? t.sep : B.blue, color: "#fff", border: "none", fontSize: 13, fontWeight: 800, cursor: saving ? "default" : "pointer", fontFamily: "inherit" }}>
+                {saving ? "جارِ الحفظ..." : "✓ حفظ"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+/* ═══ LETTERS PANEL — إصدار الإفادات الرسمية (v6.52) ═══ */
+function LettersPanel({ t, B, emps }) {
+  var [selectedEmp, setSelectedEmp] = useState(null);
+  var [letterType, setLetterType] = useState(""); // employment | salary | leave
+  var [search, setSearch] = useState("");
+  var [toEntity, setToEntity] = useState("لمن يهمه الأمر");
+  var [signedBy, setSignedBy] = useState("");
+  // Salary-specific
+  var [salary, setSalary] = useState("");
+  var [allowances, setAllowances] = useState("");
+  // Leave-specific
+  var [approvedLeaves, setApprovedLeaves] = useState([]);
+  var [selectedLeave, setSelectedLeave] = useState(null);
+
+  useEffect(function(){
+    if (letterType === "leave" && selectedEmp) {
+      fetch("/api/data?action=leaves").then(function(r){ return r.json(); })
+        .then(function(d){
+          var list = (Array.isArray(d) ? d : []).filter(function(l){
+            return l.empId === selectedEmp.id && l.status === "approved";
+          }).sort(function(a,b){ return (b.ts || "").localeCompare(a.ts || ""); });
+          setApprovedLeaves(list);
+          setSelectedLeave(list[0] || null);
+        }).catch(function(){ setApprovedLeaves([]); });
+    }
+  }, [letterType, selectedEmp]);
+
+  function generate() {
+    if (!selectedEmp || !letterType) {
+      alert("اختر موظف ونوع الإفادة");
+      return;
+    }
+    var opts = { toEntity: toEntity, signedBy: signedBy };
+    if (letterType === "employment") {
+      exportEmploymentLetter(selectedEmp, opts);
+    } else if (letterType === "salary") {
+      var total = (parseFloat(salary) || 0) + (parseFloat(allowances) || 0);
+      exportSalaryLetter(selectedEmp, Object.assign({}, opts, {
+        salary: salary || "—",
+        allowances: allowances || "—",
+        total: total > 0 ? total.toLocaleString("ar-SA") : "—",
+      }));
+    } else if (letterType === "leave") {
+      if (!selectedLeave) { alert("لا توجد إجازة معتمدة للموظف"); return; }
+      exportLeaveLetter(selectedEmp, selectedLeave, opts);
+    }
+  }
+
+  var filteredEmps = search.trim()
+    ? emps.filter(function(e){ return (e.name || "").toLowerCase().includes(search.toLowerCase()); })
+    : emps;
+
+  var letterTypesMeta = {
+    employment: { label: "إفادة تعريف بالعمل", icon: "📄", color: "#0891B2", desc: "تعريف بالموظف ومسماه الوظيفي" },
+    salary: { label: "شهادة راتب", icon: "💵", color: "#D97706", desc: "إفادة بالراتب للبنوك والجهات الرسمية" },
+    leave: { label: "إفادة إجازة", icon: "✈️", color: "#7C3AED", desc: "إثبات حصول الموظف على إجازة معتمدة" },
+  };
+
+  return (
+    <div style={{ maxWidth: 900 }}>
+      {/* Header */}
+      <div style={{ background: "linear-gradient(135deg, " + B.blue + " 0%, " + B.blueDk + " 100%)", borderRadius: 16, padding: "20px 22px", marginBottom: 16, color: "#fff", boxShadow: "0 4px 20px rgba(43,94,167,0.25)" }}>
+        <div style={{ fontSize: 20, fontWeight: 800, marginBottom: 4 }}>📄 إصدار إفادات رسمية</div>
+        <div style={{ fontSize: 11, opacity: 0.9 }}>توليد إفادات بصيغة PDF مع شعار المكتب وختم رسمي</div>
+      </div>
+
+      {/* Step 1: Select letter type */}
+      <div style={{ background: t.card, borderRadius: 14, padding: 16, border: "1px solid " + t.sep, marginBottom: 12 }}>
+        <div style={{ fontSize: 12, fontWeight: 800, color: B.blue, marginBottom: 10 }}>1️⃣ نوع الإفادة</div>
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))", gap: 10 }}>
+          {Object.keys(letterTypesMeta).map(function(k){
+            var m = letterTypesMeta[k];
+            var active = letterType === k;
+            return (
+              <button key={k} onClick={function(){ setLetterType(k); }} style={{ padding: 14, borderRadius: 12, background: active ? m.color + "15" : t.bg, border: "2px solid " + (active ? m.color : t.sep), color: t.tx, cursor: "pointer", textAlign: "right", fontFamily: "inherit" }}>
+                <div style={{ fontSize: 22, marginBottom: 4 }}>{m.icon}</div>
+                <div style={{ fontSize: 13, fontWeight: 800, color: active ? m.color : t.tx, marginBottom: 2 }}>{m.label}</div>
+                <div style={{ fontSize: 10, color: t.tx2 }}>{m.desc}</div>
+              </button>
+            );
+          })}
+        </div>
+      </div>
+
+      {/* Step 2: Select employee */}
+      {letterType && (
+        <div style={{ background: t.card, borderRadius: 14, padding: 16, border: "1px solid " + t.sep, marginBottom: 12 }}>
+          <div style={{ fontSize: 12, fontWeight: 800, color: B.blue, marginBottom: 10 }}>2️⃣ الموظف المستفيد</div>
+          {!selectedEmp ? (
+            <>
+              {emps.length > 10 && (
+                <input type="text" value={search} onChange={function(e){ setSearch(e.target.value); }} placeholder="🔍 بحث..." style={{ width: "100%", padding: "10px 12px", borderRadius: 8, border: "1px solid " + t.sep, background: t.inp, color: t.tx, fontSize: 12, outline: "none", marginBottom: 10, boxSizing: "border-box", fontFamily: "inherit" }} />
+              )}
+              <div style={{ maxHeight: 260, overflowY: "auto", display: "grid", gap: 4 }}>
+                {filteredEmps.map(function(e){
+                  return (
+                    <button key={e.id} onClick={function(){ setSelectedEmp(e); }} style={{ padding: "9px 12px", borderRadius: 8, background: t.bg, border: "1px solid " + t.sep, color: t.tx, textAlign: "right", fontSize: 12, fontWeight: 600, cursor: "pointer", fontFamily: "inherit", display: "flex", justifyContent: "space-between" }}>
+                      <span>{e.name}</span>
+                      <span style={{ color: t.tx2, fontSize: 10 }}>{e.role || "—"}</span>
+                    </button>
+                  );
+                })}
+              </div>
+            </>
+          ) : (
+            <div style={{ padding: 12, borderRadius: 10, background: B.blue + "15", border: "1px solid " + B.blue, display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+              <div>
+                <div style={{ fontSize: 14, fontWeight: 800, color: t.tx }}>{selectedEmp.name}</div>
+                <div style={{ fontSize: 11, color: t.tx2 }}>{selectedEmp.role} · {selectedEmp.id}</div>
+              </div>
+              <button onClick={function(){ setSelectedEmp(null); setSelectedLeave(null); }} style={{ padding: "6px 12px", borderRadius: 6, background: t.card, border: "1px solid " + t.sep, color: t.tx2, fontSize: 11, cursor: "pointer", fontFamily: "inherit" }}>↻ تغيير</button>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Step 3: Additional fields based on letter type */}
+      {letterType && selectedEmp && (
+        <div style={{ background: t.card, borderRadius: 14, padding: 16, border: "1px solid " + t.sep, marginBottom: 12 }}>
+          <div style={{ fontSize: 12, fontWeight: 800, color: B.blue, marginBottom: 10 }}>3️⃣ تفاصيل الإفادة</div>
+
+          <div style={{ marginBottom: 10 }}>
+            <div style={{ fontSize: 11, fontWeight: 700, color: t.tx2, marginBottom: 4 }}>الجهة المرسل إليها</div>
+            <input type="text" value={toEntity} onChange={function(e){ setToEntity(e.target.value); }} placeholder="مثال: البنك الأهلي، الهيئة السعودية للمهندسين" style={{ width: "100%", padding: "10px 12px", borderRadius: 8, border: "1px solid " + t.sep, background: t.inp, color: t.tx, fontSize: 12, outline: "none", boxSizing: "border-box", fontFamily: "inherit" }} />
+          </div>
+
+          <div style={{ marginBottom: 10 }}>
+            <div style={{ fontSize: 11, fontWeight: 700, color: t.tx2, marginBottom: 4 }}>توقيع (اختياري)</div>
+            <input type="text" value={signedBy} onChange={function(e){ setSignedBy(e.target.value); }} placeholder="مثال: م. هاني محمد عسيري — مدير عام" style={{ width: "100%", padding: "10px 12px", borderRadius: 8, border: "1px solid " + t.sep, background: t.inp, color: t.tx, fontSize: 12, outline: "none", boxSizing: "border-box", fontFamily: "inherit" }} />
+          </div>
+
+          {letterType === "salary" && (
+            <>
+              <div style={{ marginBottom: 10 }}>
+                <div style={{ fontSize: 11, fontWeight: 700, color: t.tx2, marginBottom: 4 }}>الراتب الأساسي (ر.س)</div>
+                <input type="number" value={salary} onChange={function(e){ setSalary(e.target.value); }} placeholder="8000" style={{ width: "100%", padding: "10px 12px", borderRadius: 8, border: "1px solid " + t.sep, background: t.inp, color: t.tx, fontSize: 12, outline: "none", boxSizing: "border-box", fontFamily: "inherit" }} />
+              </div>
+              <div style={{ marginBottom: 10 }}>
+                <div style={{ fontSize: 11, fontWeight: 700, color: t.tx2, marginBottom: 4 }}>البدلات (ر.س)</div>
+                <input type="number" value={allowances} onChange={function(e){ setAllowances(e.target.value); }} placeholder="2000" style={{ width: "100%", padding: "10px 12px", borderRadius: 8, border: "1px solid " + t.sep, background: t.inp, color: t.tx, fontSize: 12, outline: "none", boxSizing: "border-box", fontFamily: "inherit" }} />
+              </div>
+            </>
+          )}
+
+          {letterType === "leave" && (
+            <div style={{ marginBottom: 10 }}>
+              <div style={{ fontSize: 11, fontWeight: 700, color: t.tx2, marginBottom: 4 }}>اختر الإجازة</div>
+              {approvedLeaves.length === 0 ? (
+                <div style={{ padding: 12, borderRadius: 8, background: "rgba(239,68,68,0.1)", color: "#DC2626", fontSize: 11, fontWeight: 600 }}>⚠️ لا توجد إجازات معتمدة لهذا الموظف</div>
+              ) : (
+                <div style={{ display: "grid", gap: 4, maxHeight: 160, overflowY: "auto" }}>
+                  {approvedLeaves.map(function(l){
+                    var active = selectedLeave && selectedLeave.id === l.id;
+                    var types = { annual: "سنوية", sick: "مرضية", emergency: "طارئة", personal: "شخصية" };
+                    return (
+                      <button key={l.id} onClick={function(){ setSelectedLeave(l); }} style={{ padding: "8px 12px", borderRadius: 6, background: active ? B.blue + "20" : t.bg, border: "1px solid " + (active ? B.blue : t.sep), color: t.tx, fontSize: 11, textAlign: "right", cursor: "pointer", fontFamily: "inherit" }}>
+                        <strong>{types[l.type] || l.type}</strong> · {l.days || 1} يوم · من {l.from} إلى {l.to}
+                      </button>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+          )}
+
+          <button onClick={generate} disabled={letterType === "leave" && !selectedLeave} style={{ width: "100%", marginTop: 10, padding: "12px 14px", borderRadius: 10, background: B.blue, border: "none", color: "#fff", fontSize: 14, fontWeight: 800, cursor: "pointer", fontFamily: "inherit" }}>
+            📄 توليد الإفادة وطباعتها PDF
+          </button>
+        </div>
+      )}
     </div>
   );
 }
