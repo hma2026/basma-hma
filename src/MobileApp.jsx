@@ -10,7 +10,7 @@ import { ALL_VIOLATIONS_DEFAULT, PENALTY_TYPES, LAIHA_INFO, COMPLAINT_STATUS, VI
 
 /* ═══════════ APP CONFIG (إعدادات التطبيق) ═══════════ */
 const APP_CONFIG = {
-  VER: "4.97",
+  VER: "4.98",
   NAME: "بصمة HMA",
   FULL_NAME: "نظام الحضور والانصراف الذكي",
   COMPANY: "هاني محمد عسيري للاستشارات الهندسية",
@@ -3096,7 +3096,10 @@ function TawasulPage({ user, allEmps }) {
     if (isRefresh) setRefreshing(true); else setLoading(true);
     setErr(null);
     try {
-      var r = await fetch("/api/data?action=tawasul-list");
+      var ctrl = new AbortController();
+      var tmo = setTimeout(function(){ ctrl.abort(); }, 10000);
+      var r = await fetch("/api/data?action=tawasul-list", { signal: ctrl.signal });
+      clearTimeout(tmo);
       var d = await r.json();
       if (!r.ok || d.error) {
         setErr(d.error || ("خطأ " + r.status));
@@ -3107,7 +3110,8 @@ function TawasulPage({ user, allEmps }) {
         setProjects(d.projects || []);
       }
     } catch (e) {
-      setErr("تعذر تحميل البيانات: " + (e.message || "اتصال"));
+      var msg = e.name === "AbortError" ? "انتهت المهلة — نظام كوادر بطيء أو غير متوفر" : (e.message || "اتصال");
+      setErr("تعذر تحميل البيانات: " + msg);
       setRequests([]);
     }
     setLoading(false);
@@ -3197,10 +3201,31 @@ function TawasulPage({ user, allEmps }) {
   var activeFilters = (filterStatus !== "all" ? 1 : 0) + (filterCategory !== "all" ? 1 : 0) + (filterUrgency !== "all" ? 1 : 0);
   var pageBg = C.bg;
 
+  // Show loading screen but allow user to skip after 5 seconds
+  var [loadingWait, setLoadingWait] = useState(0);
+  useEffect(function(){
+    if (!loading) { setLoadingWait(0); return; }
+    var t = setInterval(function(){ setLoadingWait(function(w){ return w + 1; }); }, 1000);
+    return function(){ clearInterval(t); };
+  }, [loading]);
+
   if (loading) {
     return (
       <div style={{ minHeight: "100vh", background: pageBg, color: C.text, paddingBottom: 80, display: "flex", alignItems: "center", justifyContent: "center", fontFamily: "'Tajawal',sans-serif" }}>
-        <div style={{ textAlign: "center" }}><div style={{ fontSize: 40, marginBottom: 10 }}>🤝</div><div style={{ fontSize: 14, color: C.sub }}>جارِ تحميل المهام...</div></div>
+        <div style={{ textAlign: "center", maxWidth: 320, padding: 20 }}>
+          <div style={{ fontSize: 40, marginBottom: 10 }}>🤝</div>
+          <div style={{ fontSize: 14, color: C.sub, marginBottom: 14 }}>جارِ تحميل المهام...</div>
+          {loadingWait >= 5 && (
+            <div>
+              <div style={{ fontSize: 11, color: C.sub, marginBottom: 10 }}>
+                ⏳ يستغرق الاتصال وقتاً أطول من المعتاد ({loadingWait}ث)
+              </div>
+              <button onClick={function(){ setLoading(false); setErr("تم التخطي — بيانات قديمة"); setRequests([]); }} style={{ padding: "8px 16px", borderRadius: 10, background: C.card, color: C.text, border: "1px solid " + C.cardBorder, fontSize: 12, fontWeight: 700, cursor: "pointer", fontFamily: "'Tajawal',sans-serif" }}>
+                تخطي والمتابعة
+              </button>
+            </div>
+          )}
+        </div>
       </div>
     );
   }

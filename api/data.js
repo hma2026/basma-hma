@@ -1385,7 +1385,10 @@ export default async function handler(req, res) {
       /* ═══ TAWASUL — نظام تبادل المهام الإدارية (proxy to kadwar) ═══ */
       case 'tawasul-list': {
         try {
-          var kr = await fetch('https://hma.engineer/api/basma-sync?action=tawasul');
+          var ctrl = new AbortController();
+          var tmo = setTimeout(function(){ ctrl.abort(); }, 8000);
+          var kr = await fetch('https://hma.engineer/api/basma-sync?action=tawasul', { signal: ctrl.signal });
+          clearTimeout(tmo);
           if (!kr.ok) return res.status(kr.status).json({ error: 'kadwar returned ' + kr.status, requests: [], categories: [], projects: [] });
           var kd = await kr.json();
           return res.json({
@@ -1397,7 +1400,8 @@ export default async function handler(req, res) {
             syncDate: kd.syncDate || new Date().toISOString(),
           });
         } catch (e) {
-          return res.status(502).json({ error: 'تعذر الاتصال بنظام كوادر: ' + (e.message || 'unknown'), requests: [], categories: [], projects: [] });
+          var msg = e.name === 'AbortError' ? 'انتهت المهلة (كوادر بطيء)' : (e.message || 'unknown');
+          return res.status(502).json({ error: 'تعذر الاتصال بنظام كوادر: ' + msg, requests: [], categories: [], projects: [] });
         }
       }
 
