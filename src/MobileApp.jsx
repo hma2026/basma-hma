@@ -10,7 +10,7 @@ import { ALL_VIOLATIONS_DEFAULT, PENALTY_TYPES, LAIHA_INFO, COMPLAINT_STATUS, VI
 
 /* ═══════════ APP CONFIG (إعدادات التطبيق) ═══════════ */
 const APP_CONFIG = {
-  VER: "6.42",
+  VER: "6.45",
   NAME: "بصمة HMA",
   FULL_NAME: "نظام الحضور والانصراف الذكي",
   COMPANY: "هاني محمد عسيري للاستشارات الهندسية",
@@ -82,6 +82,13 @@ if (typeof document !== "undefined" && !document.getElementById("basma-css")) {
     "body.basma-modal-open{overflow:hidden!important;position:fixed!important;width:100%!important;top:0;left:0;touch-action:none;overscroll-behavior:contain}",
     ".basma-modal-content{-webkit-overflow-scrolling:touch;overscroll-behavior:contain;touch-action:pan-y}",
     ".basma-modal-overlay{-webkit-tap-highlight-color:transparent;touch-action:none}",
+    /* v6.43 — Desktop session: expand modals to match frame width */
+    "body.basma-desktop-mode div[style*='maxWidth: 420px']{max-width:720px!important}",
+    "body.basma-desktop-mode div[style*='maxWidth: 380px']{max-width:640px!important}",
+    "body.basma-desktop-mode div[style*='maxWidth: 360px']{max-width:600px!important}",
+    "body.basma-desktop-mode div[style*='maxWidth: 500px']{max-width:760px!important}",
+    "body.basma-desktop-mode div[style*='max-width: 420px']{max-width:720px!important}",
+    "body.basma-desktop-mode div[style*='max-width: 380px']{max-width:640px!important}",
   ].join("\n");
   document.head.appendChild(style);
 
@@ -390,6 +397,16 @@ function MobileAppInner() {
       return !!(u && u._desktopSession);
     } catch(e) { return false; }
   })();
+
+  // v6.43 — Toggle body class for CSS-based modal width overrides
+  useEffect(function(){
+    if (isDesktopSession) {
+      document.body.classList.add("basma-desktop-mode");
+    } else {
+      document.body.classList.remove("basma-desktop-mode");
+    }
+    return function(){ document.body.classList.remove("basma-desktop-mode"); };
+  }, [isDesktopSession]);
 
   const [page, setPage] = useState(function(){
     if (isDesktopSession) return "tawasul";
@@ -1159,7 +1176,7 @@ function MobileAppInner() {
   if (!consentGiven) return <ConsentScreen onAccept={function(){ localStorage.setItem("basma_consent_date", new Date().toISOString()); setConsentGiven(true); }} />;
 
   return (
-    <div style={Object.assign({}, S.phone, isDesktopSession ? { maxWidth: "none", width: "100%" } : {})}>
+    <div style={Object.assign({}, S.phone, isDesktopSession ? { maxWidth: 860, width: "100%" } : {})}>
       {!online && <div style={{ background: C.red, color: "#fff", textAlign: "center", padding: "6px 0", fontSize: 11, fontWeight: 700 }}>⚠️ لا يوجد اتصال بالإنترنت</div>}
 
       <div key={page} style={{ flex: 1, display: "flex", flexDirection: "column", animation: "pageIn .3s ease" }}>
@@ -3380,6 +3397,7 @@ function exportTawasulPDF(request, nameOf) {
     '.warning{background:#fee;border:1px solid #ef4444;color:#c00;padding:12px;border-radius:8px;font-size:11px;margin-top:20px}' +
     '@media print{body{padding:15px}h1{page-break-after:avoid}table{page-break-inside:auto}tr{page-break-inside:avoid}}' +
     '</style></head><body>' +
+    '<div style="text-align:center;margin-bottom:20px;padding-bottom:15px;border-bottom:3px solid #c9a84c"><img src="/hma-logo.png" alt="HMA" style="width:90px;height:auto;object-fit:contain;display:inline-block" /><div style="font-size:13px;color:#1a3a6e;font-weight:900;margin-top:8px">مكتب هاني محمد عسيري للاستشارات الهندسية</div></div>' +
     '<h1>📋 طلب تواصل — #' + (r.serial || r.id) + '</h1>' +
     '<div class="header-sub">' +
     '<span class="badge" style="background:' + m.color + '22;color:' + m.color + '">' + m.icon + ' ' + m.label + '</span>' +
@@ -9460,7 +9478,8 @@ function exportViolationsRecord(user, violations) {
     var st = v.status === "ACTIVE" ? "سارية" : v.status === "APPEALED" ? "متظلم عليها" : v.status === "CANCELLED" ? "ملغاة" : v.status;
     return "<tr><td>" + (i+1) + "</td><td>" + (v.violationId || "") + "</td><td>" + (v.description || "").replace(/</g,"&lt;") + "</td><td>" + (v.occurrence || "") + "</td><td>" + (v.penaltyLabel || "") + "</td><td>" + st + "</td><td>" + (v.createdAt ? new Date(v.createdAt).toLocaleDateString("ar-SA") : "") + "</td></tr>";
   }).join("");
-  var html = "<!DOCTYPE html><html dir='rtl' lang='ar'><head><meta charset='utf-8'><title>سجل المخالفات — " + user.name + "</title><style>body{font-family:'Segoe UI',Tahoma,sans-serif;margin:30px;color:#1a1a1a}h1{font-size:18px;text-align:center;color:#2B5EA7}h2{font-size:14px;text-align:center;color:#666;margin-bottom:20px}.info{display:flex;justify-content:space-between;margin-bottom:16px;font-size:12px;border:1px solid #ddd;padding:12px;border-radius:8px;background:#f9f9f9}table{width:100%;border-collapse:collapse;margin-top:12px}th{background:#2B5EA7;color:#fff;padding:8px 6px;font-size:11px;text-align:right}td{padding:8px 6px;border-bottom:1px solid #eee;font-size:11px}.footer{margin-top:24px;text-align:center;font-size:10px;color:#999;border-top:1px solid #eee;padding-top:12px}@media print{body{margin:10px}}</style></head><body>" +
+  var html = "<!DOCTYPE html><html dir='rtl' lang='ar'><head><meta charset='utf-8'><title>سجل المخالفات — " + user.name + "</title><style>body{font-family:'Segoe UI',Tahoma,sans-serif;margin:30px;color:#1a1a1a}h1{font-size:18px;text-align:center;color:#2B5EA7}h2{font-size:14px;text-align:center;color:#666;margin-bottom:20px}.info{display:flex;justify-content:space-between;margin-bottom:16px;font-size:12px;border:1px solid #ddd;padding:12px;border-radius:8px;background:#f9f9f9}table{width:100%;border-collapse:collapse;margin-top:12px}th{background:#2B5EA7;color:#fff;padding:8px 6px;font-size:11px;text-align:right}td{padding:8px 6px;border-bottom:1px solid #eee;font-size:11px}.footer{margin-top:24px;text-align:center;font-size:10px;color:#999;border-top:1px solid #eee;padding-top:12px}.hma-hdr{text-align:center;margin-bottom:18px;padding-bottom:14px;border-bottom:3px solid #c9a84c}.hma-hdr img{width:80px;height:auto}@media print{body{margin:10px}}</style></head><body>" +
+    "<div class='hma-hdr'><img src='/hma-logo.png' alt='HMA' /></div>" +
     "<h1>📜 سجل المخالفات الرسمية</h1>" +
     "<h2>مكتب هاني محمد عسيري للاستشارات الهندسية</h2>" +
     "<div class='info'><div><strong>الموظف:</strong> " + user.name + "</div><div><strong>الرقم:</strong> " + user.id + "</div><div><strong>المسمى:</strong> " + (user.role || "—") + "</div><div><strong>التاريخ:</strong> " + new Date().toLocaleDateString("ar-SA") + "</div></div>" +

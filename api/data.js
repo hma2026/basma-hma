@@ -1141,6 +1141,66 @@ export default async function handler(req, res) {
         return res.json({ from: weekAgo.toISOString().split('T')[0], to: now.toISOString().split('T')[0], employees: comparison });
       }
 
+      /* v6.44 — DIAGNOSTIC: shows what the system knows about org hierarchy */
+      case 'debug-hierarchy': {
+        var dbgEmps = (await dbGet('employees')) || [];
+        var dbgStats = {
+          totalEmployees: dbgEmps.length,
+          withKadwarId: 0,
+          withManagerKadwarId: 0,
+          withManagerEmail: 0,
+          withManagerId: 0,
+          withoutAnyManager: 0,
+        };
+        var dbgSample = [];
+        dbgEmps.forEach(function(e){
+          if (e.kadwarId) dbgStats.withKadwarId++;
+          if (e.managerKadwarId) dbgStats.withManagerKadwarId++;
+          if (e.managerEmail) dbgStats.withManagerEmail++;
+          if (e.managerId) dbgStats.withManagerId++;
+          if (!e.managerKadwarId && !e.managerEmail && !e.managerId && !e.supervisorId) dbgStats.withoutAnyManager++;
+        });
+        // Show up to 5 sample employees (with sensitive fields redacted)
+        dbgEmps.slice(0, 5).forEach(function(e){
+          dbgSample.push({
+            id: e.id,
+            name: e.name,
+            kadwarId: e.kadwarId || null,
+            managerId: e.managerId || null,
+            managerKadwarId: e.managerKadwarId || null,
+            managerEmail: e.managerEmail || null,
+            supervisorId: e.supervisorId || null,
+            supervisorKadwarId: e.supervisorKadwarId || null,
+            role: e.role || null,
+            isManager: e.isManager || false,
+          });
+        });
+        // Build hierarchy same way tawasul-list does
+        var dbgKadToEmp = {}, dbgEmailToEmp = {};
+        dbgEmps.forEach(function(e){
+          if (e.kadwarId) dbgKadToEmp[String(e.kadwarId)] = String(e.id);
+          if (e.email) dbgEmailToEmp[String(e.email).toLowerCase()] = String(e.id);
+        });
+        var dbgHierarchy = (await dbGet('org_hierarchy')) || {};
+        dbgEmps.forEach(function(e){
+          if (!e || !e.id) return;
+          var empKey = String(e.id);
+          if (dbgHierarchy[empKey]) return;
+          var managerId = null;
+          if (e.managerId) managerId = String(e.managerId);
+          else if (e.managerKadwarId && dbgKadToEmp[String(e.managerKadwarId)]) managerId = dbgKadToEmp[String(e.managerKadwarId)];
+          else if (e.managerEmail && dbgEmailToEmp[String(e.managerEmail).toLowerCase()]) managerId = dbgEmailToEmp[String(e.managerEmail).toLowerCase()];
+          if (managerId && managerId !== empKey) dbgHierarchy[empKey] = managerId;
+        });
+        return res.json({
+          stats: dbgStats,
+          sampleEmployees: dbgSample,
+          computedHierarchy: dbgHierarchy,
+          hierarchySize: Object.keys(dbgHierarchy).length,
+          hint: 'إذا withManagerKadwarId = 0 فالمزامنة من كوادر لم تحفظ managerId. إذا > 0 لكن hierarchySize = 0 فالـ managerKadwarId لا يطابق أي kadwarId موجود.',
+        });
+      }
+
       case 'auto_check': {
         // Auto-detect violations for today + workType-aware + auto-warn after 3 lates
         const today = new Date().toISOString().split('T')[0];
@@ -1871,8 +1931,10 @@ export default async function handler(req, res) {
             var allEmps = (await dbGet('employees')) || [];
             // Map kadwarId -> empId (for resolving manager references by kadwar id)
             var kadIdToEmpId = {};
+            var emailToEmpId = {};
             allEmps.forEach(function(e){
               if (e.kadwarId) kadIdToEmpId[String(e.kadwarId)] = String(e.id);
+              if (e.email) emailToEmpId[String(e.email).toLowerCase()] = String(e.id);
             });
             // For each employee with a manager, register in hierarchy
             allEmps.forEach(function(e){
@@ -1884,9 +1946,12 @@ export default async function handler(req, res) {
               if (e.managerId) managerId = String(e.managerId);
               // Manager by kadwar id → resolve to empId
               else if (e.managerKadwarId && kadIdToEmpId[String(e.managerKadwarId)]) managerId = kadIdToEmpId[String(e.managerKadwarId)];
-              // Supervisor fallback
+              // v6.44 — Manager by email (some kadwar sync returns email not id)
+              else if (e.managerEmail && emailToEmpId[String(e.managerEmail).toLowerCase()]) managerId = emailToEmpId[String(e.managerEmail).toLowerCase()];
+              // Supervisor fallbacks
               else if (e.supervisorId) managerId = String(e.supervisorId);
               else if (e.supervisorKadwarId && kadIdToEmpId[String(e.supervisorKadwarId)]) managerId = kadIdToEmpId[String(e.supervisorKadwarId)];
+              else if (e.supervisorEmail && emailToEmpId[String(e.supervisorEmail).toLowerCase()]) managerId = emailToEmpId[String(e.supervisorEmail).toLowerCase()];
               if (managerId && managerId !== empKey) hierarchy[empKey] = managerId;
             });
           } catch(e) { /* silent */ }

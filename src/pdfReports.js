@@ -3,7 +3,7 @@
    Uses browser print-to-PDF for perfect Arabic support
    ═══════════════════════════════════════════════════════════════ */
 
-const HMA_LOGO = `<svg viewBox="0 0 100 100" style="width:60px;height:60px"><circle cx="50" cy="50" r="48" fill="#1a3a6e"/><text x="50" y="58" font-family="Cairo,sans-serif" font-size="24" font-weight="900" fill="#d4a949" text-anchor="middle">HMA</text></svg>`;
+const HMA_LOGO = `<img src="/hma-logo.png" alt="HMA" style="width:80px;height:auto;object-fit:contain;display:block" />`;
 
 function todayAr() {
   return new Date().toLocaleDateString('ar-SA', {
