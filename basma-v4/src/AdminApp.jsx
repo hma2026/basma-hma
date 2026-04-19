@@ -3,7 +3,7 @@ import { ALL_VIOLATIONS_DEFAULT, PENALTY_TYPES, LAIHA_INFO, COMPLAINT_STATUS, VI
 import { generateAttendanceReport, generateEmployeeReport, generateMonthlySummary, generateViolationsReport, generateEmployeesListReport, generateBenefitsReport, generateAnnouncementsReport } from "./pdfReports";
 
 const APP = "بصمة HMA";
-const VER = "5.09";
+const VER = "5.10";
 const CO = "هاني محمد عسيري للإستشارات الهندسية";
 const B = { blue: "#2B5EA7", yellow: "#FDD800", red: "#E2192C", black: "#1A1A1A", blueDk: "#1E4478", blueLt: "#EDF3FB", gold: "#D4A017" };
 
@@ -2209,11 +2209,15 @@ function TawasulAdminTaskDetail({ task, t, B, statusMeta, onDelete, onClose }) {
             </div>
           </div>
 
-          {/* Description — DIFFERENT BACKGROUND (gold tint gradient) */}
+          {/* Description — distinguished by gold side bar + prominent header (plain background) */}
           {r.description && (
-            <div style={{ background: "linear-gradient(135deg, " + B.gold + "14, " + B.gold + "06)", borderRadius: 12, padding: 16, border: "1.5px solid " + B.gold + "55", marginBottom: 14, boxShadow: "inset 0 0 0 1px " + B.gold + "20" }}>
-              <div style={{ fontSize: 12, fontWeight: 900, color: B.gold, marginBottom: 10, display: "flex", alignItems: "center", gap: 6 }}><span>📝</span><span>وصف المهمة</span></div>
-              <div style={{ fontSize: 13, color: t.tx, lineHeight: 1.9, whiteSpace: "pre-wrap" }}>{r.description}</div>
+            <div style={{ position: "relative", background: t.card, borderRadius: 12, padding: "16px 16px 16px 22px", border: "1px solid " + t.sep, marginBottom: 14, overflow: "hidden" }}>
+              <div style={{ position: "absolute", top: 0, bottom: 0, right: 0, width: 6, background: "linear-gradient(180deg, " + B.gold + ", " + B.gold + "aa)" }} />
+              <div style={{ fontSize: 14, fontWeight: 900, color: B.gold, marginBottom: 12, display: "flex", alignItems: "center", gap: 8 }}>
+                <span style={{ fontSize: 18 }}>📝</span>
+                <span>وصف المهمة</span>
+              </div>
+              <div style={{ fontSize: 14, color: t.tx, lineHeight: 1.95, whiteSpace: "pre-wrap", fontWeight: 500 }}>{r.description}</div>
             </div>
           )}
 

@@ -10,7 +10,7 @@ import { ALL_VIOLATIONS_DEFAULT, PENALTY_TYPES, LAIHA_INFO, COMPLAINT_STATUS, VI
 
 /* ═══════════ APP CONFIG (إعدادات التطبيق) ═══════════ */
 const APP_CONFIG = {
-  VER: "5.09",
+  VER: "5.10",
   NAME: "بصمة HMA",
   FULL_NAME: "نظام الحضور والانصراف الذكي",
   COMPANY: "هاني محمد عسيري للاستشارات الهندسية",
@@ -5026,9 +5026,14 @@ function TawasulDetailModal({ request, user, allEmps, onClose, nameOf, onUpdated
           </div>
 
           {r.description && (
-            <div style={{ background: "linear-gradient(135deg, " + C.gold + "12, " + C.gold + "06)", borderRadius: 12, padding: 14, border: "1.5px solid " + C.gold + "50", marginBottom: 12, boxShadow: "inset 0 0 0 1px " + C.gold + "20" }}>
-              <div style={{ fontSize: 11, fontWeight: 800, color: C.gold, marginBottom: 8, display: "flex", alignItems: "center", gap: 6 }}><span>📝</span><span>وصف المهمة</span></div>
-              <div style={{ fontSize: 13, color: C.text, lineHeight: 1.8, whiteSpace: "pre-wrap" }}>{r.description}</div>
+            <div style={{ position: "relative", background: C.card, borderRadius: 12, padding: "14px 14px 14px 18px", border: "1px solid " + C.cardBorder, marginBottom: 12, overflow: "hidden" }}>
+              {/* Gold accent bar on the right (RTL) */}
+              <div style={{ position: "absolute", top: 0, bottom: 0, right: 0, width: 5, background: "linear-gradient(180deg, " + C.gold + ", " + C.gold + "aa)" }} />
+              <div style={{ fontSize: 13, fontWeight: 900, color: C.gold, marginBottom: 10, display: "flex", alignItems: "center", gap: 8, fontFamily: "'Cairo',sans-serif" }}>
+                <span style={{ fontSize: 16 }}>📝</span>
+                <span>وصف المهمة</span>
+              </div>
+              <div style={{ fontSize: 14, color: C.text, lineHeight: 1.85, whiteSpace: "pre-wrap", fontWeight: 500 }}>{r.description}</div>
             </div>
           )}
 
