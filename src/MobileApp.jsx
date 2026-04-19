@@ -10,7 +10,7 @@ import { ALL_VIOLATIONS_DEFAULT, PENALTY_TYPES, LAIHA_INFO, COMPLAINT_STATUS, VI
 
 /* ═══════════ APP CONFIG (إعدادات التطبيق) ═══════════ */
 const APP_CONFIG = {
-  VER: "5.11",
+  VER: "6.23",
   NAME: "بصمة HMA",
   FULL_NAME: "نظام الحضور والانصراف الذكي",
   COMPANY: "هاني محمد عسيري للاستشارات الهندسية",
@@ -183,43 +183,36 @@ var CPS = [
   { label: "انصراف", h: 17, m: 0, icon: "🌙", color: "#6366f1" },
 ];
 
-/* ── Challenge Questions (5 أنواع متفق عليها) ── */
-const CHALLENGES = [
-  { q: "أكمل: سبحان الله وبحمده ...", opts: ["سبحان الله العظيم","الحمد لله رب العالمين","لا إله إلا الله"], correct: 0, type: "ذكر" },
-  { q: "دعاء الصباح: اللهم بك أصبحنا وبك ...", opts: ["أمسينا","حيينا","توكلنا"], correct: 0, type: "ذكر" },
-  { q: "ما وحدة قياس قوة الخرسانة؟", opts: ["نيوتن","ميجا باسكال","كيلو جرام"], correct: 1, type: "هندسي" },
-  { q: "ما هو الحد الأدنى لغطاء الخرسانة للأعمدة؟", opts: ["25 مم","40 مم","75 مم"], correct: 1, type: "هندسي" },
-  { q: "كم يوم يلزم لمعالجة الخرسانة بالماء؟", opts: ["3 أيام","7 أيام","14 يوم"], correct: 1, type: "هندسي" },
-  { q: "ما الشيء الذي يمشي بلا أرجل؟", opts: ["الماء","الوقت","الهواء"], correct: 1, type: "لغز" },
-  { q: "كم عدد أركان الإسلام؟", opts: ["ثلاثة","خمسة","سبعة"], correct: 1, type: "عام" },
-  { q: "كم ركعة صلاة التراويح؟", opts: ["8 أو 20","12","6"], correct: 0, type: "عام" },
-  { q: "ما هي نسبة الماء إلى الأسمنت المثالية؟", opts: ["0.30","0.45","0.60"], correct: 1, type: "هندسي" },
-  { q: "ما أول شي يُراجع عند استلام موقع جديد؟", opts: ["المخططات","الميزانية","المعدات"], correct: 0, type: "هندسي" },
-  // أسئلة نظام العمل
-  { q: "كم يوم مدة التظلم من جزاء تأديبي؟", opts: ["يوم واحد","3 أيام عمل","7 أيام"], correct: 1, type: "نظام العمل" },
-  { q: "بعد كم يوم غياب متصل يُفسخ العقد (م.80)؟", opts: ["10 أيام","15 يوم","30 يوم"], correct: 1, type: "نظام العمل" },
-  { q: "كم يوم الإجازة السنوية لمن خدم أقل من 5 سنوات؟", opts: ["15 يوم","21 يوم","30 يوم"], correct: 1, type: "نظام العمل" },
-  { q: "بعد كم يوم من المخالفة لا يُعتبر عائداً (م.44)؟", opts: ["90 يوم","180 يوم","365 يوم"], correct: 1, type: "نظام العمل" },
-  { q: "كم ساعة عمل يومياً في رمضان للمسلمين؟", opts: ["5 ساعات","6 ساعات","7 ساعات"], correct: 1, type: "نظام العمل" },
-  // أسئلة سلامة
-  { q: "ما أول إجراء عند اكتشاف حريق في الموقع؟", opts: ["إطفاء الحريق","إنذار الجميع والإخلاء","الاتصال بالشرطة"], correct: 1, type: "سلامة" },
-  { q: "ما لون خوذة السلامة للمهندس عادة؟", opts: ["أبيض","أصفر","أحمر"], correct: 0, type: "سلامة" },
-  { q: "كم المسافة الآمنة من حافة الحفريات؟", opts: ["0.5 متر","1 متر","2 متر"], correct: 2, type: "سلامة" },
-  // أسئلة هندسية
-  { q: "ما الفرق بين الإسمنت البورتلاندي العادي والمقاوم؟", opts: ["اللون","مقاومة الكبريتات","السعر"], correct: 1, type: "هندسي" },
-  { q: "ما الحد الأقصى لـ slump الخرسانة العادية؟", opts: ["50 مم","100 مم","150 مم"], correct: 1, type: "هندسي" },
-  { q: "ما المسافة بين أعمدة القالب (الشدّة) عادة؟", opts: ["50 سم","100 سم","200 سم"], correct: 1, type: "هندسي" },
-  { q: "كم يوم قبل فك شدّة البلاطة؟", opts: ["3 أيام","7 أيام","21 يوم"], correct: 2, type: "هندسي" },
-  // أسئلة عامة
-  { q: "ما عاصمة المملكة العربية السعودية؟", opts: ["جدة","الرياض","مكة"], correct: 1, type: "عام" },
-  { q: "في أي سنة تأسست المملكة؟", opts: ["1902","1932","1945"], correct: 1, type: "عام" },
-  { q: "كم عدد مناطق المملكة الإدارية؟", opts: ["10","13","15"], correct: 1, type: "عام" },
-  { q: "ما هي رؤية المملكة؟", opts: ["رؤية 2025","رؤية 2030","رؤية 2035"], correct: 1, type: "عام" },
-  { q: "ما الطعم الذي لا تستطيع الطيور تذوقه؟", opts: ["المالح","الحار","الحلو"], correct: 1, type: "لغز" },
-  { q: "كم عدد العظام في جسم الإنسان البالغ؟", opts: ["176","206","256"], correct: 1, type: "عام" },
-  { q: "ما أقوى عضلة في جسم الإنسان؟", opts: ["القلب","اللسان","الفك"], correct: 2, type: "عام" },
-  { q: "أكمل الحديث: إنما الأعمال ...", opts: ["بالنيات","بالخواتيم","بالإخلاص"], correct: 0, type: "ذكر" },
-];
+/* ── Challenge Questions ──
+   NOTE: No default challenges in code anymore. 
+   Questions are loaded from admin-managed bank (settings.questions in Redis).
+   If the bank is empty, the challenge simply doesn't appear. */
+function adminQToChallenge(adminQ) {
+  var opts = [adminQ.correct, adminQ.wrong1, adminQ.wrong2];
+  var correctText = adminQ.correct;
+  for (var i = opts.length - 1; i > 0; i--) {
+    var j = Math.floor(Math.random() * (i + 1));
+    var tmp = opts[i]; opts[i] = opts[j]; opts[j] = tmp;
+  }
+  var correctIdx = opts.indexOf(correctText);
+  return { q: adminQ.q, opts: opts, correct: correctIdx, type: adminQ.type || "سؤال" };
+}
+
+var CHALLENGES_CACHE = null; // populated from /api/data?action=settings on load
+function getChallengesList() {
+  if (Array.isArray(CHALLENGES_CACHE) && CHALLENGES_CACHE.length > 0) {
+    return CHALLENGES_CACHE.map(adminQToChallenge);
+  }
+  return []; // empty = no challenge shown
+}
+function pickChallenge() {
+  var list = getChallengesList();
+  if (!list || list.length === 0) return null;
+  return list[Math.floor(Math.random() * list.length)];
+}
+
+// Legacy constant kept as empty array to avoid ReferenceError in edge cases
+const CHALLENGES = [];
 
 /* ── Mascot Messages ── */
 const MASCOT = {
@@ -848,6 +841,12 @@ function MobileAppInner() {
         fetch("/api/data?action=banners").then(function(r){ return r.json(); }).then(function(bnrD){
           if (bnrD && Array.isArray(bnrD.banners)) setBanners(bnrD.banners);
         }),
+        // Admin-managed challenge questions (stored in settings.questions)
+        fetch("/api/data?action=settings").then(function(r){ return r.json(); }).then(function(sd){
+          if (sd && Array.isArray(sd.questions) && sd.questions.length > 0) {
+            CHALLENGES_CACHE = sd.questions;
+          }
+        }).catch(function(){}),
         // Field projects (only if field/mixed)
         (emp.type === "field" || emp.type === "mixed") ? api("projects").then(function(ps){
           if (Array.isArray(ps)) setFieldProjects(ps);
@@ -1212,13 +1211,13 @@ function HomePage({ user, branch, now, todayAtt, allAtt, gps, gpsDist, streak, l
     }
   }
 
-  // Challenge state — inside the circle
-  var [challengeQ] = useState(function() { return CHALLENGES[Math.floor(Math.random() * CHALLENGES.length)]; });
+  // Challenge state — only shows if admin has added questions to the bank
+  var [challengeQ] = useState(function() { return pickChallenge(); });
   var [challengeAnswer, setChallengeAnswer] = useState(null); // null = not answered, true = correct, false = wrong
   var challengeDoneToday = localStorage.getItem("basma_challenge_" + todayStr()) === "1";
-  // Show challenge if user hasn't checked in yet today AND hasn't already answered
+  // Show challenge only if: user hasn't checked in, not answered today, AND a valid question was loaded
   var hasCheckedIn = (todayAtt || []).some(function(r){ return r.type === "checkin"; });
-  var showChallenge = !hasCheckedIn && !challengeDoneToday && challengeAnswer === null;
+  var showChallenge = !!challengeQ && !hasCheckedIn && !challengeDoneToday && challengeAnswer === null;
 
   function answerChallenge(idx) {
     if (challengeAnswer !== null) return;
@@ -5737,46 +5736,138 @@ function FaceModal({ empId, onVerified, onSkip, onCancel }) {
 }
 
 function ChallengeModal({ user, onClose, onPoints }) {
-  var [q] = useState(function(){ return CHALLENGES[Math.floor(Math.random() * CHALLENGES.length)]; });
+  var [q] = useState(function(){ return pickChallenge(); });
   var [selected, setSelected] = useState(null);
   var [answered, setAnswered] = useState(false);
+  var [closing, setClosing] = useState(false);
+
+  // Guard: if no question is available (empty bank), just close silently
+  useEffect(function(){
+    if (!q) onClose();
+  }, [q]);
+  if (!q) return null;
+
+  function doClose() {
+    setClosing(true);
+    setTimeout(onClose, 200);
+  }
 
   function answer(idx) {
     if (answered) return;
     setSelected(idx);
     setAnswered(true);
     if (idx === q.correct) {
-      setTimeout(function(){ onPoints(25); onClose(); }, 1200);
+      setTimeout(function(){ onPoints(25); doClose(); }, 1200);
     } else {
-      setTimeout(onClose, 2000);
+      setTimeout(doClose, 2000);
     }
   }
 
   var isCorrect = selected === q.correct;
 
   return (
-    <div style={S.overlay} onClick={onClose}>
-      <div className="basma-slideup" style={{ ...S.modal, maxWidth: 360 }} onClick={function(e){ e.stopPropagation(); }}>
-        <div style={{ fontSize: 14, fontWeight: 800, fontFamily: "'Cairo',sans-serif", textAlign: "center", color: C.green, marginBottom: 4 }}>⚡ سؤال التحدي</div>
-        <div style={{ fontSize: 11, color: C.sub, textAlign: "center", marginBottom: 16 }}>اجب صحيحاً واكسب 25 نقطة</div>
-        <div style={{ fontSize: 15, fontWeight: 700, textAlign: "center", marginBottom: 16, lineHeight: 1.6, color: C.text }}>{q.q}</div>
+    <div
+      onClick={doClose}
+      style={{
+        position: "fixed",
+        inset: 0,
+        background: "rgba(0,0,0,0.28)",
+        backdropFilter: "blur(6px)",
+        WebkitBackdropFilter: "blur(6px)",
+        zIndex: 300,
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "center",
+        padding: 20,
+        fontFamily: "'Tajawal',sans-serif",
+        animation: closing ? "challengeFadeOut .2s ease forwards" : "challengeFadeIn .25s ease forwards",
+      }}
+    >
+      <style>{`
+        @keyframes challengeFadeIn { from { opacity: 0; } to { opacity: 1; } }
+        @keyframes challengeFadeOut { from { opacity: 1; } to { opacity: 0; } }
+        @keyframes challengePopIn {
+          0% { transform: scale(0.7) translateY(20px); opacity: 0; }
+          60% { transform: scale(1.03) translateY(-2px); opacity: 1; }
+          100% { transform: scale(1) translateY(0); opacity: 1; }
+        }
+        @keyframes challengePopOut {
+          from { transform: scale(1); opacity: 1; }
+          to { transform: scale(0.92) translateY(10px); opacity: 0; }
+        }
+      `}</style>
+      <div
+        onClick={function(e){ e.stopPropagation(); }}
+        style={{
+          background: C.card,
+          borderRadius: 22,
+          padding: "22px 20px 18px",
+          width: "100%",
+          maxWidth: 360,
+          border: "2px solid " + C.gold + "55",
+          boxShadow: "0 20px 60px rgba(0,0,0,0.5), 0 0 0 1px " + C.gold + "22",
+          position: "relative",
+          animation: closing ? "challengePopOut .2s ease forwards" : "challengePopIn .35s cubic-bezier(0.34, 1.56, 0.64, 1) forwards",
+        }}
+      >
+        {/* Close button in the corner — shows this is a popup */}
+        <button
+          onClick={doClose}
+          style={{
+            position: "absolute",
+            top: 10,
+            left: 10,
+            width: 28,
+            height: 28,
+            borderRadius: 14,
+            background: C.bg,
+            border: "1px solid " + C.cardBorder,
+            color: C.sub,
+            fontSize: 14,
+            cursor: "pointer",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            fontFamily: "inherit",
+          }}
+          title="إغلاق"
+        >
+          ×
+        </button>
+
+        {/* Floating badge at top */}
+        <div style={{ position: "absolute", top: -14, left: "50%", transform: "translateX(-50%)", background: "linear-gradient(135deg, " + C.gold + ", " + C.goldDark + ")", color: "#fff", padding: "5px 14px", borderRadius: 14, fontSize: 10, fontWeight: 900, letterSpacing: 0.5, boxShadow: "0 4px 12px " + C.gold + "66", fontFamily: "'Cairo',sans-serif" }}>
+          ⚡ سؤال التحدي
+        </div>
+
+        <div style={{ fontSize: 11, color: C.sub, textAlign: "center", marginTop: 8, marginBottom: 14 }}>
+          اجب صحيحاً واكسب 25 نقطة · {q.type || "عام"}
+        </div>
+        <div style={{ fontSize: 15, fontWeight: 700, textAlign: "center", marginBottom: 16, lineHeight: 1.6, color: C.text, fontFamily: "'Cairo',sans-serif" }}>
+          {q.q}
+        </div>
         <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
           {q.opts.map(function(opt, i) {
-            var bg = "#fff", border = "2px solid #eee", color = C.text;
+            var bg = C.bg, border = "2px solid " + C.cardBorder, color = C.text;
             if (answered) {
-              if (i === q.correct) { bg = "rgba(45,159,111,.1)"; border = "2px solid " + C.green; color = C.green; }
-              else if (i === selected && !isCorrect) { bg = "rgba(231,76,60,.1)"; border = "2px solid " + C.red; color = C.red; }
+              if (i === q.correct) { bg = "rgba(16,185,129,.15)"; border = "2px solid #10b981"; color = "#10b981"; }
+              else if (i === selected && !isCorrect) { bg = "rgba(239,68,68,.15)"; border = "2px solid #ef4444"; color = "#ef4444"; }
             }
             return (
-              <button key={i} onClick={function(){ answer(i); }} style={{ padding: "12px 16px", borderRadius: 14, background: bg, border: border, color: color, fontSize: 14, fontWeight: 600, cursor: answered ? "default" : "pointer", textAlign: "center", fontFamily: "'Tajawal',sans-serif", transition: "all .2s" }}>
+              <button key={i} onClick={function(){ answer(i); }} disabled={answered} style={{ padding: "12px 16px", borderRadius: 14, background: bg, border: border, color: color, fontSize: 14, fontWeight: 700, cursor: answered ? "default" : "pointer", textAlign: "center", fontFamily: "'Tajawal',sans-serif", transition: "all .2s" }}>
                 {answered && i === q.correct ? "✓ " : ""}{answered && i === selected && !isCorrect ? "✗ " : ""}{opt}
               </button>
             );
           })}
         </div>
         {answered && (
-          <div style={{ textAlign: "center", marginTop: 14, fontSize: 14, fontWeight: 800, color: isCorrect ? C.green : C.red }}>
+          <div style={{ textAlign: "center", marginTop: 14, fontSize: 14, fontWeight: 800, color: isCorrect ? "#10b981" : "#ef4444", fontFamily: "'Cairo',sans-serif" }}>
             {isCorrect ? "🎉 إجابة صحيحة! +25 نقطة" : "❌ إجابة خاطئة — حظاً أوفر غداً"}
+          </div>
+        )}
+        {!answered && (
+          <div style={{ textAlign: "center", marginTop: 12, fontSize: 10, color: C.sub }}>
+            يمكنك إغلاق النافذة والعودة لاحقاً
           </div>
         )}
       </div>

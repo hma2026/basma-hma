@@ -3028,6 +3028,223 @@ export default async function handler(req, res) {
         return res.json(results);
       }
 
+      case 'seed_questions': {
+        // One-time seed: populates settings.questions with the default bank
+        // for the admin to cherry-pick from. Does NOT overwrite existing questions.
+        if (req.method !== 'POST') return res.status(405).json({ error: 'POST required' });
+        var DEFAULT_BANK = [
+          // ذكر
+          { type: "ذكر", q: "أكمل: سبحان الله وبحمده ...", correct: "سبحان الله العظيم", wrong1: "الحمد لله رب العالمين", wrong2: "لا إله إلا الله" },
+          { type: "ذكر", q: "دعاء الصباح: اللهم بك أصبحنا وبك ...", correct: "أمسينا", wrong1: "حيينا", wrong2: "توكلنا" },
+          { type: "ذكر", q: "أكمل الحديث: إنما الأعمال ...", correct: "بالنيات", wrong1: "بالخواتيم", wrong2: "بالإخلاص" },
+          // هندسي
+          { type: "هندسي", q: "ما وحدة قياس قوة الخرسانة؟", correct: "ميجا باسكال", wrong1: "نيوتن", wrong2: "كيلو جرام" },
+          { type: "هندسي", q: "ما هو الحد الأدنى لغطاء الخرسانة للأعمدة؟", correct: "40 مم", wrong1: "25 مم", wrong2: "75 مم" },
+          { type: "هندسي", q: "كم يوم يلزم لمعالجة الخرسانة بالماء؟", correct: "7 أيام", wrong1: "3 أيام", wrong2: "14 يوم" },
+          { type: "هندسي", q: "ما هي نسبة الماء إلى الأسمنت المثالية؟", correct: "0.45", wrong1: "0.30", wrong2: "0.60" },
+          { type: "هندسي", q: "ما أول شي يُراجع عند استلام موقع جديد؟", correct: "المخططات", wrong1: "الميزانية", wrong2: "المعدات" },
+          { type: "هندسي", q: "ما الفرق بين الإسمنت البورتلاندي العادي والمقاوم؟", correct: "مقاومة الكبريتات", wrong1: "اللون", wrong2: "السعر" },
+          { type: "هندسي", q: "ما الحد الأقصى لـ slump الخرسانة العادية؟", correct: "100 مم", wrong1: "50 مم", wrong2: "150 مم" },
+          { type: "هندسي", q: "ما المسافة بين أعمدة القالب (الشدّة) عادة؟", correct: "100 سم", wrong1: "50 سم", wrong2: "200 سم" },
+          { type: "هندسي", q: "كم يوم قبل فك شدّة البلاطة؟", correct: "21 يوم", wrong1: "3 أيام", wrong2: "7 أيام" },
+          // نظام العمل
+          { type: "سؤال", q: "كم يوم مدة التظلم من جزاء تأديبي؟", correct: "3 أيام عمل", wrong1: "يوم واحد", wrong2: "7 أيام" },
+          { type: "سؤال", q: "بعد كم يوم غياب متصل يُفسخ العقد (م.80)؟", correct: "15 يوم", wrong1: "10 أيام", wrong2: "30 يوم" },
+          { type: "سؤال", q: "كم يوم الإجازة السنوية لمن خدم أقل من 5 سنوات؟", correct: "21 يوم", wrong1: "15 يوم", wrong2: "30 يوم" },
+          { type: "سؤال", q: "بعد كم يوم من المخالفة لا يُعتبر عائداً (م.44)؟", correct: "180 يوم", wrong1: "90 يوم", wrong2: "365 يوم" },
+          { type: "سؤال", q: "كم ساعة عمل يومياً في رمضان للمسلمين؟", correct: "6 ساعات", wrong1: "5 ساعات", wrong2: "7 ساعات" },
+          // سلامة
+          { type: "معلومة", q: "ما أول إجراء عند اكتشاف حريق في الموقع؟", correct: "إنذار الجميع والإخلاء", wrong1: "إطفاء الحريق", wrong2: "الاتصال بالشرطة" },
+          { type: "معلومة", q: "ما لون خوذة السلامة للمهندس عادة؟", correct: "أبيض", wrong1: "أصفر", wrong2: "أحمر" },
+          { type: "معلومة", q: "كم المسافة الآمنة من حافة الحفريات؟", correct: "2 متر", wrong1: "0.5 متر", wrong2: "1 متر" },
+          // ألغاز
+          { type: "لغز", q: "ما الشيء الذي يمشي بلا أرجل؟", correct: "الوقت", wrong1: "الماء", wrong2: "الهواء" },
+          { type: "لغز", q: "ما الطعم الذي لا تستطيع الطيور تذوقه؟", correct: "الحار", wrong1: "المالح", wrong2: "الحلو" },
+          // عام
+          { type: "سؤال", q: "كم عدد أركان الإسلام؟", correct: "خمسة", wrong1: "ثلاثة", wrong2: "سبعة" },
+          { type: "سؤال", q: "كم ركعة صلاة التراويح؟", correct: "8 أو 20", wrong1: "12", wrong2: "6" },
+          { type: "سؤال", q: "ما عاصمة المملكة العربية السعودية؟", correct: "الرياض", wrong1: "جدة", wrong2: "مكة" },
+          { type: "سؤال", q: "في أي سنة تأسست المملكة؟", correct: "1932", wrong1: "1902", wrong2: "1945" },
+          { type: "سؤال", q: "كم عدد مناطق المملكة الإدارية؟", correct: "13", wrong1: "10", wrong2: "15" },
+          { type: "سؤال", q: "ما هي رؤية المملكة؟", correct: "رؤية 2030", wrong1: "رؤية 2025", wrong2: "رؤية 2035" },
+          { type: "معلومة", q: "كم عدد العظام في جسم الإنسان البالغ؟", correct: "206", wrong1: "176", wrong2: "256" },
+          { type: "معلومة", q: "ما أقوى عضلة في جسم الإنسان؟", correct: "الفك", wrong1: "القلب", wrong2: "اللسان" },
+        ];
+        try {
+          var settingsCur = await dbGet('settings') || {};
+          var mode = (req.body && req.body.mode) || 'append'; // 'append' | 'replace'
+          var existing = Array.isArray(settingsCur.questions) ? settingsCur.questions : [];
+          var nowTs = Date.now();
+          var seeded = DEFAULT_BANK.map(function(q, i){ return Object.assign({ id: nowTs + i }, q); });
+          var merged;
+          if (mode === 'replace' || existing.length === 0) {
+            merged = seeded;
+          } else {
+            // Append, avoiding duplicates by question text
+            var existingTexts = new Set(existing.map(function(q){ return (q.q || '').trim(); }));
+            var toAdd = seeded.filter(function(q){ return !existingTexts.has((q.q || '').trim()); });
+            merged = existing.concat(toAdd);
+          }
+          settingsCur.questions = merged;
+          await dbSet('settings', settingsCur);
+          return res.json({ ok: true, total: merged.length, added: merged.length - existing.length, mode: mode });
+        } catch (e) {
+          return res.status(500).json({ error: 'seed_questions: ' + (e.message || 'unknown') });
+        }
+      }
+
+      case 'system_check': {
+        // Comprehensive system health check — runs 20+ tests across storage, data, integrations
+        var report = {
+          ts: new Date().toISOString(),
+          overall: 'ok',
+          sections: {},
+        };
+
+        async function safeTime(fn) {
+          var t0 = Date.now();
+          try { var v = await fn(); return { ok: true, ms: Date.now() - t0, value: v }; }
+          catch(e) { return { ok: false, ms: Date.now() - t0, error: (e.message || String(e)).substring(0, 200) }; }
+        }
+
+        // ══════════ STORAGE LAYER ══════════
+        var storage = {};
+        // Redis
+        storage.redis_configured = { ok: USE_REDIS, value: USE_REDIS ? 'Upstash URL + token present' : 'missing UPSTASH_REDIS_REST_URL or UPSTASH_REDIS_REST_TOKEN' };
+        if (USE_REDIS) {
+          storage.redis_write = await safeTime(async function(){
+            await redisSet('__health_check', { ts: new Date().toISOString() });
+            return 'wrote';
+          });
+          storage.redis_read = await safeTime(async function(){
+            var v = await redisGet('__health_check');
+            return v && v.ts ? 'read back OK' : 'read failed';
+          });
+          storage.redis_delete = await safeTime(async function(){
+            await redisRequest('DEL', PFX_REDIS + '__health_check');
+            return 'deleted';
+          });
+        }
+        // R2
+        storage.r2_configured = { ok: USE_R2, value: USE_R2 ? 'R2 credentials present' : 'missing R2_ACCOUNT_ID/KEY/SECRET' };
+        storage.r2_public_url = { ok: !!R2_PUBLIC_URL, value: R2_PUBLIC_URL || 'R2_PUBLIC_URL not set' };
+        // Blob (legacy)
+        storage.blob_configured = { ok: !!process.env.BLOB_READ_WRITE_TOKEN, value: process.env.BLOB_READ_WRITE_TOKEN ? 'BLOB token present (fallback)' : 'no blob fallback' };
+        report.sections.storage = storage;
+
+        // ══════════ DATA INTEGRITY ══════════
+        var dataChecks = {};
+        var tables = [
+          { key: 'employees', label: 'الموظفين' },
+          { key: 'branches', label: 'الفروع' },
+          { key: 'attendance', label: 'سجل الحضور' },
+          { key: 'violations_v2', label: 'المخالفات' },
+          { key: 'complaints', label: 'الشكاوى' },
+          { key: 'investigations', label: 'التحقيقات' },
+          { key: 'appeals', label: 'التظلمات' },
+          { key: 'leaves', label: 'الإجازات' },
+          { key: 'notifications', label: 'الإشعارات' },
+          { key: 'announcements', label: 'التعاميم' },
+          { key: 'banners', label: 'البنرات' },
+          { key: 'events', label: 'المناسبات' },
+          { key: 'faces', label: 'بصمات الوجه' },
+          { key: 'custody', label: 'العهد' },
+          { key: 'settings', label: 'الإعدادات' },
+          { key: 'work_types', label: 'أنواع الدوام' },
+          { key: 'laiha_settings', label: 'إعدادات اللائحة' },
+        ];
+        for (var tbl of tables) {
+          var r = await safeTime(async function(){
+            var data = await dbGet(tbl.key);
+            if (data === null || data === undefined) return { type: 'empty', count: 0 };
+            if (Array.isArray(data)) return { type: 'array', count: data.length };
+            if (typeof data === 'object') return { type: 'object', count: Object.keys(data).length };
+            return { type: typeof data, count: 1 };
+          });
+          dataChecks[tbl.key] = { label: tbl.label, ok: r.ok, ms: r.ms, value: r.value, error: r.error };
+        }
+        // Tawasul
+        var twslR = await safeTime(async function(){
+          var idx = await dbGet('twsl:idx');
+          return { type: 'array', count: Array.isArray(idx) ? idx.length : 0 };
+        });
+        dataChecks['tawasul'] = { label: 'مهام التواصل', ok: twslR.ok, ms: twslR.ms, value: twslR.value, error: twslR.error };
+        report.sections.data = dataChecks;
+
+        // ══════════ CONFIGURATION ══════════
+        var config = {};
+        var settings = await dbGet('settings') || {};
+        config.has_admin_email = { ok: !!(settings.adminEmail || settings.admin_email), value: settings.adminEmail || settings.admin_email || 'not set' };
+        config.has_custom_questions = { ok: Array.isArray(settings.questions) && settings.questions.length > 0, value: Array.isArray(settings.questions) ? settings.questions.length + ' أسئلة' : 'none (uses defaults)' };
+        config.email_lists = { ok: !!settings.emailLists, value: settings.emailLists ? Object.keys(settings.emailLists).length + ' lists' : 'none' };
+        config.observed_employees = { ok: true, value: Array.isArray(settings.observed) ? settings.observed.length + ' موظف تحت الملاحظة' : '0' };
+        // Laiha
+        var laiha = await dbGet('laiha_settings') || {};
+        config.laiha_auto_enabled = { ok: laiha.autoViolations !== false, value: laiha.autoViolations === false ? 'DISABLED' : 'ENABLED (3pm UTC cron)' };
+        // Branches
+        var branches = await dbGet('branches') || [];
+        config.branches_count = { ok: branches.length > 0, value: branches.length + ' فروع' };
+        config.branches_have_geofence = { ok: branches.every(function(b){ return b.lat && b.lng && b.radius; }), value: branches.filter(function(b){ return b.lat && b.lng && b.radius; }).length + '/' + branches.length + ' بنطاق جغرافي' };
+        report.sections.config = config;
+
+        // ══════════ INTEGRATIONS ══════════
+        var integrations = {};
+        // Push notifications (VAPID)
+        integrations.vapid_public = { ok: !!process.env.VAPID_PUBLIC_KEY, value: process.env.VAPID_PUBLIC_KEY ? 'VAPID_PUBLIC_KEY set' : 'missing' };
+        integrations.vapid_private = { ok: !!process.env.VAPID_PRIVATE_KEY, value: process.env.VAPID_PRIVATE_KEY ? 'VAPID_PRIVATE_KEY set' : 'missing' };
+        integrations.vapid_email = { ok: !!process.env.VAPID_CONTACT_EMAIL, value: process.env.VAPID_CONTACT_EMAIL || 'not set' };
+        // Push subscriptions
+        var subs = await safeTime(async function(){ var s = await dbGet('push_subscriptions') || {}; return Object.keys(s).length + ' مشترك'; });
+        integrations.push_subscriptions = { ok: subs.ok, value: subs.value, error: subs.error };
+        // GitHub token (for update tool)
+        integrations.github_token = { ok: !!process.env.GITHUB_TOKEN, value: process.env.GITHUB_TOKEN ? 'GITHUB_TOKEN present (update tool OK)' : 'missing — update tool disabled' };
+        // Kadwar sync
+        var kadwarR = await safeTime(async function(){
+          var kd = await dbGet('kadwar_data');
+          return kd ? 'synced (' + (Array.isArray(kd.employees) ? kd.employees.length : 0) + ' موظف من كوادر)' : 'no kadwar data';
+        });
+        integrations.kadwar_sync = { ok: kadwarR.ok, value: kadwarR.value, error: kadwarR.error };
+        report.sections.integrations = integrations;
+
+        // ══════════ TAWASUL SYSTEM ══════════
+        var tawasul = {};
+        tawasul.task_index = await safeTime(async function(){
+          var idx = await dbGet('twsl:idx') || [];
+          return idx.length + ' مهمة مفهرسة';
+        });
+        tawasul.categories = await safeTime(async function(){
+          var c = await dbGet('twsl:categories') || [];
+          return c.length + ' تصنيف';
+        });
+        tawasul.projects = await safeTime(async function(){
+          var p = await dbGet('twsl:projects') || [];
+          return p.length + ' مشروع';
+        });
+        tawasul.notifs = await safeTime(async function(){
+          var n = await dbGet('twsl:notifs') || [];
+          return n.length + ' إشعار';
+        });
+        tawasul.serial_counter = await safeTime(async function(){
+          var s = await dbGet('twsl:serial') || 0;
+          return 'CB' + String(s).padStart(4, '0') + ' (تالي: CB' + String(s+1).padStart(4,'0') + ')';
+        });
+        report.sections.tawasul = tawasul;
+
+        // ══════════ COMPUTE OVERALL ══════════
+        var failed = [];
+        Object.keys(report.sections).forEach(function(sec){
+          Object.keys(report.sections[sec]).forEach(function(key){
+            var item = report.sections[sec][key];
+            if (item && item.ok === false) failed.push(sec + '.' + key);
+          });
+        });
+        report.overall = failed.length === 0 ? 'ok' : failed.length <= 2 ? 'warning' : 'error';
+        report.failed_checks = failed;
+        report.total_checks = Object.keys(report.sections).reduce(function(sum, sec){ return sum + Object.keys(report.sections[sec]).length; }, 0);
+
+        return res.json(report);
+      }
+
       default: return res.status(400).json({ error: 'unknown action' });
     }
   } catch (err) { return res.status(500).json({ error: err.message }); }

@@ -3,7 +3,7 @@ import { ALL_VIOLATIONS_DEFAULT, PENALTY_TYPES, LAIHA_INFO, COMPLAINT_STATUS, VI
 import { generateAttendanceReport, generateEmployeeReport, generateMonthlySummary, generateViolationsReport, generateEmployeesListReport, generateBenefitsReport, generateAnnouncementsReport } from "./pdfReports";
 
 const APP = "بصمة HMA";
-const VER = "5.11";
+const VER = "6.23";
 const CO = "هاني محمد عسيري للإستشارات الهندسية";
 const B = { blue: "#2B5EA7", yellow: "#FDD800", red: "#E2192C", black: "#1A1A1A", blueDk: "#1E4478", blueLt: "#EDF3FB", gold: "#D4A017" };
 
@@ -552,6 +552,7 @@ export default function AdminApp() {
         { id: "work_types", icon: "⏰", label: "أنواع الدوام" },
         { id: "benefits", icon: "🏅", label: "الامتيازات" },
         { id: "storage", icon: "💾", label: "التخزين" },
+        { id: "system_check", icon: "🔍", label: "فحص النظام" },
         { id: "test_panel", icon: "🧪", label: "اختبار النظام" },
         { id: "admin_profile", icon: "🔐", label: "حساب المدير" },
       ],
@@ -1139,8 +1140,53 @@ export default function AdminApp() {
 
       {/* ═══ QUESTIONS (إدارة أسئلة الصباح) ═══ */}
       {tab === "questions" && <>
-        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 14 }}><span style={{ fontSize: 14, fontWeight: 700 }}>إدارة أسئلة تحدي الصباح</span><span style={{ fontSize: 11, color: t.txM }}>{"إجمالي: " + hrQuestions.length + " سؤال"}</span></div>
-        <div style={{ fontSize: 10, color: t.txM, marginBottom: 14, padding: 10, borderRadius: 8, background: B.blueLt }}>الإجابة الأولى دائماً هي الصحيحة — يتم خلط الخيارات تلقائياً عند العرض للموظف. كل يوم سؤال مختلف — لا يتكرر خلال أسبوع.</div>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 14 }}><span style={{ fontSize: 14, fontWeight: 700 }}>بنك أسئلة تحدي الصباح</span><span style={{ fontSize: 11, color: t.txM }}>{"إجمالي: " + hrQuestions.length + " سؤال"}</span></div>
+
+        {/* New info banner — explains that nothing shows until admin approves */}
+        <div style={{ fontSize: 11, color: t.tx, marginBottom: 14, padding: 12, borderRadius: 10, background: "rgba(10,132,255,0.06)", border: "1px solid rgba(10,132,255,0.2)", lineHeight: 1.7 }}>
+          <div style={{ fontWeight: 800, marginBottom: 4, color: B.blue }}>ℹ️ كيف يعمل بنك الأسئلة</div>
+          التحدي الصباحي يظهر للموظفين <b>فقط</b> من الأسئلة التي تحفظها أنت هنا. لا أسئلة افتراضية — إذا البنك فارغ، لا يظهر تحدي.<br/>
+          الإجابة الأولى (الخضراء) دائماً هي الصحيحة — الخيارات تُخلط تلقائياً عند العرض للموظف.
+        </div>
+
+        {/* Import default bank — visible when bank is empty or few questions */}
+        {hrQuestions.length < 10 && (
+          <div style={{ background: "rgba(16,185,129,0.08)", borderRadius: 12, padding: 14, border: "1px solid rgba(16,185,129,0.3)", marginBottom: 14 }}>
+            <div style={{ fontSize: 13, fontWeight: 800, color: "#10b981", marginBottom: 6 }}>📦 استيراد بنك الأسئلة الافتراضي (30 سؤال)</div>
+            <div style={{ fontSize: 11, color: t.tx2, marginBottom: 10, lineHeight: 1.6 }}>
+              يمكنك استيراد مجموعة أسئلة جاهزة (ذكر / هندسي / نظام عمل / سلامة / ألغاز / عام) ثم <b>تختار منها ما يناسبك وتحذف الباقي</b>.
+              {hrQuestions.length > 0 && " الأسئلة الموجودة لديك الآن ستبقى — سيُضاف الجديد فقط."}
+            </div>
+            <div style={{ display: "flex", gap: 8 }}>
+              <button onClick={async function() {
+                if (!confirm("استيراد 30 سؤالاً افتراضياً إلى البنك؟\n\nالأسئلة الموجودة لديك " + (hrQuestions.length > 0 ? "ستبقى" : "(لا شيء حالياً)") + " — فقط يُضاف الجديد.\n\nبعد الاستيراد، يمكنك حذف ما لا يناسبك.")) return;
+                try {
+                  var r = await fetch("/api/data?action=seed_questions", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ mode: "append" }) });
+                  var d = await r.json();
+                  if (d.ok) {
+                    alert("✅ تم الاستيراد — أُضيف " + d.added + " سؤال جديد (الإجمالي: " + d.total + ")\n\nأعد تحميل الصفحة لرؤية الأسئلة.");
+                    window.location.reload();
+                  } else {
+                    alert("فشل: " + (d.error || "خطأ"));
+                  }
+                } catch(e) { alert("فشل: " + e.message); }
+              }} style={{ flex: 1, padding: "10px 14px", borderRadius: 10, background: "#10b981", color: "#fff", border: "none", fontSize: 12, fontWeight: 800, cursor: "pointer", fontFamily: "inherit" }}>📥 استيراد إلى البنك</button>
+              <button onClick={async function() {
+                if (!confirm("⚠️ استبدال كامل — سيتم حذف أي أسئلة موجودة واستبدالها بالـ 30 الافتراضية.\n\nهل أنت متأكد؟")) return;
+                try {
+                  var r = await fetch("/api/data?action=seed_questions", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ mode: "replace" }) });
+                  var d = await r.json();
+                  if (d.ok) {
+                    alert("✅ تم الاستبدال — البنك الآن يحوي " + d.total + " سؤال");
+                    window.location.reload();
+                  } else {
+                    alert("فشل: " + (d.error || "خطأ"));
+                  }
+                } catch(e) { alert("فشل: " + e.message); }
+              }} style={{ padding: "10px 14px", borderRadius: 10, background: "transparent", color: t.tx, border: "1px solid " + t.sep, fontSize: 11, fontWeight: 700, cursor: "pointer", fontFamily: "inherit" }}>استبدال كامل</button>
+            </div>
+          </div>
+        )}
 
         {/* Add new question */}
         <div style={{ background: t.card, borderRadius: 14, padding: "16px", border: "1px solid " + t.sep, marginBottom: 14 }}>
@@ -1176,6 +1222,22 @@ export default function AdminApp() {
           </div>;
         })}
         {hrQuestions.length === 0 && <div style={{ textAlign: "center", color: t.txM, fontSize: 12, padding: 30 }}>لا توجد أسئلة مخصصة — سيستخدم النظام الأسئلة الافتراضية</div>}
+
+        {/* Save / Reset buttons */}
+        <div style={{ display: "flex", gap: 10, marginTop: 18, padding: 14, background: t.card, borderRadius: 12, border: "1px solid " + t.sep }}>
+          <button onClick={async function() {
+            try {
+              await saveSettings({ questions: hrQuestions });
+              alert("✅ تم حفظ الأسئلة (" + hrQuestions.length + " سؤال) — ستظهر للموظفين في التحدي الصباحي");
+            } catch(e) { alert("فشل الحفظ: " + (e.message || "خطأ")); }
+          }} style={{ flex: 2, padding: "12px 16px", borderRadius: 10, background: B.blue, color: "#fff", border: "none", fontSize: 13, fontWeight: 800, cursor: "pointer", fontFamily: "inherit" }}>💾 حفظ الأسئلة</button>
+          <button onClick={function() {
+            if (confirm("مسح كل الأسئلة المحفوظة؟ سيعود النظام لاستخدام الأسئلة الافتراضية المضمّنة في الكود.")) {
+              setHrQuestions([]);
+              saveSettings({ questions: [] });
+            }
+          }} style={{ flex: 1, padding: "12px 16px", borderRadius: 10, background: "transparent", color: t.tx, border: "1px solid " + t.sep, fontSize: 12, fontWeight: 700, cursor: "pointer", fontFamily: "inherit" }}>🗑 مسح الكل</button>
+        </div>
       </>}
 
       {/* ═══ LAIHA — إدارة لائحة العمل (المدير العام) ═══ */}
@@ -1400,6 +1462,7 @@ export default function AdminApp() {
       {tab === "banners" && <BannersPanel t={t} B={B} />}
       {tab === "tawasul" && <TawasulAdminPanel t={t} B={B} />}
       {tab === "test_panel" && <TestPanel t={t} B={B} emps={safeEmps} />}
+      {tab === "system_check" && <SystemCheckPanel t={t} B={B} />}
       {tab === "storage" && <StoragePanel t={t} B={B} />}
 
       {tab === "admin_profile" && <AdminProfile t={t} B={B} onLogout={function(){ localStorage.removeItem("basma_admin_email"); localStorage.removeItem("basma_last_mode"); setLoggedIn(false); }} />}
@@ -3836,6 +3899,271 @@ function AnnouncementForm({ t, B, emps, branches, initial, onSave, onCancel }) {
 }
 
 /* ═══ STORAGE PANEL — مراقبة وإدارة التخزين ═══ */
+/* ═══ SYSTEM CHECK PANEL — فحص شامل لكل النظام ═══ */
+function SystemCheckPanel({ t, B }) {
+  var [report, setReport] = useState(null);
+  var [running, setRunning] = useState(false);
+  var [err, setErr] = useState(null);
+  var [testResults, setTestResults] = useState({});
+  var [testingItem, setTestingItem] = useState(null);
+  var [expandedSection, setExpandedSection] = useState(null);
+
+  async function runCheck() {
+    setRunning(true);
+    setErr(null);
+    setTestResults({});
+    try {
+      var r = await fetch("/api/data?action=system_check");
+      var data = await r.json();
+      if (!r.ok || data.error) {
+        setErr(data.error || ("خطأ " + r.status));
+      } else {
+        setReport(data);
+        // Auto-expand sections with failures
+        if (data.failed_checks && data.failed_checks.length > 0) {
+          var firstFailSection = data.failed_checks[0].split(".")[0];
+          setExpandedSection(firstFailSection);
+        } else {
+          setExpandedSection("storage");
+        }
+      }
+    } catch(e) {
+      setErr("فشل الاتصال: " + (e.message || "خطأ"));
+    }
+    setRunning(false);
+  }
+
+  useEffect(function(){ runCheck(); }, []);
+
+  // ═══ Feature tests (frontend-triggered) ═══
+  var featureTests = [
+    { id: "auth_check", label: "حالة تسجيل الدخول", run: async function(){
+      var ok = !!localStorage.getItem("basma_admin_email");
+      return { ok: ok, msg: ok ? "مسجّل الدخول: " + localStorage.getItem("basma_admin_email") : "غير مسجّل" };
+    }},
+    { id: "api_ping", label: "الاتصال بـ API", run: async function(){
+      var t0 = Date.now();
+      var r = await fetch("/api/data?action=settings");
+      return { ok: r.ok, msg: r.status + " — " + (Date.now()-t0) + "ms" };
+    }},
+    { id: "tawasul_list", label: "تحميل قائمة التواصل", run: async function(){
+      var r = await fetch("/api/data?action=tawasul-list");
+      var d = await r.json();
+      return { ok: !d.error, msg: (d.requests||[]).length + " مهمة" };
+    }},
+    { id: "notifications_push", label: "إشعارات المتصفح (Notification API)", run: async function(){
+      if (typeof Notification === "undefined") return { ok: false, msg: "غير مدعوم" };
+      return { ok: Notification.permission === "granted", msg: Notification.permission };
+    }},
+    { id: "service_worker", label: "Service Worker (PWA)", run: async function(){
+      if (!("serviceWorker" in navigator)) return { ok: false, msg: "غير مدعوم" };
+      var regs = await navigator.serviceWorker.getRegistrations();
+      return { ok: regs.length > 0, msg: regs.length + " مسجّل" };
+    }},
+    { id: "local_storage", label: "Local Storage", run: async function(){
+      try {
+        localStorage.setItem("__test", "1");
+        var ok = localStorage.getItem("__test") === "1";
+        localStorage.removeItem("__test");
+        return { ok: ok, msg: ok ? "يعمل" : "لا يعمل" };
+      } catch(e) { return { ok: false, msg: e.message }; }
+    }},
+    { id: "geolocation", label: "تحديد الموقع (GPS)", run: async function(){
+      if (!navigator.geolocation) return { ok: false, msg: "غير مدعوم" };
+      return new Promise(function(resolve){
+        navigator.geolocation.getCurrentPosition(
+          function(p){ resolve({ ok: true, msg: "OK — دقة " + Math.round(p.coords.accuracy) + "م" }); },
+          function(e){ resolve({ ok: false, msg: "خطأ " + e.code + ": " + e.message }); },
+          { timeout: 5000, enableHighAccuracy: false }
+        );
+      });
+    }},
+    { id: "camera", label: "الكاميرا (بصمة الوجه)", run: async function(){
+      if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) return { ok: false, msg: "غير مدعوم" };
+      try {
+        var stream = await navigator.mediaDevices.getUserMedia({ video: true });
+        stream.getTracks().forEach(function(track){ track.stop(); });
+        return { ok: true, msg: "الوصول متاح" };
+      } catch(e) { return { ok: false, msg: e.name + ": " + e.message }; }
+    }},
+    { id: "online_status", label: "حالة الاتصال", run: async function(){
+      return { ok: navigator.onLine, msg: navigator.onLine ? "متصل" : "غير متصل" };
+    }},
+    { id: "clock_sync", label: "توقيت الجهاز", run: async function(){
+      var t0 = Date.now();
+      var r = await fetch("/api/data?action=settings");
+      await r.json();
+      var serverRequestMs = Date.now() - t0;
+      return { ok: true, msg: "توقيت محلي: " + new Date().toLocaleString("ar-SA") + " (زمن الخادم ~" + serverRequestMs + "ms)" };
+    }},
+  ];
+
+  async function runFeatureTest(ft) {
+    setTestingItem(ft.id);
+    try {
+      var res = await ft.run();
+      setTestResults(function(p){ var n = Object.assign({}, p); n[ft.id] = res; return n; });
+    } catch(e) {
+      setTestResults(function(p){ var n = Object.assign({}, p); n[ft.id] = { ok: false, msg: "خطأ: " + (e.message || "غير معروف") }; return n; });
+    }
+    setTestingItem(null);
+  }
+
+  async function runAllFeatureTests() {
+    for (var i = 0; i < featureTests.length; i++) {
+      await runFeatureTest(featureTests[i]);
+    }
+  }
+
+  // ═══ UI helpers ═══
+  function statusColor(ok) {
+    if (ok === true) return "#10b981";
+    if (ok === false) return "#ef4444";
+    return "#94a3b8";
+  }
+  function statusIcon(ok) {
+    if (ok === true) return "✅";
+    if (ok === false) return "❌";
+    return "⚠️";
+  }
+
+  var sectionIcons = {
+    storage: "💾",
+    data: "📊",
+    config: "⚙️",
+    integrations: "🔗",
+    tawasul: "🤝",
+  };
+  var sectionLabels = {
+    storage: "طبقة التخزين",
+    data: "سلامة البيانات",
+    config: "الإعدادات",
+    integrations: "التكاملات الخارجية",
+    tawasul: "نظام التواصل",
+  };
+
+  function renderSection(sectionKey) {
+    var section = report.sections[sectionKey];
+    if (!section) return null;
+    var items = Object.keys(section);
+    var okCount = items.filter(function(k){ return section[k].ok !== false; }).length;
+    var isExpanded = expandedSection === sectionKey;
+    return (
+      <div key={sectionKey} style={{ marginBottom: 10, background: t.card, borderRadius: 12, border: "1px solid " + t.sep, overflow: "hidden" }}>
+        <button onClick={function(){ setExpandedSection(isExpanded ? null : sectionKey); }} style={{ width: "100%", padding: "14px 16px", background: "transparent", border: "none", display: "flex", alignItems: "center", gap: 10, cursor: "pointer", fontFamily: "inherit" }}>
+          <span style={{ fontSize: 22 }}>{sectionIcons[sectionKey] || "📦"}</span>
+          <div style={{ flex: 1, textAlign: "right" }}>
+            <div style={{ fontSize: 14, fontWeight: 800, color: t.tx }}>{sectionLabels[sectionKey] || sectionKey}</div>
+            <div style={{ fontSize: 11, color: t.tx2, marginTop: 2 }}>{okCount}/{items.length} فحص نجح</div>
+          </div>
+          <div style={{ fontSize: 11, padding: "3px 10px", borderRadius: 8, background: okCount === items.length ? "rgba(16,185,129,.12)" : "rgba(239,68,68,.12)", color: okCount === items.length ? "#10b981" : "#ef4444", fontWeight: 800 }}>
+            {okCount === items.length ? "سليم" : (items.length - okCount) + " أعطال"}
+          </div>
+          <span style={{ fontSize: 14, color: t.tx2, transform: isExpanded ? "rotate(90deg)" : "rotate(0)", transition: "transform .2s" }}>◂</span>
+        </button>
+        {isExpanded && (
+          <div style={{ padding: "4px 16px 14px", borderTop: "1px solid " + t.sep }}>
+            {items.map(function(key){
+              var item = section[key];
+              var valueText = item.value !== undefined ? (typeof item.value === "object" ? JSON.stringify(item.value) : String(item.value)) : "";
+              return (
+                <div key={key} style={{ display: "flex", alignItems: "flex-start", gap: 10, padding: "8px 0", borderBottom: "1px solid " + t.sep, fontSize: 12 }}>
+                  <span style={{ fontSize: 14, flexShrink: 0 }}>{statusIcon(item.ok)}</span>
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div style={{ color: t.tx, fontWeight: 600, marginBottom: 2, wordBreak: "break-word" }}>{item.label || key}</div>
+                    <div style={{ fontSize: 10, color: item.ok === false ? "#ef4444" : t.tx2, wordBreak: "break-all" }}>
+                      {item.error ? "❌ " + item.error : valueText}
+                    </div>
+                    {item.ms !== undefined && <div style={{ fontSize: 9, color: t.txM, marginTop: 1 }}>⏱ {item.ms}ms</div>}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        )}
+      </div>
+    );
+  }
+
+  var overallColor = !report ? t.tx2 : report.overall === "ok" ? "#10b981" : report.overall === "warning" ? "#f59e0b" : "#ef4444";
+  var overallLabel = !report ? "…" : report.overall === "ok" ? "النظام يعمل بسلام" : report.overall === "warning" ? "تحذير: بعض الأعطال" : "خطأ: أعطال متعددة";
+  var overallIcon = !report ? "⏳" : report.overall === "ok" ? "🟢" : report.overall === "warning" ? "🟡" : "🔴";
+
+  return (
+    <div>
+      {/* Summary card */}
+      <div style={{ background: t.card, borderRadius: 16, padding: 20, border: "2px solid " + overallColor + "60", marginBottom: 14 }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 14 }}>
+          <div style={{ fontSize: 42 }}>{overallIcon}</div>
+          <div style={{ flex: 1 }}>
+            <div style={{ fontSize: 18, fontWeight: 900, color: overallColor, marginBottom: 3 }}>{overallLabel}</div>
+            <div style={{ fontSize: 12, color: t.tx2 }}>
+              {report ? report.total_checks + " فحص — " + (report.failed_checks || []).length + " عطل" : "جارِ الفحص..."}
+              {report && report.ts && <span style={{ marginRight: 8, color: t.txM }}>• {new Date(report.ts).toLocaleTimeString("ar-SA")}</span>}
+            </div>
+          </div>
+          <button onClick={runCheck} disabled={running} style={{ padding: "10px 18px", borderRadius: 10, background: running ? t.sep : B.blue, color: "#fff", border: "none", fontSize: 13, fontWeight: 700, cursor: running ? "default" : "pointer", fontFamily: "inherit" }}>
+            {running ? "⏳ فحص..." : "🔄 إعادة فحص"}
+          </button>
+        </div>
+      </div>
+
+      {err && (
+        <div style={{ background: "rgba(239,68,68,0.08)", border: "1px solid rgba(239,68,68,0.3)", borderRadius: 12, padding: 14, marginBottom: 14, fontSize: 12, color: "#ef4444" }}>
+          ❌ {err}
+        </div>
+      )}
+
+      {/* Server-side sections */}
+      {report && Object.keys(report.sections).map(function(sec){ return renderSection(sec); })}
+
+      {/* Client-side feature tests */}
+      <div style={{ background: t.card, borderRadius: 12, border: "1px solid " + t.sep, overflow: "hidden", marginTop: 16 }}>
+        <div style={{ padding: "14px 16px", borderBottom: "1px solid " + t.sep, display: "flex", alignItems: "center", gap: 10 }}>
+          <span style={{ fontSize: 22 }}>🧪</span>
+          <div style={{ flex: 1 }}>
+            <div style={{ fontSize: 14, fontWeight: 800, color: t.tx }}>اختبارات الواجهة (هذا المتصفح)</div>
+            <div style={{ fontSize: 11, color: t.tx2, marginTop: 2 }}>{featureTests.length} اختبار — تشغّل محلياً على جهازك</div>
+          </div>
+          <button onClick={runAllFeatureTests} disabled={!!testingItem} style={{ padding: "8px 14px", borderRadius: 8, background: testingItem ? t.sep : B.blue, color: "#fff", border: "none", fontSize: 11, fontWeight: 700, cursor: testingItem ? "default" : "pointer", fontFamily: "inherit" }}>
+            {testingItem ? "جارِ..." : "▶️ تشغيل الكل"}
+          </button>
+        </div>
+        <div style={{ padding: "4px 16px 14px" }}>
+          {featureTests.map(function(ft){
+            var res = testResults[ft.id];
+            var isTesting = testingItem === ft.id;
+            return (
+              <div key={ft.id} style={{ display: "flex", alignItems: "center", gap: 10, padding: "10px 0", borderBottom: "1px solid " + t.sep, fontSize: 12 }}>
+                <span style={{ fontSize: 14, flexShrink: 0, width: 20, textAlign: "center" }}>
+                  {isTesting ? "⏳" : res ? statusIcon(res.ok) : "◻️"}
+                </span>
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div style={{ color: t.tx, fontWeight: 600 }}>{ft.label}</div>
+                  {res && <div style={{ fontSize: 10, color: res.ok === false ? "#ef4444" : t.tx2, marginTop: 2, wordBreak: "break-word" }}>{res.msg}</div>}
+                </div>
+                <button onClick={function(){ runFeatureTest(ft); }} disabled={isTesting} style={{ padding: "4px 10px", borderRadius: 6, background: "transparent", border: "1px solid " + t.sep, color: t.tx2, fontSize: 10, fontWeight: 700, cursor: isTesting ? "default" : "pointer", fontFamily: "inherit", flexShrink: 0 }}>
+                  {isTesting ? "..." : "اختبار"}
+                </button>
+              </div>
+            );
+          })}
+        </div>
+      </div>
+
+      {/* Raw JSON (for debugging) */}
+      {report && (
+        <details style={{ marginTop: 14 }}>
+          <summary style={{ padding: 10, background: t.card, borderRadius: 8, border: "1px solid " + t.sep, cursor: "pointer", fontSize: 11, color: t.tx2, fontWeight: 600 }}>عرض التقرير الكامل (JSON)</summary>
+          <pre style={{ background: t.card, borderRadius: 8, padding: 12, marginTop: 6, fontSize: 10, color: t.tx2, overflow: "auto", maxHeight: 400, border: "1px solid " + t.sep, direction: "ltr", textAlign: "left", fontFamily: "monospace" }}>{JSON.stringify(report, null, 2)}</pre>
+        </details>
+      )}
+    </div>
+  );
+}
+
+/* ═══════════════════════════════════════════════════════════ */
+
 function StoragePanel({ t, B }) {
   var [status, setStatus] = useState(null);
   var [loading, setLoading] = useState(true);
