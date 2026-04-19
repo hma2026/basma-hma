@@ -1441,6 +1441,7 @@ export default async function handler(req, res) {
             { id: "other",       label: "أخرى",           icon: "📎", fixed: false },
           ];
           var projects = (await dbGet('twsl:projects')) || [];
+          var hierarchy = (await dbGet('org_hierarchy')) || {};
           // Fetch all requests in parallel
           var requests = await Promise.all(idx.map(function(id){
             return dbGet('twsl:' + id).then(function(r){ return r; }).catch(function(){ return null; });
@@ -1451,11 +1452,12 @@ export default async function handler(req, res) {
             requests: requests,
             categories: categories,
             projects: projects,
+            hierarchy: hierarchy,
             total: requests.length,
             syncDate: new Date().toISOString(),
           });
         } catch (e) {
-          return res.status(500).json({ error: 'tawasul-list error: ' + (e.message || 'unknown'), requests: [], categories: [], projects: [] });
+          return res.status(500).json({ error: 'tawasul-list error: ' + (e.message || 'unknown'), requests: [], categories: [], projects: [], hierarchy: {} });
         }
       }
 
@@ -3026,6 +3028,63 @@ export default async function handler(req, res) {
           results.tests.requests = reqs ? (Array.isArray(reqs) ? reqs.length + ' requests' : typeof reqs) : 'NULL (empty)';
         } catch(e) { results.tests.requests = 'FAIL: ' + e.message; }
         return res.json(results);
+      }
+
+      /* ═══ ORG HIERARCHY — مَن يدير مَن (managerId لكل موظف) ═══
+         GET:  { ok, hierarchy: { <empId>: <managerId> }, employees: [...] }
+         POST: { assignments: { <empId>: <managerId> } } — batch update
+         Stored in Redis key 'org_hierarchy' as { <empId>: <managerId> } */
+      case 'org_hierarchy': {
+        try {
+          if (req.method === 'POST') {
+            var body = req.body || {};
+            if (body.assignments) {
+              // Batch update
+              var h = (await dbGet('org_hierarchy')) || {};
+              Object.keys(body.assignments).forEach(function(empId){
+                var mgrId = body.assignments[empId];
+                if (mgrId === null || mgrId === '' || mgrId === undefined) {
+                  delete h[empId];
+                } else {
+                  h[empId] = String(mgrId);
+                }
+              });
+              await dbSet('org_hierarchy', h);
+              return res.json({ ok: true, hierarchy: h, updated: Object.keys(body.assignments).length });
+            }
+            // Single assignment
+            if (body.empId) {
+              var h2 = (await dbGet('org_hierarchy')) || {};
+              if (body.managerId === null || body.managerId === '' || body.managerId === undefined) {
+                delete h2[body.empId];
+              } else {
+                h2[body.empId] = String(body.managerId);
+              }
+              await dbSet('org_hierarchy', h2);
+              return res.json({ ok: true, hierarchy: h2 });
+            }
+            return res.status(400).json({ error: 'assignments or empId required' });
+          }
+          // GET: return full hierarchy + list of employees with enriched managerId
+          var hh = (await dbGet('org_hierarchy')) || {};
+          var emps = (await dbGet('employees')) || [];
+          var enriched = emps.map(function(e){
+            var eid = String(e.id || e.username || '');
+            return {
+              id: e.id,
+              username: e.username,
+              name: e.name,
+              department: e.department,
+              role: e.role,
+              isAdmin: !!e.isAdmin,
+              isManager: !!e.isManager,
+              managerId: hh[eid] || null,
+            };
+          });
+          return res.json({ ok: true, hierarchy: hh, employees: enriched });
+        } catch(e) {
+          return res.status(500).json({ error: 'org_hierarchy: ' + (e.message || 'unknown') });
+        }
       }
 
       case 'seed_questions': {

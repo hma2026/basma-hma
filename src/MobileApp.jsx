@@ -10,7 +10,7 @@ import { ALL_VIOLATIONS_DEFAULT, PENALTY_TYPES, LAIHA_INFO, COMPLAINT_STATUS, VI
 
 /* ═══════════ APP CONFIG (إعدادات التطبيق) ═══════════ */
 const APP_CONFIG = {
-  VER: "6.23",
+  VER: "6.25",
   NAME: "بصمة HMA",
   FULL_NAME: "نظام الحضور والانصراف الذكي",
   COMPANY: "هاني محمد عسيري للاستشارات الهندسية",
@@ -4247,6 +4247,7 @@ function TawasulPage({ user, allEmps }) {
   var [requests, setRequests] = useState(null);
   var [categories, setCategories] = useState([]);
   var [projects, setProjects] = useState([]);
+  var [hierarchy, setHierarchy] = useState({}); // { empId: managerId }
   var [loading, setLoading] = useState(true);
   var [err, setErr] = useState(null);
   var [search, setSearch] = useState("");
@@ -4280,9 +4281,10 @@ function TawasulPage({ user, allEmps }) {
         setRequests(d.requests || []);
         setCategories(d.categories || []);
         setProjects(d.projects || []);
+        setHierarchy(d.hierarchy || {});
       }
     } catch (e) {
-      var msg = e.name === "AbortError" ? "انتهت المهلة — نظام كوادر بطيء أو غير متوفر" : (e.message || "اتصال");
+      var msg = e.name === "AbortError" ? "انتهت المهلة — الخادم بطيء، جرّب إعادة التحميل" : (e.message || "اتصال");
       setErr("تعذر تحميل البيانات: " + msg);
       setRequests([]);
     }
@@ -4328,21 +4330,89 @@ function TawasulPage({ user, allEmps }) {
     return found ? (found.name || found.username || id) : String(id);
   }
 
+  // Compute set of all employees who report (directly or transitively) to me
+  // Returns a Set of string IDs — does NOT include myself
+  var subordinatesSet = React.useMemo(function(){
+    var result = new Set();
+    if (!myId || !hierarchy || Object.keys(hierarchy).length === 0) return result;
+    var myStr = String(myId);
+    // Build reverse index: manager -> [subordinates]
+    var reverse = {};
+    Object.keys(hierarchy).forEach(function(empKey){
+      var mgr = String(hierarchy[empKey]);
+      if (!reverse[mgr]) reverse[mgr] = [];
+      reverse[mgr].push(empKey);
+    });
+    // BFS from me
+    var queue = (reverse[myStr] || []).slice();
+    while (queue.length > 0) {
+      var cur = queue.shift();
+      if (result.has(cur)) continue;
+      result.add(cur);
+      if (reverse[cur]) queue.push.apply(queue, reverse[cur]);
+    }
+    return result;
+  }, [myId, hierarchy]);
+
+  var hasSubordinates = subordinatesSet.size > 0;
+
+  // Helper: does this request involve anyone under my supervision?
+  function involvesSubordinate(r) {
+    if (!hasSubordinates) return false;
+    // Requester is a subordinate
+    var reqId = String(r.requesterId || "");
+    if (subordinatesSet.has(reqId)) return true;
+    // OR any assignee is a subordinate
+    return (r.assignees || []).some(function(a){
+      return subordinatesSet.has(String(a.id));
+    });
+  }
+
   function matchesTab(r) {
     var isRequester = String(r.requesterId) === String(myId) || r.requesterId === (user && user.username);
     var isAssignee = (r.assignees || []).some(function(a){ return String(a.id) === String(myId) || a.id === (user && user.username); });
     var isDone = r.status === "closed" || r.status === "evaluated" || r.status === "cancelled";
-    // Privacy: even admins only see their OWN tasks in the mobile app (admin overview is in AdminApp)
-    // Inbox = tasks addressed to me (not tasks I sent — those are in "sent")
+    var involvesSub = involvesSubordinate(r);
+
+    // Personal tabs (mine)
     if (tab === "inbox") return isAssignee && !isDone;
     if (tab === "sent") return isRequester && !isDone;
     if (tab === "done") return isDone && (isRequester || isAssignee);
-    if (tab === "calendar") return isRequester || isAssignee;
+
+    // Department tabs (under my supervision) — exclude tasks I'm personally part of (those are in personal tabs)
+    if (tab === "dept_inbox") return involvesSub && !isRequester && !isAssignee && !isDone;
+    if (tab === "dept_sent")  return involvesSub && !isRequester && !isAssignee && !isDone;
+    if (tab === "dept_done")  return involvesSub && !isRequester && !isAssignee && isDone;
+
+    if (tab === "calendar") return isRequester || isAssignee || involvesSub;
+    return true;
+  }
+
+  // Differentiate: dept_inbox = tasks coming INTO my department (assignee is my subordinate)
+  //                dept_sent  = tasks going OUT from my department (requester is my subordinate)
+  // Redefine to be precise:
+  function matchesTabRefined(r) {
+    var isRequester = String(r.requesterId) === String(myId) || r.requesterId === (user && user.username);
+    var isAssignee = (r.assignees || []).some(function(a){ return String(a.id) === String(myId) || a.id === (user && user.username); });
+    var isDone = r.status === "closed" || r.status === "evaluated" || r.status === "cancelled";
+    var reqIsSub = hasSubordinates && subordinatesSet.has(String(r.requesterId || ""));
+    var anyAssigneeIsSub = hasSubordinates && (r.assignees || []).some(function(a){ return subordinatesSet.has(String(a.id)); });
+
+    if (tab === "inbox") return isAssignee && !isDone;
+    if (tab === "sent") return isRequester && !isDone;
+    if (tab === "done") return isDone && (isRequester || isAssignee);
+
+    // Dept: tasks involving subordinates but NOT me personally (to avoid duplicates)
+    if (tab === "dept_inbox") return anyAssigneeIsSub && !isAssignee && !isRequester && !isDone;
+    if (tab === "dept_sent")  return reqIsSub && !isRequester && !isAssignee && !isDone;
+    if (tab === "dept_done")  return (reqIsSub || anyAssigneeIsSub) && !isRequester && !isAssignee && isDone;
+
+    if (tab === "calendar") return isRequester || isAssignee || reqIsSub || anyAssigneeIsSub;
     return true;
   }
 
   var filtered = (requests || []).filter(function(r){
-    if (!matchesTab(r)) return false;
+    if (!matchesTabRefined(r)) return false;
     if (filterStatus !== "all" && r.status !== filterStatus) return false;
     if (filterCategory !== "all" && r.category !== filterCategory) return false;
     if (filterUrgency !== "all" && r.urgency !== filterUrgency) return false;
@@ -4365,14 +4435,26 @@ function TawasulPage({ user, allEmps }) {
       var isR = String(r.requesterId) === String(myId);
       var isA = (r.assignees || []).some(function(a){ return String(a.id) === String(myId); });
       var isDone = r.status === "closed" || r.status === "evaluated" || r.status === "cancelled";
-      if (tabId === "inbox") return isAdmin ? !isDone : (isA && !isDone);
-      if (tabId === "sent") return isAdmin ? !isDone : (isR && !isDone);
-      if (tabId === "done") return isAdmin ? isDone : (isDone && (isR || isA));
+      var reqIsSub = hasSubordinates && subordinatesSet.has(String(r.requesterId || ""));
+      var anyAssigneeIsSub = hasSubordinates && (r.assignees || []).some(function(a){ return subordinatesSet.has(String(a.id)); });
+      if (tabId === "inbox") return isA && !isDone;
+      if (tabId === "sent") return isR && !isDone;
+      if (tabId === "done") return isDone && (isR || isA);
+      if (tabId === "dept_inbox") return anyAssigneeIsSub && !isA && !isR && !isDone;
+      if (tabId === "dept_sent")  return reqIsSub && !isR && !isA && !isDone;
+      if (tabId === "dept_done")  return (reqIsSub || anyAssigneeIsSub) && !isR && !isA && isDone;
       return false;
     }).length;
   }
 
-  var counts = { inbox: tabCount("inbox"), sent: tabCount("sent"), done: tabCount("done") };
+  var counts = {
+    inbox: tabCount("inbox"),
+    sent: tabCount("sent"),
+    done: tabCount("done"),
+    dept_inbox: tabCount("dept_inbox"),
+    dept_sent: tabCount("dept_sent"),
+    dept_done: tabCount("dept_done"),
+  };
   var activeFilters = (filterStatus !== "all" ? 1 : 0) + (filterCategory !== "all" ? 1 : 0) + (filterUrgency !== "all" ? 1 : 0);
   var pageBg = C.bg;
 
@@ -4419,17 +4501,58 @@ function TawasulPage({ user, allEmps }) {
         <div style={{ fontSize: 11, opacity: 0.85 }}>إدارة المهام الداخلية — {(requests || []).length} مهمة</div>
       </div>
 
-      <div style={{ display: "flex", padding: "12px", gap: 8, background: C.bg }}>
+      {/* Department badge — shows count of subordinates if any */}
+      {hasSubordinates && (
+        <div style={{ background: "linear-gradient(135deg, #7c3aed, #5b21b6)", padding: "8px 16px", color: "#fff", display: "flex", alignItems: "center", gap: 8, fontSize: 11, fontWeight: 700, fontFamily: "'Tajawal',sans-serif" }}>
+          <span style={{ fontSize: 14 }}>👔</span>
+          <span>أنت مدير لـ {subordinatesSet.size} {subordinatesSet.size === 1 ? "موظف" : "موظفاً"}</span>
+          <span style={{ marginRight: "auto", fontSize: 10, opacity: 0.85 }}>صناديق إدارتك متاحة أسفل</span>
+        </div>
+      )}
+
+      {/* Row 1 — Personal tabs */}
+      <div style={{ display: "flex", padding: "12px 12px 6px", gap: 6, background: C.bg, alignItems: "center" }}>
+        <div style={{ fontSize: 9, fontWeight: 800, color: C.sub, minWidth: 28 }}>شخصي</div>
         {[{id:"inbox",icon:"📥",label:"الوارد"},{id:"sent",icon:"📤",label:"المُرسَل"},{id:"done",icon:"✅",label:"المُنجَز"},{id:"calendar",icon:"📅",label:"التقويم"}].map(function(x){
           var active = tab === x.id;
           return (
-            <button key={x.id} onClick={function(){ setTab(x.id); }} style={{ flex: 1, padding: "10px 8px", borderRadius: 12, background: active ? C.hdr2 : C.card, border: "1px solid " + (active ? C.hdr2 : C.cardBorder), color: active ? "#fff" : C.text, fontSize: 12, fontWeight: 800, cursor: "pointer", fontFamily: "inherit", display: "flex", alignItems: "center", justifyContent: "center", gap: 4 }}>
+            <button key={x.id} onClick={function(){ setTab(x.id); }} style={{ flex: 1, padding: "10px 6px", borderRadius: 12, background: active ? C.hdr2 : C.card, border: "1px solid " + (active ? C.hdr2 : C.cardBorder), color: active ? "#fff" : C.text, fontSize: 11, fontWeight: 800, cursor: "pointer", fontFamily: "inherit", display: "flex", alignItems: "center", justifyContent: "center", gap: 3 }}>
               <span>{x.icon}</span><span>{x.label}</span>
-              {counts[x.id] > 0 && <span style={{ minWidth: 18, height: 18, padding: "0 5px", borderRadius: 9, background: active ? "#fff" : C.hdr2, color: active ? C.hdr2 : "#fff", fontSize: 10, fontWeight: 900, display: "flex", alignItems: "center", justifyContent: "center", marginRight: 3 }}>{counts[x.id]}</span>}
+              {counts[x.id] > 0 && <span style={{ minWidth: 16, height: 16, padding: "0 4px", borderRadius: 8, background: active ? "#fff" : C.hdr2, color: active ? C.hdr2 : "#fff", fontSize: 9, fontWeight: 900, display: "flex", alignItems: "center", justifyContent: "center" }}>{counts[x.id]}</span>}
             </button>
           );
         })}
       </div>
+
+      {/* Row 2 — Department tabs (only if user has subordinates) */}
+      {hasSubordinates && (
+        <div style={{ display: "flex", padding: "0 12px 10px", gap: 6, background: C.bg, alignItems: "center" }}>
+          <div style={{ fontSize: 9, fontWeight: 800, color: "#7c3aed", minWidth: 28 }}>إدارتي</div>
+          {[
+            { id: "dept_inbox", icon: "📥", label: "وارد إدارتي" },
+            { id: "dept_sent",  icon: "📤", label: "مُرسَل إدارتي" },
+            { id: "dept_done",  icon: "✅", label: "مُنجَز إدارتي" },
+          ].map(function(x){
+            var active = tab === x.id;
+            return (
+              <button key={x.id} onClick={function(){ setTab(x.id); }} style={{ flex: 1, padding: "10px 6px", borderRadius: 12, background: active ? "#7c3aed" : C.card, border: "1.5px solid " + (active ? "#7c3aed" : "rgba(124,58,237,0.35)"), color: active ? "#fff" : "#7c3aed", fontSize: 11, fontWeight: 800, cursor: "pointer", fontFamily: "inherit", display: "flex", alignItems: "center", justifyContent: "center", gap: 3 }}>
+                <span>{x.icon}</span><span>{x.label}</span>
+                {counts[x.id] > 0 && <span style={{ minWidth: 16, height: 16, padding: "0 4px", borderRadius: 8, background: active ? "#fff" : "#7c3aed", color: active ? "#7c3aed" : "#fff", fontSize: 9, fontWeight: 900, display: "flex", alignItems: "center", justifyContent: "center" }}>{counts[x.id]}</span>}
+              </button>
+            );
+          })}
+          {/* Placeholder to keep alignment with row 1 (4 items vs 3) */}
+          <div style={{ flex: 1 }}></div>
+        </div>
+      )}
+
+      {/* Read-only banner for department tabs */}
+      {tab && tab.indexOf("dept_") === 0 && (
+        <div style={{ margin: "0 12px 8px", padding: "8px 12px", background: "rgba(124,58,237,0.08)", border: "1px solid rgba(124,58,237,0.25)", borderRadius: 10, fontSize: 10, color: "#7c3aed", fontWeight: 700, display: "flex", alignItems: "center", gap: 6 }}>
+          <span style={{ fontSize: 14 }}>👁</span>
+          <span>وضع العرض فقط — مهام موظفيك (لا يمكنك التعديل أو الحذف)</span>
+        </div>
+      )}
 
       <div style={{ padding: "0 12px 10px", display: "flex", flexDirection: "column", gap: 8 }}>
         <div style={{ display: "flex", gap: 8 }}>
@@ -4510,7 +4633,7 @@ function TawasulPage({ user, allEmps }) {
         </>)}
       </div>
 
-      {selectedReq && <TawasulDetailModal request={selectedReq} user={user} allEmps={allEmps} onClose={function(){ setSelectedReq(null); }} nameOf={nameOf} onUpdated={function(){ setSelectedReq(null); loadData(true); }} onEdit={function(r){ setSelectedReq(null); setEditingReq(r); }} />}
+      {selectedReq && <TawasulDetailModal request={selectedReq} user={user} allEmps={allEmps} onClose={function(){ setSelectedReq(null); }} nameOf={nameOf} onUpdated={function(){ setSelectedReq(null); loadData(true); }} onEdit={function(r){ setSelectedReq(null); setEditingReq(r); }} readOnly={tab && tab.indexOf("dept_") === 0} />}
 
       {showCreate && <TawasulCreateModal user={user} allEmps={allEmps} categories={categories} projects={projects} onClose={function(){ setShowCreate(false); }} onSaved={function(){ setShowCreate(false); loadData(true); }} />}
 
@@ -4523,7 +4646,7 @@ function TawasulPage({ user, allEmps }) {
 }
 
 /* ═══════════ TAWASUL DETAIL MODAL — with Phase 2 actions (big button + secondary + comment) ═══════════ */
-function TawasulDetailModal({ request, user, allEmps, onClose, nameOf, onUpdated, onEdit }) {
+function TawasulDetailModal({ request, user, allEmps, onClose, nameOf, onUpdated, onEdit, readOnly }) {
   var r = request;
   var myId = user && (user.id || user.username);
   var myName = (user && (user.name || user.username)) || "";
@@ -4538,8 +4661,9 @@ function TawasulDetailModal({ request, user, allEmps, onClose, nameOf, onUpdated
   var isAdmin = user && (user.role === "admin" || user.role === "hr_manager" || user.isAdmin || user.username === "admin");
   var isRequester = String(r.requesterId) === String(myId);
   var isAssignee = (r.assignees || []).some(function(a){ return String(a.id) === String(myId); });
-  var canActAsAssignee = isAssignee || (isAdmin && !isRequester);
-  var canActAsRequester = isRequester || isAdmin;
+  // In read-only mode (department tabs), disable all acting roles
+  var canActAsAssignee = !readOnly && (isAssignee || (isAdmin && !isRequester));
+  var canActAsRequester = !readOnly && (isRequester || isAdmin);
 
   var [commentText, setCommentText] = useState("");
   var [busy, setBusy] = useState(false);
@@ -4794,34 +4918,34 @@ function TawasulDetailModal({ request, user, allEmps, onClose, nameOf, onUpdated
     else if (bigBtn.who === "requester") canPressBig = canActAsRequester;
   }
 
-  var canReject = canActAsAssignee && (r.status === "sent" || r.status === "received");
-  var canReturn = canActAsAssignee && ["sent","received","inprogress","accepted"].indexOf(r.status) >= 0;
+  var canReject = !readOnly && canActAsAssignee && (r.status === "sent" || r.status === "received");
+  var canReturn = !readOnly && canActAsAssignee && ["sent","received","inprogress","accepted"].indexOf(r.status) >= 0;
   // NEW escalation rule: only after 2+ rejections or 1+ returns (no first-time escalation)
   var returnCount = r.returnCount || 0;
   var rejectedCount = r.rejectedCount || 0;
   var escalationAllowedByRule = returnCount >= 1 || rejectedCount >= 2;
-  var canEscalate = (canActAsAssignee || canActAsRequester) && !r.escalation && !["closed","cancelled","evaluated"].includes(r.status) && escalationAllowedByRule;
-  var canCancel = isRequester && !["closed","cancelled","evaluated","delivered"].includes(r.status);
+  var canEscalate = !readOnly && (canActAsAssignee || canActAsRequester) && !r.escalation && !["closed","cancelled","evaluated"].includes(r.status) && escalationAllowedByRule;
+  var canCancel = !readOnly && isRequester && !["closed","cancelled","evaluated","delivered"].includes(r.status);
   // Admins can delete any task, requesters can delete drafts
-  var canDelete = isAdmin || (isRequester && r.status === "draft");
-  var canEdit = (isRequester || isAdmin) && ["draft","incomplete"].includes(r.status);
+  var canDelete = !readOnly && (isAdmin || (isRequester && r.status === "draft"));
+  var canEdit = !readOnly && (isRequester || isAdmin) && ["draft","incomplete"].includes(r.status);
   // Resend or transfer rejected task — requester only
-  var canResendRejected = isRequester && r.status === "rejected";
-  var canTransferRejected = isRequester && r.status === "rejected";
+  var canResendRejected = !readOnly && isRequester && r.status === "rejected";
+  var canTransferRejected = !readOnly && isRequester && r.status === "rejected";
   // Assignee can request a collaborator on an active task
-  var canRequestCollab = isAssignee && ["sent","received","accepted","inprogress"].indexOf(r.status) >= 0;
+  var canRequestCollab = !readOnly && isAssignee && ["sent","received","accepted","inprogress"].indexOf(r.status) >= 0;
   // Requester approves pending collab requests
   var pendingCollabs = (r.pendingCollabRequests || []).filter(function(x){ return x.status === "pending"; });
-  var hasPendingCollabForMe = isRequester && pendingCollabs.length > 0;
+  var hasPendingCollabForMe = !readOnly && isRequester && pendingCollabs.length > 0;
 
   // Evaluation eligibility (spec section 12)
   var hasMyEval = (r.evaluations || []).some(function(e){ return String(e.by) === String(myId); });
   var evalRole = isRequester ? "requester" : (isAssignee ? "assignee" : null);
-  var canEvaluate = evalRole && !hasMyEval && r.status === "delivered";
+  var canEvaluate = !readOnly && evalRole && !hasMyEval && r.status === "delivered";
 
   // HR eligibility (spec section 14) — available for admins on escalated tasks
   var isHR = user && (user.role === "hr_manager" || user.username === "admin" || user.isAdmin);
-  var canHR = isHR && r.escalation && r.status !== "evaluated" && r.status !== "closed";
+  var canHR = !readOnly && isHR && r.escalation && r.status !== "evaluated" && r.status !== "closed";
 
   var [showEval, setShowEval] = useState(false);
   var [showHR, setShowHR] = useState(false);
@@ -4832,6 +4956,12 @@ function TawasulDetailModal({ request, user, allEmps, onClose, nameOf, onUpdated
         <div style={{ display: "flex", justifyContent: "center", padding: "10px 0 4px", position: "sticky", top: 0, background: C.bg, zIndex: 2 }}><div style={{ width: 40, height: 4, borderRadius: 2, background: C.cardBorder }} /></div>
 
         <div style={{ padding: "12px 18px 18px", borderBottom: "1px solid " + C.cardBorder }}>
+          {readOnly && (
+            <div style={{ marginBottom: 10, padding: "8px 12px", background: "linear-gradient(135deg, rgba(124,58,237,0.18), rgba(124,58,237,0.08))", border: "1.5px solid rgba(124,58,237,0.4)", borderRadius: 10, display: "flex", alignItems: "center", gap: 8, fontSize: 11, color: "#7c3aed", fontWeight: 800 }}>
+              <span style={{ fontSize: 16 }}>👁</span>
+              <span>مهمة أحد موظفيك — وضع عرض فقط</span>
+            </div>
+          )}
           <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 10, flexWrap: "wrap" }}>
             {r.serial && <div style={{ fontSize: 13, fontWeight: 900, color: C.gold, fontFamily: "monospace" }}>#{r.serial}</div>}
             <div style={{ display: "inline-flex", alignItems: "center", gap: 5, padding: "4px 10px", borderRadius: 10, background: m.color + "22", color: m.color, fontSize: 11, fontWeight: 800 }}><span>{m.icon}</span><span>{m.label}</span></div>
@@ -5065,7 +5195,7 @@ function TawasulDetailModal({ request, user, allEmps, onClose, nameOf, onUpdated
             })}
 
             {/* Comment input */}
-            {!["closed","cancelled"].includes(r.status) && (isRequester || isAssignee || isAdmin) && (
+            {!readOnly && !["closed","cancelled"].includes(r.status) && (isRequester || isAssignee || isAdmin) && (
               <div style={{ marginTop: 10, display: "flex", gap: 6 }}>
                 <input type="text" value={commentText} onChange={function(e){ setCommentText(e.target.value); }} placeholder="أضف تعليقاً..." onKeyDown={function(e){ if(e.key === "Enter") sendComment(); }} style={{ flex: 1, padding: "10px 12px", borderRadius: 10, border: "1px solid " + C.cardBorder, background: C.bg, color: C.text, fontSize: 12, fontFamily: "inherit", outline: "none" }} />
                 <button onClick={sendComment} disabled={busy || !commentText.trim()} style={{ padding: "10px 14px", borderRadius: 10, background: commentText.trim() ? C.hdr2 : C.cardBorder, color: "#fff", border: "none", fontSize: 12, fontWeight: 700, cursor: commentText.trim() ? "pointer" : "default", fontFamily: "inherit" }}>📤</button>

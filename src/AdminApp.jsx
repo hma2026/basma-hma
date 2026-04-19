@@ -3,7 +3,7 @@ import { ALL_VIOLATIONS_DEFAULT, PENALTY_TYPES, LAIHA_INFO, COMPLAINT_STATUS, VI
 import { generateAttendanceReport, generateEmployeeReport, generateMonthlySummary, generateViolationsReport, generateEmployeesListReport, generateBenefitsReport, generateAnnouncementsReport } from "./pdfReports";
 
 const APP = "بصمة HMA";
-const VER = "6.23";
+const VER = "6.25";
 const CO = "هاني محمد عسيري للإستشارات الهندسية";
 const B = { blue: "#2B5EA7", yellow: "#FDD800", red: "#E2192C", black: "#1A1A1A", blueDk: "#1E4478", blueLt: "#EDF3FB", gold: "#D4A017" };
 
@@ -513,6 +513,7 @@ export default function AdminApp() {
       label: "الموارد البشرية",
       items: [
         { id: "employees", icon: "👥", label: "الموظفين" },
+        { id: "org_hierarchy", icon: "🏢", label: "الهيكل التنظيمي" },
         { id: "leaves", icon: "📋", label: "الإجازات", badge: pending },
         { id: "admin_requests", icon: "📝", label: "الطلبات" },
         { id: "complaints", icon: "📣", label: "الشكاوى", badge: badgeCounts.complaints },
@@ -1462,6 +1463,7 @@ export default function AdminApp() {
       {tab === "banners" && <BannersPanel t={t} B={B} />}
       {tab === "tawasul" && <TawasulAdminPanel t={t} B={B} />}
       {tab === "test_panel" && <TestPanel t={t} B={B} emps={safeEmps} />}
+      {tab === "org_hierarchy" && <OrgHierarchyPanel t={t} B={B} />}
       {tab === "system_check" && <SystemCheckPanel t={t} B={B} />}
       {tab === "storage" && <StoragePanel t={t} B={B} />}
 
@@ -3899,6 +3901,212 @@ function AnnouncementForm({ t, B, emps, branches, initial, onSave, onCancel }) {
 }
 
 /* ═══ STORAGE PANEL — مراقبة وإدارة التخزين ═══ */
+/* ═══ ORG HIERARCHY PANEL — الهيكل التنظيمي (مَن يدير مَن) ═══ */
+function OrgHierarchyPanel({ t, B }) {
+  var [employees, setEmployees] = useState([]);
+  var [hierarchy, setHierarchy] = useState({});
+  var [loading, setLoading] = useState(true);
+  var [saving, setSaving] = useState(false);
+  var [pending, setPending] = useState({}); // { empId: managerId } — unsaved changes
+  var [search, setSearch] = useState("");
+  var [err, setErr] = useState(null);
+
+  async function load() {
+    setLoading(true); setErr(null);
+    try {
+      var r = await fetch("/api/data?action=org_hierarchy");
+      var d = await r.json();
+      if (!r.ok || d.error) { setErr(d.error || "خطأ"); }
+      else {
+        setEmployees(d.employees || []);
+        setHierarchy(d.hierarchy || {});
+      }
+    } catch(e) { setErr(e.message || "خطأ"); }
+    setLoading(false);
+  }
+
+  useEffect(function(){ load(); }, []);
+
+  function getCurrentManager(empId) {
+    var key = String(empId);
+    if (pending.hasOwnProperty(key)) return pending[key];
+    return hierarchy[key] || "";
+  }
+
+  function setManagerFor(empId, managerId) {
+    setPending(function(p){
+      var n = Object.assign({}, p);
+      n[String(empId)] = managerId || null;
+      return n;
+    });
+  }
+
+  async function saveAll() {
+    if (Object.keys(pending).length === 0) { alert("لا تغييرات للحفظ"); return; }
+    setSaving(true);
+    try {
+      var r = await fetch("/api/data?action=org_hierarchy", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ assignments: pending }),
+      });
+      var d = await r.json();
+      if (!r.ok || !d.ok) {
+        alert("فشل الحفظ: " + (d.error || "خطأ"));
+      } else {
+        alert("✅ تم حفظ " + d.updated + " تغيير");
+        setPending({});
+        await load();
+      }
+    } catch(e) { alert("فشل: " + (e.message || "خطأ")); }
+    setSaving(false);
+  }
+
+  function discardChanges() {
+    if (Object.keys(pending).length === 0) return;
+    if (confirm("تجاهل " + Object.keys(pending).length + " تغيير غير محفوظ؟")) setPending({});
+  }
+
+  // Filter
+  var filtered = employees.filter(function(e){
+    if (!search.trim()) return true;
+    var q = search.trim().toLowerCase();
+    return ((e.name||"") + " " + (e.username||"") + " " + (e.department||"")).toLowerCase().indexOf(q) >= 0;
+  });
+
+  // Build a set of potential managers (any employee that someone reports to, OR isManager/isAdmin)
+  var potentialManagers = employees.filter(function(e){
+    if (e.isAdmin || e.isManager) return true;
+    // also include anyone who is a manager via hierarchy
+    var eid = String(e.id || e.username);
+    return Object.values(hierarchy).indexOf(eid) >= 0 || Object.values(pending).indexOf(eid) >= 0;
+  });
+
+  // Detect cycles (simple check)
+  function getCycle(startEmpId) {
+    var seen = new Set();
+    var cur = String(startEmpId);
+    while (cur) {
+      if (seen.has(cur)) return true;
+      seen.add(cur);
+      var next = pending[cur] !== undefined ? pending[cur] : hierarchy[cur];
+      if (!next) break;
+      cur = String(next);
+    }
+    return false;
+  }
+
+  var pendingCount = Object.keys(pending).length;
+
+  if (loading) return <div style={{ padding: 40, textAlign: "center", color: t.tx2 }}>جارِ تحميل الموظفين...</div>;
+
+  return (
+    <div>
+      {/* Info banner */}
+      <div style={{ background: "rgba(10,132,255,0.06)", border: "1px solid rgba(10,132,255,0.2)", borderRadius: 12, padding: 14, marginBottom: 14, lineHeight: 1.7 }}>
+        <div style={{ fontSize: 14, fontWeight: 800, color: B.blue, marginBottom: 6 }}>🏢 الهيكل التنظيمي</div>
+        <div style={{ fontSize: 11, color: t.tx }}>
+          حدّد المدير المباشر لكل موظف. كل مدير يرى مهام موظفيه المباشرين في "وارد/مُرسَل/مُنجَز إدارتي".<br/>
+          المدير الأعلى (مدير المدير) يرى كل شيء أسفل منه بالتدرّج.
+        </div>
+      </div>
+
+      {err && <div style={{ background: "rgba(239,68,68,0.08)", border: "1px solid rgba(239,68,68,0.3)", borderRadius: 10, padding: 12, marginBottom: 14, color: "#ef4444", fontSize: 12 }}>❌ {err}</div>}
+
+      {/* Search + Save bar */}
+      <div style={{ display: "flex", gap: 8, marginBottom: 14, flexWrap: "wrap", alignItems: "center" }}>
+        <input type="text" value={search} onChange={function(e){ setSearch(e.target.value); }} placeholder="🔍 ابحث باسم أو قسم..." style={{ flex: "1 1 200px", padding: "10px 14px", borderRadius: 10, border: "1px solid " + t.sep, background: t.card, color: t.tx, fontSize: 12, fontFamily: "inherit", outline: "none", minWidth: 200 }} />
+        {pendingCount > 0 && (
+          <>
+            <span style={{ padding: "8px 12px", borderRadius: 8, background: "rgba(245,158,11,0.15)", color: "#f59e0b", fontSize: 11, fontWeight: 800 }}>⚠️ {pendingCount} تغيير غير محفوظ</span>
+            <button onClick={discardChanges} disabled={saving} style={{ padding: "9px 14px", borderRadius: 10, background: "transparent", color: t.tx, border: "1px solid " + t.sep, fontSize: 12, fontWeight: 700, cursor: "pointer", fontFamily: "inherit" }}>إلغاء</button>
+            <button onClick={saveAll} disabled={saving} style={{ padding: "9px 16px", borderRadius: 10, background: saving ? t.sep : "#10b981", color: "#fff", border: "none", fontSize: 12, fontWeight: 800, cursor: saving ? "default" : "pointer", fontFamily: "inherit" }}>
+              {saving ? "⏳ ..." : "💾 حفظ كل التغييرات"}
+            </button>
+          </>
+        )}
+      </div>
+
+      {/* Stats */}
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(140px, 1fr))", gap: 8, marginBottom: 14 }}>
+        <StatMini label="إجمالي الموظفين" value={employees.length} color={B.blue} t={t} />
+        <StatMini label="لديهم مدير مباشر" value={employees.filter(function(e){ return hierarchy[String(e.id||e.username)]; }).length} color="#10b981" t={t} />
+        <StatMini label="بدون مدير محدد" value={employees.filter(function(e){ return !hierarchy[String(e.id||e.username)] && !e.isAdmin; }).length} color="#f59e0b" t={t} />
+        <StatMini label="مدراء في الهرم" value={potentialManagers.length} color="#7c3aed" t={t} />
+      </div>
+
+      {/* Employees list */}
+      <div style={{ background: t.card, borderRadius: 12, border: "1px solid " + t.sep, overflow: "hidden" }}>
+        {filtered.length === 0 ? (
+          <div style={{ padding: 30, textAlign: "center", color: t.tx2, fontSize: 12 }}>لا نتائج</div>
+        ) : filtered.map(function(emp, idx){
+          var eid = String(emp.id || emp.username || "");
+          var curMgr = getCurrentManager(eid);
+          var hasChange = pending.hasOwnProperty(eid);
+          var isCycle = curMgr && getCycle(eid);
+          var mgrEmp = employees.find(function(e){ return String(e.id||e.username) === String(curMgr); });
+
+          return (
+            <div key={eid} style={{ padding: 12, borderBottom: idx < filtered.length - 1 ? "1px solid " + t.sep : "none", display: "flex", alignItems: "center", gap: 12, background: hasChange ? "rgba(245,158,11,0.06)" : "transparent" }}>
+              <div style={{ width: 36, height: 36, borderRadius: "50%", background: emp.isAdmin ? B.red+"22" : emp.isManager ? B.blue+"22" : t.bg, color: emp.isAdmin ? B.red : emp.isManager ? B.blue : t.tx, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 14, fontWeight: 800, flexShrink: 0 }}>
+                {(emp.name||emp.username||"?").charAt(0)}
+              </div>
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <div style={{ fontSize: 13, fontWeight: 700, color: t.tx, display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap" }}>
+                  <span>{emp.name || emp.username}</span>
+                  {emp.isAdmin && <span style={{ padding: "1px 8px", fontSize: 9, fontWeight: 800, background: B.red+"20", color: B.red, borderRadius: 4 }}>مدير عام</span>}
+                  {emp.isManager && !emp.isAdmin && <span style={{ padding: "1px 8px", fontSize: 9, fontWeight: 800, background: B.blue+"20", color: B.blue, borderRadius: 4 }}>مدير</span>}
+                  {hasChange && <span style={{ padding: "1px 8px", fontSize: 9, fontWeight: 800, background: "rgba(245,158,11,0.2)", color: "#f59e0b", borderRadius: 4 }}>معدّل</span>}
+                  {isCycle && <span style={{ padding: "1px 8px", fontSize: 9, fontWeight: 800, background: "rgba(239,68,68,0.2)", color: "#ef4444", borderRadius: 4 }}>⚠️ حلقة</span>}
+                </div>
+                <div style={{ fontSize: 10, color: t.tx2, marginTop: 2 }}>
+                  {emp.department || "—"} · {emp.role || "—"}
+                </div>
+              </div>
+              <div style={{ display: "flex", flexDirection: "column", gap: 3, minWidth: 220 }}>
+                <div style={{ fontSize: 9, color: t.txM, fontWeight: 700 }}>المدير المباشر:</div>
+                <select
+                  value={curMgr || ""}
+                  onChange={function(e){ setManagerFor(eid, e.target.value); }}
+                  disabled={emp.isAdmin}
+                  style={{ padding: "7px 10px", borderRadius: 8, border: "1px solid " + (hasChange ? "#f59e0b" : t.sep), background: t.inp, color: t.tx, fontSize: 11, fontFamily: "inherit", outline: "none", cursor: emp.isAdmin ? "not-allowed" : "pointer" }}
+                >
+                  <option value="">— لا يوجد (أعلى الهرم) —</option>
+                  {employees.filter(function(m){
+                    var mid = String(m.id||m.username);
+                    return mid !== eid; // can't be own manager
+                  }).map(function(m){
+                    var mid = String(m.id||m.username);
+                    return <option key={mid} value={mid}>{m.name || m.username}{m.department ? " ("+m.department+")" : ""}</option>;
+                  })}
+                </select>
+              </div>
+            </div>
+          );
+        })}
+      </div>
+
+      {/* Help */}
+      <div style={{ marginTop: 14, padding: 12, background: t.card, borderRadius: 10, border: "1px solid " + t.sep, fontSize: 11, color: t.tx2, lineHeight: 1.7 }}>
+        💡 <b>نصائح:</b><br/>
+        • المدير العام (admin) لا يحتاج مديراً — هو أعلى الهرم.<br/>
+        • إذا لم تحدد مديراً للموظف، مهامه لا تظهر لأحد في "وارد إدارتي".<br/>
+        • تجنّب الحلقات (فلان يدير فلان الذي يدير فلان الأول) — النظام يحذّرك.<br/>
+        • اضغط "💾 حفظ" بعد الانتهاء من كل التغييرات.
+      </div>
+    </div>
+  );
+}
+
+function StatMini({ label, value, color, t }) {
+  return (
+    <div style={{ background: t.card, borderRadius: 10, padding: 12, border: "1px solid " + t.sep, textAlign: "center" }}>
+      <div style={{ fontSize: 22, fontWeight: 900, color: color, marginBottom: 3 }}>{value}</div>
+      <div style={{ fontSize: 10, color: t.tx2, fontWeight: 600 }}>{label}</div>
+    </div>
+  );
+}
+
 /* ═══ SYSTEM CHECK PANEL — فحص شامل لكل النظام ═══ */
 function SystemCheckPanel({ t, B }) {
   var [report, setReport] = useState(null);
@@ -3949,7 +4157,60 @@ function SystemCheckPanel({ t, B }) {
     { id: "tawasul_list", label: "تحميل قائمة التواصل", run: async function(){
       var r = await fetch("/api/data?action=tawasul-list");
       var d = await r.json();
-      return { ok: !d.error, msg: (d.requests||[]).length + " مهمة" };
+      return { ok: !d.error, msg: (d.requests||[]).length + " مهمة · " + (d.categories||[]).length + " تصنيف · " + (d.projects||[]).length + " مشروع" };
+    }},
+    { id: "tawasul_categories_endpoint", label: "endpoint التصنيفات", run: async function(){
+      var r = await fetch("/api/data?action=tawasul-categories");
+      var d = await r.json();
+      return { ok: r.ok && !d.error, msg: r.ok ? (Array.isArray(d.categories) ? d.categories.length + " تصنيف" : "OK") : "status " + r.status };
+    }},
+    { id: "tawasul_projects_endpoint", label: "endpoint المشاريع", run: async function(){
+      var r = await fetch("/api/data?action=tawasul-projects");
+      var d = await r.json();
+      return { ok: r.ok && !d.error, msg: r.ok ? (Array.isArray(d.projects) ? d.projects.length + " مشروع" : "OK") : "status " + r.status };
+    }},
+    { id: "tawasul_permissions_endpoint", label: "endpoint الصلاحيات", run: async function(){
+      var r = await fetch("/api/data?action=tawasul-permissions");
+      var d = await r.json();
+      return { ok: r.ok && !d.error, msg: r.ok ? (Array.isArray(d.permissions) ? d.permissions.length + " موظف" : "OK") : "status " + r.status };
+    }},
+    { id: "tawasul_roundtrip", label: "دورة حياة مهمة كاملة (إنشاء ← تحديث ← حذف)", run: async function(){
+      // Create a test task
+      var testId = "twsl_test_" + Date.now();
+      var testReq = {
+        id: testId,
+        title: "🧪 [اختبار نظام] مهمة اختبارية — احذفها",
+        description: "هذه مهمة أُنشئت بواسطة أداة الفحص للتحقق من سلامة نظام التواصل. تُحذف تلقائياً.",
+        status: "draft",
+        urgency: "normal",
+        category: "admin",
+        department: "اختبار",
+        requesterId: "system_test",
+        requesterName: "🧪 أداة الفحص",
+        assignees: [],
+        log: [],
+      };
+      // 1. Create
+      var c = await fetch("/api/data?action=tawasul-save", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ request: testReq }) });
+      var cd = await c.json();
+      if (!cd.ok) return { ok: false, msg: "فشل الإنشاء: " + (cd.error || "خطأ") };
+      var createdId = cd.request && cd.request.id;
+      if (!createdId) return { ok: false, msg: "الإنشاء تم لكن لم يُرجع ID" };
+      // 2. Update
+      var updated = Object.assign({}, cd.request, { title: "🧪 [محدّث] اختبار", status: "sent" });
+      var u = await fetch("/api/data?action=tawasul-save", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ request: updated }) });
+      var ud = await u.json();
+      if (!ud.ok) return { ok: false, msg: "فشل التحديث: " + (ud.error || "خطأ") };
+      // 3. Verify it's in the list
+      var l = await fetch("/api/data?action=tawasul-list");
+      var ld = await l.json();
+      var found = (ld.requests || []).find(function(x){ return x.id === createdId; });
+      if (!found) return { ok: false, msg: "المهمة لم تظهر في قائمة التواصل بعد الحفظ" };
+      // 4. Delete
+      var del = await fetch("/api/data?action=tawasul-delete", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ id: createdId }) });
+      var dd = await del.json();
+      if (!dd.ok) return { ok: false, msg: "فشل الحذف: " + (dd.error || "خطأ") };
+      return { ok: true, msg: "✓ إنشاء + تحديث + قراءة + حذف = كل الدورة تعمل" };
     }},
     { id: "notifications_push", label: "إشعارات المتصفح (Notification API)", run: async function(){
       if (typeof Notification === "undefined") return { ok: false, msg: "غير مدعوم" };
