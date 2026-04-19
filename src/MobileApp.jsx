@@ -10,7 +10,7 @@ import { ALL_VIOLATIONS_DEFAULT, PENALTY_TYPES, LAIHA_INFO, COMPLAINT_STATUS, VI
 
 /* ═══════════ APP CONFIG (إعدادات التطبيق) ═══════════ */
 const APP_CONFIG = {
-  VER: "5.05",
+  VER: "5.07",
   NAME: "بصمة HMA",
   FULL_NAME: "نظام الحضور والانصراف الذكي",
   COMPANY: "هاني محمد عسيري للاستشارات الهندسية",
@@ -819,6 +819,10 @@ function MobileAppInner() {
             }).length;
             setTawasulUnread(unread);
           }
+        }).catch(function(){});
+        // Safety-net: trigger auto-violations check (server-side guards against multiple runs)
+        fetch("/api/data?action=auto_violations_check").then(function(r){ return r.json(); }).then(function(d){
+          if (d && d.ok) console.log("[auto_violations] ran:", d.count, "violations generated");
         }).catch(function(){});
       }, 2000);
     } catch { /**/ }
@@ -3152,145 +3156,462 @@ function TawasulReportsModal({ user, onClose }) {
   );
 }
 
-/* ═══════════ TAWASUL HR ASSISTANT (AI recommendations — extra feature) ═══════════ */
+/* ═══════════ HR AI ASSISTANT — full spec implementation ═══════════ */
+
+// Case detection logic (spec section 5)
+function detectHRCases(reqs) {
+  var now = Date.now();
+  var cases = [];
+  (reqs || []).forEach(function(r){
+    if (["closed","cancelled","evaluated"].indexOf(r.status) >= 0) return;
+    var hrs = (now - new Date(r.createdAt || now).getTime()) / 3600000;
+    var days = Math.floor(hrs / 24);
+    var isLate = r.deadline && new Date(r.deadline).getTime() < now;
+    var assigneeName = ((r.assignees || [])[0] || {}).name || "—";
+    var assigneeDept = r.department || "—";
+    var caseBase = {
+      id: r.id,
+      serial: r.serial,
+      title: r.title,
+      assigneeName: assigneeName,
+      assigneeDept: assigneeDept,
+      requesterName: r.requesterName,
+      status: r.status,
+      escalation: r.escalation,
+      deadline: r.deadline,
+      createdAt: r.createdAt,
+      daysOld: days,
+      _raw: r,
+    };
+    // 1. Rejection — always critical
+    if (r.status === "rejected") {
+      cases.push(Object.assign({}, caseBase, {
+        caseType: "rejection",
+        level: "critical",
+        reason: r.rejectionReason || "بدون سبب",
+      }));
+    }
+    // 2. Escalation — always critical
+    else if (r.escalation) {
+      cases.push(Object.assign({}, caseBase, {
+        caseType: "escalation",
+        level: "critical",
+        reason: r.escalationReason || (r.escalation === "red" ? "تصعيد أحمر" : "تصعيد أصفر"),
+      }));
+    }
+    // 3. No response — warning <24h, critical >24h
+    else if (r.status === "sent" && hrs > 6) {
+      cases.push(Object.assign({}, caseBase, {
+        caseType: "no_response",
+        level: hrs > 24 ? "critical" : "warning",
+        reason: "لم يتم الاستلام منذ " + Math.floor(hrs) + " ساعة",
+      }));
+    }
+    // 4. Overdue — warning <=3 days, critical >3 days
+    else if (isLate) {
+      var lateDays = Math.ceil((now - new Date(r.deadline).getTime()) / 86400000);
+      cases.push(Object.assign({}, caseBase, {
+        caseType: "overdue",
+        level: lateDays > 3 ? "critical" : "warning",
+        reason: "متأخر " + lateDays + " يوم",
+        daysOld: lateDays,
+      }));
+    }
+  });
+  // Sort: critical first
+  cases.sort(function(a,b){ return (a.level === "critical" ? 0 : 1) - (b.level === "critical" ? 0 : 1); });
+  return cases;
+}
+
+var CASE_META = {
+  rejection:   { icon: "❌", label: "رفض",        color: "#ef4444" },
+  escalation:  { icon: "🔺", label: "تصعيد",     color: "#ef4444" },
+  no_response: { icon: "📭", label: "بلا استجابة", color: "#f59e0b" },
+  overdue:     { icon: "⏰", label: "تأخير",      color: "#f59e0b" },
+};
+
+var SUGGESTIONS = {
+  rejection: [
+    { action: "reassign", label: "🔄 إعادة إسناد" },
+    { action: "force",    label: "📌 إلزام + إنذار" },
+    { action: "cancel",   label: "🚫 إلغاء المهمة" },
+  ],
+  escalation: [
+    { action: "extend",      label: "📅 تمديد" },
+    { action: "force",       label: "📌 إلزام + إنذار" },
+    { action: "reassign",    label: "🔄 إعادة إسناد" },
+    { action: "investigate", label: "🔍 تحقيق" },
+  ],
+  no_response: [
+    { action: "remind",   label: "🔔 تذكير" },
+    { action: "wait",     label: "⏳ انتظار" },
+    { action: "reassign", label: "🔄 إسناد لآخر" },
+  ],
+  overdue: [
+    { action: "extend", label: "📅 تمديد" },
+    { action: "note",   label: "📝 ملاحظة" },
+    { action: "force",  label: "📌 إلزام" },
+  ],
+};
+
 function TawasulHRAssistant({ user, onClose }) {
   var [loading, setLoading] = useState(true);
-  var [aiLoading, setAiLoading] = useState(false);
-  var [data, setData] = useState(null);
-  var [recommendations, setRecommendations] = useState("");
   var [err, setErr] = useState("");
-  var [customQ, setCustomQ] = useState("");
+  var [reqs, setReqs] = useState([]);
+  var [decisions, setDecisions] = useState([]);
+  var [tab, setTab] = useState("cases"); // cases | analytics | log
+  var [expanded, setExpanded] = useState({}); // { caseId: true }
+  var [aiSummary, setAiSummary] = useState("");
+  var [aiLoading, setAiLoading] = useState(false);
+  var [busyCase, setBusyCase] = useState(null);
 
-  useEffect(function() {
-    fetch("/api/data?action=tawasul-list").then(function(r){ return r.json(); }).then(function(d){
-      if (d.error) { setErr(d.error); setLoading(false); return; }
-      setData({ requests: d.requests || [] });
-      setLoading(false);
-    }).catch(function(e){ setErr(e.message || "خطأ"); setLoading(false); });
-  }, []);
+  var userName = (user && (user.name || user.username)) || "مدير";
+  var userRole = user && user.username === "admin" ? "🔐 المدير العام" : "مدير HR";
 
-  async function analyzeWithAI(question) {
-    if (!data) return;
-    setAiLoading(true); setErr(""); setRecommendations("");
+  async function loadAll() {
+    setLoading(true); setErr("");
     try {
-      var reqs = data.requests;
-      var summary = {
-        total: reqs.length,
-        open: reqs.filter(function(r){ return ["closed","cancelled","evaluated","rejected"].indexOf(r.status) < 0; }).length,
-        escalatedYellow: reqs.filter(function(r){ return r.escalation === "yellow"; }).length,
-        escalatedRed: reqs.filter(function(r){ return r.escalation === "red"; }).length,
-        rejected: reqs.filter(function(r){ return r.status === "rejected"; }).length,
-        late: reqs.filter(function(r){
-          if (!r.deadline) return false;
-          if (["closed","cancelled","evaluated"].indexOf(r.status) >= 0) return false;
-          return new Date(r.deadline).getTime() < Date.now();
-        }).length,
-      };
-      // Top performers
-      var empScores = {};
-      reqs.forEach(function(r){
-        if (r.finalScore === undefined || r.finalScore === null) return;
-        (r.assignees || []).forEach(function(a){
-          if (!a.id) return;
-          if (!empScores[a.id]) empScores[a.id] = { name: a.name, total: 0, count: 0 };
-          empScores[a.id].total += r.finalScore;
-          empScores[a.id].count += 1;
-        });
+      var [r1, r2] = await Promise.all([
+        fetch("/api/data?action=tawasul-list").then(function(r){ return r.json(); }),
+        fetch("/api/data?action=hr-ai-decisions").then(function(r){ return r.json(); }),
+      ]);
+      if (r1.error) throw new Error(r1.error);
+      setReqs(r1.requests || []);
+      setDecisions(r2.decisions || []);
+    } catch(e) { setErr(e.message || "خطأ"); }
+    setLoading(false);
+  }
+  useEffect(function(){ loadAll(); }, []);
+
+  var cases = detectHRCases(reqs);
+  var stats = {
+    total: reqs.length,
+    closed: reqs.filter(function(r){ return ["closed","evaluated","cancelled"].indexOf(r.status) >= 0; }).length,
+    critical: cases.filter(function(c){ return c.level === "critical"; }).length,
+    warning: cases.filter(function(c){ return c.level === "warning"; }).length,
+  };
+
+  async function generateSummary() {
+    setAiLoading(true);
+    try {
+      var overdueCount = cases.filter(function(c){ return c.caseType === "overdue"; }).length;
+      var topCases = cases.slice(0, 5).map(function(c){
+        return "- " + c.serial + " (" + CASE_META[c.caseType].label + "): " + (c.title || "—") + " — المكلَّف: " + c.assigneeName + " — " + c.reason;
+      }).join("\n");
+      var prompt = "أنت مساعد ذكي لإدارة الموارد البشرية في مكتب هندسي.\n" +
+        "اكتب ملخصاً تنفيذياً مختصراً (5 أسطر كحد أقصى) باللغة العربية لمدير HR عن حالة المهام اليوم:\n\n" +
+        "- إجمالي المهام المفتوحة: " + cases.length + "\n" +
+        "- حرجة: " + stats.critical + "\n" +
+        "- تحتاج متابعة: " + stats.warning + "\n" +
+        "- متأخرة: " + overdueCount + "\n\n" +
+        (topCases ? "أبرز الحالات:\n" + topCases + "\n\n" : "") +
+        "اقترح 2-3 أولويات قابلة للتنفيذ اليوم.";
+      var resp = await callTawasulAI(null, null, {
+        system: "أنت مساعد ذكي لإدارة الموارد البشرية — ردودك مختصرة وعملية وبالعربية.",
+        messages: [{ role: "user", content: prompt }],
+        max_tokens: 400,
       });
-      var topPerformers = Object.keys(empScores).map(function(id){
-        return { name: empScores[id].name, avg: Math.round(empScores[id].total / empScores[id].count), count: empScores[id].count };
-      }).sort(function(a,b){ return b.avg - a.avg; }).slice(0, 5);
-
-      // Worst rejection/return candidates
-      var empRejections = {};
-      reqs.forEach(function(r){
-        if (r.status !== "rejected") return;
-        (r.assignees || []).forEach(function(a){
-          if (!empRejections[a.id]) empRejections[a.id] = { name: a.name, count: 0 };
-          empRejections[a.id].count += 1;
-        });
-      });
-      var topRejectors = Object.keys(empRejections).map(function(id){ return empRejections[id]; }).sort(function(a,b){ return b.count - a.count; }).slice(0, 3);
-
-      var systemPrompt = "أنت مساعد ذكي لمدير الموارد البشرية في مكتب هندسي. قدم توصيات عملية ومختصرة وقابلة للتنفيذ بناءً على بيانات المهام.\n\n" +
-        "البيانات:\n" +
-        "- إجمالي المهام: " + summary.total + "\n" +
-        "- مفتوحة: " + summary.open + "\n" +
-        "- متأخرة: " + summary.late + "\n" +
-        "- مُصعَّدة أصفر: " + summary.escalatedYellow + "\n" +
-        "- مُصعَّدة أحمر: " + summary.escalatedRed + "\n" +
-        "- مرفوضة: " + summary.rejected + "\n\n" +
-        "أفضل الموظفين (حسب التقييم):\n" + topPerformers.map(function(p,i){ return (i+1) + ". " + p.name + " — متوسط " + p.avg + "/100 (" + p.count + " مهمة)"; }).join("\n") + "\n\n" +
-        (topRejectors.length > 0 ? "أكثر الموظفين رفضاً للمهام:\n" + topRejectors.map(function(p,i){ return (i+1) + ". " + p.name + " — رفض " + p.count + " مهمة"; }).join("\n") + "\n\n" : "") +
-        "أجب بالعربية، مختصراً، بنقاط واضحة ومحددة (3-5 نقاط). لا تكرر الأرقام فقط — اقترح إجراءات محددة.";
-
-      var userMsg = question || "حلل أداء الفريق وقدم توصيات لتحسين سير العمل.";
-
-      var rawResp = await callTawasulAI(null, null, {
-        system: systemPrompt,
-        messages: [{ role: "user", content: userMsg }],
-        max_tokens: 700,
-      });
-      setRecommendations(rawResp);
-    } catch (e) {
-      setErr("فشل التحليل: " + (e.message || "خطأ"));
+      setAiSummary(resp || "تعذر توليد الملخص");
+    } catch(e) {
+      setAiSummary("⚠️ " + (e.message || "فشل التوليد"));
     }
     setAiLoading(false);
   }
 
-  useEffect(function(){
-    if (data && !recommendations && !aiLoading) {
-      analyzeWithAI();
+  async function takeDecision(caseItem, actionObj) {
+    var ok = window.confirm(
+      "⚠️ تأكيد القرار\n\n" +
+      "المهمة: " + caseItem.serial + " — " + (caseItem.title || "") + "\n" +
+      "الإجراء: " + actionObj.label + "\n\n" +
+      "سيُسجَّل باسم: " + userName + "\n\n" +
+      "متابعة؟"
+    );
+    if (!ok) return;
+    setBusyCase(caseItem.id);
+    try {
+      var nowIso = new Date().toISOString();
+      var decision = {
+        id: "d_" + Date.now() + "_" + Math.random().toString(36).slice(2,6),
+        serial: caseItem.serial,
+        taskId: caseItem.id,
+        action: actionObj.action,
+        label: actionObj.label,
+        by: userName,
+        byRole: userRole,
+        at: nowIso,
+        undone: false,
+      };
+      // 1. Save decision
+      await fetch("/api/data?action=hr-ai-decisions", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ decision: decision }),
+      });
+      // 2. Apply decision to task
+      var upd = Object.assign({}, caseItem._raw);
+      upd.log = (upd.log || []).concat([{ text: actionObj.label + " — " + userRole + ": " + userName, by: userName, at: nowIso }]);
+      if (actionObj.action === "force") {
+        upd.status = "sent";
+        upd.hrDecision = "force";
+      } else if (actionObj.action === "cancel") {
+        upd.status = "cancelled";
+      } else if (actionObj.action === "extend") {
+        upd.deadline = new Date(Date.now() + 3*86400000).toISOString();
+      } else if (actionObj.action === "reassign") {
+        upd.hrDecision = "reassign";
+      } else if (actionObj.action === "investigate") {
+        upd.hrDecision = "investigate";
+      } else if (actionObj.action === "remind") {
+        // log only — add notification
+        try {
+          var twsLog = await fetch("/api/data?action=tawasul-notifs", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              notif: {
+                type: "hr_reminder",
+                taskId: caseItem.id,
+                serial: caseItem.serial,
+                from: userName,
+                targetId: ((caseItem._raw.assignees || [])[0] || {}).id,
+                text: "🔔 تذكير من HR: " + (caseItem.title || ""),
+              },
+            }),
+          });
+        } catch(e){}
+      }
+      upd.updatedAt = nowIso;
+      await fetch("/api/data?action=tawasul-save", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ request: upd }),
+      });
+      // Reload all data
+      await loadAll();
+      alert("✅ تم تنفيذ القرار — " + actionObj.label);
+    } catch(e) {
+      alert("⚠️ فشل: " + (e.message || "خطأ"));
     }
-  }, [data]);
+    setBusyCase(null);
+  }
 
-  var quickQs = [
-    "ما أبرز المشاكل في سير العمل؟",
-    "أي موظف يستحق مكافأة هذا الشهر؟",
-    "ما أسباب التأخير المتكررة؟",
-    "هل هناك نمط في الرفض؟",
-  ];
+  async function undoDecision(decision) {
+    if (decision.undone) return;
+    var ok = window.confirm(
+      "↩️ التراجع عن القرار؟\n\n" +
+      "المهمة: " + decision.serial + "\n" +
+      "الإجراء: " + decision.label + "\n\n" +
+      "ملاحظة: التراجع لا يُعيد حالة المهمة تلقائياً — قد يحتاج تدخل يدوي."
+    );
+    if (!ok) return;
+    try {
+      var updated = Object.assign({}, decision, {
+        undone: true,
+        undoneBy: userName,
+        undoneAt: new Date().toISOString(),
+      });
+      await fetch("/api/data?action=hr-ai-decisions", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ decision: updated }),
+      });
+      await loadAll();
+    } catch(e) {
+      alert("⚠️ فشل التراجع: " + e.message);
+    }
+  }
+
+  // Top performers (Analytics)
+  var topPerformers = (function(){
+    var scores = {};
+    reqs.forEach(function(r){
+      if (r.finalScore === undefined || r.finalScore === null) return;
+      (r.assignees || []).forEach(function(a){
+        if (!a.id) return;
+        if (!scores[a.id]) scores[a.id] = { name: a.name || a.id, dept: "", total: 0, count: 0 };
+        scores[a.id].total += r.finalScore;
+        scores[a.id].count += 1;
+      });
+    });
+    return Object.keys(scores).map(function(id){
+      var s = scores[id];
+      return { name: s.name, dept: s.dept, score: Math.round(s.total / s.count), count: s.count };
+    }).sort(function(a,b){ return b.score - a.score; }).slice(0, 5);
+  })();
+
+  function scoreColor(n){ return n >= 80 ? "#22c55e" : n >= 60 ? "#f59e0b" : "#ef4444"; }
 
   return (
-    <div onClick={onClose} style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.75)", zIndex: 1100, display: "flex", alignItems: "flex-end", justifyContent: "center", fontFamily: "'Tajawal',sans-serif" }}>
-      <div onClick={function(e){ e.stopPropagation(); }} style={{ background: "linear-gradient(135deg, rgba(167,139,250,0.12), rgba(124,58,237,0.06))", borderRadius: "20px 20px 0 0", maxWidth: 460, width: "100%", maxHeight: "94vh", overflowY: "auto", direction: "rtl", color: C.text, border: "1.5px solid rgba(167,139,250,0.3)" }}>
-        <div style={{ padding: "14px 16px", borderBottom: "1px solid rgba(167,139,250,0.3)", display: "flex", justifyContent: "space-between", alignItems: "center", position: "sticky", top: 0, background: C.bg, zIndex: 2 }}>
-          <div style={{ fontSize: 16, fontWeight: 900, color: "#a78bfa", fontFamily: "'Cairo',sans-serif" }}>🤖 مساعد الموارد البشرية</div>
-          <button onClick={onClose} style={{ background: "none", border: "none", fontSize: 22, color: C.sub, cursor: "pointer" }}>×</button>
-        </div>
-        <div style={{ padding: 16 }}>
-          <div style={{ fontSize: 11, color: C.sub, marginBottom: 14, lineHeight: 1.7 }}>
-            مساعد ذكي لتحليل أداء الفريق وتقديم توصيات — مخصص للإدارة والموارد البشرية.
-          </div>
+    <div onClick={onClose} style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.8)", zIndex: 1200, display: "flex", alignItems: "flex-end", justifyContent: "center", fontFamily: "'Tajawal',sans-serif" }}>
+      <div onClick={function(e){ e.stopPropagation(); }} style={{ background: C.bg, borderRadius: "20px 20px 0 0", maxWidth: 480, width: "100%", maxHeight: "96vh", overflowY: "auto", direction: "rtl", color: C.text, border: "1.5px solid rgba(167,139,250,0.3)" }}>
 
-          {loading && <div style={{ textAlign: "center", padding: 20, color: C.sub }}>⏳ جارِ تحميل البيانات...</div>}
-          {err && <div style={{ padding: 10, background: "rgba(239,68,68,0.1)", color: "#ef4444", borderRadius: 8, fontSize: 12, fontWeight: 700 }}>⚠️ {err}</div>}
-
-          {data && !err && (
+        {/* Header */}
+        <div style={{ padding: "16px 18px", borderBottom: "1px solid rgba(167,139,250,0.3)", background: "linear-gradient(135deg, rgba(167,139,250,0.15), rgba(124,58,237,0.08))", position: "sticky", top: 0, zIndex: 3 }}>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
             <div>
-              {/* Quick questions */}
-              <div style={{ display: "flex", flexWrap: "wrap", gap: 6, marginBottom: 14 }}>
-                {quickQs.map(function(q, i){
-                  return <button key={i} onClick={function(){ analyzeWithAI(q); }} disabled={aiLoading} style={{ padding: "7px 12px", borderRadius: 10, background: C.card, color: "#a78bfa", border: "1px solid rgba(167,139,250,0.4)", fontSize: 11, fontWeight: 700, cursor: aiLoading ? "default" : "pointer", fontFamily: "inherit", opacity: aiLoading ? 0.5 : 1 }}>{q}</button>;
+              <div style={{ fontSize: 18, fontWeight: 900, color: "#a78bfa", fontFamily: "'Cairo',sans-serif", marginBottom: 3 }}>🤖 مساعد HR الذكي</div>
+              <div style={{ fontSize: 10, color: C.sub }}>{new Date().toLocaleDateString("ar-SA", { weekday: "long", day: "numeric", month: "long", year: "numeric" })}</div>
+            </div>
+            <div style={{ textAlign: "left" }}>
+              <div style={{ fontSize: 11, fontWeight: 800, color: C.text }}>👤 {userName}</div>
+              <div style={{ fontSize: 9, color: "#a78bfa", fontWeight: 700, marginTop: 2 }}>{userRole}</div>
+              <button onClick={onClose} style={{ marginTop: 6, background: "none", border: "none", fontSize: 22, color: C.sub, cursor: "pointer" }}>×</button>
+            </div>
+          </div>
+        </div>
+
+        {loading && <div style={{ textAlign: "center", padding: 40, color: C.sub, fontSize: 13 }}>⏳ جارِ التحميل...</div>}
+        {err && <div style={{ padding: 14, background: "rgba(239,68,68,0.1)", color: "#ef4444", margin: 14, borderRadius: 10, fontSize: 12, fontWeight: 700 }}>⚠️ {err}</div>}
+
+        {!loading && !err && (
+          <div style={{ padding: 14 }}>
+            {/* 4 Stats cards */}
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 8, marginBottom: 12 }}>
+              {[
+                { icon: "📋", value: stats.total, label: "إجمالي", color: C.hdr2 },
+                { icon: "✅", value: stats.closed, label: "مكتملة", color: "#22c55e" },
+                { icon: "🔴", value: stats.critical, label: "حرجة", color: "#ef4444" },
+                { icon: "🟡", value: stats.warning, label: "تنبيه", color: "#f59e0b" },
+              ].map(function(s, i){
+                return (
+                  <div key={i} style={{ padding: 10, background: C.card, borderRadius: 10, border: "1px solid " + C.cardBorder, textAlign: "center" }}>
+                    <div style={{ fontSize: 16 }}>{s.icon}</div>
+                    <div style={{ fontSize: 20, fontWeight: 900, color: s.color, fontFamily: "'Cairo',sans-serif" }}>{s.value}</div>
+                    <div style={{ fontSize: 9, color: C.sub, marginTop: 2 }}>{s.label}</div>
+                  </div>
+                );
+              })}
+            </div>
+
+            {/* Alert if any critical */}
+            {stats.critical > 0 && (
+              <div style={{ padding: 12, background: "rgba(239,68,68,0.1)", border: "1.5px solid rgba(239,68,68,0.4)", borderRadius: 10, marginBottom: 12, fontSize: 12, fontWeight: 800, color: "#ef4444", display: "flex", alignItems: "center", gap: 8 }}>
+                <span style={{ fontSize: 18 }}>🔴</span>
+                <span>{stats.critical} حالة تتطلب قرار فوري</span>
+              </div>
+            )}
+
+            {/* Tabs */}
+            <div style={{ display: "flex", gap: 4, borderBottom: "1px solid " + C.cardBorder, marginBottom: 14 }}>
+              {[
+                { id: "cases", icon: "📋", label: "الحالات (" + cases.length + ")" },
+                { id: "analytics", icon: "📊", label: "التحليلات" },
+                { id: "log", icon: "📜", label: "القرارات (" + decisions.length + ")" },
+              ].map(function(tb){
+                var active = tab === tb.id;
+                return <button key={tb.id} onClick={function(){ setTab(tb.id); }} style={{ flex: 1, padding: "10px 6px", background: "none", border: "none", borderBottom: active ? "2px solid " + C.gold : "2px solid transparent", color: active ? C.gold : C.sub, fontSize: 11, fontWeight: 700, cursor: "pointer", fontFamily: "inherit" }}>{tb.icon} {tb.label}</button>;
+              })}
+            </div>
+
+            {/* TAB: CASES */}
+            {tab === "cases" && (
+              <div>
+                {cases.length === 0 ? (
+                  <div style={{ padding: 30, textAlign: "center", color: C.sub, background: C.card, borderRadius: 12 }}>
+                    <div style={{ fontSize: 30, marginBottom: 8 }}>✅</div>
+                    <div style={{ fontSize: 13 }}>لا توجد حالات تتطلب تدخلك</div>
+                  </div>
+                ) : cases.map(function(c){
+                  var meta = CASE_META[c.caseType] || { icon: "•", label: c.caseType, color: "#64748b" };
+                  var isExp = expanded[c.id];
+                  var isCritical = c.level === "critical";
+                  var isBusy = busyCase === c.id;
+                  var suggestions = SUGGESTIONS[c.caseType] || [];
+                  return (
+                    <div key={c.id} style={{ marginBottom: 8, borderRadius: 12, border: "1.5px solid " + (isCritical ? "rgba(239,68,68,0.3)" : "rgba(245,158,11,0.3)"), background: isCritical ? "rgba(239,68,68,0.04)" : "rgba(245,158,11,0.04)", overflow: "hidden" }}>
+                      <button onClick={function(){ setExpanded(function(e){ var n = Object.assign({}, e); n[c.id] = !n[c.id]; return n; }); }} style={{ width: "100%", padding: 12, background: "none", border: "none", cursor: "pointer", fontFamily: "inherit", textAlign: "right", display: "flex", alignItems: "center", gap: 10, color: C.text }}>
+                        <span style={{ padding: "3px 8px", borderRadius: 6, fontSize: 9, fontWeight: 900, background: meta.color + "22", color: meta.color }}>
+                          {isCritical ? "حرج" : "تنبيه"}
+                        </span>
+                        <div style={{ flex: 1, minWidth: 0, textAlign: "right" }}>
+                          <div style={{ fontSize: 12, fontWeight: 800, color: C.text, marginBottom: 3 }}>{c.serial} {meta.icon} {meta.label}</div>
+                          <div style={{ fontSize: 11, fontWeight: 700, color: C.text, marginBottom: 3, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{c.title || "—"}</div>
+                          <div style={{ fontSize: 10, color: C.sub }}>👤 {c.assigneeName} · 📤 {c.requesterName || "—"}</div>
+                        </div>
+                        <span style={{ fontSize: 14, color: C.sub }}>{isExp ? "▲" : "▼"}</span>
+                      </button>
+                      {isExp && (
+                        <div style={{ padding: "4px 12px 12px 12px", borderTop: "1px solid " + C.cardBorder }}>
+                          <div style={{ padding: 10, background: C.bg, borderRadius: 8, marginTop: 8, marginBottom: 10, fontSize: 11, color: C.text, lineHeight: 1.6 }}>
+                            <strong style={{ color: meta.color }}>السبب:</strong> {c.reason}
+                          </div>
+                          <div style={{ fontSize: 10, color: C.sub, marginBottom: 6, fontWeight: 700 }}>اقتراحات المساعد:</div>
+                          <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
+                            {suggestions.map(function(s, i){
+                              return <button key={i} onClick={function(){ takeDecision(c, s); }} disabled={isBusy} style={{ flex: "1 1 100px", minWidth: 100, padding: "8px 10px", borderRadius: 8, background: isBusy ? C.cardBorder : C.card, color: C.text, border: "1px solid " + C.cardBorder, fontSize: 11, fontWeight: 700, cursor: isBusy ? "default" : "pointer", fontFamily: "inherit" }}>{isBusy ? "..." : s.label}</button>;
+                            })}
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
+
+                {/* AI Summary */}
+                <div style={{ marginTop: 14, padding: 12, borderRadius: 12, background: "rgba(167,139,250,0.06)", border: "1px solid rgba(167,139,250,0.25)" }}>
+                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
+                    <div style={{ fontSize: 12, fontWeight: 800, color: "#a78bfa" }}>🤖 ملخص المساعد الذكي</div>
+                    <button onClick={generateSummary} disabled={aiLoading} style={{ padding: "4px 10px", borderRadius: 6, background: "#a78bfa", color: "#fff", border: "none", fontSize: 10, fontWeight: 700, cursor: aiLoading ? "default" : "pointer", fontFamily: "inherit", opacity: aiLoading ? 0.6 : 1 }}>{aiLoading ? "..." : "🔄 توليد"}</button>
+                  </div>
+                  {aiSummary ? (
+                    <div style={{ fontSize: 11, color: C.text, lineHeight: 1.9, whiteSpace: "pre-wrap" }}>{aiSummary}</div>
+                  ) : (
+                    <div style={{ fontSize: 10, color: C.sub, fontStyle: "italic" }}>اضغط "🔄 توليد" لإنشاء ملخص ذكي اليوم.</div>
+                  )}
+                </div>
+              </div>
+            )}
+
+            {/* TAB: ANALYTICS */}
+            {tab === "analytics" && (
+              <div>
+                <div style={{ fontSize: 12, fontWeight: 800, color: C.text, marginBottom: 10 }}>🏆 أفضل الموظفين (تواصل)</div>
+                {topPerformers.length === 0 ? (
+                  <div style={{ padding: 30, textAlign: "center", color: C.sub, background: C.card, borderRadius: 10, fontSize: 12 }}>لا توجد تقييمات بعد</div>
+                ) : topPerformers.map(function(p, i){
+                  var medal = i === 0 ? "🥇" : i === 1 ? "🥈" : i === 2 ? "🥉" : "  ";
+                  var clr = scoreColor(p.score);
+                  return (
+                    <div key={i} style={{ display: "flex", alignItems: "center", gap: 10, padding: 10, background: i < 3 ? clr + "10" : C.card, borderRadius: 10, border: "1px solid " + (i < 3 ? clr + "40" : C.cardBorder), marginBottom: 6 }}>
+                      <div style={{ fontSize: 18, width: 24, textAlign: "center" }}>{medal}</div>
+                      <div style={{ flex: 1 }}>
+                        <div style={{ fontSize: 12, fontWeight: 800, color: C.text }}>{p.name}</div>
+                        <div style={{ fontSize: 10, color: C.sub }}>{p.count} مهمة</div>
+                      </div>
+                      <div style={{ fontSize: 16, fontWeight: 900, color: clr }}>{p.score}<span style={{ fontSize: 10, opacity: 0.6 }}>%</span></div>
+                    </div>
+                  );
                 })}
               </div>
+            )}
 
-              {/* Custom question */}
-              <div style={{ display: "flex", gap: 6, marginBottom: 14 }}>
-                <input type="text" value={customQ} onChange={function(e){ setCustomQ(e.target.value); }} placeholder="اسأل سؤالاً مخصصاً..." onKeyDown={function(e){ if(e.key==="Enter" && customQ.trim()){ analyzeWithAI(customQ); setCustomQ(""); } }} style={{ flex: 1, padding: "10px 12px", borderRadius: 10, border: "1px solid " + C.cardBorder, background: C.card, color: C.text, fontSize: 12, fontFamily: "inherit", outline: "none" }} />
-                <button onClick={function(){ if(customQ.trim()){ analyzeWithAI(customQ); setCustomQ(""); } }} disabled={aiLoading || !customQ.trim()} style={{ padding: "10px 14px", borderRadius: 10, background: customQ.trim() ? "#a78bfa" : C.cardBorder, color: "#fff", border: "none", fontSize: 12, fontWeight: 700, cursor: customQ.trim() ? "pointer" : "default", fontFamily: "inherit" }}>🚀</button>
+            {/* TAB: LOG */}
+            {tab === "log" && (
+              <div>
+                {decisions.length === 0 ? (
+                  <div style={{ padding: 30, textAlign: "center", color: C.sub, background: C.card, borderRadius: 10, fontSize: 12 }}>لم تُتخذ قرارات بعد</div>
+                ) : decisions.slice().reverse().map(function(d){
+                  return (
+                    <div key={d.id} style={{ padding: 10, marginBottom: 6, borderRadius: 10, background: C.card, border: "1px solid " + C.cardBorder, borderRight: "3px solid " + (d.undone ? "#94a3b8" : C.gold), opacity: d.undone ? 0.5 : 1 }}>
+                      <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 4 }}>
+                        <span style={{ fontSize: 11, fontWeight: 800, color: C.text }}>{d.serial}</span>
+                        <span style={{ fontSize: 9, color: C.sub }}>{new Date(d.at).toLocaleString("ar-SA")}</span>
+                      </div>
+                      <div style={{ fontSize: 11, color: C.text, marginBottom: 4 }}>
+                        {d.label} — <strong>{d.by}</strong> ({d.byRole})
+                      </div>
+                      {d.undone ? (
+                        <div style={{ fontSize: 10, color: "#ef4444", fontWeight: 700 }}>↩️ تم التراجع بواسطة {d.undoneBy}</div>
+                      ) : (
+                        <button onClick={function(){ undoDecision(d); }} style={{ padding: "4px 10px", borderRadius: 6, background: "rgba(239,68,68,0.1)", color: "#ef4444", border: "1px solid rgba(239,68,68,0.3)", fontSize: 10, fontWeight: 700, cursor: "pointer", fontFamily: "inherit" }}>↩️ تراجع</button>
+                      )}
+                    </div>
+                  );
+                })}
               </div>
-
-              {/* Response */}
-              {aiLoading && <div style={{ textAlign: "center", padding: 20, color: "#a78bfa", fontSize: 12 }}>🤖 جارِ التحليل...</div>}
-              {recommendations && (
-                <div style={{ background: C.card, borderRadius: 12, padding: 14, border: "1px solid rgba(167,139,250,0.3)", fontSize: 12, lineHeight: 1.9, color: C.text, whiteSpace: "pre-wrap" }}>
-                  {recommendations}
-                </div>
-              )}
-            </div>
-          )}
-        </div>
+            )}
+          </div>
+        )}
       </div>
     </div>
   );
@@ -4597,7 +4918,7 @@ function FaceModal({ empId, onVerified, onSkip, onCancel }) {
       var distance = Math.sqrt(sum);
       var matchPct = Math.max(0, Math.round((1 - distance / 1.2) * 100));
 
-      if (matchPct >= 55) {
+      if (matchPct >= 50) {
         setStatus("matched");
         setMsg("✓ تطابق " + matchPct + "% — تم التحقق");
         setTimeout(function(){ onVerified(photo); }, 800);

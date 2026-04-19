@@ -922,10 +922,56 @@ export default async function handler(req, res) {
           }
         }
 
-        // Save new violations
+        // Save new violations + SEND NOTIFICATIONS to employee and HR
         if (newViolations.length > 0) {
-          for (const v of newViolations) violations.push({ id: 'V' + Date.now() + Math.random().toString(36).substr(2, 4), status: 'open', ...v, ts: new Date().toISOString() });
+          var allNotifs = (await dbGet('notifications')) || [];
+          var nowISO = new Date().toISOString();
+
+          for (const v of newViolations) {
+            var vId = 'V' + Date.now() + Math.random().toString(36).substr(2, 4);
+            violations.push({ id: vId, status: 'open', ...v, ts: nowISO });
+
+            // Notify the employee
+            var empNotifTitle = v.type === 'late' ? '⏰ تنبيه تأخير' : v.type === 'absent' ? '🚫 تنبيه غياب' : '⚠️ مخالفة جديدة';
+            var empNotifMsg = v.type === 'late'
+              ? 'تم تسجيل تأخير اليوم: ' + (v.details || '') + '. الرجاء مراجعة قسم الموارد البشرية.'
+              : v.type === 'absent'
+              ? 'تم تسجيل غياب اليوم بدون إفادة مسبقة. الرجاء المبادرة بالتواصل مع HR.'
+              : 'تم تسجيل مخالفة: ' + (v.details || '');
+            allNotifs.push({
+              id: 'n_emp_' + Date.now() + '_' + Math.random().toString(36).substr(2,4),
+              empId: v.empId,
+              type: v.type,
+              title: empNotifTitle,
+              message: empNotifMsg,
+              violationId: vId,
+              read: false,
+              createdAt: nowISO,
+            });
+
+            // Notify HR / admins (by flagging for all HR users)
+            var hrEmps = (await dbGet('employees')) || [];
+            var hrIds = hrEmps.filter(function(e){ return e.role === 'hr_manager' || e.role === 'admin' || e.isAdmin; }).map(function(e){ return e.id; });
+            hrIds.forEach(function(hrId){
+              allNotifs.push({
+                id: 'n_hr_' + Date.now() + '_' + Math.random().toString(36).substr(2,4),
+                empId: hrId,
+                type: 'hr_alert',
+                title: '👔 مخالفة تتطلب مراجعة',
+                message: 'الموظف ' + (v.empName || '—') + ': ' + (v.details || v.type),
+                violationId: vId,
+                targetEmpId: v.empId,
+                read: false,
+                createdAt: nowISO,
+              });
+            });
+          }
+
+          // Keep last 1000 notifs
+          if (allNotifs.length > 1000) allNotifs = allNotifs.slice(-1000);
+
           await dbSet('violations', violations);
+          await dbSet('notifications', allNotifs);
         }
 
         // Auto-escalate overdue warnings
@@ -1648,6 +1694,32 @@ export default async function handler(req, res) {
           return res.json({ ok: true, permissions: perms });
         } catch (e) {
           return res.status(500).json({ error: 'permissions error: ' + (e.message || 'unknown') });
+        }
+      }
+
+      /* ═══ HR AI DECISIONS (سجل قرارات المساعد الذكي) ═══ */
+      case 'hr-ai-decisions': {
+        try {
+          if (req.method === 'POST') {
+            var bd = req.body || {};
+            var decision = bd.decision;
+            if (!decision || !decision.id) return res.status(400).json({ error: 'decision.id required' });
+            var decs = (await dbGet('hr_ai:decisions')) || [];
+            var dIdx = decs.findIndex(function(d){ return d.id === decision.id; });
+            if (dIdx >= 0) {
+              decs[dIdx] = decision; // update (for undo)
+            } else {
+              decs.push(decision); // new
+              if (decs.length > 1000) decs = decs.slice(-1000); // keep last 1000
+            }
+            await dbSet('hr_ai:decisions', decs);
+            return res.json({ ok: true, decision: decision, total: decs.length });
+          }
+          // GET: return all decisions
+          var decsR = (await dbGet('hr_ai:decisions')) || [];
+          return res.json({ ok: true, decisions: decsR, total: decsR.length });
+        } catch (e) {
+          return res.status(500).json({ error: 'hr-ai-decisions error: ' + (e.message || 'unknown') });
         }
       }
 
@@ -2665,7 +2737,28 @@ export default async function handler(req, res) {
       }
 
 
-      /* ═══ AUTO VIOLATIONS (الإنذارات التلقائية) ═══ */
+      /* ═══ AUTO VIOLATIONS TRIGGER (safety-net, called by client) ═══ */
+      case 'auto_violations_check': {
+        // Client-triggered safety-net. Runs once per day after 6pm Saudi time.
+        var nowCheck = new Date();
+        var saudiHourCheck = (nowCheck.getUTCHours() + 3) % 24;
+        if (saudiHourCheck < 18) return res.json({ ok: false, reason: 'too_early', saudiHour: saudiHourCheck });
+        var lastRun = await dbGet('auto_violations_last_run');
+        var todayStrChk = nowCheck.toISOString().split('T')[0];
+        if (lastRun === todayStrChk) return res.json({ ok: false, reason: 'already_ran', lastRun: lastRun });
+        // Mark as running first (to avoid races)
+        await dbSet('auto_violations_last_run', todayStrChk);
+        // Internally call auto_violations by forwarding through fetch to self
+        try {
+          var baseUrl = req.headers.host ? ('https://' + req.headers.host) : 'http://localhost:3000';
+          var selfR = await fetch(baseUrl + '/api/data?action=auto_violations');
+          var selfD = await selfR.json();
+          return res.json({ ok: true, triggered: true, result: selfD });
+        } catch (e) {
+          return res.status(500).json({ error: 'self-call failed: ' + (e.message || 'unknown') });
+        }
+      }
+
       case 'auto_violations': {
         // Called by cron daily 6pm — checks today's attendance and generates violations per laiha
         var emps = await dbGet('employees') || [];
@@ -2749,8 +2842,11 @@ export default async function handler(req, res) {
             generated.push({ empId: emp.id, name: emp.name, rule: rule.id, occurrence: occurrence, penalty: newVio.penaltyLabel, needsApproval: !autoApply });
           }
 
-          // Check absence
-          if (!checkin && nowH >= 18) { // 6pm or later
+          // Check absence — account for Saudi Arabia timezone (UTC+3)
+          // Server runs in UTC; 6pm Saudi = 15:00 UTC
+          var nowUTC = new Date();
+          var saudiHour = (nowUTC.getUTCHours() + 3) % 24;
+          if (!checkin && saudiHour >= 18) {
             var absRule = laihaRules.find(r => r.absentDays === 1);
             if (absRule) applyRule(absRule, today);
           }
