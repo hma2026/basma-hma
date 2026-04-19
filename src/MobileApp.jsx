@@ -10,7 +10,7 @@ import { ALL_VIOLATIONS_DEFAULT, PENALTY_TYPES, LAIHA_INFO, COMPLAINT_STATUS, VI
 
 /* ═══════════ APP CONFIG (إعدادات التطبيق) ═══════════ */
 const APP_CONFIG = {
-  VER: "5.07",
+  VER: "5.08",
   NAME: "بصمة HMA",
   FULL_NAME: "نظام الحضور والانصراف الذكي",
   COMPANY: "هاني محمد عسيري للاستشارات الهندسية",
@@ -382,6 +382,57 @@ function MobileAppInner() {
   const [initDone, setInitDone] = useState(false);
   const [tawasulUnread, setTawasulUnread] = useState(0);
   const [fieldProjects, setFieldProjects] = useState([]);
+  const tawasulPollRef = useRef({ interval: null, lastUnread: 0, requested: false });
+
+  // Tawasul polling — checks every 30 seconds for new notifications (any page)
+  function startTawasulPolling(emp) {
+    if (tawasulPollRef.current.interval) clearInterval(tawasulPollRef.current.interval);
+    var pollMyId = emp && (emp.id || emp.username);
+    var pollIsAdmin = emp && (emp.role === "admin" || emp.isAdmin || emp.username === "admin");
+    // Request browser notification permission
+    if (typeof Notification !== "undefined" && Notification.permission === "default" && !tawasulPollRef.current.requested) {
+      tawasulPollRef.current.requested = true;
+      try { Notification.requestPermission(); } catch(e) {}
+    }
+    async function checkUnread() {
+      if (document.hidden) return; // skip if tab not visible
+      try {
+        var r = await fetch("/api/data?action=tawasul-list");
+        var d = await r.json();
+        if (!d || !Array.isArray(d.requests)) return;
+        var unreadTasks = d.requests.filter(function(req){
+          var isAssignee = (req.assignees || []).some(function(a){ return String(a.id) === String(pollMyId); });
+          var notDone = req.status !== "closed" && req.status !== "evaluated" && req.status !== "cancelled";
+          return notDone && (pollIsAdmin ? true : isAssignee) && (req.status === "sent" || req.status === "received");
+        });
+        var newCount = unreadTasks.length;
+        setTawasulUnread(newCount);
+        // Trigger notification if count increased
+        if (newCount > tawasulPollRef.current.lastUnread && tawasulPollRef.current.lastUnread > 0) {
+          try { playTawasulNotif(); } catch(e) {}
+          // Browser native notification
+          if (typeof Notification !== "undefined" && Notification.permission === "granted") {
+            try {
+              new Notification("🤝 مهمة جديدة في تواصل", {
+                body: "لديك " + newCount + " مهمة غير منجزة",
+                icon: "/icon-192.png",
+                tag: "tawasul-notif",
+              });
+            } catch(e) {}
+          }
+        }
+        tawasulPollRef.current.lastUnread = newCount;
+      } catch(e) { /* silent */ }
+    }
+    checkUnread(); // initial
+    tawasulPollRef.current.interval = setInterval(checkUnread, 30000); // every 30s
+  }
+
+  useEffect(function(){
+    return function(){
+      if (tawasulPollRef.current.interval) clearInterval(tawasulPollRef.current.interval);
+    };
+  }, []);
 
   // Apply dark mode
   useEffect(function() {
@@ -825,6 +876,8 @@ function MobileAppInner() {
           if (d && d.ok) console.log("[auto_violations] ran:", d.count, "violations generated");
         }).catch(function(){});
       }, 2000);
+      // Start polling for tawasul notifications every 30 seconds (any page)
+      startTawasulPolling(emp);
     } catch { /**/ }
   }
 
@@ -2115,6 +2168,7 @@ function saveFavs(username, favs) {
 function TawasulCreateModal({ user, allEmps, categories, projects, onClose, onSaved, existing }) {
   var myId = user && (user.id || user.username);
   var myEmail = user && user.email;
+  var isAdminUser = user && (user.role === "admin" || user.isAdmin || user.username === "admin");
   var isEdit = !!existing;
   var cats = (categories && categories.length > 0) ? categories : TAWASUL_CATEGORIES_DEFAULT;
 
@@ -2361,10 +2415,7 @@ function TawasulCreateModal({ user, allEmps, categories, projects, onClose, onSa
           </div>
           <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 10 }}>
             <div style={{ fontSize: 16, fontWeight: 900, color: C.text, fontFamily: "'Cairo',sans-serif" }}>{isEdit ? "✎ تعديل مهمة" : "➕ مهمة جديدة"}</div>
-            <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
-              {!isEdit && <button onClick={function(){ setShowAI(true); }} style={{ padding: "6px 12px", borderRadius: 10, background: "rgba(167,139,250,0.15)", color: "#a78bfa", border: "1px solid rgba(167,139,250,0.4)", fontSize: 11, fontWeight: 800, cursor: "pointer", fontFamily: "inherit" }}>🤖 مساعد ذكي</button>}
-              <button onClick={onClose} style={{ background: "none", border: "none", fontSize: 22, color: C.sub, cursor: "pointer", padding: 0 }}>×</button>
-            </div>
+            <button onClick={onClose} style={{ background: "none", border: "none", fontSize: 22, color: C.sub, cursor: "pointer", padding: 0 }}>×</button>
           </div>
           {/* Progress */}
           <div style={{ display: "flex", alignItems: "center", gap: 3, marginBottom: 6 }}>
@@ -2380,10 +2431,36 @@ function TawasulCreateModal({ user, allEmps, categories, projects, onClose, onSa
         </div>
 
         <div style={{ padding: 16 }}>
-          {/* Step 1: urgency */}
+          {/* Step 1: urgency + prominent AI button */}
           {step === 1 && (
             <div>
-              <div style={{ fontSize: 14, fontWeight: 700, color: C.sub, marginBottom: 14 }}>ما أولوية هذه المهمة؟</div>
+              {!isEdit && (
+                <button onClick={function(){ setShowAI(true); }} style={{
+                  width: "100%",
+                  padding: "18px 20px",
+                  borderRadius: 16,
+                  background: "linear-gradient(135deg, #a78bfa, #7c3aed)",
+                  color: "#fff",
+                  border: "none",
+                  fontSize: 16,
+                  fontWeight: 900,
+                  cursor: "pointer",
+                  fontFamily: "'Cairo',sans-serif",
+                  marginBottom: 16,
+                  boxShadow: "0 6px 18px rgba(124,58,237,0.4)",
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  gap: 10,
+                }}>
+                  <span style={{ fontSize: 28 }}>🤖</span>
+                  <div style={{ textAlign: "right" }}>
+                    <div style={{ fontSize: 16, fontWeight: 900 }}>إنشاء بمساعدة AI</div>
+                    <div style={{ fontSize: 10, fontWeight: 500, opacity: 0.9, marginTop: 2 }}>وصف مختصر + تحليل ذكي للنموذج</div>
+                  </div>
+                </button>
+              )}
+              <div style={{ fontSize: 14, fontWeight: 700, color: C.sub, marginBottom: 14 }}>أو اختر أولوية المهمة يدوياً:</div>
               <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
                 <button onClick={function(){ updateForm({ urgency: "urgent" }); }} style={{ padding: "20px 12px", borderRadius: 14, background: form.urgency === "urgent" ? "#ef4444" : C.card, color: form.urgency === "urgent" ? "#fff" : C.text, border: "2px solid " + (form.urgency === "urgent" ? "#ef4444" : C.cardBorder), fontSize: 14, fontWeight: 800, cursor: "pointer", fontFamily: "inherit" }}>🔴<br/>عاجل</button>
                 <button onClick={function(){ updateForm({ urgency: "normal" }); }} style={{ padding: "20px 12px", borderRadius: 14, background: form.urgency === "normal" ? "#f59e0b" : C.card, color: form.urgency === "normal" ? "#fff" : C.text, border: "2px solid " + (form.urgency === "normal" ? "#f59e0b" : C.cardBorder), fontSize: 14, fontWeight: 800, cursor: "pointer", fontFamily: "inherit" }}>🟡<br/>عادي</button>
@@ -2481,15 +2558,23 @@ function TawasulCreateModal({ user, allEmps, categories, projects, onClose, onSa
             <div>
               <div style={{ fontSize: 14, fontWeight: 700, color: C.sub, marginBottom: 14 }}>اختر الإدارة المعنية</div>
               <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-                {allDepts.length === 0 ? (
+                {allDepts.length === 0 && !isAdminUser ? (
+                  <div style={{ padding: 14, background: C.card, borderRadius: 10, border: "1px dashed " + C.cardBorder, fontSize: 12, color: C.sub, textAlign: "center" }}>
+                    🏢 لا توجد إدارات — يرجى التواصل مع المدير العام لإضافة الإدارات
+                  </div>
+                ) : allDepts.length === 0 && isAdminUser ? (
                   <input type="text" value={form.department} onChange={function(e){ updateForm({ department: e.target.value }); }} placeholder="أدخل اسم الإدارة" style={inputStyle} />
                 ) : allDepts.map(function(d){
                   var active = form.department === d;
                   return <button key={d} onClick={function(){ updateForm({ department: d }); }} style={{ padding: "12px 14px", borderRadius: 10, background: active ? C.hdr2 : C.card, color: active ? "#fff" : C.text, border: "1.5px solid " + (active ? C.hdr2 : C.cardBorder), fontSize: 13, fontWeight: 700, cursor: "pointer", fontFamily: "inherit", textAlign: "right" }}>🏢 {d}</button>;
                 })}
               </div>
-              <div style={{ fontSize: 11, color: C.sub, marginTop: 10 }}>أو اكتب إدارة غير موجودة:</div>
-              <input type="text" value={form.department && !allDepts.includes(form.department) ? form.department : ""} onChange={function(e){ updateForm({ department: e.target.value }); }} placeholder="اكتب اسم الإدارة" style={Object.assign({}, inputStyle, { marginTop: 6 })} />
+              {isAdminUser && allDepts.length > 0 && (
+                <>
+                  <div style={{ fontSize: 11, color: C.sub, marginTop: 10 }}>أو اكتب إدارة غير موجودة (مخصص للمدير العام):</div>
+                  <input type="text" value={form.department && !allDepts.includes(form.department) ? form.department : ""} onChange={function(e){ updateForm({ department: e.target.value }); }} placeholder="اكتب اسم الإدارة" style={Object.assign({}, inputStyle, { marginTop: 6 })} />
+                </>
+              )}
             </div>
           )}
 
@@ -2938,6 +3023,130 @@ function exportTawasulPDF(request, nameOf) {
 }
 
 /* ═══════════ TAWASUL REPORTS PAGE (spec section 18.1) ═══════════ */
+
+/* ═══════════ TAWASUL CALENDAR VIEW ═══════════ */
+function TawasulCalendarView({ requests, onOpen }) {
+  var today = new Date();
+  var [year, setYear] = useState(today.getFullYear());
+  var [month, setMonth] = useState(today.getMonth()); // 0-11
+  var [selectedDay, setSelectedDay] = useState(today.getDate());
+
+  // Group tasks by day (use deadline if set, else createdAt)
+  var tasksByDay = {};
+  (requests || []).forEach(function(r){
+    var d = r.deadline ? new Date(r.deadline) : (r.createdAt ? new Date(r.createdAt) : null);
+    if (!d) return;
+    if (d.getFullYear() !== year || d.getMonth() !== month) return;
+    var day = d.getDate();
+    if (!tasksByDay[day]) tasksByDay[day] = [];
+    tasksByDay[day].push(r);
+  });
+
+  var daysInMonth = new Date(year, month + 1, 0).getDate();
+  var firstDow = new Date(year, month, 1).getDay(); // 0=Sun
+  var monthNames = ["يناير","فبراير","مارس","أبريل","مايو","يونيو","يوليو","أغسطس","سبتمبر","أكتوبر","نوفمبر","ديسمبر"];
+  var weekDays = ["أ","إ","ث","أر","خ","ج","س"]; // Sun..Sat (Arabic initials)
+
+  function goPrev() {
+    if (month === 0) { setYear(year - 1); setMonth(11); }
+    else { setMonth(month - 1); }
+    setSelectedDay(1);
+  }
+  function goNext() {
+    if (month === 11) { setYear(year + 1); setMonth(0); }
+    else { setMonth(month + 1); }
+    setSelectedDay(1);
+  }
+
+  var cells = [];
+  for (var i = 0; i < firstDow; i++) cells.push(null);
+  for (var d = 1; d <= daysInMonth; d++) cells.push(d);
+
+  var selectedTasks = tasksByDay[selectedDay] || [];
+  var isTodayMonth = today.getFullYear() === year && today.getMonth() === month;
+
+  return (
+    <div style={{ paddingBottom: 20 }}>
+      {/* Month header */}
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "12px 14px", background: C.card, borderRadius: 12, border: "1px solid " + C.cardBorder, marginBottom: 10 }}>
+        <button onClick={goPrev} style={{ padding: "6px 12px", borderRadius: 8, background: C.bg, color: C.text, border: "1px solid " + C.cardBorder, fontSize: 14, fontWeight: 700, cursor: "pointer", fontFamily: "inherit" }}>‹</button>
+        <div style={{ fontSize: 14, fontWeight: 900, color: C.text, fontFamily: "'Cairo',sans-serif" }}>{monthNames[month]} {year}</div>
+        <button onClick={goNext} style={{ padding: "6px 12px", borderRadius: 8, background: C.bg, color: C.text, border: "1px solid " + C.cardBorder, fontSize: 14, fontWeight: 700, cursor: "pointer", fontFamily: "inherit" }}>›</button>
+      </div>
+
+      {/* Weekday headers */}
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(7, 1fr)", gap: 4, marginBottom: 4 }}>
+        {weekDays.map(function(w, i){
+          return <div key={i} style={{ textAlign: "center", fontSize: 10, fontWeight: 800, color: C.sub, padding: 4 }}>{w}</div>;
+        })}
+      </div>
+
+      {/* Days grid */}
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(7, 1fr)", gap: 4, marginBottom: 14 }}>
+        {cells.map(function(day, i){
+          if (day === null) return <div key={i} />;
+          var tasks = tasksByDay[day] || [];
+          var count = tasks.length;
+          var hasUrgent = tasks.some(function(t){ return t.urgency === "urgent"; });
+          var hasEsc = tasks.some(function(t){ return t.escalation; });
+          var isToday = isTodayMonth && today.getDate() === day;
+          var isSelected = selectedDay === day;
+          var bgColor = isSelected ? C.hdr2 : hasEsc ? "rgba(239,68,68,0.12)" : hasUrgent ? "rgba(245,158,11,0.12)" : count > 0 ? "rgba(34,197,94,0.1)" : C.card;
+          var textColor = isSelected ? "#fff" : C.text;
+          return (
+            <button key={i} onClick={function(){ setSelectedDay(day); }} style={{
+              aspectRatio: "1",
+              border: isToday && !isSelected ? "2px solid " + C.gold : "1px solid " + C.cardBorder,
+              borderRadius: 8,
+              background: bgColor,
+              color: textColor,
+              cursor: "pointer",
+              display: "flex",
+              flexDirection: "column",
+              alignItems: "center",
+              justifyContent: "center",
+              padding: 2,
+              fontFamily: "inherit",
+              position: "relative",
+            }}>
+              <div style={{ fontSize: 13, fontWeight: isToday || isSelected ? 900 : 600 }}>{day}</div>
+              {count > 0 && (
+                <div style={{ fontSize: 8, marginTop: 1, display: "flex", alignItems: "center", gap: 1 }}>
+                  <span style={{ width: 4, height: 4, borderRadius: 2, background: isSelected ? "#fff" : hasEsc ? "#ef4444" : hasUrgent ? "#f59e0b" : "#22c55e", display: "inline-block" }}></span>
+                  <span style={{ fontWeight: 800, opacity: isSelected ? 1 : 0.85 }}>{count}</span>
+                </div>
+              )}
+            </button>
+          );
+        })}
+      </div>
+
+      {/* Selected day tasks */}
+      <div style={{ padding: 10, background: C.card, borderRadius: 12, border: "1px solid " + C.cardBorder }}>
+        <div style={{ fontSize: 12, fontWeight: 800, color: C.text, marginBottom: 8 }}>
+          📅 {selectedDay} {monthNames[month]}
+          {selectedTasks.length > 0 && <span style={{ color: C.sub, fontWeight: 600, marginRight: 8 }}>— {selectedTasks.length} مهمة</span>}
+        </div>
+        {selectedTasks.length === 0 ? (
+          <div style={{ textAlign: "center", padding: 20, color: C.sub, fontSize: 12 }}>لا توجد مهام</div>
+        ) : selectedTasks.map(function(r){
+          var m = getTawasulStatusMeta(r.status);
+          return (
+            <div key={r.id} onClick={function(){ onOpen(r); }} style={{ padding: 10, marginBottom: 6, background: C.bg, borderRadius: 8, borderRight: "3px solid " + m.color, cursor: "pointer", display: "flex", alignItems: "center", gap: 10 }}>
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <div style={{ fontSize: 12, fontWeight: 800, color: C.text, marginBottom: 3 }}>{r.serial || "—"} {r.urgency === "urgent" ? "🔴" : ""} {r.title || "(بدون عنوان)"}</div>
+                <div style={{ fontSize: 10, color: C.sub }}>{m.label}</div>
+              </div>
+              <span style={{ color: C.sub, fontSize: 14 }}>‹</span>
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+
 function TawasulReportsModal({ user, onClose }) {
   var [data, setData] = useState(null);
   var [loading, setLoading] = useState(true);
@@ -4024,9 +4233,11 @@ function TawasulPage({ user, allEmps }) {
     var isRequester = String(r.requesterId) === String(myId) || r.requesterId === (user && user.username);
     var isAssignee = (r.assignees || []).some(function(a){ return String(a.id) === String(myId) || a.id === (user && user.username); });
     var isDone = r.status === "closed" || r.status === "evaluated" || r.status === "cancelled";
-    if (tab === "inbox") return isAdmin ? !isDone : (isAssignee && !isDone);
+    // Requirement: when I create a task, I also see it in my inbox (as a personal copy)
+    if (tab === "inbox") return isAdmin ? !isDone : ((isAssignee || isRequester) && !isDone);
     if (tab === "sent") return isAdmin ? (!isDone && isRequester) || !isDone : (isRequester && !isDone);
     if (tab === "done") return isAdmin ? isDone : (isDone && (isRequester || isAssignee));
+    if (tab === "calendar") return isAdmin ? true : (isRequester || isAssignee);
     return true;
   }
 
@@ -4102,7 +4313,6 @@ function TawasulPage({ user, allEmps }) {
           <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
             <button onClick={function(){ loadData(true); }} disabled={refreshing} style={{ background: "rgba(255,255,255,.15)", border: "1px solid rgba(255,255,255,.25)", borderRadius: 10, padding: "6px 10px", color: "#fff", fontSize: 11, fontWeight: 700, cursor: "pointer", fontFamily: "inherit" }}>{refreshing ? "⟳..." : "⟳"}</button>
             <button onClick={function(){ setShowReports(true); }} style={{ background: "rgba(255,255,255,.15)", border: "1px solid rgba(255,255,255,.25)", borderRadius: 10, padding: "6px 10px", color: "#fff", fontSize: 11, fontWeight: 700, cursor: "pointer", fontFamily: "inherit" }}>📊</button>
-            {isAdmin && <button onClick={function(){ setShowHRAssistant(true); }} style={{ background: "rgba(167,139,250,0.3)", border: "1px solid rgba(167,139,250,0.5)", borderRadius: 10, padding: "6px 10px", color: "#fff", fontSize: 11, fontWeight: 700, cursor: "pointer", fontFamily: "inherit" }}>🤖</button>}
             <button onClick={function(){ setShowCreate(true); }} style={{ background: "#22c55e", border: "none", borderRadius: 10, padding: "6px 12px", color: "#fff", fontSize: 12, fontWeight: 800, cursor: "pointer", fontFamily: "inherit" }}>➕ جديد</button>
           </div>
         </div>
@@ -4110,7 +4320,7 @@ function TawasulPage({ user, allEmps }) {
       </div>
 
       <div style={{ display: "flex", padding: "12px", gap: 8, background: C.bg }}>
-        {[{id:"inbox",icon:"📥",label:"الوارد"},{id:"sent",icon:"📤",label:"المُرسَل"},{id:"done",icon:"✅",label:"المُنجَز"}].map(function(x){
+        {[{id:"inbox",icon:"📥",label:"الوارد"},{id:"sent",icon:"📤",label:"المُرسَل"},{id:"done",icon:"✅",label:"المُنجَز"},{id:"calendar",icon:"📅",label:"التقويم"}].map(function(x){
           var active = tab === x.id;
           return (
             <button key={x.id} onClick={function(){ setTab(x.id); }} style={{ flex: 1, padding: "10px 8px", borderRadius: 12, background: active ? C.hdr2 : C.card, border: "1px solid " + (active ? C.hdr2 : C.cardBorder), color: active ? "#fff" : C.text, fontSize: 12, fontWeight: 800, cursor: "pointer", fontFamily: "inherit", display: "flex", alignItems: "center", justifyContent: "center", gap: 4 }}>
@@ -4155,6 +4365,9 @@ function TawasulPage({ user, allEmps }) {
       {err && <div style={{ margin: "0 12px 12px", padding: "12px 14px", borderRadius: 12, background: "rgba(239,68,68,0.1)", border: "1px solid #EF4444", color: "#EF4444", fontSize: 12, fontWeight: 600, display: "flex", alignItems: "center", gap: 8 }}><span style={{ fontSize: 18 }}>⚠️</span><div style={{ flex: 1 }}>{err}</div><button onClick={function(){ loadData(true); }} style={{ background: "#EF4444", border: "none", borderRadius: 8, padding: "6px 12px", color: "#fff", fontSize: 11, fontWeight: 700, cursor: "pointer", fontFamily: "inherit" }}>إعادة</button></div>}
 
       <div style={{ padding: "0 12px" }}>
+        {tab === "calendar" ? (
+          <TawasulCalendarView requests={filtered} onOpen={function(r){ setSelectedReq(r); }} />
+        ) : (<>
         {filtered.length === 0 && !err && (
           <div style={{ textAlign: "center", padding: "60px 20px", color: C.sub }}>
             <div style={{ fontSize: 48, marginBottom: 12 }}>📭</div>
@@ -4194,6 +4407,7 @@ function TawasulPage({ user, allEmps }) {
             </div>
           );
         })}
+        </>)}
       </div>
 
       {selectedReq && <TawasulDetailModal request={selectedReq} user={user} allEmps={allEmps} onClose={function(){ setSelectedReq(null); }} nameOf={nameOf} onUpdated={function(){ setSelectedReq(null); loadData(true); }} onEdit={function(r){ setSelectedReq(null); setEditingReq(r); }} />}
@@ -4823,6 +5037,27 @@ function FaceModal({ empId, onVerified, onSkip, onCancel }) {
   var [storedDesc, setStoredDesc] = useState(null); // null = not checked, false = no face stored, array = stored descriptor
   var faceapi = typeof window !== "undefined" ? window.faceapi : null;
 
+  // Restart camera (used for retry after mismatch/error)
+  async function restartCamera() {
+    try {
+      // Stop existing stream first
+      if (stream) {
+        stream.getTracks().forEach(function(t){ t.stop(); });
+        setStream(null);
+      }
+      setStatus("init");
+      setMsg("إعادة تشغيل الكاميرا...");
+      var s = await navigator.mediaDevices.getUserMedia({ video: { facingMode: "user", width: 320, height: 320 } });
+      setStream(s);
+      if (videoRef.current) videoRef.current.srcObject = s;
+      setStatus("ready");
+      setMsg("وجّه وجهك للكاميرا ثم اضغط التقاط");
+    } catch(e) {
+      setStatus("error");
+      setMsg("لا يمكن الوصول للكاميرا — " + (e.message || ""));
+    }
+  }
+
   useEffect(function() {
     var s = null;
     var cancelled = false;
@@ -4973,14 +5208,13 @@ function FaceModal({ empId, onVerified, onSkip, onCancel }) {
         {status === "error" && !msg.includes("كاميرا") && (
           <div style={{ display: "flex", gap: 8 }}>
             <button onClick={handleClose} style={{ flex: 1, padding: 12, borderRadius: 14, border: "2px solid " + C.bg, background: C.card, color: C.sub, fontSize: 13, fontWeight: 700, cursor: "pointer" }}>إلغاء</button>
-            <button onClick={function(){ setStatus("ready"); setMsg("وجّه وجهك ثم اضغط التقاط"); }} style={{ flex: 1, padding: 12, borderRadius: 14, border: "none", background: "linear-gradient(135deg,"+C.blue+","+C.blueBright+")", color: "#fff", fontSize: 13, fontWeight: 700, cursor: "pointer" }}>إعادة المحاولة</button>
+            <button onClick={restartCamera} style={{ flex: 1, padding: 12, borderRadius: 14, border: "none", background: "linear-gradient(135deg,"+C.blue+","+C.blueBright+")", color: "#fff", fontSize: 13, fontWeight: 700, cursor: "pointer" }}>إعادة المحاولة</button>
           </div>
         )}
         {status === "error" && msg.includes("كاميرا") && (
-          <div style={{ textAlign: "center" }}>
-            <button onClick={function(){ if (stream) stream.getTracks().forEach(function(t){ t.stop(); }); onSkip(); }} style={{ padding: "10px 24px", borderRadius: 12, background: C.orange, color: "#fff", fontSize: 13, fontWeight: 700, border: "none", cursor: "pointer" }}>
-              متابعة بدون صورة
-            </button>
+          <div style={{ display: "flex", gap: 8 }}>
+            <button onClick={handleClose} style={{ flex: 1, padding: 12, borderRadius: 14, border: "2px solid " + C.bg, background: C.card, color: C.sub, fontSize: 13, fontWeight: 700, cursor: "pointer" }}>إلغاء</button>
+            <button onClick={restartCamera} style={{ flex: 1, padding: 12, borderRadius: 14, border: "none", background: C.blue, color: "#fff", fontSize: 13, fontWeight: 700, cursor: "pointer" }}>🔄 إعادة</button>
           </div>
         )}
         {status === "ready" && (
@@ -4990,9 +5224,12 @@ function FaceModal({ empId, onVerified, onSkip, onCancel }) {
           </div>
         )}
         {status === "mismatch" && (
-          <div style={{ display: "flex", gap: 8 }}>
-            <button onClick={handleClose} style={{ flex: 1, padding: 12, borderRadius: 14, border: "2px solid " + C.bg, background: C.card, color: C.sub, fontSize: 13, fontWeight: 700, cursor: "pointer" }}>إلغاء</button>
-            <button onClick={function(){ if (stream) stream.getTracks().forEach(function(t){ t.stop(); }); onSkip(); }} style={{ flex: 1, padding: 12, borderRadius: 14, border: "none", background: C.orange, color: "#fff", fontSize: 13, fontWeight: 700, cursor: "pointer" }}>متابعة بدون تحقق</button>
+          <div style={{ display: "flex", gap: 8, flexDirection: "column" }}>
+            <button onClick={restartCamera} style={{ padding: 12, borderRadius: 14, border: "none", background: "linear-gradient(135deg,"+C.blue+","+C.blueBright+")", color: "#fff", fontSize: 14, fontWeight: 800, cursor: "pointer" }}>🔄 إعادة المحاولة</button>
+            <div style={{ display: "flex", gap: 8 }}>
+              <button onClick={handleClose} style={{ flex: 1, padding: 10, borderRadius: 12, border: "2px solid " + C.bg, background: C.card, color: C.sub, fontSize: 12, fontWeight: 700, cursor: "pointer" }}>إلغاء</button>
+              <button onClick={function(){ if (stream) stream.getTracks().forEach(function(t){ t.stop(); }); onSkip(); }} style={{ flex: 1, padding: 10, borderRadius: 12, border: "none", background: C.orange, color: "#fff", fontSize: 12, fontWeight: 700, cursor: "pointer" }}>متابعة بدون تحقق</button>
+            </div>
           </div>
         )}
       </div>
