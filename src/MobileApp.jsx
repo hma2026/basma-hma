@@ -10,7 +10,7 @@ import { ALL_VIOLATIONS_DEFAULT, PENALTY_TYPES, LAIHA_INFO, COMPLAINT_STATUS, VI
 
 /* ═══════════ APP CONFIG (إعدادات التطبيق) ═══════════ */
 const APP_CONFIG = {
-  VER: "6.28",
+  VER: "6.30",
   NAME: "بصمة HMA",
   FULL_NAME: "نظام الحضور والانصراف الذكي",
   COMPANY: "هاني محمد عسيري للاستشارات الهندسية",
@@ -1036,6 +1036,9 @@ function MobileAppInner() {
       {showNotifs && <NotificationPanel notifications={notifications} onClose={function(){ setShowNotifs(false); }} onMarkRead={async function(){
         try { await api("notifications", { method: "PUT", body: { markAllRead: true, empId: user.id } }); setUnreadCount(0); setNotifications(function(prev){ return prev.map(function(n){ return {...n, read: true}; }); }); } catch(e) {}
       }} onGoToLegal={function(){ setShowNotifs(false); setPage("profile"); setTimeout(function(){ localStorage.setItem("basma_profile_tab","legal"); window.dispatchEvent(new CustomEvent("basma:profile-tab-changed")); }, 50); }} />}
+
+      {/* Floating active-timer indicator — global, shows on all pages */}
+      {user && <ActiveTimerFloater user={user} onGoTo={function(taskId){ setPage("tawasul"); setTimeout(function(){ window.dispatchEvent(new CustomEvent("basma:open-task", { detail: { taskId: taskId } })); }, 80); }} />}
 
       {toast && <Toast msg={toast.msg} type={toast.type} />}
       {callBanner && <CallBanner type={callBanner.type} msg={callBanner.msg} onDismiss={function(){ setCallBanner(null); }} />}
@@ -4739,6 +4742,18 @@ function TawasulPage({ user, allEmps }) {
     prevUnreadRef.current = currentUnread;
   }, [requests, myId]);
 
+  // Listen for "open task" event from ActiveTimerFloater (global floating indicator)
+  useEffect(function(){
+    function handleOpen(ev) {
+      var taskId = ev && ev.detail && ev.detail.taskId;
+      if (!taskId) return;
+      var found = (requests || []).find(function(r){ return String(r.id) === String(taskId); });
+      if (found) setSelectedReq(found);
+    }
+    window.addEventListener("basma:open-task", handleOpen);
+    return function(){ window.removeEventListener("basma:open-task", handleOpen); };
+  }, [requests]);
+
   function nameOf(id) {
     if (!id) return "—";
     if (String(id) === String(myId)) return "أنت";
@@ -5259,7 +5274,8 @@ function TawasulPage({ user, allEmps }) {
                 <div style={{ minWidth: 0, flex: 1 }}><span style={{ fontWeight: 600 }}>من:</span> {requesterName} <span style={{ margin: "0 4px" }}>•</span> <span style={{ fontWeight: 600 }}>إلى:</span> {assigneeNames}</div>
                 <div style={{ display: "flex", gap: 8, flexShrink: 0 }}>
                   {hasEval && <span style={{ fontWeight: 700, color: C.gold }}>⭐ {r.finalScore}</span>}
-                  {(r.log && r.log.length > 0) && <span style={{ fontWeight: 700, color: C.sub }}>💬 {r.log.length}</span>}
+                  {(r.log && r.log.length > 0) && <span style={{ fontWeight: 700, color: C.sub }}>📜 {r.log.length}</span>}
+                  {(r.chatMessages && r.chatMessages.filter(function(m){ return !m.deleted; }).length > 0) && <span style={{ fontWeight: 700, color: C.gold }}>💬 {r.chatMessages.filter(function(m){ return !m.deleted; }).length}</span>}
                   {(r.attachments && r.attachments.length > 0) && <span style={{ fontWeight: 700, color: C.sub }}>📎 {r.attachments.length}</span>}
                 </div>
               </div>
@@ -5365,6 +5381,31 @@ function TawasulAnalytics({ requests, myId, user, hierarchy, subordinatesSet, na
     .sort(function(a,b){ return (b.sent + b.received) - (a.sent + a.received); })
     .slice(0, 5);
 
+  // ═══ TIME TRACKING STATS (v6.29) ═══
+  // Compute my total tracked time, by task (top 5), and overall team time
+  var myTotalSec = 0;
+  var teamTotalSec = 0;
+  var myTaskTimes = []; // [{ serial, title, sec, taskId }]
+  mine.forEach(function(r){
+    var myTaskSec = 0;
+    (r.timeEntries || []).forEach(function(e){
+      if (String(e.userId) === String(myId)) myTaskSec += (e.durationSec || 0);
+    });
+    if (myTaskSec > 0) {
+      myTotalSec += myTaskSec;
+      myTaskTimes.push({ serial: r.serial, title: r.title || "(بدون عنوان)", sec: myTaskSec, taskId: r.id });
+    }
+  });
+  all.forEach(function(r){
+    (r.timeEntries || []).forEach(function(e){ teamTotalSec += (e.durationSec || 0); });
+  });
+  myTaskTimes.sort(function(a,b){ return b.sec - a.sec; });
+  var topMyTimeTasks = myTaskTimes.slice(0, 5);
+
+  // Department time stats (if manager)
+  var deptTimeSec = 0;
+  var deptSubTimes = {}; // { id: { id, name, sec } }
+
   // Department stats (if user has subordinates)
   var hasSubs = subordinatesSet && subordinatesSet.size > 0;
   var deptStats = null;
@@ -5396,6 +5437,15 @@ function TawasulAnalytics({ requests, myId, user, hierarchy, subordinatesSet, na
           }
         }
       });
+      // Accumulate time per subordinate + dept total
+      (r.timeEntries || []).forEach(function(e){
+        var eid = String(e.userId || "");
+        if (subordinatesSet.has(eid)) {
+          deptTimeSec += (e.durationSec || 0);
+          if (!deptSubTimes[eid]) deptSubTimes[eid] = { id: eid, name: e.userName || nameOf(eid), sec: 0 };
+          deptSubTimes[eid].sec += (e.durationSec || 0);
+        }
+      });
     });
     var topSubs = Object.values(subCounts).sort(function(a,b){ return b.total - a.total; }).slice(0, 10);
 
@@ -5408,6 +5458,8 @@ function TawasulAnalytics({ requests, myId, user, hierarchy, subordinatesSet, na
       topSubs: topSubs,
     };
   }
+
+  var topDeptTimeSubs = Object.values(deptSubTimes).sort(function(a,b){ return b.sec - a.sec; }).slice(0, 5);
 
   // Status meta for colors
   var statusOrder = ["draft", "sent", "received", "accepted", "inprogress", "delivered", "evaluated", "closed", "rejected", "incomplete", "cancelled"];
@@ -5552,6 +5604,49 @@ function TawasulAnalytics({ requests, myId, user, hierarchy, subordinatesSet, na
         </div>
       )}
 
+      {/* ═══ Time Tracking Stats (v6.29) ═══ */}
+      {myTotalSec > 0 && (
+        <div style={{ background: C.card, borderRadius: 12, padding: 14, border: "1px solid " + C.cardBorder, marginBottom: 14 }}>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>
+            <div style={{ fontSize: 12, fontWeight: 700, color: C.text }}>⏱ الوقت المسجّل</div>
+            <div style={{ fontSize: 11, color: C.gold, fontWeight: 800 }}>{fmtDuration(myTotalSec)}</div>
+          </div>
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8, marginBottom: 12 }}>
+            <div style={{ padding: 10, borderRadius: 10, background: "rgba(201,168,76,0.12)", border: "1px solid rgba(201,168,76,0.4)", textAlign: "center" }}>
+              <div style={{ fontSize: 10, color: C.sub, marginBottom: 3 }}>وقتي الإجمالي</div>
+              <div style={{ fontSize: 15, fontWeight: 900, color: C.gold }}>{fmtDuration(myTotalSec)}</div>
+              <div style={{ fontSize: 9, color: C.sub, marginTop: 2 }}>{myTaskTimes.length} مهمة</div>
+            </div>
+            <div style={{ padding: 10, borderRadius: 10, background: "rgba(59,130,246,0.1)", border: "1px solid rgba(59,130,246,0.3)", textAlign: "center" }}>
+              <div style={{ fontSize: 10, color: C.sub, marginBottom: 3 }}>متوسط/مهمة</div>
+              <div style={{ fontSize: 15, fontWeight: 900, color: "#3b82f6" }}>{myTaskTimes.length > 0 ? fmtDuration(Math.round(myTotalSec / myTaskTimes.length)) : "—"}</div>
+              <div style={{ fontSize: 9, color: C.sub, marginTop: 2 }}>لكل مهمة لدي وقت فيها</div>
+            </div>
+          </div>
+          {topMyTimeTasks.length > 0 && (
+            <div>
+              <div style={{ fontSize: 10, fontWeight: 800, color: C.sub, marginBottom: 6 }}>📊 أكثر 5 مهام استغرقت وقتي</div>
+              {topMyTimeTasks.map(function(t, i){
+                var pct = myTotalSec > 0 ? Math.round((t.sec / myTotalSec) * 100) : 0;
+                return (
+                  <div key={i} style={{ marginBottom: 6 }}>
+                    <div style={{ display: "flex", justifyContent: "space-between", fontSize: 11, marginBottom: 3, gap: 8 }}>
+                      <span style={{ color: C.text, fontWeight: 700, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", flex: 1 }}>
+                        {t.serial && <span style={{ color: C.gold, marginLeft: 4 }}>#{t.serial}</span>} {t.title}
+                      </span>
+                      <span style={{ color: C.gold, fontWeight: 800, flexShrink: 0 }}>{fmtDuration(t.sec)}</span>
+                    </div>
+                    <div style={{ height: 5, borderRadius: 3, background: "rgba(255,255,255,0.06)", overflow: "hidden" }}>
+                      <div style={{ height: "100%", width: pct + "%", background: C.gold, borderRadius: 3 }} />
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </div>
+      )}
+
       {/* ═══ Department section (only if manager) ═══ */}
       {deptStats && (
         <>
@@ -5589,6 +5684,31 @@ function TawasulAnalytics({ requests, myId, user, hierarchy, subordinatesSet, na
               })}
             </div>
           )}
+          {/* Top subordinates by TIME — v6.29 */}
+          {topDeptTimeSubs.length > 0 && (
+            <div style={{ background: C.card, borderRadius: 12, padding: 14, border: "1.5px solid rgba(124,58,237,0.3)", marginBottom: 14 }}>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 10 }}>
+                <div style={{ fontSize: 12, fontWeight: 700, color: "#7c3aed" }}>⏱ توزيع ساعات الفريق</div>
+                <div style={{ fontSize: 11, color: "#7c3aed", fontWeight: 800 }}>{fmtDuration(deptTimeSec)}</div>
+              </div>
+              {topDeptTimeSubs.map(function(s, i){
+                var pct = deptTimeSec > 0 ? Math.round((s.sec / deptTimeSec) * 100) : 0;
+                var initial = (s.name || "?").charAt(0);
+                return (
+                  <div key={s.id} style={{ marginBottom: 8 }}>
+                    <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 4 }}>
+                      <div style={{ width: 28, height: 28, borderRadius: 14, background: "#7c3aed", color: "#fff", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 11, fontWeight: 800, flexShrink: 0 }}>{initial}</div>
+                      <div style={{ flex: 1, fontSize: 12, fontWeight: 700, color: C.text, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{s.name}</div>
+                      <div style={{ fontSize: 11, color: "#7c3aed", fontWeight: 800, flexShrink: 0 }}>{fmtDuration(s.sec)} · {pct}%</div>
+                    </div>
+                    <div style={{ height: 5, borderRadius: 3, background: "rgba(255,255,255,0.06)", overflow: "hidden", marginRight: 38 }}>
+                      <div style={{ height: "100%", width: pct + "%", background: "#7c3aed", borderRadius: 3 }} />
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
         </>
       )}
 
@@ -5596,6 +5716,791 @@ function TawasulAnalytics({ requests, myId, user, hierarchy, subordinatesSet, na
       <div style={{ textAlign: "center", fontSize: 10, color: C.sub, marginTop: 20, padding: 10, fontStyle: "italic" }}>
         💡 الإحصائيات محسوبة من البيانات المحمّلة حالياً ({all.length} مهمة)
       </div>
+    </div>
+  );
+}
+
+/* ═══════════ ACTIVE TIMER FLOATER (المؤشر العائم للمؤقت) ═══════════ */
+function ActiveTimerFloater({ user, onGoTo }) {
+  var myId = user && (user.id || user.username);
+  var [active, setActive] = useState(null);
+  var [elapsed, setElapsed] = useState(0);
+
+  // Poll active timer every 20s + on mount + on custom event "basma:timer-changed"
+  useEffect(function(){
+    if (!myId) return;
+    var aborted = false;
+    function load() {
+      fetch("/api/data?action=tawasul-timer-active&userId=" + encodeURIComponent(myId))
+        .then(function(r){ return r.json(); })
+        .then(function(d){ if (!aborted) setActive((d && d.active) || null); })
+        .catch(function(){});
+    }
+    load();
+    var id = setInterval(load, 20000);
+    function onChange(){ load(); }
+    window.addEventListener("basma:timer-changed", onChange);
+    return function(){ aborted = true; clearInterval(id); window.removeEventListener("basma:timer-changed", onChange); };
+  }, [myId]);
+
+  // Tick elapsed every second
+  useEffect(function(){
+    if (!active || !active.startedAt) { setElapsed(0); return; }
+    function tick(){
+      var st = new Date(active.startedAt).getTime();
+      setElapsed(Math.max(0, Math.floor((Date.now() - st) / 1000)));
+    }
+    tick();
+    var id = setInterval(tick, 1000);
+    return function(){ clearInterval(id); };
+  }, [active]);
+
+  if (!active || !active.taskId) return null;
+
+  var h = Math.floor(elapsed / 3600);
+  var m = Math.floor((elapsed % 3600) / 60);
+  var s = elapsed % 60;
+  function pad(n){ return n < 10 ? "0" + n : String(n); }
+  var timeStr = h > 0 ? (pad(h) + ":" + pad(m) + ":" + pad(s)) : (pad(m) + ":" + pad(s));
+
+  return (
+    <div
+      onClick={function(){ if (onGoTo) onGoTo(active.taskId); }}
+      style={{
+        position: "fixed",
+        top: 10,
+        left: "50%",
+        transform: "translateX(-50%)",
+        zIndex: 3500,
+        background: "linear-gradient(135deg,#10b981,#059669)",
+        color: "#fff",
+        padding: "8px 14px",
+        borderRadius: 999,
+        boxShadow: "0 4px 14px rgba(16,185,129,0.45)",
+        display: "flex",
+        alignItems: "center",
+        gap: 10,
+        cursor: "pointer",
+        fontFamily: "inherit",
+        maxWidth: "92vw",
+        animation: "basma-timer-pulse 2s ease-in-out infinite",
+      }}
+      title="انقر للانتقال للمهمة"
+    >
+      <style>{"@keyframes basma-timer-pulse{0%,100%{box-shadow:0 4px 14px rgba(16,185,129,.45)}50%{box-shadow:0 4px 22px rgba(16,185,129,.75)}}"}</style>
+      <span style={{ fontSize: 14 }}>⏱</span>
+      <span style={{ fontFamily: "monospace", fontSize: 13, fontWeight: 800, letterSpacing: 1 }}>{timeStr}</span>
+      {active.serial && <span style={{ fontSize: 11, opacity: 0.9, fontWeight: 700 }}>#{active.serial}</span>}
+      {active.title && (
+        <span style={{ fontSize: 11, opacity: 0.85, maxWidth: 140, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
+          {active.title}
+        </span>
+      )}
+      <span style={{ fontSize: 11, opacity: 0.75 }}>←</span>
+    </div>
+  );
+}
+
+/* ═══════════ TIME TRACKING PANEL ═══════════ */
+function fmtDuration(sec) {
+  if (!sec || sec < 0) return "0 د";
+  var h = Math.floor(sec / 3600);
+  var m = Math.floor((sec % 3600) / 60);
+  var s = sec % 60;
+  if (h > 0) return h + " س " + (m > 0 ? m + " د" : "");
+  if (m > 0) return m + " د" + (s > 0 && m < 5 ? " " + s + " ث" : "");
+  return s + " ث";
+}
+function fmtDurationHM(sec) {
+  if (!sec || sec < 0) return "00:00";
+  var h = Math.floor(sec / 3600);
+  var m = Math.floor((sec % 3600) / 60);
+  var s = sec % 60;
+  function pad(n){ return n < 10 ? "0" + n : String(n); }
+  if (h > 0) return pad(h) + ":" + pad(m) + ":" + pad(s);
+  return pad(m) + ":" + pad(s);
+}
+
+function TimeTrackingPanel({ request, user, readOnly, canEdit, onUpdated }) {
+  var r = request;
+  var myId = user && (user.id || user.username);
+  var myName = (user && (user.name || user.username)) || "";
+  var isAdmin = user && (user.role === "admin" || user.role === "hr_manager" || user.isAdmin || user.username === "admin");
+
+  var entries = (r.timeEntries || []).slice().sort(function(a,b){ return new Date(b.endedAt || b.startedAt || 0) - new Date(a.endedAt || a.startedAt || 0); });
+  var totalSec = entries.reduce(function(sum,e){ return sum + (e.durationSec || 0); }, 0);
+  var mySec = entries.filter(function(e){ return String(e.userId) === String(myId); }).reduce(function(sum,e){ return sum + (e.durationSec || 0); }, 0);
+
+  // Breakdown by user
+  var byUser = {};
+  entries.forEach(function(e){
+    var k = String(e.userId || "");
+    if (!byUser[k]) byUser[k] = { id: k, name: e.userName || "غير معروف", sec: 0, count: 0 };
+    byUser[k].sec += (e.durationSec || 0);
+    byUser[k].count += 1;
+  });
+  var usersList = Object.values(byUser).sort(function(a,b){ return b.sec - a.sec; });
+
+  var [active, setActive] = useState(null); // my active timer on THIS task (or any task)
+  var [elapsed, setElapsed] = useState(0);
+  var [busy, setBusy] = useState(false);
+  var [err, setErr] = useState(null);
+  var [showManual, setShowManual] = useState(false);
+  var [showEntries, setShowEntries] = useState(false);
+
+  // Load my active timer on mount
+  useEffect(function(){
+    if (!myId) return;
+    fetch("/api/data?action=tawasul-timer-active&userId=" + encodeURIComponent(myId))
+      .then(function(res){ return res.json(); })
+      .then(function(d){ if (d && d.active) setActive(d.active); })
+      .catch(function(){});
+  }, [myId, r.id]);
+
+  // Live-update elapsed every second when timer running
+  useEffect(function(){
+    if (!active || !active.startedAt) { setElapsed(0); return; }
+    function tick(){
+      var st = new Date(active.startedAt).getTime();
+      setElapsed(Math.max(0, Math.floor((Date.now() - st) / 1000)));
+    }
+    tick();
+    var id = setInterval(tick, 1000);
+    return function(){ clearInterval(id); };
+  }, [active]);
+
+  var activeOnThis = active && String(active.taskId) === String(r.id);
+  var activeOnOther = active && !activeOnThis;
+
+  async function startTimer() {
+    setBusy(true); setErr(null);
+    try {
+      var res = await fetch("/api/data?action=tawasul-timer-start", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ userId: myId, userName: myName, taskId: r.id }),
+      });
+      var d = await res.json();
+      if (!res.ok) throw new Error(d.error || "فشل البدء");
+      setActive(d.active);
+      try { window.dispatchEvent(new CustomEvent("basma:timer-changed")); } catch(_){}
+    } catch(e) { setErr(e.message || "خطأ"); }
+    setBusy(false);
+  }
+
+  async function stopTimer(note) {
+    setBusy(true); setErr(null);
+    try {
+      var res = await fetch("/api/data?action=tawasul-timer-stop", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ userId: myId, userName: myName, note: note || "" }),
+      });
+      var d = await res.json();
+      if (!res.ok) throw new Error(d.error || "فشل الإيقاف");
+      setActive(null);
+      setElapsed(0);
+      try { window.dispatchEvent(new CustomEvent("basma:timer-changed")); } catch(_){}
+      if (onUpdated) onUpdated();
+    } catch(e) { setErr(e.message || "خطأ"); }
+    setBusy(false);
+  }
+
+  async function cancelTimer() {
+    setBusy(true);
+    try {
+      await fetch("/api/data?action=tawasul-timer-cancel", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ userId: myId }),
+      });
+      setActive(null); setElapsed(0);
+      try { window.dispatchEvent(new CustomEvent("basma:timer-changed")); } catch(_){}
+    } catch(e) {}
+    setBusy(false);
+  }
+
+  async function deleteEntry(entryId) {
+    if (!window.confirm("حذف هذا السجل نهائياً؟")) return;
+    setBusy(true); setErr(null);
+    try {
+      var res = await fetch("/api/data?action=tawasul-timer-delete", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ taskId: r.id, entryId: entryId, userId: myId, userName: myName, isAdmin: isAdmin }),
+      });
+      var d = await res.json();
+      if (!res.ok) throw new Error(d.error || "فشل الحذف");
+      if (onUpdated) onUpdated();
+    } catch(e) { setErr(e.message || "خطأ"); }
+    setBusy(false);
+  }
+
+  function formatEntryTime(iso) {
+    if (!iso) return "";
+    try {
+      var d = new Date(iso);
+      return d.toLocaleString("ar-SA", { year: "numeric", month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit" });
+    } catch(e) { return ""; }
+  }
+
+  return (
+    <div style={{ background: C.card, borderRadius: 12, padding: 14, border: "1px solid " + C.cardBorder, marginBottom: 12 }}>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 10 }}>
+        <div style={{ fontSize: 11, fontWeight: 800, color: C.sub }}>⏱ تتبع الوقت</div>
+        {totalSec > 0 && <div style={{ fontSize: 11, color: C.gold, fontWeight: 800 }}>الإجمالي: {fmtDuration(totalSec)}</div>}
+      </div>
+
+      {/* Stat cards — total + mine */}
+      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8, marginBottom: 12 }}>
+        <div style={{ padding: 10, borderRadius: 10, background: "rgba(59,130,246,0.1)", border: "1px solid rgba(59,130,246,0.3)", textAlign: "center" }}>
+          <div style={{ fontSize: 10, color: C.sub, marginBottom: 3 }}>إجمالي وقت المهمة</div>
+          <div style={{ fontSize: 16, fontWeight: 900, color: "#3b82f6" }}>{totalSec > 0 ? fmtDuration(totalSec) : "—"}</div>
+          <div style={{ fontSize: 9, color: C.sub, marginTop: 2 }}>{entries.length} سجل · {usersList.length} شخص</div>
+        </div>
+        <div style={{ padding: 10, borderRadius: 10, background: "rgba(201,168,76,0.12)", border: "1px solid rgba(201,168,76,0.4)", textAlign: "center" }}>
+          <div style={{ fontSize: 10, color: C.sub, marginBottom: 3 }}>وقتي على هذه المهمة</div>
+          <div style={{ fontSize: 16, fontWeight: 900, color: C.gold }}>{mySec > 0 ? fmtDuration(mySec) : "—"}</div>
+          <div style={{ fontSize: 9, color: C.sub, marginTop: 2 }}>{entries.filter(function(e){ return String(e.userId) === String(myId); }).length} سجل</div>
+        </div>
+      </div>
+
+      {/* Active timer — running on this task */}
+      {activeOnThis && (
+        <div style={{ padding: 14, borderRadius: 12, background: "linear-gradient(135deg,#10b981,#059669)", color: "#fff", marginBottom: 10, boxShadow: "0 4px 12px rgba(16,185,129,0.35)" }}>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
+            <span style={{ fontSize: 11, fontWeight: 800, opacity: 0.9 }}>⏱ المؤقت يعمل على هذه المهمة</span>
+            <span style={{ fontSize: 10, opacity: 0.85 }}>بدأت: {formatEntryTime(active.startedAt)}</span>
+          </div>
+          <div style={{ fontSize: 32, fontWeight: 900, textAlign: "center", fontFamily: "monospace", letterSpacing: 2, padding: "6px 0" }}>{fmtDurationHM(elapsed)}</div>
+          <div style={{ display: "grid", gridTemplateColumns: "2fr 1fr", gap: 8, marginTop: 10 }}>
+            <button onClick={function(){ var n = window.prompt("ملاحظة (اختياري):", ""); stopTimer(n || ""); }} disabled={busy}
+                    style={{ padding: "11px 8px", borderRadius: 10, background: "#fff", color: "#059669", border: "none", fontSize: 13, fontWeight: 800, cursor: "pointer", fontFamily: "inherit" }}>
+              ⏹ إيقاف وحفظ
+            </button>
+            <button onClick={function(){ if (window.confirm("إلغاء المؤقت بدون حفظ؟")) cancelTimer(); }} disabled={busy}
+                    style={{ padding: "11px 8px", borderRadius: 10, background: "rgba(255,255,255,0.2)", color: "#fff", border: "1px solid rgba(255,255,255,0.4)", fontSize: 12, fontWeight: 700, cursor: "pointer", fontFamily: "inherit" }}>
+              إلغاء
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* Active on OTHER task — warn user */}
+      {activeOnOther && (
+        <div style={{ padding: 10, borderRadius: 10, background: "rgba(245,158,11,0.15)", border: "1px solid rgba(245,158,11,0.4)", marginBottom: 10, fontSize: 11, color: "#b45309" }}>
+          ⚠️ مؤقتك يعمل الآن على مهمة أخرى ({active.serial || active.taskId}). أوقفه أولاً قبل البدء هنا.
+        </div>
+      )}
+
+      {/* Start button — only if can edit, not read-only, no active timer */}
+      {!readOnly && canEdit && !active && (
+        <button onClick={startTimer} disabled={busy}
+                style={{ width: "100%", padding: "12px 14px", borderRadius: 12, background: "linear-gradient(135deg,#22c55e,#16a34a)", color: "#fff", border: "none", fontSize: 14, fontWeight: 800, cursor: busy ? "wait" : "pointer", fontFamily: "inherit", marginBottom: 8, boxShadow: "0 3px 10px rgba(34,197,94,0.3)" }}>
+          {busy ? "⏳ جارِ البدء..." : "▶️ بدء المؤقت"}
+        </button>
+      )}
+
+      {/* Manual entry + history toggle */}
+      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
+        {!readOnly && canEdit && (
+          <button onClick={function(){ setShowManual(true); }} disabled={busy}
+                  style={{ padding: "9px 10px", borderRadius: 10, background: "rgba(59,130,246,0.1)", color: "#3b82f6", border: "1px solid rgba(59,130,246,0.35)", fontSize: 11, fontWeight: 700, cursor: "pointer", fontFamily: "inherit" }}>
+            ➕ إضافة يدوية
+          </button>
+        )}
+        {entries.length > 0 && (
+          <button onClick={function(){ setShowEntries(!showEntries); }}
+                  style={{ padding: "9px 10px", borderRadius: 10, background: C.bg, color: C.text, border: "1px solid " + C.cardBorder, fontSize: 11, fontWeight: 700, cursor: "pointer", fontFamily: "inherit", gridColumn: (readOnly || !canEdit) ? "span 2" : "auto" }}>
+            {showEntries ? "🔽 إخفاء السجلات" : "📋 عرض السجلات (" + entries.length + ")"}
+          </button>
+        )}
+      </div>
+
+      {err && <div style={{ marginTop: 8, padding: 8, borderRadius: 8, background: "rgba(239,68,68,0.1)", border: "1px solid rgba(239,68,68,0.3)", color: "#ef4444", fontSize: 11, fontWeight: 600 }}>❌ {err}</div>}
+
+      {/* Breakdown by user */}
+      {usersList.length > 0 && (
+        <div style={{ marginTop: 12, padding: 10, borderRadius: 10, background: C.bg, border: "1px solid " + C.cardBorder }}>
+          <div style={{ fontSize: 10, fontWeight: 800, color: C.sub, marginBottom: 6 }}>👥 التوزيع حسب الشخص</div>
+          {usersList.map(function(u){
+            var pct = totalSec > 0 ? Math.round((u.sec / totalSec) * 100) : 0;
+            return (
+              <div key={u.id} style={{ marginBottom: 6 }}>
+                <div style={{ display: "flex", justifyContent: "space-between", fontSize: 11, marginBottom: 3 }}>
+                  <span style={{ color: C.text, fontWeight: 700 }}>{u.name} {String(u.id) === String(myId) ? "(أنت)" : ""}</span>
+                  <span style={{ color: C.gold, fontWeight: 800 }}>{fmtDuration(u.sec)} · {pct}%</span>
+                </div>
+                <div style={{ height: 5, borderRadius: 3, background: "rgba(255,255,255,0.06)", overflow: "hidden" }}>
+                  <div style={{ height: "100%", width: pct + "%", background: String(u.id) === String(myId) ? C.gold : "#3b82f6", borderRadius: 3, transition: "width .3s" }} />
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      )}
+
+      {/* Entries list — collapsible */}
+      {showEntries && entries.length > 0 && (
+        <div style={{ marginTop: 10, maxHeight: 280, overflowY: "auto", padding: 4 }}>
+          {entries.map(function(e){
+            var canDel = (String(e.userId) === String(myId)) || isAdmin;
+            return (
+              <div key={e.id} style={{ padding: 9, marginBottom: 6, borderRadius: 8, background: C.bg, border: "1px solid " + C.cardBorder, fontSize: 11 }}>
+                <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 3 }}>
+                  <span style={{ color: C.text, fontWeight: 700 }}>{e.userName || "—"} {e.manual ? "📝" : "⏱"}</span>
+                  <span style={{ color: C.gold, fontWeight: 800 }}>{fmtDuration(e.durationSec)}</span>
+                </div>
+                <div style={{ fontSize: 10, color: C.sub, marginBottom: e.note ? 4 : 0 }}>
+                  {e.manual ? "يدوي · " : ""}{formatEntryTime(e.endedAt || e.startedAt)}
+                </div>
+                {e.note && <div style={{ fontSize: 10, color: C.text, fontStyle: "italic", padding: "4px 6px", borderRight: "2px solid " + C.gold, background: "rgba(201,168,76,0.05)", marginBottom: 4 }}>{e.note}</div>}
+                {canDel && !readOnly && (
+                  <button onClick={function(){ deleteEntry(e.id); }} disabled={busy}
+                          style={{ padding: "3px 8px", borderRadius: 6, background: "rgba(239,68,68,0.08)", color: "#ef4444", border: "1px solid rgba(239,68,68,0.25)", fontSize: 9, fontWeight: 700, cursor: "pointer", fontFamily: "inherit" }}>
+                    🗑 حذف
+                  </button>
+                )}
+              </div>
+            );
+          })}
+        </div>
+      )}
+
+      {/* Manual entry modal */}
+      {showManual && (
+        <ManualTimeEntry taskId={r.id} userId={myId} userName={myName} onClose={function(){ setShowManual(false); }} onSaved={function(){ setShowManual(false); if (onUpdated) onUpdated(); }} />
+      )}
+    </div>
+  );
+}
+
+function ManualTimeEntry({ taskId, userId, userName, onClose, onSaved }) {
+  var [hours, setHours] = useState("");
+  var [minutes, setMinutes] = useState("");
+  var [note, setNote] = useState("");
+  var [date, setDate] = useState((function(){ var d = new Date(); return d.toISOString().slice(0,16); })());
+  var [busy, setBusy] = useState(false);
+  var [err, setErr] = useState(null);
+
+  async function save() {
+    var h = parseInt(hours, 10) || 0;
+    var m = parseInt(minutes, 10) || 0;
+    var totalSec = h * 3600 + m * 60;
+    if (totalSec <= 0) { setErr("الرجاء إدخال وقت أكبر من صفر"); return; }
+    setBusy(true); setErr(null);
+    try {
+      var res = await fetch("/api/data?action=tawasul-timer-add", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ taskId: taskId, userId: userId, userName: userName, durationSec: totalSec, note: note, date: new Date(date).toISOString() }),
+      });
+      var d = await res.json();
+      if (!res.ok) throw new Error(d.error || "فشل الحفظ");
+      if (onSaved) onSaved();
+    } catch(e) { setErr(e.message || "خطأ"); setBusy(false); }
+  }
+
+  return (
+    <div onClick={onClose} style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.6)", zIndex: 4000, display: "flex", alignItems: "center", justifyContent: "center", padding: 16 }}>
+      <div onClick={function(ev){ ev.stopPropagation(); }} style={{ background: C.card, borderRadius: 16, padding: 20, width: "100%", maxWidth: 400, border: "1px solid " + C.cardBorder }}>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 14 }}>
+          <div style={{ fontSize: 15, fontWeight: 900, color: C.text }}>➕ إضافة وقت يدوي</div>
+          <button onClick={onClose} style={{ background: "none", border: "none", color: C.sub, fontSize: 20, cursor: "pointer", padding: 0 }}>✕</button>
+        </div>
+        <div style={{ fontSize: 11, color: C.sub, marginBottom: 8 }}>المدة</div>
+        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8, marginBottom: 12 }}>
+          <div>
+            <input type="number" min="0" value={hours} onChange={function(e){ setHours(e.target.value); }} placeholder="0"
+                   style={{ width: "100%", padding: "10px 12px", borderRadius: 8, background: C.bg, border: "1px solid " + C.cardBorder, color: C.text, fontSize: 13, fontFamily: "inherit", textAlign: "center", boxSizing: "border-box" }} />
+            <div style={{ fontSize: 10, color: C.sub, textAlign: "center", marginTop: 3 }}>ساعات</div>
+          </div>
+          <div>
+            <input type="number" min="0" max="59" value={minutes} onChange={function(e){ setMinutes(e.target.value); }} placeholder="0"
+                   style={{ width: "100%", padding: "10px 12px", borderRadius: 8, background: C.bg, border: "1px solid " + C.cardBorder, color: C.text, fontSize: 13, fontFamily: "inherit", textAlign: "center", boxSizing: "border-box" }} />
+            <div style={{ fontSize: 10, color: C.sub, textAlign: "center", marginTop: 3 }}>دقائق</div>
+          </div>
+        </div>
+        <div style={{ fontSize: 11, color: C.sub, marginBottom: 6 }}>التاريخ والوقت</div>
+        <input type="datetime-local" value={date} onChange={function(e){ setDate(e.target.value); }}
+               style={{ width: "100%", padding: "10px 12px", borderRadius: 8, background: C.bg, border: "1px solid " + C.cardBorder, color: C.text, fontSize: 12, fontFamily: "inherit", marginBottom: 12, boxSizing: "border-box" }} />
+        <div style={{ fontSize: 11, color: C.sub, marginBottom: 6 }}>ملاحظة (اختياري)</div>
+        <textarea value={note} onChange={function(e){ setNote(e.target.value); }} placeholder="وصف قصير للعمل المنجز..." rows={2}
+                  style={{ width: "100%", padding: "10px 12px", borderRadius: 8, background: C.bg, border: "1px solid " + C.cardBorder, color: C.text, fontSize: 12, fontFamily: "inherit", resize: "vertical", boxSizing: "border-box", marginBottom: 12 }} />
+        {err && <div style={{ marginBottom: 10, padding: 8, borderRadius: 8, background: "rgba(239,68,68,0.1)", border: "1px solid rgba(239,68,68,0.3)", color: "#ef4444", fontSize: 11, fontWeight: 600 }}>❌ {err}</div>}
+        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
+          <button onClick={onClose} disabled={busy} style={{ padding: "11px 10px", borderRadius: 10, background: C.bg, color: C.text, border: "1px solid " + C.cardBorder, fontSize: 12, fontWeight: 700, cursor: "pointer", fontFamily: "inherit" }}>إلغاء</button>
+          <button onClick={save} disabled={busy} style={{ padding: "11px 10px", borderRadius: 10, background: C.gold, color: "#000", border: "none", fontSize: 12, fontWeight: 800, cursor: busy ? "wait" : "pointer", fontFamily: "inherit" }}>{busy ? "⏳ جارِ الحفظ..." : "💾 حفظ"}</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/* ═══════════ CHAT PANEL (الدردشة داخل المهمة) — v6.30 ═══════════ */
+function chatTimeAgo(iso) {
+  if (!iso) return "";
+  try {
+    var d = new Date(iso);
+    var diff = (Date.now() - d.getTime()) / 1000;
+    if (diff < 60) return "الآن";
+    if (diff < 3600) return "منذ " + Math.floor(diff/60) + " د";
+    if (diff < 86400) return d.toLocaleTimeString("ar-SA", { hour: "2-digit", minute: "2-digit" });
+    if (diff < 604800) return Math.floor(diff/86400) + " يوم";
+    return d.toLocaleDateString("ar-SA", { month: "2-digit", day: "2-digit" });
+  } catch(e) { return ""; }
+}
+
+function ChatPanel({ request, user, allEmps, readOnly, onUpdated, nameOf }) {
+  var r = request;
+  var myId = user && (user.id || user.username);
+  var myName = (user && (user.name || user.username)) || "";
+  var isAdmin = user && (user.role === "admin" || user.role === "hr_manager" || user.isAdmin || user.username === "admin");
+
+  // Participants: requester + assignees (unique) — used for mention autocomplete
+  var participants = React.useMemo(function(){
+    var m = {};
+    if (r.requesterId) m[String(r.requesterId)] = { id: String(r.requesterId), name: r.requesterName || nameOf(r.requesterId) };
+    (r.assignees || []).forEach(function(a){ if (a && a.id) m[String(a.id)] = { id: String(a.id), name: a.name || nameOf(a.id) }; });
+    // Include me in list for reference
+    if (myId && !m[String(myId)]) m[String(myId)] = { id: String(myId), name: myName || "أنت" };
+    return Object.values(m);
+  }, [r.id, r.requesterId, r.assignees, myId]);
+
+  var [messages, setMessages] = useState(r.chatMessages || []);
+  var [text, setText] = useState("");
+  var [busy, setBusy] = useState(false);
+  var [err, setErr] = useState(null);
+  var [replyingTo, setReplyingTo] = useState(null); // message object being replied to
+  var [showMentionMenu, setShowMentionMenu] = useState(false);
+  var [mentionQuery, setMentionQuery] = useState("");
+  var [reactMenuFor, setReactMenuFor] = useState(null); // message id showing react popup
+  var inputRef = useRef(null);
+  var scrollRef = useRef(null);
+
+  // Poll refresh every 15s
+  useEffect(function(){
+    var aborted = false;
+    async function load() {
+      try {
+        var res = await fetch("/api/data?action=tawasul-chat-list&taskId=" + encodeURIComponent(r.id));
+        var d = await res.json();
+        if (!aborted && Array.isArray(d.messages)) setMessages(d.messages);
+      } catch(e) {}
+    }
+    var id = setInterval(load, 15000);
+    return function(){ aborted = true; clearInterval(id); };
+  }, [r.id]);
+
+  // Sync local state when request updates externally
+  useEffect(function(){ setMessages(r.chatMessages || []); }, [r.chatMessages]);
+
+  // Auto-scroll to bottom on new messages
+  useEffect(function(){
+    if (scrollRef.current) scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
+  }, [messages.length]);
+
+  // Parse current cursor position for @mention trigger
+  function handleTextChange(ev) {
+    var val = ev.target.value;
+    setText(val);
+    var cursor = ev.target.selectionStart || val.length;
+    var upToCursor = val.slice(0, cursor);
+    var m = upToCursor.match(/@([\u0600-\u06FFa-zA-Z0-9_\-]*)$/);
+    if (m) {
+      setMentionQuery(m[1] || "");
+      setShowMentionMenu(true);
+    } else {
+      setShowMentionMenu(false);
+    }
+  }
+
+  function insertMention(person) {
+    if (!inputRef.current) return;
+    var el = inputRef.current;
+    var cursor = el.selectionStart || text.length;
+    var before = text.slice(0, cursor);
+    var after = text.slice(cursor);
+    // Replace the trailing @query with @name
+    var newBefore = before.replace(/@([\u0600-\u06FFa-zA-Z0-9_\-]*)$/, "@" + (person.name || "") + " ");
+    var newVal = newBefore + after;
+    setText(newVal);
+    setShowMentionMenu(false);
+    setMentionQuery("");
+    setTimeout(function(){
+      try {
+        el.focus();
+        var pos = newBefore.length;
+        el.setSelectionRange(pos, pos);
+      } catch(e) {}
+    }, 0);
+  }
+
+  // Extract mentioned user IDs from text by matching @name
+  function extractMentions(txt) {
+    var ids = [];
+    participants.forEach(function(p){
+      if (!p.name) return;
+      // Escape regex
+      var esc = p.name.replace(/[-\/\\^$*+?.()|[\]{}]/g, '\\$&');
+      var re = new RegExp("(^|\\s)@" + esc + "(?=\\s|$|[،,.!?؛:])", "u");
+      if (re.test(txt)) ids.push(String(p.id));
+    });
+    return ids;
+  }
+
+  async function sendMessage() {
+    var trimmed = (text || "").trim();
+    if (!trimmed) return;
+    setBusy(true); setErr(null);
+    try {
+      var mentions = extractMentions(trimmed);
+      var payload = {
+        taskId: r.id,
+        text: trimmed,
+        by: String(myId),
+        byName: myName,
+        mentions: mentions,
+        replyTo: replyingTo ? replyingTo.id : null,
+      };
+      var res = await fetch("/api/data?action=tawasul-chat-send", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      });
+      var d = await res.json();
+      if (!res.ok) throw new Error(d.error || "فشل الإرسال");
+      setMessages((d.task && d.task.chatMessages) || messages.concat([d.message]));
+      setText("");
+      setReplyingTo(null);
+      if (onUpdated) onUpdated();
+    } catch(e) { setErr(e.message || "خطأ"); }
+    setBusy(false);
+  }
+
+  async function toggleReaction(msgId, emoji) {
+    setReactMenuFor(null);
+    try {
+      var res = await fetch("/api/data?action=tawasul-chat-react", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ taskId: r.id, messageId: msgId, emoji: emoji, by: String(myId) }),
+      });
+      var d = await res.json();
+      if (!res.ok) throw new Error(d.error || "فشل التفاعل");
+      // Update locally
+      setMessages(function(prev){
+        return prev.map(function(m){ return m.id === msgId ? d.message : m; });
+      });
+    } catch(e) { setErr(e.message || "خطأ"); }
+  }
+
+  async function deleteMessage(msgId) {
+    if (!window.confirm("حذف هذه الرسالة؟")) return;
+    try {
+      var res = await fetch("/api/data?action=tawasul-chat-delete", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ taskId: r.id, messageId: msgId, by: String(myId), isAdmin: isAdmin }),
+      });
+      var d = await res.json();
+      if (!res.ok) throw new Error(d.error || "فشل الحذف");
+      setMessages(function(prev){
+        return prev.map(function(m){ return m.id === msgId ? Object.assign({}, m, { deleted: true, text: "", mentions: [] }) : m; });
+      });
+    } catch(e) { setErr(e.message || "خطأ"); }
+  }
+
+  // Render text with @mentions highlighted
+  function renderText(txt, mentions) {
+    if (!txt) return null;
+    // Build regex for all participant names
+    var parts = [txt];
+    participants.forEach(function(p){
+      if (!p.name) return;
+      var esc = p.name.replace(/[-\/\\^$*+?.()|[\]{}]/g, '\\$&');
+      var re = new RegExp("(@" + esc + ")", "gu");
+      var newParts = [];
+      parts.forEach(function(seg){
+        if (typeof seg !== "string") { newParts.push(seg); return; }
+        var sp = seg.split(re);
+        sp.forEach(function(s){
+          if (re.test(s) || s === ("@" + p.name)) {
+            newParts.push(<span key={newParts.length} style={{ color: C.gold, fontWeight: 800, background: "rgba(201,168,76,0.15)", padding: "0 4px", borderRadius: 4 }}>{s}</span>);
+          } else if (s) {
+            newParts.push(s);
+          }
+        });
+      });
+      parts = newParts;
+    });
+    return parts;
+  }
+
+  // Filter mention menu
+  var filteredParticipants = participants.filter(function(p){
+    if (!mentionQuery) return true;
+    return (p.name || "").toLowerCase().indexOf(mentionQuery.toLowerCase()) >= 0;
+  }).slice(0, 5);
+
+  var EMOJIS = ["👍","❤️","🎉","😂","❓","🙏","✅"];
+
+  return (
+    <div style={{ background: C.card, borderRadius: 12, padding: 0, border: "1px solid " + C.cardBorder, marginBottom: 12, overflow: "hidden" }}>
+      {/* Header */}
+      <div style={{ padding: "10px 14px", borderBottom: "1px solid " + C.cardBorder, display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+        <div style={{ fontSize: 11, fontWeight: 800, color: C.sub }}>💬 الدردشة ({messages.filter(function(m){ return !m.deleted; }).length})</div>
+        <div style={{ fontSize: 9, color: C.sub }}>{participants.length} مشارك</div>
+      </div>
+
+      {/* Messages list */}
+      <div ref={scrollRef} style={{ maxHeight: 420, overflowY: "auto", padding: "12px 10px", background: C.bg }}>
+        {messages.length === 0 ? (
+          <div style={{ textAlign: "center", padding: "30px 10px", color: C.sub, fontSize: 11 }}>
+            <div style={{ fontSize: 28, marginBottom: 6 }}>💬</div>
+            <div>لا توجد رسائل بعد — ابدأ الحوار!</div>
+          </div>
+        ) : messages.map(function(m){
+          var mine = String(m.by) === String(myId);
+          var replied = m.replyTo ? messages.find(function(x){ return x.id === m.replyTo; }) : null;
+          var reactions = m.reactions || {};
+          var reactionKeys = Object.keys(reactions).filter(function(k){ return (reactions[k] || []).length > 0; });
+          var canDelete = !m.deleted && (mine || isAdmin);
+
+          if (m.deleted) {
+            return (
+              <div key={m.id} style={{ display: "flex", justifyContent: mine ? "flex-end" : "flex-start", marginBottom: 8 }}>
+                <div style={{ padding: "6px 12px", borderRadius: 12, background: "rgba(148,163,184,0.1)", border: "1px dashed " + C.cardBorder, fontSize: 11, color: C.sub, fontStyle: "italic" }}>
+                  🚫 تم حذف الرسالة
+                </div>
+              </div>
+            );
+          }
+
+          return (
+            <div key={m.id} style={{ display: "flex", flexDirection: "column", alignItems: mine ? "flex-end" : "flex-start", marginBottom: 10 }}>
+              {/* Sender name (if not mine) */}
+              {!mine && (
+                <div style={{ fontSize: 9, color: C.sub, fontWeight: 700, marginBottom: 3, paddingRight: 8 }}>
+                  {m.byName || "—"}
+                </div>
+              )}
+
+              {/* Bubble */}
+              <div style={{ position: "relative", maxWidth: "82%", minWidth: 60 }}>
+                {/* Reply preview above message */}
+                {replied && (
+                  <div style={{ padding: "5px 9px", borderRadius: "10px 10px 4px 4px", background: "rgba(201,168,76,0.08)", borderRight: "3px solid " + C.gold, fontSize: 10, color: C.sub, marginBottom: 2 }}>
+                    <div style={{ color: C.gold, fontWeight: 800, marginBottom: 1 }}>↩ {replied.byName || "—"}</div>
+                    <div style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", maxWidth: 260, opacity: 0.85 }}>
+                      {replied.deleted ? "(محذوفة)" : (replied.text || "")}
+                    </div>
+                  </div>
+                )}
+
+                <div
+                  onClick={function(){ setReactMenuFor(reactMenuFor === m.id ? null : m.id); }}
+                  style={{
+                    padding: "8px 12px",
+                    borderRadius: mine ? "14px 14px 4px 14px" : "14px 14px 14px 4px",
+                    background: mine ? "linear-gradient(135deg,#c9a84c,#b8960c)" : C.card,
+                    color: mine ? "#1a1410" : C.text,
+                    fontSize: 13,
+                    lineHeight: 1.55,
+                    border: mine ? "none" : "1px solid " + C.cardBorder,
+                    boxShadow: mine ? "0 2px 8px rgba(201,168,76,0.25)" : "0 1px 3px rgba(0,0,0,0.1)",
+                    wordBreak: "break-word",
+                    whiteSpace: "pre-wrap",
+                    cursor: "pointer",
+                    userSelect: "text",
+                  }}
+                >
+                  {renderText(m.text || "", m.mentions || [])}
+                </div>
+
+                {/* Reactions strip under bubble */}
+                {reactionKeys.length > 0 && (
+                  <div style={{ display: "flex", gap: 4, marginTop: 3, flexWrap: "wrap", justifyContent: mine ? "flex-end" : "flex-start" }}>
+                    {reactionKeys.map(function(emj){
+                      var list = reactions[emj] || [];
+                      var iReacted = list.indexOf(String(myId)) >= 0;
+                      return (
+                        <button key={emj} onClick={function(ev){ ev.stopPropagation(); toggleReaction(m.id, emj); }}
+                                style={{ padding: "2px 7px", borderRadius: 10, background: iReacted ? "rgba(201,168,76,0.25)" : C.bg, color: C.text, border: "1px solid " + (iReacted ? C.gold : C.cardBorder), fontSize: 11, cursor: "pointer", fontFamily: "inherit", fontWeight: 700 }}>
+                          {emj} {list.length}
+                        </button>
+                      );
+                    })}
+                  </div>
+                )}
+
+                {/* React menu (tap bubble to show) */}
+                {reactMenuFor === m.id && (
+                  <div style={{ position: "absolute", top: -38, [mine ? "right" : "left"]: 0, zIndex: 10, background: C.card, borderRadius: 20, padding: "4px 6px", boxShadow: "0 4px 14px rgba(0,0,0,0.3)", border: "1px solid " + C.cardBorder, display: "flex", gap: 2, whiteSpace: "nowrap" }}>
+                    {EMOJIS.map(function(emj){
+                      return <button key={emj} onClick={function(ev){ ev.stopPropagation(); toggleReaction(m.id, emj); }}
+                                     style={{ padding: "4px 6px", background: "none", border: "none", fontSize: 16, cursor: "pointer", lineHeight: 1 }}>
+                        {emj}
+                      </button>;
+                    })}
+                    {!readOnly && (
+                      <button onClick={function(ev){ ev.stopPropagation(); setReplyingTo(m); setReactMenuFor(null); if (inputRef.current) inputRef.current.focus(); }}
+                              style={{ padding: "4px 8px", background: "none", border: "none", fontSize: 14, cursor: "pointer", lineHeight: 1, color: C.text }}>↩</button>
+                    )}
+                    {canDelete && (
+                      <button onClick={function(ev){ ev.stopPropagation(); deleteMessage(m.id); }}
+                              style={{ padding: "4px 8px", background: "none", border: "none", fontSize: 14, cursor: "pointer", lineHeight: 1, color: "#ef4444" }}>🗑</button>
+                    )}
+                  </div>
+                )}
+              </div>
+
+              {/* Timestamp */}
+              <div style={{ fontSize: 9, color: C.sub, marginTop: 2, padding: "0 4px" }}>{chatTimeAgo(m.at)}</div>
+            </div>
+          );
+        })}
+      </div>
+
+      {/* Reply preview above input */}
+      {replyingTo && (
+        <div style={{ padding: "6px 12px", background: "rgba(201,168,76,0.08)", borderTop: "1px solid " + C.cardBorder, borderRight: "3px solid " + C.gold, display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8 }}>
+          <div style={{ flex: 1, minWidth: 0 }}>
+            <div style={{ fontSize: 9, color: C.gold, fontWeight: 800 }}>↩ رد على {replyingTo.byName || "—"}</div>
+            <div style={{ fontSize: 10, color: C.sub, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{replyingTo.text}</div>
+          </div>
+          <button onClick={function(){ setReplyingTo(null); }} style={{ background: "none", border: "none", color: C.sub, fontSize: 16, cursor: "pointer", padding: "2px 6px" }}>✕</button>
+        </div>
+      )}
+
+      {/* Input */}
+      {!readOnly && (
+        <div style={{ padding: 10, borderTop: "1px solid " + C.cardBorder, position: "relative" }}>
+          {showMentionMenu && filteredParticipants.length > 0 && (
+            <div style={{ position: "absolute", bottom: "100%", right: 10, left: 10, background: C.card, border: "1px solid " + C.cardBorder, borderRadius: 10, boxShadow: "0 -4px 14px rgba(0,0,0,0.25)", zIndex: 20, overflow: "hidden", marginBottom: 4 }}>
+              <div style={{ fontSize: 9, color: C.sub, padding: "6px 10px", borderBottom: "1px solid " + C.cardBorder, fontWeight: 700 }}>👥 اختر شخصاً للإشارة</div>
+              {filteredParticipants.map(function(p){
+                return (
+                  <button key={p.id} onClick={function(){ insertMention(p); }}
+                          style={{ width: "100%", padding: "8px 12px", background: "none", border: "none", color: C.text, fontSize: 12, fontWeight: 600, cursor: "pointer", fontFamily: "inherit", textAlign: "right", borderBottom: "1px solid " + C.cardBorder }}>
+                    @{p.name}
+                  </button>
+                );
+              })}
+            </div>
+          )}
+
+          <div style={{ display: "grid", gridTemplateColumns: "1fr auto", gap: 8, alignItems: "flex-end" }}>
+            <textarea
+              ref={inputRef}
+              value={text}
+              onChange={handleTextChange}
+              onKeyDown={function(e){ if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); sendMessage(); } }}
+              placeholder="اكتب رسالة... (استخدم @ للإشارة)"
+              rows={1}
+              style={{ padding: "10px 12px", borderRadius: 10, background: C.bg, border: "1px solid " + C.cardBorder, color: C.text, fontSize: 13, fontFamily: "inherit", resize: "none", maxHeight: 100, boxSizing: "border-box" }}
+            />
+            <button onClick={sendMessage} disabled={busy || !text.trim()}
+                    style={{ padding: "10px 16px", borderRadius: 10, background: text.trim() && !busy ? C.gold : C.bg, color: text.trim() && !busy ? "#000" : C.sub, border: "none", fontSize: 13, fontWeight: 800, cursor: text.trim() && !busy ? "pointer" : "not-allowed", fontFamily: "inherit" }}>
+              {busy ? "..." : "➤"}
+            </button>
+          </div>
+
+          {err && <div style={{ marginTop: 6, padding: 6, borderRadius: 6, background: "rgba(239,68,68,0.1)", border: "1px solid rgba(239,68,68,0.3)", color: "#ef4444", fontSize: 10, fontWeight: 600 }}>❌ {err}</div>}
+        </div>
+      )}
     </div>
   );
 }
@@ -6440,8 +7345,14 @@ function TawasulDetailModal({ request, user, allEmps, onClose, nameOf, onUpdated
             </div>
           )}
 
+          {/* Time tracking panel — always visible to give visibility of effort */}
+          <TimeTrackingPanel request={r} user={user} readOnly={readOnly} canEdit={canActAsAssignee || canActAsRequester || isAdmin} onUpdated={onUpdated} />
+
           {/* Attachments panel — upload/list/delete */}
           <AttachmentsPanel request={r} user={user} readOnly={readOnly} canEdit={canActAsAssignee || canActAsRequester || isAdmin} onUpdated={onUpdated} />
+
+          {/* Chat panel — in-task conversation with mentions, replies, reactions (v6.30) */}
+          <ChatPanel request={r} user={user} allEmps={allEmps} readOnly={readOnly} onUpdated={onUpdated} nameOf={nameOf} />
 
           {evals.length > 0 && (
             <div style={{ background: C.card, borderRadius: 12, padding: 14, border: "1px solid " + C.cardBorder, marginBottom: 12 }}>

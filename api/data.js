@@ -1748,6 +1748,378 @@ export default async function handler(req, res) {
         }
       }
 
+      /* ═══════════ TIME TRACKING (تتبع الوقت) — v6.29 ═══════════
+         - twsl:active:{userId}  =>  { taskId, startedAt, note }
+         - request.timeEntries[] =>  [{ id, userId, userName, startedAt, endedAt, durationSec, note, manual? }]
+      */
+      case 'tawasul-timer-start': {
+        if (req.method !== 'POST') return res.status(405).json({ error: 'POST required' });
+        try {
+          var bTs = req.body || {};
+          var userIdTs = String(bTs.userId || '');
+          var taskIdTs = String(bTs.taskId || '');
+          if (!userIdTs || !taskIdTs) return res.status(400).json({ error: 'userId و taskId مطلوبان' });
+
+          var activeKey = 'twsl:active:' + userIdTs;
+          var existingActive = await dbGet(activeKey);
+          if (existingActive && existingActive.taskId) {
+            return res.status(409).json({ error: 'هناك مؤقت نشط بالفعل', active: existingActive });
+          }
+
+          // Verify task exists
+          var taskTs = await dbGet('twsl:' + taskIdTs);
+          if (!taskTs) return res.status(404).json({ error: 'المهمة غير موجودة' });
+
+          var nowTs = new Date().toISOString();
+          var activeVal = { taskId: taskIdTs, startedAt: nowTs, note: bTs.note || '', serial: taskTs.serial || '', title: taskTs.title || '' };
+          await dbSet(activeKey, activeVal);
+          return res.json({ ok: true, active: activeVal });
+        } catch (e) {
+          return res.status(500).json({ error: 'tawasul-timer-start error: ' + (e.message || 'unknown') });
+        }
+      }
+
+      case 'tawasul-timer-stop': {
+        if (req.method !== 'POST') return res.status(405).json({ error: 'POST required' });
+        try {
+          var bTp = req.body || {};
+          var userIdTp = String(bTp.userId || '');
+          if (!userIdTp) return res.status(400).json({ error: 'userId مطلوب' });
+
+          var keyTp = 'twsl:active:' + userIdTp;
+          var activeTp = await dbGet(keyTp);
+          if (!activeTp || !activeTp.taskId) return res.status(404).json({ error: 'لا يوجد مؤقت نشط' });
+
+          var taskTp = await dbGet('twsl:' + activeTp.taskId);
+          if (!taskTp) {
+            await dbSet(keyTp, null);
+            return res.status(404).json({ error: 'المهمة غير موجودة' });
+          }
+
+          var nowTp = new Date().toISOString();
+          var startedMs = new Date(activeTp.startedAt).getTime();
+          var endedMs = Date.now();
+          var durSec = Math.max(1, Math.round((endedMs - startedMs) / 1000));
+
+          var entryTp = {
+            id: 'te_' + Date.now() + '_' + Math.random().toString(36).slice(2, 6),
+            userId: userIdTp,
+            userName: bTp.userName || '',
+            startedAt: activeTp.startedAt,
+            endedAt: nowTp,
+            durationSec: durSec,
+            note: bTp.note || activeTp.note || '',
+          };
+
+          taskTp.timeEntries = (taskTp.timeEntries || []).concat([entryTp]);
+          taskTp.updatedAt = nowTp;
+
+          // Format duration for log
+          var h = Math.floor(durSec / 3600);
+          var m = Math.floor((durSec % 3600) / 60);
+          var durText = h > 0 ? (h + ' س ' + m + ' د') : (m + ' د');
+          taskTp.log = (taskTp.log || []).concat([{
+            text: '⏱ ' + (bTp.userName || '') + ' سجّل ' + durText + ' على المهمة',
+            by: bTp.userName || '', at: nowTp,
+          }]);
+
+          await dbSet('twsl:' + taskTp.id, taskTp);
+          await dbSet(keyTp, null);
+
+          return res.json({ ok: true, entry: entryTp, task: taskTp });
+        } catch (e) {
+          return res.status(500).json({ error: 'tawasul-timer-stop error: ' + (e.message || 'unknown') });
+        }
+      }
+
+      case 'tawasul-timer-cancel': {
+        // Cancel active timer without saving an entry
+        if (req.method !== 'POST') return res.status(405).json({ error: 'POST required' });
+        try {
+          var uidC = String((req.body || {}).userId || '');
+          if (!uidC) return res.status(400).json({ error: 'userId مطلوب' });
+          await dbSet('twsl:active:' + uidC, null);
+          return res.json({ ok: true });
+        } catch (e) {
+          return res.status(500).json({ error: 'tawasul-timer-cancel error: ' + (e.message || 'unknown') });
+        }
+      }
+
+      case 'tawasul-timer-add': {
+        // Manual time entry (for forgotten work)
+        if (req.method !== 'POST') return res.status(405).json({ error: 'POST required' });
+        try {
+          var bTa = req.body || {};
+          var taskIdTa = String(bTa.taskId || '');
+          var userIdTa = String(bTa.userId || '');
+          var durSecTa = parseInt(bTa.durationSec, 10);
+          if (!taskIdTa || !userIdTa || !durSecTa || durSecTa <= 0) {
+            return res.status(400).json({ error: 'taskId و userId و durationSec مطلوبة' });
+          }
+          if (durSecTa > 24 * 3600) return res.status(400).json({ error: 'لا يمكن إضافة أكثر من 24 ساعة دفعة واحدة' });
+
+          var taskTa = await dbGet('twsl:' + taskIdTa);
+          if (!taskTa) return res.status(404).json({ error: 'المهمة غير موجودة' });
+
+          var nowTa = new Date().toISOString();
+          var dateTa = bTa.date || nowTa;
+          var entryTa = {
+            id: 'te_' + Date.now() + '_' + Math.random().toString(36).slice(2, 6),
+            userId: userIdTa,
+            userName: bTa.userName || '',
+            startedAt: dateTa,
+            endedAt: dateTa,
+            durationSec: durSecTa,
+            note: bTa.note || '',
+            manual: true,
+          };
+
+          taskTa.timeEntries = (taskTa.timeEntries || []).concat([entryTa]);
+          taskTa.updatedAt = nowTa;
+
+          var hTa = Math.floor(durSecTa / 3600);
+          var mTa = Math.floor((durSecTa % 3600) / 60);
+          var durTextTa = hTa > 0 ? (hTa + ' س ' + mTa + ' د') : (mTa + ' د');
+          taskTa.log = (taskTa.log || []).concat([{
+            text: '⏱ ' + (bTa.userName || '') + ' أضاف يدوياً ' + durTextTa,
+            by: bTa.userName || '', at: nowTa,
+          }]);
+
+          await dbSet('twsl:' + taskTa.id, taskTa);
+          return res.json({ ok: true, entry: entryTa, task: taskTa });
+        } catch (e) {
+          return res.status(500).json({ error: 'tawasul-timer-add error: ' + (e.message || 'unknown') });
+        }
+      }
+
+      case 'tawasul-timer-delete': {
+        if (req.method !== 'POST') return res.status(405).json({ error: 'POST required' });
+        try {
+          var bTd = req.body || {};
+          var taskIdTd = String(bTd.taskId || '');
+          var entryIdTd = String(bTd.entryId || '');
+          if (!taskIdTd || !entryIdTd) return res.status(400).json({ error: 'taskId و entryId مطلوبان' });
+
+          var taskTd = await dbGet('twsl:' + taskIdTd);
+          if (!taskTd) return res.status(404).json({ error: 'المهمة غير موجودة' });
+
+          var entries = taskTd.timeEntries || [];
+          var targetEntry = entries.find(function(e){ return e.id === entryIdTd; });
+          if (!targetEntry) return res.status(404).json({ error: 'السجل غير موجود' });
+
+          // Permission check: only entry owner or admin can delete
+          var actorId = String(bTd.userId || '');
+          var isAdminTd = !!bTd.isAdmin;
+          if (!isAdminTd && String(targetEntry.userId) !== actorId) {
+            return res.status(403).json({ error: 'لا يمكنك حذف سجل وقت لشخص آخر' });
+          }
+
+          taskTd.timeEntries = entries.filter(function(e){ return e.id !== entryIdTd; });
+          var nowTd = new Date().toISOString();
+          taskTd.updatedAt = nowTd;
+          taskTd.log = (taskTd.log || []).concat([{
+            text: '⏱ ' + (bTd.userName || '') + ' حذف سجل وقت',
+            by: bTd.userName || '', at: nowTd,
+          }]);
+          await dbSet('twsl:' + taskTd.id, taskTd);
+          return res.json({ ok: true, task: taskTd });
+        } catch (e) {
+          return res.status(500).json({ error: 'tawasul-timer-delete error: ' + (e.message || 'unknown') });
+        }
+      }
+
+      case 'tawasul-timer-active': {
+        // GET active timer for current user
+        try {
+          var uidA = String((req.query && req.query.userId) || (req.body && req.body.userId) || '');
+          if (!uidA) return res.status(400).json({ error: 'userId مطلوب' });
+          var activeA = await dbGet('twsl:active:' + uidA);
+          return res.json({ active: activeA || null });
+        } catch (e) {
+          return res.status(500).json({ error: 'tawasul-timer-active error: ' + (e.message || 'unknown'), active: null });
+        }
+      }
+
+      /* ═══════════ IN-TASK CHAT (الدردشة داخل المهمة) — v6.30 ═══════════
+         - request.chatMessages[] => [{ id, text, by, byName, at, mentions[], replyTo, reactions{emoji:[userIds]}, deleted? }]
+      */
+      case 'tawasul-chat-send': {
+        if (req.method !== 'POST') return res.status(405).json({ error: 'POST required' });
+        try {
+          var bC = req.body || {};
+          var taskIdC = String(bC.taskId || '');
+          var textC = String(bC.text || '').trim();
+          var byC = String(bC.by || '');
+          if (!taskIdC || !textC || !byC) return res.status(400).json({ error: 'taskId و text و by مطلوبة' });
+          if (textC.length > 2000) return res.status(400).json({ error: 'الرسالة طويلة جداً (الحد 2000 حرف)' });
+
+          var taskC = await dbGet('twsl:' + taskIdC);
+          if (!taskC) return res.status(404).json({ error: 'المهمة غير موجودة' });
+
+          var nowC = new Date().toISOString();
+          var msgC = {
+            id: 'm_' + Date.now() + '_' + Math.random().toString(36).slice(2, 6),
+            text: textC,
+            by: byC,
+            byName: String(bC.byName || ''),
+            at: nowC,
+            mentions: Array.isArray(bC.mentions) ? bC.mentions.map(String).slice(0, 20) : [],
+            replyTo: bC.replyTo ? String(bC.replyTo) : null,
+            reactions: {},
+          };
+
+          taskC.chatMessages = (taskC.chatMessages || []).concat([msgC]);
+          // Cap at 1000 messages per task (keep newest)
+          if (taskC.chatMessages.length > 1000) taskC.chatMessages = taskC.chatMessages.slice(-1000);
+          taskC.updatedAt = nowC;
+
+          await dbSet('twsl:' + taskC.id, taskC);
+
+          // Push notification — fire and forget
+          (async function(){
+            try {
+              var pushSubsC = (await dbGet('push_subscriptions')) || {};
+              // Recipients: all task participants (requester + assignees) + any mentioned users — excluding sender
+              var recipients = {};
+              if (taskC.requesterId) recipients[String(taskC.requesterId)] = true;
+              (taskC.assignees || []).forEach(function(a){ if (a.id) recipients[String(a.id)] = true; });
+              msgC.mentions.forEach(function(mid){ recipients[String(mid)] = true; });
+              delete recipients[byC];
+
+              var isMentionPush = msgC.mentions.length > 0;
+              var previewC = textC.length > 80 ? textC.slice(0, 77) + '...' : textC;
+
+              var recipientIds = Object.keys(recipients);
+              for (var iC = 0; iC < recipientIds.length; iC++) {
+                var ridC = recipientIds[iC];
+                var subC = pushSubsC[ridC];
+                if (!subC || !subC.subscription) continue;
+                var isThisMentioned = msgC.mentions.indexOf(ridC) >= 0;
+                var titleC = (isThisMentioned ? '📣 @ذكرك ' : '💬 ') + (msgC.byName || 'رسالة جديدة') + (taskC.serial ? ' · #' + taskC.serial : '');
+                try {
+                  await sendWebPush(subC.subscription, {
+                    title: titleC,
+                    body: previewC,
+                    tag: 'twsl-chat-' + taskC.id,
+                    icon: '/icon-192.png',
+                    badge: '/icon-192.png',
+                    data: { taskId: taskC.id, type: 'tawasul_chat', url: '/?tab=tawasul&open=' + taskC.id },
+                  });
+                } catch(ePushC) { console.error('[chat push]', ridC, ePushC.message); }
+              }
+
+              // Also add in-app notif for mentions
+              if (isMentionPush) {
+                var notifsC = (await dbGet('twsl:notifs')) || [];
+                msgC.mentions.forEach(function(mid){
+                  if (String(mid) === byC) return;
+                  notifsC.push({
+                    id: 'n_' + Date.now() + '_' + Math.random().toString(36).slice(2, 6),
+                    type: 'chat_mention',
+                    taskId: taskC.id,
+                    serial: taskC.serial || '',
+                    from: msgC.byName || '',
+                    preview: previewC,
+                    createdAt: nowC,
+                    read: false,
+                    targetId: mid,
+                  });
+                });
+                if (notifsC.length > 500) notifsC = notifsC.slice(-500);
+                await dbSet('twsl:notifs', notifsC);
+              }
+            } catch(ePush2) { console.error('[chat auto-push]', ePush2.message); }
+          })();
+
+          return res.json({ ok: true, message: msgC, task: taskC });
+        } catch (e) {
+          return res.status(500).json({ error: 'tawasul-chat-send error: ' + (e.message || 'unknown') });
+        }
+      }
+
+      case 'tawasul-chat-react': {
+        if (req.method !== 'POST') return res.status(405).json({ error: 'POST required' });
+        try {
+          var bR = req.body || {};
+          var taskIdR = String(bR.taskId || '');
+          var msgIdR = String(bR.messageId || '');
+          var emojiR = String(bR.emoji || '');
+          var byR = String(bR.by || '');
+          if (!taskIdR || !msgIdR || !emojiR || !byR) return res.status(400).json({ error: 'taskId و messageId و emoji و by مطلوبة' });
+          // Whitelist emojis
+          var ALLOWED_EMOJI = ['👍','❤️','🎉','😂','❓','🙏','✅'];
+          if (ALLOWED_EMOJI.indexOf(emojiR) < 0) return res.status(400).json({ error: 'emoji غير مسموح' });
+
+          var taskR = await dbGet('twsl:' + taskIdR);
+          if (!taskR) return res.status(404).json({ error: 'المهمة غير موجودة' });
+          var msgsR = taskR.chatMessages || [];
+          var idxR2 = msgsR.findIndex(function(m){ return m.id === msgIdR; });
+          if (idxR2 < 0) return res.status(404).json({ error: 'الرسالة غير موجودة' });
+
+          var mR = msgsR[idxR2];
+          mR.reactions = mR.reactions || {};
+          mR.reactions[emojiR] = Array.isArray(mR.reactions[emojiR]) ? mR.reactions[emojiR] : [];
+          var list = mR.reactions[emojiR];
+          var ex = list.indexOf(byR);
+          if (ex >= 0) list.splice(ex, 1); else list.push(byR);
+          if (list.length === 0) delete mR.reactions[emojiR];
+
+          msgsR[idxR2] = mR;
+          taskR.chatMessages = msgsR;
+          taskR.updatedAt = new Date().toISOString();
+          await dbSet('twsl:' + taskR.id, taskR);
+          return res.json({ ok: true, message: mR });
+        } catch (e) {
+          return res.status(500).json({ error: 'tawasul-chat-react error: ' + (e.message || 'unknown') });
+        }
+      }
+
+      case 'tawasul-chat-delete': {
+        if (req.method !== 'POST') return res.status(405).json({ error: 'POST required' });
+        try {
+          var bD = req.body || {};
+          var taskIdD = String(bD.taskId || '');
+          var msgIdD = String(bD.messageId || '');
+          var byD = String(bD.by || '');
+          var isAdminD = !!bD.isAdmin;
+          if (!taskIdD || !msgIdD || !byD) return res.status(400).json({ error: 'taskId و messageId و by مطلوبة' });
+
+          var taskD = await dbGet('twsl:' + taskIdD);
+          if (!taskD) return res.status(404).json({ error: 'المهمة غير موجودة' });
+          var msgsD = taskD.chatMessages || [];
+          var idxD = msgsD.findIndex(function(m){ return m.id === msgIdD; });
+          if (idxD < 0) return res.status(404).json({ error: 'الرسالة غير موجودة' });
+
+          var mD = msgsD[idxD];
+          if (!isAdminD && String(mD.by) !== byD) return res.status(403).json({ error: 'لا يمكنك حذف رسالة شخص آخر' });
+
+          // Soft delete — keep id/thread intact, scrub content
+          mD.deleted = true;
+          mD.text = '';
+          mD.mentions = [];
+          msgsD[idxD] = mD;
+          taskD.chatMessages = msgsD;
+          taskD.updatedAt = new Date().toISOString();
+          await dbSet('twsl:' + taskD.id, taskD);
+          return res.json({ ok: true });
+        } catch (e) {
+          return res.status(500).json({ error: 'tawasul-chat-delete error: ' + (e.message || 'unknown') });
+        }
+      }
+
+      case 'tawasul-chat-list': {
+        // GET messages for a task — used for polling refresh
+        try {
+          var tidL = String((req.query && req.query.taskId) || (req.body && req.body.taskId) || '');
+          if (!tidL) return res.status(400).json({ error: 'taskId مطلوب' });
+          var taskL = await dbGet('twsl:' + tidL);
+          if (!taskL) return res.json({ messages: [] });
+          return res.json({ messages: taskL.chatMessages || [], updatedAt: taskL.updatedAt });
+        } catch (e) {
+          return res.status(500).json({ error: 'tawasul-chat-list error: ' + (e.message || 'unknown'), messages: [] });
+        }
+      }
+
       case 'tawasul-check-recurring': {
         // Check recurring task templates and generate next instance if due
         // Should be called periodically (client polls on load; can also be a cron)
