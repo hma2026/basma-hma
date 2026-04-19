@@ -10,7 +10,7 @@ import { ALL_VIOLATIONS_DEFAULT, PENALTY_TYPES, LAIHA_INFO, COMPLAINT_STATUS, VI
 
 /* ═══════════ APP CONFIG (إعدادات التطبيق) ═══════════ */
 const APP_CONFIG = {
-  VER: "4.94",
+  VER: "4.95",
   NAME: "بصمة HMA",
   FULL_NAME: "نظام الحضور والانصراف الذكي",
   COMPANY: "هاني محمد عسيري للاستشارات الهندسية",
@@ -429,8 +429,13 @@ function MobileAppInner() {
   }, []);
 
   useEffect(() => {
-    const t = setInterval(() => setNow(new Date()), 1000);
-    return () => clearInterval(t);
+    var t = null;
+    function start() { if (!t) t = setInterval(() => setNow(new Date()), 1000); }
+    function stop() { if (t) { clearInterval(t); t = null; } }
+    function onVis() { if (document.hidden) stop(); else { setNow(new Date()); start(); } }
+    start();
+    document.addEventListener("visibilitychange", onVis);
+    return () => { stop(); document.removeEventListener("visibilitychange", onVis); };
   }, []);
 
   useEffect(() => {
@@ -490,11 +495,16 @@ function MobileAppInner() {
     if (gps && branch) setGpsDist(Math.round(haversine(gps.lat, gps.lng, branch.lat, branch.lng)));
   }, [gps, branch]);
 
-  // Auto-refresh every 5 minutes
+  // Auto-refresh every 5 minutes (paused when tab hidden)
   useEffect(() => {
     if (!user) return;
-    const t = setInterval(() => { loadData(user); }, 300000);
-    return () => clearInterval(t);
+    var t = null;
+    function start() { if (!t) t = setInterval(() => { loadData(user); }, 300000); }
+    function stop() { if (t) { clearInterval(t); t = null; } }
+    function onVis() { if (document.hidden) stop(); else start(); }
+    start();
+    document.addEventListener("visibilitychange", onVis);
+    return () => { stop(); document.removeEventListener("visibilitychange", onVis); };
   }, [user]);
 
   // GPS tracking every 5 minutes + offline queue
@@ -513,12 +523,17 @@ function MobileAppInner() {
         } else {
           queueGpsOffline(record);
         }
-      }, function(){}, { enableHighAccuracy: true, timeout: 20000, maximumAge: 5000 });
+      }, function(){}, { enableHighAccuracy: false, timeout: 20000, maximumAge: 30000 });
     }
-    // Track immediately + every 5 minutes
+    // Track immediately + every 5 minutes (paused when tab hidden)
     trackGps();
-    var t = setInterval(trackGps, GPS_TRACK_INTERVAL);
-    return function() { clearInterval(t); };
+    var t = null;
+    function start() { if (!t) t = setInterval(trackGps, GPS_TRACK_INTERVAL); }
+    function stop() { if (t) { clearInterval(t); t = null; } }
+    function onVis() { if (document.hidden) stop(); else { trackGps(); start(); } }
+    start();
+    document.addEventListener("visibilitychange", onVis);
+    return function() { stop(); document.removeEventListener("visibilitychange", onVis); };
   }, [user]);
 
   // Sync offline GPS queue when back online
@@ -691,14 +706,20 @@ function MobileAppInner() {
         }
       } catch(e) { /**/ }
     }
-    var pollInterval = setInterval(pollNotifications, 15000);
+    var pollInterval = null;
+    function startPoll() { if (!pollInterval) pollInterval = setInterval(pollNotifications, 60000); }
+    function stopPoll() { if (pollInterval) { clearInterval(pollInterval); pollInterval = null; } }
+    function onVis() { if (document.hidden) stopPoll(); else { pollNotifications(); startPoll(); } }
+    startPoll();
     pollNotifications(); // immediate first check
+    document.addEventListener("visibilitychange", onVis);
 
     return function() {
       if (navigator.serviceWorker) {
         navigator.serviceWorker.removeEventListener('message', handleSwMsg);
       }
-      clearInterval(pollInterval);
+      stopPoll();
+      document.removeEventListener("visibilitychange", onVis);
     };
   }, [user]);
 
@@ -727,79 +748,79 @@ function MobileAppInner() {
         const allTickets = await api("tickets");
         setMyTickets((allTickets || []).filter(function(t){ return t.empId === emp.id; }));
       } catch(e) { /**/ }
-      // Fetch team data for managers
+      // Fetch team data for managers (can run in parallel with others below)
+      var teamPromise = null;
       if (emp.isManager || emp.isAssistant) {
-        try {
-          var emps = await api("employees");
-          setAllEmps(emps || []);
-          var todayAllAtt = await api("attendance", { params: { date: todayStr() } });
-          var presentIds = new Set((todayAllAtt || []).filter(function(r){ return r.type === "checkin"; }).map(function(r){ return r.empId; }));
-          setTeamToday((emps || []).map(function(e) {
-            return { id: e.id, name: e.name, role: e.role, present: presentIds.has(e.id) };
-          }));
-        } catch(e) { /**/ }
+        teamPromise = (async function() {
+          try {
+            var emps = await api("employees");
+            setAllEmps(emps || []);
+            var todayAllAtt = await api("attendance", { params: { date: todayStr() } });
+            var presentIds = new Set((todayAllAtt || []).filter(function(r){ return r.type === "checkin"; }).map(function(r){ return r.empId; }));
+            setTeamToday((emps || []).map(function(e) {
+              return { id: e.id, name: e.name, role: e.role, present: presentIds.has(e.id) };
+            }));
+          } catch(e) { /**/ }
+        })();
       }
-      // Fetch kadwar notifications (from shared database)
-      try {
-        var notifs = await api("kadwar_notifs", { params: { empId: emp.id } });
-        if (notifs && !notifs.error) setKadwarNotifs({ tasks: notifs.tasks || 0, exams: notifs.exams || 0, alerts: notifs.alerts || 0 });
-      } catch(e) { /**/ }
-      // Fetch legal alerts (pending investigations + active violations)
-      try {
-        var invs = await api("investigations", { params: { empId: emp.id, status: "WAITING_RESPONSE" } });
-        var vios = await api("violations_v2", { params: { empId: emp.id, status: "ACTIVE" } });
-        setLegalAlerts(((invs || []).length) + ((vios || []).length));
-      } catch(e) { /**/ }
-      // Fetch announcements
-      try {
-        var annR = await fetch("/api/data?action=announcements&empId=" + emp.id);
-        var annList = await annR.json();
-        if (Array.isArray(annList)) {
-          // Filter by targeting
-          var filtered = annList.filter(function(a){
-            if (!a.published) return false;
-            if (a.target === "all") return true;
-            if (a.target === "branch" && a.targetIds && a.targetIds.indexOf(emp.branch) >= 0) return true;
-            if (a.target === "employees" && a.targetIds && a.targetIds.indexOf(emp.id) >= 0) return true;
-            return false;
-          });
-          setAnnouncements(filtered);
-        }
-      } catch(e) { /**/ }
-      // Fetch banners
-      try {
-        var bnrR = await fetch("/api/data?action=banners");
-        var bnrD = await bnrR.json();
-        if (bnrD && Array.isArray(bnrD.banners)) setBanners(bnrD.banners);
-      } catch(e) { /**/ }
-      // Fetch tawasul unread count (read-only badge)
-      try {
-        var tR = await fetch("/api/data?action=tawasul-list");
-        var tD = await tR.json();
-        if (tD && Array.isArray(tD.requests)) {
-          var myId = emp.id || emp.username;
-          var isAdmin = emp.role === "admin" || emp.role === "hr_manager" || emp.username === "admin";
-          var unread = tD.requests.filter(function(r){
-            var isAssignee = (r.assignees || []).some(function(a){ return String(a.id) === String(myId); });
-            var notDone = r.status !== "closed" && r.status !== "evaluated" && r.status !== "cancelled";
-            return notDone && (isAdmin ? true : isAssignee) && (r.status === "sent" || r.status === "received");
-          }).length;
-          setTawasulUnread(unread);
-        }
-      } catch(e) { /**/ }
-      // Fetch field projects (for field/mixed employees — used in GPS pill)
-      try {
-        if (emp.type === "field" || emp.type === "mixed") {
-          var ps = await api("projects");
+
+      // ═══ PARALLEL FETCHES — all non-critical data in parallel ═══
+      var myId = emp.id || emp.username;
+      var isAdminUser = emp.role === "admin" || emp.role === "hr_manager" || emp.username === "admin";
+
+      Promise.allSettled([
+        // Kadwar notifications
+        api("kadwar_notifs", { params: { empId: emp.id } }).then(function(notifs){
+          if (notifs && !notifs.error) setKadwarNotifs({ tasks: notifs.tasks || 0, exams: notifs.exams || 0, alerts: notifs.alerts || 0 });
+        }),
+        // Legal alerts (invs + vios in parallel)
+        Promise.all([
+          api("investigations", { params: { empId: emp.id, status: "WAITING_RESPONSE" } }),
+          api("violations_v2", { params: { empId: emp.id, status: "ACTIVE" } }),
+        ]).then(function(arr){
+          setLegalAlerts(((arr[0] || []).length) + ((arr[1] || []).length));
+        }),
+        // Announcements
+        fetch("/api/data?action=announcements&empId=" + emp.id).then(function(r){ return r.json(); }).then(function(annList){
+          if (Array.isArray(annList)) {
+            var filtered = annList.filter(function(a){
+              if (!a.published) return false;
+              if (a.target === "all") return true;
+              if (a.target === "branch" && a.targetIds && a.targetIds.indexOf(emp.branch) >= 0) return true;
+              if (a.target === "employees" && a.targetIds && a.targetIds.indexOf(emp.id) >= 0) return true;
+              return false;
+            });
+            setAnnouncements(filtered);
+          }
+        }),
+        // Banners
+        fetch("/api/data?action=banners").then(function(r){ return r.json(); }).then(function(bnrD){
+          if (bnrD && Array.isArray(bnrD.banners)) setBanners(bnrD.banners);
+        }),
+        // Field projects (only if field/mixed)
+        (emp.type === "field" || emp.type === "mixed") ? api("projects").then(function(ps){
           if (Array.isArray(ps)) setFieldProjects(ps);
-        }
-      } catch(e) { /**/ }
-      // Fetch notifications
-      try {
-        var allNotifs = await api("notifications", { params: { empId: emp.id } });
-        setNotifications(allNotifs || []);
-        setUnreadCount((allNotifs || []).filter(function(n){ return !n.read; }).length);
-      } catch(e) { /**/ }
+        }) : Promise.resolve(),
+        // Notifications
+        api("notifications", { params: { empId: emp.id } }).then(function(allNotifs){
+          setNotifications(allNotifs || []);
+          setUnreadCount((allNotifs || []).filter(function(n){ return !n.read; }).length);
+        }),
+      ]).catch(function(){});
+
+      // Tawasul unread — defer by 2 seconds to not block initial load
+      setTimeout(function() {
+        fetch("/api/data?action=tawasul-list").then(function(r){ return r.json(); }).then(function(tD){
+          if (tD && Array.isArray(tD.requests)) {
+            var unread = tD.requests.filter(function(r){
+              var isAssignee = (r.assignees || []).some(function(a){ return String(a.id) === String(myId); });
+              var notDone = r.status !== "closed" && r.status !== "evaluated" && r.status !== "cancelled";
+              return notDone && (isAdminUser ? true : isAssignee) && (r.status === "sent" || r.status === "received");
+            }).length;
+            setTawasulUnread(unread);
+          }
+        }).catch(function(){});
+      }, 2000);
     } catch { /**/ }
   }
 
@@ -3092,13 +3113,19 @@ function TawasulPage({ user, allEmps }) {
 
   useEffect(function(){
     loadData(false);
-    // Run auto-escalation check in background (spec section 13)
-    fetch("/api/data?action=tawasul-check-escalations").then(function(r){ return r.json(); }).then(function(d){
-      if (d && d.updates > 0) {
-        // Re-fetch to show new escalations
-        setTimeout(function(){ loadData(true); }, 500);
+    // Run auto-escalation check at most once per day, in background (spec section 13)
+    try {
+      var lastCheck = localStorage.getItem("basma_tawasul_esc_check");
+      var now = Date.now();
+      if (!lastCheck || (now - parseInt(lastCheck, 10)) > 86400000) {
+        setTimeout(function() {
+          fetch("/api/data?action=tawasul-check-escalations").then(function(r){ return r.json(); }).then(function(d){
+            if (d && d.updates > 0) setTimeout(function(){ loadData(true); }, 500);
+          }).catch(function(){});
+          try { localStorage.setItem("basma_tawasul_esc_check", String(now)); } catch(e) {}
+        }, 3000);
       }
-    }).catch(function(){});
+    } catch(e) {}
   }, []);
 
   // Play notif sound on increase of unread (new task arrived while on page)
