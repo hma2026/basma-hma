@@ -2206,6 +2206,45 @@ export default async function handler(req, res) {
 
           evals.push(newEval);
           await dbSet('evaluations', evals);
+
+          // v7.12 — FIX: Send notifications to assigned evaluator(s) — was missing
+          try {
+            const notifs = await dbGet('notifications') || [];
+            const typeLabel = {
+              daily: 'يومي', weekly: 'أسبوعي', monthly: 'شهري',
+              quarterly: 'ربع سنوي', annual: 'سنوي'
+            }[type] || type;
+            const periodText = periodEnd ? ' — قبل ' + new Date(periodEnd).toLocaleDateString('ar-SA') : '';
+
+            // Evaluator 1 notification
+            if (evaluatorId) {
+              notifs.push({
+                id: 'NTF' + Date.now() + 'e1',
+                empId: String(evaluatorId),
+                type: 'evaluation_assigned',
+                title: '⭐ تم تكليفك بتقييم',
+                body: 'تقييم ' + typeLabel + ' لـ ' + emp.name + ' (' + empJobTitle + ')' + periodText,
+                refId: newEval.id,
+                read: false,
+                createdAt: new Date().toISOString(),
+              });
+            }
+            // Evaluator 2 notification (co-evaluator)
+            if (evaluator2Id) {
+              notifs.push({
+                id: 'NTF' + (Date.now() + 1) + 'e2',
+                empId: String(evaluator2Id),
+                type: 'evaluation_assigned',
+                title: '⭐ تم تكليفك بتقييم (مُقيّم ثاني)',
+                body: 'تقييم ' + typeLabel + ' لـ ' + emp.name + ' (' + empJobTitle + ')' + periodText,
+                refId: newEval.id,
+                read: false,
+                createdAt: new Date().toISOString(),
+              });
+            }
+            await dbSet('notifications', notifs);
+          } catch(e) { console.error('[evaluations-notify]', e); /* non-blocking */ }
+
           return res.json({ ok: true, evaluation: newEval });
         }
         break;
