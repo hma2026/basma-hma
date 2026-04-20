@@ -4,7 +4,7 @@ import { generateAttendanceReport, generateEmployeeReport, generateMonthlySummar
 import { exportFormalWarning, exportInvestigationRecord, exportAffidavit, exportEmploymentLetter, exportSalaryLetter, exportLeaveLetter } from "./formalPdfs";
 
 const APP = "بصمة HMA";
-const VER = "6.81";
+const VER = "6.82";
 const CO = "هاني محمد عسيري للإستشارات الهندسية";
 const B = { blue: "#2B5EA7", yellow: "#FDD800", red: "#E2192C", black: "#1A1A1A", blueDk: "#1E4478", blueLt: "#EDF3FB", gold: "#D4A017" };
 
@@ -797,6 +797,78 @@ export default function AdminApp() {
                 <button style={{ ...actBtn, background: t.warnLt, color: t.warn }}>⚠️ إنذار</button>
                 <button style={{ ...actBtn, background: t.okLt, color: t.ok }}>📤 تصدير لكوادر</button>
               </div>
+
+              {/* v6.82 — Restored: All formal letter services for this employee */}
+              <div style={{ marginTop: 14, paddingTop: 12, borderTop: "1px solid " + t.sep }}>
+                <div style={{ fontSize: 12, fontWeight: 800, color: t.tx, marginBottom: 8, display: "flex", alignItems: "center", gap: 6 }}>
+                  <span>📄</span> الإفادات والخطابات الرسمية
+                </div>
+                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 6 }}>
+                  <button onClick={function(){
+                    var to = window.prompt("الجهة المُوجَّه إليها الخطاب:", "لمن يهمه الأمر") || "لمن يهمه الأمر";
+                    var by = window.prompt("اسم المسؤول الموقّع:", "مدير الموارد البشرية") || "مدير الموارد البشرية";
+                    exportEmploymentLetter(selEmp, { toEntity: to, signedBy: by });
+                  }} style={{ padding: "10px 8px", borderRadius: 8, background: "rgba(8,145,178,0.12)", border: "1px solid rgba(8,145,178,0.35)", color: "#0891B2", fontSize: 11, fontWeight: 800, cursor: "pointer", fontFamily: "inherit", textAlign: "right" }}>
+                    📄 إفادة تعريف بالعمل
+                  </button>
+                  <button onClick={function(){
+                    var to = window.prompt("الجهة المُوجَّه إليها (مثل: البنك الأهلي):", "لمن يهمه الأمر") || "لمن يهمه الأمر";
+                    var sal = window.prompt("الراتب الأساسي:", selEmp.basicSalary || selEmp.salary || "");
+                    var allow = window.prompt("البدلات:", "");
+                    var tot = window.prompt("الإجمالي:", "");
+                    var by = window.prompt("اسم المسؤول الموقّع:", "مدير الموارد البشرية") || "مدير الموارد البشرية";
+                    exportSalaryLetter(selEmp, { toEntity: to, salary: sal, allowances: allow, total: tot, signedBy: by });
+                  }} style={{ padding: "10px 8px", borderRadius: 8, background: "rgba(217,119,6,0.12)", border: "1px solid rgba(217,119,6,0.35)", color: "#D97706", fontSize: 11, fontWeight: 800, cursor: "pointer", fontFamily: "inherit", textAlign: "right" }}>
+                    💵 شهادة راتب
+                  </button>
+                  <button onClick={function(){
+                    var to = window.prompt("الجهة المُوجَّه إليها:", "لمن يهمه الأمر") || "لمن يهمه الأمر";
+                    var from = window.prompt("تاريخ بداية الإجازة (YYYY-MM-DD):", "");
+                    var until = window.prompt("تاريخ نهاية الإجازة (YYYY-MM-DD):", "");
+                    var typ = window.prompt("نوع الإجازة (سنوية / مرضية / اضطرارية):", "سنوية") || "سنوية";
+                    var by = window.prompt("اسم المسؤول الموقّع:", "مدير الموارد البشرية") || "مدير الموارد البشرية";
+                    exportLeaveLetter(selEmp, { from: from, to: until, type: typ }, { toEntity: to, signedBy: by });
+                  }} style={{ padding: "10px 8px", borderRadius: 8, background: "rgba(124,58,237,0.12)", border: "1px solid rgba(124,58,237,0.35)", color: "#7C3AED", fontSize: 11, fontWeight: 800, cursor: "pointer", fontFamily: "inherit", textAlign: "right" }}>
+                    ✈️ إفادة إجازة
+                  </button>
+                  <button onClick={function(){
+                    var stmt = window.prompt("نص التعهد / الإقرار:", "");
+                    if (!stmt || !stmt.trim()) { alert("لا يمكن إصدار تعهد فارغ"); return; }
+                    var by = window.prompt("اسم الشاهد/المسؤول الموقّع:", "مدير الموارد البشرية") || "مدير الموارد البشرية";
+                    exportAffidavit({ statement: stmt, signedBy: by }, selEmp);
+                  }} style={{ padding: "10px 8px", borderRadius: 8, background: "rgba(34,197,94,0.12)", border: "1px solid rgba(34,197,94,0.35)", color: "#16A34A", fontSize: 11, fontWeight: 800, cursor: "pointer", fontFamily: "inherit", textAlign: "right" }}>
+                    📋 تعهد / إقرار
+                  </button>
+                </div>
+
+                <div style={{ marginTop: 12, fontSize: 11, fontWeight: 800, color: t.tx, marginBottom: 8, display: "flex", alignItems: "center", gap: 6 }}>
+                  <span>⚖️</span> المستندات القانونية
+                </div>
+                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 6 }}>
+                  <button onClick={function(){
+                    var typ = window.prompt("نوع المخالفة (مثل: تأخر متكرر):", "");
+                    if (!typ || !typ.trim()) return;
+                    var desc = window.prompt("وصف المخالفة:", "") || "";
+                    var pen = window.prompt("الجزاء (مثل: إنذار شفهي):", "إنذار شفهي") || "إنذار شفهي";
+                    exportFormalWarning({ type: typ, description: desc, penalty: pen, date: new Date().toISOString() }, selEmp);
+                  }} style={{ padding: "10px 8px", borderRadius: 8, background: "rgba(239,68,68,0.12)", border: "1px solid rgba(239,68,68,0.35)", color: "#DC2626", fontSize: 11, fontWeight: 800, cursor: "pointer", fontFamily: "inherit", textAlign: "right" }}>
+                    ⚠️ إنذار رسمي
+                  </button>
+                  <button onClick={function(){
+                    var inc = window.prompt("موضوع التحقيق:", "");
+                    if (!inc || !inc.trim()) return;
+                    var det = window.prompt("تفاصيل الواقعة:", "") || "";
+                    exportInvestigationRecord({ incident: inc, details: det, date: new Date().toISOString() }, selEmp);
+                  }} style={{ padding: "10px 8px", borderRadius: 8, background: "rgba(245,158,11,0.12)", border: "1px solid rgba(245,158,11,0.35)", color: "#D97706", fontSize: 11, fontWeight: 800, cursor: "pointer", fontFamily: "inherit", textAlign: "right" }}>
+                    🔍 محضر تحقيق
+                  </button>
+                </div>
+
+                <div style={{ marginTop: 10, padding: "8px 10px", borderRadius: 6, background: "rgba(43,94,167,0.08)", border: "1px dashed rgba(43,94,167,0.25)", fontSize: 10, color: t.txM, lineHeight: 1.6 }}>
+                  💡 جميع الإفادات تُطبع بشعار HMA الرسمي وتفتح في نافذة جديدة جاهزة للطباعة أو الحفظ كـ PDF.
+                </div>
+              </div>
+
               <div style={{ marginTop: 10, padding: "8px", borderRadius: 8, background: B.blue + "10", border: "1px dashed " + B.blue + "40", fontSize: 10, color: B.blue, textAlign: "center" }}>
                 🔗 لتعديل الاسم/المسمى/الفرع/كلمة المرور — استخدم <a href="https://hma.engineer" target="_blank" style={{ color: B.blue, fontWeight: 800 }}>كوادر</a>
               </div>
