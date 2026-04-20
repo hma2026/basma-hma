@@ -11,7 +11,7 @@ import { exportEmploymentLetter, exportLeaveLetter } from "./formalPdfs";
 
 /* ═══════════ APP CONFIG (إعدادات التطبيق) ═══════════ */
 const APP_CONFIG = {
-  VER: "6.69",
+  VER: "6.72",
   NAME: "بصمة HMA",
   FULL_NAME: "نظام الحضور والانصراف الذكي",
   COMPANY: "هاني محمد عسيري للاستشارات الهندسية",
@@ -377,10 +377,10 @@ const ACHIEVEMENTS = [
   // Attendance streaks
   { id: "first_day",      icon: "🎯", name: "أول يوم", desc: "سجّلت أول حضور في بصمة",       points: 10,  category: "attendance" },
   { id: "streak_7",       icon: "🔥", name: "أسبوع كامل", desc: "7 أيام حضور متتالية",        points: 50,  category: "attendance" },
-  { id: "streak_30",      icon: "💎", name: "شهر ذهبي", desc: "30 يوم حضور متتالي",           points: 200, category: "attendance" },
-  { id: "streak_90",      icon: "👑", name: "ربع سنة ملكي", desc: "90 يوم حضور متتالي",       points: 500, category: "attendance" },
+  { id: "streak_30",      icon: "🏅", name: "شهر ذهبي", desc: "30 يوم حضور متتالي",           points: 200, category: "attendance" },
+  { id: "streak_90",      icon: "💎", name: "ربع سنة ماسي", desc: "90 يوم حضور متتالي",       points: 500, category: "attendance" },
   // Punctuality
-  { id: "early_bird_10",  icon: "🌅", name: "بكير الطير", desc: "10 مرات حضور قبل 8:00",       points: 40,  category: "punctuality" },
+  { id: "early_bird_10",  icon: "🌅", name: "السبّاق",    desc: "10 مرات حضور قبل 8:00",       points: 40,  category: "punctuality" },
   { id: "zero_late_month",icon: "⏰", name: "انضباط كامل", desc: "شهر بدون أي تأخير",           points: 150, category: "punctuality" },
   // Engagement
   { id: "profile_complete", icon: "✅", name: "ملف مكتمل", desc: "أكملت كل بيانات ملفك",      points: 30,  category: "engagement" },
@@ -391,7 +391,7 @@ const ACHIEVEMENTS = [
   { id: "task_pro",       icon: "⚡", name: "منفذ مهام", desc: "أنجزت 20 مهمة",                 points: 100, category: "tawasul" },
   { id: "task_hero",      icon: "🏆", name: "بطل المهام", desc: "أنجزت 100 مهمة",              points: 400, category: "tawasul" },
   // Leadership (managers)
-  { id: "mentor",         icon: "🧑‍🏫", name: "مرشد", desc: "وافقت على 10 طلبات لفريقك",       points: 60,  category: "leadership" },
+  { id: "mentor",         icon: "🧑‍🏫", name: "قدوة", desc: "وافقت على 10 طلبات لفريقك",       points: 60,  category: "leadership" },
 ];
 
 function getUnlockedAchievements(user, stats) {
@@ -2227,6 +2227,7 @@ function HomePage({ user, branch, workType, now, todayAtt, allAtt, gps, gpsDist,
           );
         })}
         <InvestigationBanner user={user} /><MembershipFreezeNotice user={user} /><BranchHolidayBanner branch={branch} /><OccasionBanner user={user} /><SurveyBanner user={user} />
+        <HomeBanner banners={banners} user={user} onShowAnnouncements={onShowAnnouncements} announcements={announcements} />
       </div>
 
       {/* Clock centered */}
@@ -2335,11 +2336,11 @@ function HomePage({ user, branch, workType, now, todayAtt, allAtt, gps, gpsDist,
       {/* ═══ BOTTOM (unified buttons, uniform height) ═══ */}
       <div style={{ padding: "12px 16px", display: "flex", flexDirection: "column", gap: 6 }}>
 
-        {/* GPS indicator — smaller pill, above the check-in button (v6.63) */}
-        <div style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 6, padding: "5px 12px", borderRadius: 16, background: gps ? (inAnyValidZone ? "rgba(48,209,88,0.12)" : "rgba(239,68,68,0.15)") : "rgba(150,150,150,0.1)", border: "1px solid " + (gps ? (inAnyValidZone ? "rgba(48,209,88,0.45)" : "rgba(239,68,68,0.5)") : "rgba(150,150,150,0.25)"), width: "100%", boxSizing: "border-box" }}>
+        {/* GPS indicator — compact pill matching workType width (v6.70) */}
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 6, padding: "5px 14px", borderRadius: 16, background: gps ? (inAnyValidZone ? "rgba(48,209,88,0.12)" : "rgba(239,68,68,0.15)") : "rgba(150,150,150,0.1)", border: "1px solid " + (gps ? (inAnyValidZone ? "rgba(48,209,88,0.45)" : "rgba(239,68,68,0.5)") : "rgba(150,150,150,0.25)"), width: "fit-content", maxWidth: "100%", alignSelf: "center" }}>
           <div style={{ width: 7, height: 7, borderRadius: RADIUS.pill, background: gps ? (inAnyValidZone ? "#30D158" : "#EF4444") : COLORS.textMuted, boxShadow: gps ? "0 0 6px " + (inAnyValidZone ? "rgba(48,209,88,0.6)" : "rgba(239,68,68,0.6)") : "none", flexShrink: 0 }} />
-          <span style={{ fontSize: 11, fontWeight: 700, color: gps ? (inAnyValidZone ? "#30D158" : "#EF4444") : COLORS.textMuted, fontFamily: "'Tajawal',sans-serif", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{zoneText}</span>
-          {streak > 0 && <span style={{ fontSize: 11, fontWeight: 800, color: COLORS.goldLight, marginRight: "auto", flexShrink: 0 }}>{"🔥 " + streak}</span>}
+          <span style={{ fontSize: 11, fontWeight: 700, color: gps ? (inAnyValidZone ? "#30D158" : "#EF4444") : COLORS.textMuted, fontFamily: "'Tajawal',sans-serif", whiteSpace: "nowrap" }}>{zoneText}</span>
+          {streak > 0 && <span style={{ fontSize: 11, fontWeight: 800, color: COLORS.goldLight, flexShrink: 0 }}>{"🔥 " + streak}</span>}
         </div>
 
         {/* PRIMARY — سجّل حضورك (gold, reduced height) */}
@@ -2360,9 +2361,6 @@ function HomePage({ user, branch, workType, now, todayAtt, allAtt, gps, gpsDist,
             )}
           </div>
         )}
-
-        {/* Home Banner — admin-managed rotating banners */}
-        <HomeBanner banners={banners} user={user} onShowAnnouncements={onShowAnnouncements} announcements={announcements} />
 
         {/* إجازة + إذن (secondary) */}
         <div style={{ display: "flex", gap: SPACING.sm }}>
@@ -2675,14 +2673,20 @@ function ProfilePage({ user, branch, workType, onLogout, onTicket, myTickets, da
           <div style={{ ...TYPOGRAPHY.caption, color: COLORS.textMuted }}>{user.role + " — " + user.id}</div>
         </div>
 
-        {/* Profile Tabs — horizontal scroll with emoji icons */}
-        <div style={{ display: "flex", gap: 4, background: COLORS.metallic, border: "1px solid " + COLORS.metallicBorder, borderRadius: RADIUS.lg, padding: 4, boxShadow: SHADOWS.button, overflowX: "auto", WebkitOverflowScrolling: "touch" }}>
+        {/* Profile Tabs — fixed 6 tabs, no scroll, 2-line text, gold active icon (v6.71) */}
+        <div style={{ display: "flex", gap: 3, background: COLORS.metallic, border: "1px solid " + COLORS.metallicBorder, borderRadius: RADIUS.lg, padding: 4, boxShadow: SHADOWS.button }}>
           {tabs.map(function(t) {
             var active = tab === t.id;
+            var parts = t.label.split(" ");
+            var line1 = parts.slice(0, Math.ceil(parts.length / 2)).join(" ");
+            var line2 = parts.slice(Math.ceil(parts.length / 2)).join(" ");
             return (
-              <button key={t.id} onClick={function(){ setTab(t.id); }} style={{ flex: "0 0 auto", minWidth: 60, padding: "8px 6px", borderRadius: RADIUS.md, background: active ? COLORS.metallic : "transparent", border: "1px solid " + (active ? COLORS.goldLight : "transparent"), cursor: "pointer", textAlign: "center", display: "flex", flexDirection: "column", alignItems: "center", gap: 3, color: active ? COLORS.goldLight : COLORS.textMuted }}>
-                <span style={{ fontSize: 18 }}>{t.emoji}</span>
-                <span style={{ ...TYPOGRAPHY.tiny, fontWeight: 700, whiteSpace: "nowrap" }}>{t.label}</span>
+              <button key={t.id} onClick={function(){ setTab(t.id); }} style={{ flex: 1, minWidth: 0, padding: "7px 2px", borderRadius: RADIUS.md, background: active ? "rgba(201,168,76,0.12)" : "transparent", border: "1px solid " + (active ? COLORS.goldLight : "transparent"), cursor: "pointer", textAlign: "center", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 3, minHeight: 52 }}>
+                <span style={{ fontSize: 18, filter: active ? "hue-rotate(30deg) saturate(1.5) brightness(1.1)" : "grayscale(0.3)", opacity: active ? 1 : 0.75 }}>{t.emoji}</span>
+                <span style={{ fontSize: 8.5, fontWeight: 800, lineHeight: 1.2, color: active ? COLORS.goldLight : COLORS.textMuted, display: "flex", flexDirection: "column", gap: 1 }}>
+                  <span>{line1}</span>
+                  {line2 && <span>{line2}</span>}
+                </span>
               </button>
             );
           })}
@@ -12547,14 +12551,15 @@ function AchievementsCard({ user }) {
         {displayList.map(function(a){
           var cat = categories[a.category] || categories.engagement;
           return (
-            <div key={a.id} style={{ padding: 10, borderRadius: 10, background: a.unlocked ? cat.color + "15" : COLORS.bg1, border: "1px solid " + (a.unlocked ? cat.color + "40" : COLORS.metallicBorder), opacity: a.unlocked ? 1 : 0.4, textAlign: "center", position: "relative" }}>
-              <div style={{ fontSize: 22, marginBottom: 4, filter: a.unlocked ? "none" : "grayscale(100%)" }}>{a.icon}</div>
-              <div style={{ fontSize: 10, fontWeight: 800, color: a.unlocked ? cat.color : COLORS.textMuted, marginBottom: 2 }}>{a.name}</div>
-              <div style={{ fontSize: 8, color: COLORS.textMuted, lineHeight: 1.4 }}>{a.desc}</div>
-              <div style={{ marginTop: 6, padding: "2px 6px", borderRadius: 6, background: a.unlocked ? cat.color + "22" : COLORS.metallic, color: a.unlocked ? cat.color : COLORS.textMuted, fontSize: 9, fontWeight: 800, display: "inline-block" }}>
+            <div key={a.id} style={{ padding: 10, borderRadius: 10, background: a.unlocked ? cat.color + "22" : "rgba(100,116,139,0.15)", border: "1.5px solid " + (a.unlocked ? cat.color : "rgba(148,163,184,0.35)"), opacity: a.unlocked ? 1 : 0.85, textAlign: "center", position: "relative", boxShadow: a.unlocked ? "0 2px 8px " + cat.color + "30" : "none" }}>
+              <div style={{ fontSize: 24, marginBottom: 4, filter: a.unlocked ? "none" : "grayscale(60%) brightness(0.85)" }}>{a.icon}</div>
+              <div style={{ fontSize: 11, fontWeight: 900, color: a.unlocked ? cat.color : "#94A3B8", marginBottom: 3 }}>{a.name}</div>
+              <div style={{ fontSize: 9, color: a.unlocked ? COLORS.textSecondary : "#94A3B8", lineHeight: 1.5, fontWeight: 500 }}>{a.desc}</div>
+              <div style={{ marginTop: 6, padding: "3px 8px", borderRadius: 6, background: a.unlocked ? cat.color + "44" : "rgba(148,163,184,0.25)", color: a.unlocked ? "#fff" : "#CBD5E1", fontSize: 10, fontWeight: 800, display: "inline-block" }}>
                 +{a.points} نقطة
               </div>
-              {a.unlocked && <div style={{ position: "absolute", top: 4, left: 4, fontSize: 10 }}>✓</div>}
+              {a.unlocked && <div style={{ position: "absolute", top: 4, left: 4, fontSize: 14, background: "#10B981", color: "#fff", width: 20, height: 20, borderRadius: 10, display: "flex", alignItems: "center", justifyContent: "center", fontWeight: 900 }}>✓</div>}
+              {!a.unlocked && <div style={{ position: "absolute", top: 4, left: 4, fontSize: 12, opacity: 0.7 }}>🔒</div>}
             </div>
           );
         })}
