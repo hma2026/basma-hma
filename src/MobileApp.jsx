@@ -11,7 +11,7 @@ import { exportEmploymentLetter, exportLeaveLetter } from "./formalPdfs";
 
 /* ═══════════ APP CONFIG (إعدادات التطبيق) ═══════════ */
 const APP_CONFIG = {
-  VER: "7.02",
+  VER: "7.03",
   NAME: "بصمة HMA",
   FULL_NAME: "نظام الحضور والانصراف الذكي",
   COMPANY: "هاني محمد عسيري للاستشارات الهندسية",
@@ -3091,12 +3091,7 @@ function ProfilePage({ user, branch, workType, onLogout, onTicket, myTickets, da
           </>
         )}
 
-        {tab === "achievements" && (
-          <>
-            <PointsLogCard user={user} allAtt={[]} />
-            <AchievementsCard user={user} />
-          </>
-        )}
+        {/* v7.02 — orphan "achievements" handler removed (merged into بياناتي) */}
 
         {/* v6.95 — Manager evaluations — merged inside my_evals hub below */}
 
@@ -8664,6 +8659,8 @@ function TawasulDetailModal({ request, user, allEmps, onClose, nameOf, onUpdated
 
   var [showEval, setShowEval] = useState(false);
   var [showHR, setShowHR] = useState(false);
+  // v7.03 — collapsible details
+  var [showDetails, setShowDetails] = useState(false);
 
   return (
     <div onClick={onClose} style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.6)", zIndex: 1000, display: "flex", alignItems: "flex-end", justifyContent: "center", fontFamily: "'Tajawal',sans-serif" }}>
@@ -8691,7 +8688,19 @@ function TawasulDetailModal({ request, user, allEmps, onClose, nameOf, onUpdated
         </div>
 
         <div style={{ padding: 16 }}>
-          {/* BIG BUTTON — designed prominent with pulse animation */}
+          {/* v7.03 — DESCRIPTION first (الأهم) */}
+          {r.description && (
+            <div style={{ position: "relative", background: C.card, borderRadius: 12, padding: "16px 16px 16px 20px", border: "1px solid " + C.cardBorder, marginBottom: 14, overflow: "hidden" }}>
+              <div style={{ position: "absolute", top: 0, bottom: 0, right: 0, width: 5, background: "linear-gradient(180deg, " + C.gold + ", " + C.gold + "aa)" }} />
+              <div style={{ fontSize: 13, fontWeight: 900, color: C.gold, marginBottom: 10, display: "flex", alignItems: "center", gap: 8, fontFamily: "'Cairo',sans-serif" }}>
+                <span style={{ fontSize: 16 }}>📝</span>
+                <span>وصف المهمة</span>
+              </div>
+              <div style={{ fontSize: 14, color: C.text, lineHeight: 1.85, whiteSpace: "pre-wrap", fontWeight: 500 }}>{r.description}</div>
+            </div>
+          )}
+
+          {/* BIG BUTTON — full width when actionable (action needed) */}
           {bigBtn && canPressBig && (
             <button onClick={applyBigAction} disabled={busy} style={{
               width: "100%",
@@ -8718,15 +8727,27 @@ function TawasulDetailModal({ request, user, allEmps, onClose, nameOf, onUpdated
               {!busy && <div style={{ position: "absolute", top: "50%", left: 20, transform: "translateY(-50%)", fontSize: 24, opacity: 0.3 }}>→</div>}
             </button>
           )}
+
+          {/* v7.03 — Status placeholder + MultiAssigneesProgress في صف واحد نصف الحجم (عند الانتظار) */}
           {bigBtn && !canPressBig && bigBtn.who === "requester" && (
-            <div style={{ padding: 18, borderRadius: 16, background: C.card, border: "2px dashed " + C.cardBorder, textAlign: "center", marginBottom: 14 }}>
-              <div style={{ fontSize: 16, fontWeight: 800, color: bigBtn.color, marginBottom: 4 }}>{bigBtn.label}</div>
-              <div style={{ fontSize: 12, color: C.sub }}>{bigBtn.sub}</div>
+            <div style={{ display: "grid", gridTemplateColumns: (r.assignees || []).length >= 2 ? "1fr 1fr" : "1fr", gap: 10, marginBottom: 14 }}>
+              <div style={{ padding: 12, borderRadius: 12, background: C.card, border: "2px dashed " + C.cardBorder, textAlign: "center" }}>
+                <div style={{ fontSize: 13, fontWeight: 800, color: bigBtn.color, marginBottom: 2 }}>{bigBtn.label}</div>
+                <div style={{ fontSize: 10, color: C.sub }}>{bigBtn.sub}</div>
+              </div>
+              {(r.assignees || []).length >= 2 && (
+                <MultiAssigneesProgress request={r} myId={myId} />
+              )}
             </div>
           )}
 
-          {/* ═══ Multi-assignees progress — only if 2+ assignees ═══ */}
-          {(r.assignees || []).length >= 2 && (
+          {/* Multi-progress when action IS pressable (full width below big button) */}
+          {bigBtn && canPressBig && (r.assignees || []).length >= 2 && (
+            <MultiAssigneesProgress request={r} myId={myId} />
+          )}
+
+          {/* No bigBtn but multi-assignees still visible */}
+          {!bigBtn && (r.assignees || []).length >= 2 && (
             <MultiAssigneesProgress request={r} myId={myId} />
           )}
 
@@ -8869,54 +8890,67 @@ function TawasulDetailModal({ request, user, allEmps, onClose, nameOf, onUpdated
             );
           })()}
 
-          {/* Meta */}
-          <div style={{ background: C.card, borderRadius: 12, padding: 14, border: "1px solid " + C.cardBorder, marginBottom: 12 }}>
-            {[
-              { label: "من", value: requesterName + (function(){
-                var myRow = (r.assignees || []).find(function(a){ return String(a.id) === String(myId); });
-                if (!myRow || !myRow.senderRole || myRow.senderRole === "other") return "";
-                return myRow.senderRole === "manager1" ? " (مديري الإداري)" : " (مديري الفني)";
-              })(), icon: "👤" },
-              { label: "إلى", value: (r.assignees || []).map(function(a){ return a.name || nameOf(a.id); }).join("، ") || "—", icon: "📬" },
-              r.assignMode ? { label: "نمط التكليف", value: r.assignMode === "coordinator" ? "مسؤول ينسّق" : "كل طرف مستقل", icon: "🎯" } : null,
-              { label: "تاريخ الإنشاء", value: r.createdAt ? new Date(r.createdAt).toLocaleString("ar-SA") : "—", icon: "📅" },
-              r.deadline ? { label: "الموعد النهائي", value: new Date(r.deadline).toLocaleString("ar-SA"), icon: "⏰" } : null,
-              r.deliveredAt ? { label: "تاريخ التسليم", value: new Date(r.deliveredAt).toLocaleString("ar-SA"), icon: "📦" } : null,
-              r.linkedFromSerial ? { label: "محوّلة من", value: "#" + r.linkedFromSerial, icon: "↪️" } : null,
-              rejectedCount > 0 ? { label: "عدد الرفضات", value: String(rejectedCount), icon: "❌" } : null,
-              returnCount > 0 ? { label: "عدد الإرجاعات", value: String(returnCount), icon: "📋" } : null,
-              { label: "آخر تحديث", value: tawasulTimeAgo(r.updatedAt || r.createdAt), icon: "🔄" },
-            ].filter(Boolean).map(function(row, idx, arr){
-              return <div key={idx} style={{ display: "flex", justifyContent: "space-between", padding: "8px 0", borderBottom: idx < arr.length - 1 ? "1px solid " + C.cardBorder : "none", fontSize: 12, gap: 8 }}><div style={{ color: C.sub, fontWeight: 600, flexShrink: 0 }}><span style={{ marginLeft: 5 }}>{row.icon}</span>{row.label}</div><div style={{ color: C.text, fontWeight: 700, textAlign: "left", flex: 1, minWidth: 0, wordBreak: "break-word" }}>{row.value}</div></div>;
-            })}
-          </div>
+          {/* v7.03 — TOGGLE زر عرض التفاصيل */}
+          <button onClick={function(){ setShowDetails(function(s){ return !s; }); }} style={{
+            width: "100%",
+            padding: "12px 16px",
+            borderRadius: 12,
+            background: showDetails ? C.bg : "linear-gradient(135deg, " + C.card + ", " + C.bg + ")",
+            color: C.text,
+            border: "1px solid " + C.cardBorder,
+            fontSize: 13,
+            fontWeight: 800,
+            cursor: "pointer",
+            fontFamily: "inherit",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            gap: 8,
+            marginBottom: 14,
+          }}>
+            <span>{showDetails ? "▲" : "▼"}</span>
+            <span>{showDetails ? "إخفاء التفاصيل الإضافية" : "عرض التفاصيل الإضافية"}</span>
+          </button>
 
-          {r.description && (
-            <div style={{ position: "relative", background: C.card, borderRadius: 12, padding: "14px 14px 14px 18px", border: "1px solid " + C.cardBorder, marginBottom: 12, overflow: "hidden" }}>
-              {/* Gold accent bar on the right (RTL) */}
-              <div style={{ position: "absolute", top: 0, bottom: 0, right: 0, width: 5, background: "linear-gradient(180deg, " + C.gold + ", " + C.gold + "aa)" }} />
-              <div style={{ fontSize: 13, fontWeight: 900, color: C.gold, marginBottom: 10, display: "flex", alignItems: "center", gap: 8, fontFamily: "'Cairo',sans-serif" }}>
-                <span style={{ fontSize: 16 }}>📝</span>
-                <span>وصف المهمة</span>
-              </div>
-              <div style={{ fontSize: 14, color: C.text, lineHeight: 1.85, whiteSpace: "pre-wrap", fontWeight: 500 }}>{r.description}</div>
-            </div>
-          )}
-
-          {r.deliveryMethods && r.deliveryMethods.length > 0 && (
+          {/* v7.03 — التفاصيل الموسّعة (مخفية افتراضياً) */}
+          {showDetails && <>
+            {/* Meta */}
             <div style={{ background: C.card, borderRadius: 12, padding: 14, border: "1px solid " + C.cardBorder, marginBottom: 12 }}>
-              <div style={{ fontSize: 11, fontWeight: 800, color: C.sub, marginBottom: 8 }}>📦 طرق التسليم</div>
-              {r.deliveryMethods.map(function(dm, idx){ return <div key={idx} style={{ padding: "8px 10px", borderRadius: 8, background: C.bg, marginBottom: 6, fontSize: 12 }}><div style={{ fontWeight: 700, color: C.text, marginBottom: 2 }}>{dm.label || dm.type}</div>{dm.value && <div style={{ fontSize: 11, color: C.sub, wordBreak: "break-all" }}>{dm.value}</div>}</div>; })}
+              {[
+                { label: "من", value: requesterName + (function(){
+                  var myRow = (r.assignees || []).find(function(a){ return String(a.id) === String(myId); });
+                  if (!myRow || !myRow.senderRole || myRow.senderRole === "other") return "";
+                  return myRow.senderRole === "manager1" ? " (مديري الإداري)" : " (مديري الفني)";
+                })(), icon: "👤" },
+                { label: "إلى", value: (r.assignees || []).map(function(a){ return a.name || nameOf(a.id); }).join("، ") || "—", icon: "📬" },
+                r.assignMode ? { label: "نمط التكليف", value: r.assignMode === "coordinator" ? "مسؤول ينسّق" : "كل طرف مستقل", icon: "🎯" } : null,
+                { label: "تاريخ الإنشاء", value: r.createdAt ? new Date(r.createdAt).toLocaleString("ar-SA") : "—", icon: "📅" },
+                r.deadline ? { label: "الموعد النهائي", value: new Date(r.deadline).toLocaleString("ar-SA"), icon: "⏰" } : null,
+                r.deliveredAt ? { label: "تاريخ التسليم", value: new Date(r.deliveredAt).toLocaleString("ar-SA"), icon: "📦" } : null,
+                r.linkedFromSerial ? { label: "محوّلة من", value: "#" + r.linkedFromSerial, icon: "↪️" } : null,
+                rejectedCount > 0 ? { label: "عدد الرفضات", value: String(rejectedCount), icon: "❌" } : null,
+                returnCount > 0 ? { label: "عدد الإرجاعات", value: String(returnCount), icon: "📋" } : null,
+                { label: "آخر تحديث", value: tawasulTimeAgo(r.updatedAt || r.createdAt), icon: "🔄" },
+              ].filter(Boolean).map(function(row, idx, arr){
+                return <div key={idx} style={{ display: "flex", justifyContent: "space-between", padding: "8px 0", borderBottom: idx < arr.length - 1 ? "1px solid " + C.cardBorder : "none", fontSize: 12, gap: 8 }}><div style={{ color: C.sub, fontWeight: 600, flexShrink: 0 }}><span style={{ marginLeft: 5 }}>{row.icon}</span>{row.label}</div><div style={{ color: C.text, fontWeight: 700, textAlign: "left", flex: 1, minWidth: 0, wordBreak: "break-word" }}>{row.value}</div></div>;
+              })}
             </div>
-          )}
 
-          {/* Time tracking panel — always visible to give visibility of effort */}
-          <TimeTrackingPanel request={r} user={user} readOnly={readOnly} canEdit={canActAsAssignee || canActAsRequester || isAdmin} onUpdated={onUpdated} />
+            {r.deliveryMethods && r.deliveryMethods.length > 0 && (
+              <div style={{ background: C.card, borderRadius: 12, padding: 14, border: "1px solid " + C.cardBorder, marginBottom: 12 }}>
+                <div style={{ fontSize: 11, fontWeight: 800, color: C.sub, marginBottom: 8 }}>📦 طرق التسليم</div>
+                {r.deliveryMethods.map(function(dm, idx){ return <div key={idx} style={{ padding: "8px 10px", borderRadius: 8, background: C.bg, marginBottom: 6, fontSize: 12 }}><div style={{ fontWeight: 700, color: C.text, marginBottom: 2 }}>{dm.label || dm.type}</div>{dm.value && <div style={{ fontSize: 11, color: C.sub, wordBreak: "break-all" }}>{dm.value}</div>}</div>; })}
+              </div>
+            )}
 
-          {/* Attachments panel — upload/list/delete */}
-          <AttachmentsPanel request={r} user={user} readOnly={readOnly} canEdit={canActAsAssignee || canActAsRequester || isAdmin} onUpdated={onUpdated} />
+            {/* Time tracking panel */}
+            <TimeTrackingPanel request={r} user={user} readOnly={readOnly} canEdit={canActAsAssignee || canActAsRequester || isAdmin} onUpdated={onUpdated} />
 
-          {/* Chat panel — in-task conversation with mentions, replies, reactions (v6.30) */}
+            {/* Attachments panel */}
+            <AttachmentsPanel request={r} user={user} readOnly={readOnly} canEdit={canActAsAssignee || canActAsRequester || isAdmin} onUpdated={onUpdated} />
+          </>}
+
+          {/* v7.03 — Chat panel في الأخير (يظهر دائماً) */}
           <ChatPanel request={r} user={user} allEmps={allEmps} readOnly={readOnly} onUpdated={onUpdated} nameOf={nameOf} />
 
           {evals.length > 0 && (

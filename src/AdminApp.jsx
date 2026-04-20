@@ -4,7 +4,7 @@ import { generateAttendanceReport, generateEmployeeReport, generateMonthlySummar
 import { exportFormalWarning, exportInvestigationRecord, exportAffidavit, exportEmploymentLetter, exportSalaryLetter, exportLeaveLetter } from "./formalPdfs";
 
 const APP = "بصمة HMA";
-const VER = "7.02";
+const VER = "7.03";
 const CO = "هاني محمد عسيري للإستشارات الهندسية";
 const B = { blue: "#2B5EA7", yellow: "#FDD800", red: "#E2192C", black: "#1A1A1A", blueDk: "#1E4478", blueLt: "#EDF3FB", gold: "#D4A017" };
 
@@ -5527,6 +5527,8 @@ function TawasulAdminTaskDetail({ task, t, B, statusMeta, onDelete, onClose }) {
   var resendCount = r.resendCount || 0;
   var log = r.log || [];
   var evals = r.evaluations || [];
+  // v7.03 — collapsible details
+  var [showDetails, setShowDetails] = useState(false);
 
   function fmtDate(iso) { if (!iso) return "—"; try { return new Date(iso).toLocaleString("ar-SA"); } catch(e) { return iso; } }
 
@@ -5555,34 +5557,7 @@ function TawasulAdminTaskDetail({ task, t, B, statusMeta, onDelete, onClose }) {
 
         <div style={{ padding: "18px 20px" }}>
 
-          {/* Meta grid */}
-          <div style={{ background: t.card, borderRadius: 12, padding: 14, border: "1px solid " + t.sep, marginBottom: 14 }}>
-            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(200px, 1fr))", gap: 10 }}>
-              {[
-                { label: "من", value: r.requesterName || "—", icon: "👤" },
-                { label: "إلى", value: (r.assignees || []).map(function(a){ return a.name; }).join("، ") || "—", icon: "📬" },
-                { label: "التصنيف", value: r.category || "—", icon: "🏷" },
-                { label: "القسم", value: r.department || "—", icon: "🏢" },
-                { label: "المشروع", value: r.projectName || "—", icon: "🏗" },
-                { label: "تاريخ الإنشاء", value: fmtDate(r.createdAt), icon: "📅" },
-                r.deadline ? { label: "الموعد النهائي", value: fmtDate(r.deadline), icon: "⏰" } : null,
-                r.deliveredAt ? { label: "تاريخ التسليم", value: fmtDate(r.deliveredAt), icon: "📦" } : null,
-                r.linkedFromSerial ? { label: "محوّلة من", value: "#" + r.linkedFromSerial, icon: "↪️" } : null,
-                rejectedCount > 0 ? { label: "عدد الرفضات", value: String(rejectedCount), icon: "❌" } : null,
-                returnCount > 0 ? { label: "عدد الإرجاعات", value: String(returnCount), icon: "📋" } : null,
-                resendCount > 0 ? { label: "عدد إعادات الإرسال", value: String(resendCount), icon: "🔄" } : null,
-              ].filter(Boolean).map(function(row, idx){
-                return (
-                  <div key={idx} style={{ fontSize: 12, display: "flex", justifyContent: "space-between", gap: 6, padding: 6, borderRadius: 6, background: t.bg }}>
-                    <span style={{ color: t.tx2, fontWeight: 600 }}><span style={{ marginLeft: 4 }}>{row.icon}</span>{row.label}</span>
-                    <span style={{ color: t.tx, fontWeight: 700, textAlign: "left", wordBreak: "break-word" }}>{row.value}</span>
-                  </div>
-                );
-              })}
-            </div>
-          </div>
-
-          {/* Description — distinguished by gold side bar + prominent header (plain background) */}
+          {/* v7.03 — DESCRIPTION first (الأهم) */}
           {r.description && (
             <div style={{ position: "relative", background: t.card, borderRadius: 12, padding: "16px 16px 16px 22px", border: "1px solid " + t.sep, marginBottom: 14, overflow: "hidden" }}>
               <div style={{ position: "absolute", top: 0, bottom: 0, right: 0, width: 6, background: "linear-gradient(180deg, " + B.gold + ", " + B.gold + "aa)" }} />
@@ -5594,28 +5569,80 @@ function TawasulAdminTaskDetail({ task, t, B, statusMeta, onDelete, onClose }) {
             </div>
           )}
 
-          {/* Delivery methods */}
-          {r.deliveryMethods && r.deliveryMethods.length > 0 && (
-            <div style={{ background: t.card, borderRadius: 12, padding: 14, border: "1px solid " + t.sep, marginBottom: 14 }}>
-              <div style={{ fontSize: 11, fontWeight: 800, color: t.tx2, marginBottom: 8 }}>📦 طرق التسليم</div>
-              {r.deliveryMethods.map(function(dm, idx){
-                return (
-                  <div key={idx} style={{ padding: "8px 10px", borderRadius: 8, background: t.bg, marginBottom: 6, fontSize: 12 }}>
-                    <div style={{ fontWeight: 700, color: t.tx, marginBottom: 2 }}>{dm.label || dm.type}</div>
-                    {dm.value && <div style={{ fontSize: 11, color: t.tx2, wordBreak: "break-all" }}>{dm.value}</div>}
-                  </div>
-                );
-              })}
-            </div>
-          )}
-
-          {/* Rejection/Return reason */}
+          {/* v7.03 — Rejection/Return reason visible (مهم يظهر مباشرة) */}
           {(r.rejectionReason || r.returnReason) && (
             <div style={{ background: "rgba(239,68,68,0.06)", borderRadius: 12, padding: 14, border: "1px solid rgba(239,68,68,0.3)", marginBottom: 14 }}>
               <div style={{ fontSize: 11, fontWeight: 800, color: "#ef4444", marginBottom: 6 }}>{r.rejectionReason ? "❌ سبب الرفض" : "📋 سبب الإرجاع"}</div>
               <div style={{ fontSize: 12, color: t.tx, lineHeight: 1.6 }}>{r.rejectionReason || r.returnReason}</div>
             </div>
           )}
+
+          {/* v7.03 — TOGGLE */}
+          <button onClick={function(){ setShowDetails(function(s){ return !s; }); }} style={{
+            width: "100%",
+            padding: "12px 16px",
+            borderRadius: 12,
+            background: showDetails ? t.bg : t.card,
+            color: t.tx,
+            border: "1px solid " + t.sep,
+            fontSize: 13,
+            fontWeight: 800,
+            cursor: "pointer",
+            fontFamily: "inherit",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            gap: 8,
+            marginBottom: 14,
+          }}>
+            <span>{showDetails ? "▲" : "▼"}</span>
+            <span>{showDetails ? "إخفاء التفاصيل" : "عرض التفاصيل الكاملة"}</span>
+          </button>
+
+          {/* v7.03 — التفاصيل الموسّعة */}
+          {showDetails && <>
+
+            {/* Meta grid */}
+            <div style={{ background: t.card, borderRadius: 12, padding: 14, border: "1px solid " + t.sep, marginBottom: 14 }}>
+              <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(200px, 1fr))", gap: 10 }}>
+                {[
+                  { label: "من", value: r.requesterName || "—", icon: "👤" },
+                  { label: "إلى", value: (r.assignees || []).map(function(a){ return a.name; }).join("، ") || "—", icon: "📬" },
+                  { label: "التصنيف", value: r.category || "—", icon: "🏷" },
+                  { label: "القسم", value: r.department || "—", icon: "🏢" },
+                  { label: "المشروع", value: r.projectName || "—", icon: "🏗" },
+                  { label: "تاريخ الإنشاء", value: fmtDate(r.createdAt), icon: "📅" },
+                  r.deadline ? { label: "الموعد النهائي", value: fmtDate(r.deadline), icon: "⏰" } : null,
+                  r.deliveredAt ? { label: "تاريخ التسليم", value: fmtDate(r.deliveredAt), icon: "📦" } : null,
+                  r.linkedFromSerial ? { label: "محوّلة من", value: "#" + r.linkedFromSerial, icon: "↪️" } : null,
+                  rejectedCount > 0 ? { label: "عدد الرفضات", value: String(rejectedCount), icon: "❌" } : null,
+                  returnCount > 0 ? { label: "عدد الإرجاعات", value: String(returnCount), icon: "📋" } : null,
+                  resendCount > 0 ? { label: "عدد إعادات الإرسال", value: String(resendCount), icon: "🔄" } : null,
+                ].filter(Boolean).map(function(row, idx){
+                  return (
+                    <div key={idx} style={{ fontSize: 12, display: "flex", justifyContent: "space-between", gap: 6, padding: 6, borderRadius: 6, background: t.bg }}>
+                      <span style={{ color: t.tx2, fontWeight: 600 }}><span style={{ marginLeft: 4 }}>{row.icon}</span>{row.label}</span>
+                      <span style={{ color: t.tx, fontWeight: 700, textAlign: "left", wordBreak: "break-word" }}>{row.value}</span>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+
+            {/* Delivery methods */}
+            {r.deliveryMethods && r.deliveryMethods.length > 0 && (
+              <div style={{ background: t.card, borderRadius: 12, padding: 14, border: "1px solid " + t.sep, marginBottom: 14 }}>
+                <div style={{ fontSize: 11, fontWeight: 800, color: t.tx2, marginBottom: 8 }}>📦 طرق التسليم</div>
+                {r.deliveryMethods.map(function(dm, idx){
+                  return (
+                    <div key={idx} style={{ padding: "8px 10px", borderRadius: 8, background: t.bg, marginBottom: 6, fontSize: 12 }}>
+                      <div style={{ fontWeight: 700, color: t.tx, marginBottom: 2 }}>{dm.label || dm.type}</div>
+                      {dm.value && <div style={{ fontSize: 11, color: t.tx2, wordBreak: "break-all" }}>{dm.value}</div>}
+                    </div>
+                  );
+                })}
+              </div>
+            )}
 
           {/* Evaluations */}
           {evals.length > 0 && (
@@ -5652,6 +5679,8 @@ function TawasulAdminTaskDetail({ task, t, B, statusMeta, onDelete, onClose }) {
               );
             })}
           </div>
+
+          </>}
 
           {/* Bottom action bar */}
           <div style={{ display: "flex", gap: 10, paddingTop: 6 }}>
