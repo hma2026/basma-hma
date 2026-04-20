@@ -4,7 +4,7 @@ import { generateAttendanceReport, generateEmployeeReport, generateMonthlySummar
 import { exportFormalWarning, exportInvestigationRecord, exportAffidavit, exportEmploymentLetter, exportSalaryLetter, exportLeaveLetter } from "./formalPdfs";
 
 const APP = "بصمة HMA";
-const VER = "6.92";
+const VER = "6.93";
 const CO = "هاني محمد عسيري للإستشارات الهندسية";
 const B = { blue: "#2B5EA7", yellow: "#FDD800", red: "#E2192C", black: "#1A1A1A", blueDk: "#1E4478", blueLt: "#EDF3FB", gold: "#D4A017" };
 
@@ -518,24 +518,16 @@ export default function AdminApp() {
       items: [
         { id: "employees", icon: "👥", label: "الموظفين" },
         { id: "org_hierarchy", icon: "🏢", label: "الهيكل التنظيمي" },
-        { id: "leaves", icon: "📋", label: "الإجازات", badge: pending },
-        { id: "leave_requests_v2", icon: "🏖️", label: "طلبات الإجازات + تسليم" },
+        { id: "leaves_hub", icon: "🏖️", label: "الإجازات", badge: pending },
         { id: "payroll", icon: "💰", label: "الرواتب 🔒" },
-        { id: "leave_balances", icon: "💰", label: "أرصدة الإجازات" },
         { id: "letters", icon: "📄", label: "الإفادات" },
         { id: "branches", icon: "🏢", label: "الفروع" },
         { id: "att_insights", icon: "📈", label: "ذكاء الحضور" },
-        { id: "system_settings", icon: "⚙️", label: "إعدادات النظام" },
         { id: "surveys", icon: "📊", label: "الاستطلاعات" },
-        { id: "backup", icon: "🛡", label: "النسخ الاحتياطي" },
         { id: "hr_tickets", icon: "📨", label: "رسائل الموظفين" },
         { id: "evaluations_hr", icon: "⭐", label: "التقييمات" },
         { id: "admin_requests", icon: "📝", label: "الطلبات" },
-        { id: "complaints", icon: "📣", label: "الشكاوى", badge: badgeCounts.complaints },
-        { id: "investigations", icon: "🔍", label: "التحقيقات", badge: badgeCounts.investigations },
-        { id: "violations_v2", icon: "⚖️", label: "المخالفات الرسمية", badge: badgeCounts.violations },
-        { id: "appeals", icon: "📢", label: "التظلمات", badge: badgeCounts.appeals },
-        { id: "laiha", icon: "📜", label: "لائحة العمل" },
+        { id: "discipline_hub", icon: "⚖️", label: "النظام التأديبي", badge: (badgeCounts.complaints || 0) + (badgeCounts.investigations || 0) + (badgeCounts.violations || 0) + (badgeCounts.appeals || 0) || null },
         { id: "termination", icon: "🚪", label: "إنهاء الخدمات" },
       ],
     },
@@ -563,21 +555,9 @@ export default function AdminApp() {
     },
     {
       id: "config",
-      label: "إعدادات النظام",
+      label: "الإعدادات والتكامل",
       items: [
-        { id: "settings", icon: "⚙️", label: "الإعدادات العامة" },
-        { id: "work_types", icon: "⏰", label: "أنواع الدوام" },
-        { id: "benefits", icon: "🏅", label: "الامتيازات" },
-        { id: "storage", icon: "💾", label: "التخزين" },
-        { id: "system_check", icon: "🔍", label: "فحص النظام" },
-        { id: "test_panel", icon: "🧪", label: "اختبار النظام" },
-        { id: "admin_profile", icon: "🔐", label: "حساب المدير" },
-      ],
-    },
-    {
-      id: "integration",
-      label: "التكامل والمزامنة",
-      items: [
+        { id: "settings_hub", icon: "⚙️", label: "الإعدادات" },
         { id: "kadwar_sync", icon: "🔗", label: "كوادر — التكامل" },
       ],
     },
@@ -1354,6 +1334,15 @@ export default function AdminApp() {
 
       {/* ═══ APPEALS — التظلمات ═══ */}
       {tab === "appeals" && <AppealsPanel t={t} B={B} emps={emps} />}
+
+      {/* ═══ v6.93 — DISCIPLINE HUB (موحّد: لائحة + شكاوى + تحقيقات + مخالفات + تظلمات) ═══ */}
+      {tab === "discipline_hub" && <DisciplineHub t={t} B={B} emps={emps} badgeCounts={badgeCounts} />}
+
+      {/* ═══ v6.93 — LEAVES HUB (موحّد: طلبات+تسليم + أرصدة + سجل قديم) ═══ */}
+      {tab === "leaves_hub" && <LeavesHub t={t} B={B} emps={safeEmps} leaves={leaves} role={role} approve={approve} reject={reject} />}
+
+      {/* ═══ v6.93 — SETTINGS HUB (موحّد: 7 تابات فرعية) ═══ */}
+      {tab === "settings_hub" && <SettingsHub t={t} B={B} emps={safeEmps} onLogout={function(){ localStorage.removeItem("basma_admin_email"); localStorage.removeItem("basma_last_mode"); setLoggedIn(false); }} onOpenOldSettings={function(k){ setTab("settings"); }} />}
 
       {/* ═══ SETTINGS ═══ */}
       {tab === "settings" && <>
@@ -12580,5 +12569,151 @@ function FinesPreviewModal({ t, B, actorId, onClose }) {
         </div>
       </div>}
     </div>
+  </div>;
+}
+
+/* ═══════════════════════════════════════════════════════════════════
+ * v6.93 — Hubs المدمجة — تبويبات فرعية بدلاً من تبويبات رئيسية متكررة
+ * مكوّن SubTabBar موحّد ثم 3 hubs: Leaves + Discipline + Settings
+ * ═══════════════════════════════════════════════════════════════════ */
+
+function SubTabBar({ tabs, active, onChange, t, B, badges }) {
+  badges = badges || {};
+  return <div style={{ display: "flex", gap: 6, marginBottom: 18, flexWrap: "wrap", padding: 4, background: t.bg, borderRadius: 12, border: "1px solid " + t.sep }}>
+    {tabs.map(function(tb){
+      var a = active === tb.id;
+      var badge = badges[tb.id];
+      return <button key={tb.id} onClick={function(){ onChange(tb.id); }} style={{
+        padding: "8px 14px", borderRadius: 8,
+        background: a ? B.blue : "transparent",
+        color: a ? "#fff" : t.tx,
+        border: "none", fontSize: 12, fontWeight: 700, cursor: "pointer",
+        display: "flex", alignItems: "center", gap: 6,
+        fontFamily: "inherit"
+      }}>
+        <span style={{ fontSize: 14 }}>{tb.icon}</span>
+        <span>{tb.label}</span>
+        {badge ? <span style={{ padding: "1px 7px", borderRadius: 10, background: a ? "rgba(255,255,255,0.25)" : B.red, color: "#fff", fontSize: 10, fontWeight: 800 }}>{badge}</span> : null}
+      </button>;
+    })}
+  </div>;
+}
+
+/* ────── LeavesHub — الإجازات (3 تابات) ────── */
+function LeavesHub({ t, B, emps, leaves, role, approve, reject }) {
+  var [sub, setSub] = useState("requests");
+  var pending = (leaves || []).filter(function(l){ return l.status === "معلّق"; }).length;
+  return <div>
+    <SubTabBar t={t} B={B} active={sub} onChange={setSub}
+      badges={{ requests: pending }}
+      tabs={[
+        { id: "requests", icon: "🏖️", label: "الطلبات + التسليم" },
+        { id: "balances", icon: "💰", label: "الأرصدة" },
+        { id: "legacy",   icon: "📋", label: "سجل قديم" },
+      ]} />
+    {sub === "requests" && <LeaveRequestsHRPanel t={t} B={B} emps={emps} />}
+    {sub === "balances" && <LeaveBalancesPanel t={t} B={B} emps={emps} />}
+    {sub === "legacy" && <div>
+      {(leaves || []).length === 0 && <div style={{ textAlign: "center", padding: 40, color: t.txM, background: t.card, borderRadius: 12 }}>لا توجد طلبات في السجل القديم. الطلبات الجديدة تدار من تبويب "الطلبات + التسليم".</div>}
+      {(leaves || []).map(function(l){
+        var sc = l.status === "معلّق" ? t.warn : l.status === "معتمد" ? t.ok : t.bad;
+        return <div key={l.id} style={{ background: t.card, borderRadius: 14, padding: "16px 18px", border: "1px solid " + t.sep, marginBottom: 10, display: "flex", alignItems: "center", gap: 14 }}>
+          <div style={{ width: 44, height: 44, borderRadius: 12, background: sc + "12", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 20 }}>{l.status === "معلّق" ? "⏳" : l.status === "معتمد" ? "✅" : "❌"}</div>
+          <div style={{ flex: 1 }}>
+            <div style={{ fontSize: 14, fontWeight: 700 }}>{l.emp}</div>
+            <div style={{ fontSize: 11, color: t.tx2, marginTop: 2 }}>{l.type} · {l.days} أيام · {l.from} → {l.to}</div>
+            {l.reason && <div style={{ fontSize: 10, color: t.txM, marginTop: 2 }}>{l.reason}</div>}
+          </div>
+          <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", gap: 6 }}>
+            <span style={{ padding: "3px 10px", borderRadius: 6, fontSize: 10, fontWeight: 700, background: sc + "15", color: sc }}>{l.status}</span>
+            {l.status === "معلّق" && role === "manager" && <div style={{ display: "flex", gap: 4 }}>
+              <button onClick={function(){approve(l.id);}} style={{ padding: "5px 10px", borderRadius: 6, background: t.ok, color: "#fff", fontSize: 10, fontWeight: 700, border: "none", cursor: "pointer" }}>اعتماد</button>
+              <button onClick={function(){reject(l.id);}} style={{ padding: "5px 10px", borderRadius: 6, background: t.bad, color: "#fff", fontSize: 10, fontWeight: 700, border: "none", cursor: "pointer" }}>رفض</button>
+            </div>}
+          </div>
+        </div>;
+      })}
+    </div>}
+  </div>;
+}
+
+/* ────── DisciplineHub — النظام التأديبي (5 تابات) ────── */
+function DisciplineHub({ t, B, emps, badgeCounts }) {
+  var [sub, setSub] = useState("laiha");
+  badgeCounts = badgeCounts || {};
+  return <div>
+    <SubTabBar t={t} B={B} active={sub} onChange={setSub}
+      badges={{
+        complaints: badgeCounts.complaints,
+        investigations: badgeCounts.investigations,
+        violations: badgeCounts.violations,
+        appeals: badgeCounts.appeals,
+      }}
+      tabs={[
+        { id: "laiha",          icon: "📜", label: "لائحة العمل" },
+        { id: "complaints",     icon: "📣", label: "الشكاوى" },
+        { id: "investigations", icon: "🔍", label: "التحقيقات" },
+        { id: "violations",     icon: "⚖️", label: "المخالفات الرسمية" },
+        { id: "appeals",        icon: "📢", label: "التظلمات" },
+      ]} />
+    {sub === "laiha" && <LaihaPanel t={t} B={B} />}
+    {sub === "complaints" && <ComplaintsPanel t={t} B={B} emps={emps} />}
+    {sub === "investigations" && <InvestigationsPanel t={t} B={B} emps={emps} />}
+    {sub === "violations" && <ViolationsV2Panel t={t} B={B} emps={emps} />}
+    {sub === "appeals" && <AppealsPanel t={t} B={B} emps={emps} />}
+  </div>;
+}
+
+/* ────── SettingsHub — الإعدادات (8 تابات، منظمة في 3 مجموعات) ────── */
+function SettingsHub({ t, B, emps, onLogout, onOpenOldSettings }) {
+  var [sub, setSub] = useState("general");
+  return <div>
+    <SubTabBar t={t} B={B} active={sub} onChange={setSub}
+      tabs={[
+        { id: "general",   icon: "⚙️", label: "الإعدادات العامة" },
+        { id: "work",      icon: "⏰", label: "أنواع الدوام" },
+        { id: "benefits",  icon: "🏅", label: "الامتيازات" },
+        { id: "system",    icon: "🛠️", label: "إعدادات النظام" },
+        { id: "storage",   icon: "💾", label: "التخزين والنسخ" },
+        { id: "check",     icon: "🔍", label: "فحص + اختبار" },
+        { id: "admin",     icon: "🔐", label: "حساب المدير" },
+      ]} />
+    {sub === "general" && <div>
+      <div style={{ padding: 16, background: t.card, borderRadius: 12, border: "1px solid " + t.sep, marginBottom: 16 }}>
+        <div style={{ fontSize: 14, fontWeight: 800, color: t.tx, marginBottom: 6 }}>⚙️ الإعدادات العامة</div>
+        <div style={{ fontSize: 11, color: t.txM, lineHeight: 1.7 }}>
+          الإعدادات الأساسية للنظام: اسم الشركة، الشعار، اللغة، المنطقة الزمنية، إعدادات الإشعارات.
+        </div>
+        <button onClick={function(){ if (onOpenOldSettings) onOpenOldSettings("settings"); }} style={{ marginTop: 10, padding: "8px 14px", background: B.blue, color: "#fff", border: "none", borderRadius: 8, fontSize: 11, fontWeight: 700, cursor: "pointer" }}>فتح الإعدادات القديمة ↗</button>
+      </div>
+    </div>}
+    {sub === "work" && <WorkTypesPanel t={t} B={B} emps={emps} />}
+    {sub === "benefits" && <BenefitsPanel t={t} B={B} />}
+    {sub === "system" && <SystemSettingsPanel t={t} B={B} />}
+    {sub === "storage" && <div>
+      <div style={{ display: "grid", gridTemplateColumns: "1fr", gap: 14 }}>
+        <div style={{ padding: 14, background: t.card, borderRadius: 12, border: "1px solid " + t.sep }}>
+          <div style={{ fontSize: 13, fontWeight: 800, color: t.tx, marginBottom: 10 }}>💾 التخزين</div>
+          <StoragePanel t={t} B={B} />
+        </div>
+        <div style={{ padding: 14, background: t.card, borderRadius: 12, border: "1px solid " + t.sep }}>
+          <div style={{ fontSize: 13, fontWeight: 800, color: t.tx, marginBottom: 10 }}>🛡️ النسخ الاحتياطي</div>
+          <BackupPanel t={t} B={B} />
+        </div>
+      </div>
+    </div>}
+    {sub === "check" && <div>
+      <div style={{ display: "grid", gridTemplateColumns: "1fr", gap: 14 }}>
+        <div style={{ padding: 14, background: t.card, borderRadius: 12, border: "1px solid " + t.sep }}>
+          <div style={{ fontSize: 13, fontWeight: 800, color: t.tx, marginBottom: 10 }}>🔍 فحص النظام</div>
+          <SystemCheckPanel t={t} B={B} />
+        </div>
+        <div style={{ padding: 14, background: t.card, borderRadius: 12, border: "1px solid " + t.sep }}>
+          <div style={{ fontSize: 13, fontWeight: 800, color: t.tx, marginBottom: 10 }}>🧪 اختبار النظام</div>
+          <TestPanel t={t} B={B} emps={emps} />
+        </div>
+      </div>
+    </div>}
+    {sub === "admin" && <AdminProfile t={t} B={B} onLogout={onLogout} />}
   </div>;
 }
