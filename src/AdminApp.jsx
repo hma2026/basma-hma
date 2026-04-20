@@ -4,7 +4,7 @@ import { generateAttendanceReport, generateEmployeeReport, generateMonthlySummar
 import { exportFormalWarning, exportInvestigationRecord, exportAffidavit, exportEmploymentLetter, exportSalaryLetter, exportLeaveLetter } from "./formalPdfs";
 
 const APP = "بصمة HMA";
-const VER = "7.07";
+const VER = "7.08";
 const CO = "هاني محمد عسيري للإستشارات الهندسية";
 const B = { blue: "#2B5EA7", yellow: "#FDD800", red: "#E2192C", black: "#1A1A1A", blueDk: "#1E4478", blueLt: "#EDF3FB", gold: "#D4A017" };
 
@@ -12453,20 +12453,22 @@ function SettingsHub({ t, B, emps, onLogout, onOpenOldSettings }) {
   return <div>
     <SubTabBar t={t} B={B} active={sub} onChange={setSub}
       tabs={[
-        { id: "work",        icon: "⏰", label: "أنواع الدوام" },
-        { id: "benefits",    icon: "🏅", label: "الامتيازات" },
-        { id: "system",      icon: "🛠️", label: "إعدادات النظام" },
-        { id: "attachments", icon: "📎", label: "أنواع المرفقات" },
-        { id: "faces",       icon: "📸", label: "بصمات الوجه" },
-        { id: "cleanup",     icon: "🧹", label: "تنظيف البيانات" },
-        { id: "advanced",    icon: "📨", label: "إعدادات متقدمة" },
-        { id: "storage",     icon: "💾", label: "التخزين والنسخ" },
-        { id: "check",       icon: "🔍", label: "فحص + اختبار" },
-        { id: "admin",       icon: "🔐", label: "حساب المدير" },
+        { id: "work",          icon: "⏰", label: "أنواع الدوام" },
+        { id: "benefits",      icon: "🏅", label: "الامتيازات" },
+        { id: "system",        icon: "🛠️", label: "إعدادات النظام" },
+        { id: "emp_edits",     icon: "✏️", label: "تعديلات موظفين" },
+        { id: "attachments",   icon: "📎", label: "أنواع المرفقات" },
+        { id: "faces",         icon: "📸", label: "بصمات الوجه" },
+        { id: "cleanup",       icon: "🧹", label: "تنظيف البيانات" },
+        { id: "advanced",      icon: "📨", label: "إعدادات متقدمة" },
+        { id: "storage",       icon: "💾", label: "التخزين والنسخ" },
+        { id: "check",         icon: "🔍", label: "فحص + اختبار" },
+        { id: "admin",         icon: "🔐", label: "حساب المدير" },
       ]} />
     {sub === "work" && <WorkTypesPanel t={t} B={B} emps={emps} />}
     {sub === "benefits" && <BenefitsPanel t={t} B={B} />}
     {sub === "system" && <SystemSettingsPanel t={t} B={B} />}
+    {sub === "emp_edits" && <EmployeeEditsPanel t={t} B={B} actorName="HR" />}
     {/* v6.98 — مكوّنات يتيمة من tab "settings" القديم تم نقلها هنا */}
     {sub === "attachments" && <AttachmentTypesManager t={t} B={B} />}
     {sub === "faces" && <FacesManager t={t} B={B} emps={emps} />}
@@ -13020,6 +13022,151 @@ function TerminationsList({ t, B, emps }) {
             </button>
             <button onClick={function(){ cancel(term); }} disabled={isBusy} style={{ flex: 1, padding: "8px 12px", background: "transparent", color: t.bad, border: "1px solid " + t.bad, borderRadius: 8, fontSize: 11, fontWeight: 700, cursor: isBusy ? "wait" : "pointer", fontFamily: "inherit" }}>
               {isBusy && busy[term.id] === "cancel" ? "جارٍ..." : "❌ إلغاء"}
+            </button>
+          </div>
+        )}
+      </div>;
+    })}
+  </div>;
+}
+
+/* ═══════════════════════════════════════════════════════════════════
+ * v7.08 — EmployeeEditsPanel — موافقة/رفض طلبات تعديل بيانات الموظفين
+ * ═══════════════════════════════════════════════════════════════════ */
+function EmployeeEditsPanel({ t, B, actorName }) {
+  var [items, setItems] = useState([]);
+  var [loading, setLoading] = useState(true);
+  var [filter, setFilter] = useState("pending"); // pending | approved | rejected | all
+  var [busy, setBusy] = useState({});
+
+  async function load() {
+    setLoading(true);
+    try {
+      var d = await fetch("/api/data?action=employee-edit-list").then(function(r){ return r.json(); });
+      setItems(Array.isArray(d) ? d : []);
+    } catch(e) {}
+    setLoading(false);
+  }
+  useEffect(function(){ load(); }, []);
+
+  async function approve(req) {
+    if (!confirm("اعتماد تعديل '" + req.fieldLabel + "' لـ " + req.empName + "؟\n\nالقديم: " + (req.oldValue || "—") + "\nالجديد: " + (req.newValue || "—"))) return;
+    setBusy(function(p){ var n = {...p}; n[req.id] = "approve"; return n; });
+    try {
+      var r = await fetch("/api/data?action=employee-edit-approve", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ id: req.id, actor: "hr", actorName: actorName || "HR" })
+      }).then(function(x){ return x.json(); });
+      if (r.ok) { alert("✅ تم الاعتماد والتطبيق"); load(); }
+      else alert("فشل: " + (r.error || "غير معروف"));
+    } catch(e) { alert("فشل: " + e.message); }
+    setBusy(function(p){ var n = {...p}; delete n[req.id]; return n; });
+  }
+
+  async function reject(req) {
+    var reason = prompt("سبب الرفض:", "");
+    if (reason === null) return;
+    setBusy(function(p){ var n = {...p}; n[req.id] = "reject"; return n; });
+    try {
+      var r = await fetch("/api/data?action=employee-edit-reject", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ id: req.id, actor: "hr", actorName: actorName || "HR", rejectReason: reason })
+      }).then(function(x){ return x.json(); });
+      if (r.ok) { alert("✅ تم الرفض وإشعار الموظف"); load(); }
+      else alert("فشل: " + (r.error || "غير معروف"));
+    } catch(e) { alert("فشل: " + e.message); }
+    setBusy(function(p){ var n = {...p}; delete n[req.id]; return n; });
+  }
+
+  var statusMeta = {
+    pending:  { label: "⏳ معلّق",  color: "#D97706", bg: "rgba(217,119,6,0.12)" },
+    approved: { label: "✅ معتمد",  color: "#16A34A", bg: "rgba(22,163,74,0.12)" },
+    rejected: { label: "❌ مرفوض", color: "#DC2626", bg: "rgba(220,38,38,0.12)" },
+  };
+  var filtered = filter === "all" ? items : items.filter(function(x){ return (x.status || "pending") === filter; });
+  var counts = {
+    pending: items.filter(function(x){ return (x.status || "pending") === "pending"; }).length,
+    approved: items.filter(function(x){ return x.status === "approved"; }).length,
+    rejected: items.filter(function(x){ return x.status === "rejected"; }).length,
+  };
+
+  return <div style={{ background: t.card, borderRadius: 14, padding: 18, border: "1px solid " + t.sep }}>
+    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 14 }}>
+      <div>
+        <div style={{ fontSize: 15, fontWeight: 900, color: t.tx }}>✏️ طلبات تعديل بيانات الموظفين</div>
+        <div style={{ fontSize: 11, color: t.txM, marginTop: 4 }}>
+          {counts.pending > 0 && <span style={{ color: "#D97706", fontWeight: 800 }}>⏳ {counts.pending} معلّق • </span>}
+          <span>✅ {counts.approved} معتمد • ❌ {counts.rejected} مرفوض</span>
+        </div>
+      </div>
+      <button onClick={load} style={{ padding: "7px 14px", borderRadius: 8, background: t.bg, border: "1px solid " + t.sep, fontSize: 11, fontWeight: 700, color: t.tx, cursor: "pointer" }}>🔄 تحديث</button>
+    </div>
+
+    <div style={{ display: "flex", gap: 6, marginBottom: 14, flexWrap: "wrap" }}>
+      {[
+        { id: "pending", label: "⏳ معلّقة", count: counts.pending },
+        { id: "approved", label: "✅ معتمدة", count: counts.approved },
+        { id: "rejected", label: "❌ مرفوضة", count: counts.rejected },
+        { id: "all", label: "الكل", count: items.length },
+      ].map(function(f){
+        var active = filter === f.id;
+        return <button key={f.id} onClick={function(){ setFilter(f.id); }} style={{
+          padding: "8px 14px", borderRadius: 8,
+          background: active ? B.blue : "transparent",
+          color: active ? "#fff" : t.tx, border: "1px solid " + (active ? B.blue : t.sep),
+          fontSize: 11, fontWeight: 700, cursor: "pointer", fontFamily: "inherit",
+        }}>{f.label} ({f.count})</button>;
+      })}
+    </div>
+
+    {loading && <div style={{ padding: 24, textAlign: "center", color: t.txM, fontSize: 12 }}>جارٍ التحميل...</div>}
+    {!loading && filtered.length === 0 && <div style={{ padding: 24, textAlign: "center", color: t.txM, fontSize: 12 }}>لا توجد طلبات</div>}
+
+    {!loading && filtered.map(function(req){
+      var st = statusMeta[req.status || "pending"];
+      var isBusy = !!busy[req.id];
+      return <div key={req.id} style={{ padding: 14, background: t.bg, borderRadius: 10, border: "1px solid " + t.sep, marginBottom: 10 }}>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 10, marginBottom: 10 }}>
+          <div style={{ flex: 1 }}>
+            <div style={{ fontSize: 13, fontWeight: 800, color: t.tx, marginBottom: 4 }}>
+              {req.empName} <span style={{ fontSize: 10, color: t.txM, fontWeight: 600 }}>({req.empId})</span>
+            </div>
+            <div style={{ display: "flex", gap: 6, flexWrap: "wrap", fontSize: 10, color: t.tx2 }}>
+              <span style={{ padding: "2px 8px", borderRadius: 6, background: st.bg, color: st.color, fontWeight: 800 }}>{st.label}</span>
+              <span style={{ padding: "2px 8px", borderRadius: 6, background: B.blue + "15", color: B.blue, fontWeight: 700 }}>🏷 {req.fieldLabel}</span>
+              <span>• طلب: {req.requestedByName || req.requestedBy}</span>
+              <span>• {req.requestedAt ? new Date(req.requestedAt).toLocaleString("ar-SA") : ""}</span>
+            </div>
+          </div>
+        </div>
+
+        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8, marginBottom: 10 }}>
+          <div style={{ padding: 10, borderRadius: 8, background: t.card, border: "1px solid " + t.sep }}>
+            <div style={{ fontSize: 9, color: t.tx2, marginBottom: 4, fontWeight: 700 }}>القيمة القديمة</div>
+            <div style={{ fontSize: 12, color: t.tx, wordBreak: "break-word" }}>{String(req.oldValue || "—")}</div>
+          </div>
+          <div style={{ padding: 10, borderRadius: 8, background: req.status === "approved" ? "rgba(22,163,74,0.08)" : t.card, border: "1px solid " + (req.status === "approved" ? "rgba(22,163,74,0.3)" : t.sep) }}>
+            <div style={{ fontSize: 9, color: t.tx2, marginBottom: 4, fontWeight: 700 }}>القيمة الجديدة</div>
+            <div style={{ fontSize: 12, color: t.tx, wordBreak: "break-word", fontWeight: 700 }}>{String(req.newValue || "—")}</div>
+          </div>
+        </div>
+
+        {req.reason && <div style={{ fontSize: 11, color: t.tx2, marginBottom: 8, padding: "6px 10px", borderRadius: 6, background: t.card }}>💬 {req.reason}</div>}
+        {req.rejectReason && <div style={{ fontSize: 11, color: "#DC2626", marginBottom: 8, padding: "6px 10px", borderRadius: 6, background: "rgba(220,38,38,0.06)" }}>❌ سبب الرفض: {req.rejectReason}</div>}
+
+        {req.reviewedAt && (
+          <div style={{ fontSize: 10, color: req.status === "approved" ? "#16A34A" : "#6B7280", marginBottom: 8 }}>
+            {req.status === "approved" ? "✓" : "✗"} {req.reviewedByName || req.reviewedBy} • {new Date(req.reviewedAt).toLocaleString("ar-SA")}
+          </div>
+        )}
+
+        {(req.status || "pending") === "pending" && (
+          <div style={{ display: "flex", gap: 8 }}>
+            <button onClick={function(){ approve(req); }} disabled={isBusy} style={{ flex: 2, padding: "8px 12px", background: "#16A34A", color: "#fff", border: "none", borderRadius: 8, fontSize: 12, fontWeight: 800, cursor: isBusy ? "wait" : "pointer", fontFamily: "inherit" }}>
+              {isBusy && busy[req.id] === "approve" ? "جارٍ..." : "✅ اعتماد وتطبيق"}
+            </button>
+            <button onClick={function(){ reject(req); }} disabled={isBusy} style={{ flex: 1, padding: "8px 12px", background: "transparent", color: "#DC2626", border: "1px solid #DC2626", borderRadius: 8, fontSize: 11, fontWeight: 700, cursor: isBusy ? "wait" : "pointer", fontFamily: "inherit" }}>
+              {isBusy && busy[req.id] === "reject" ? "جارٍ..." : "❌ رفض"}
             </button>
           </div>
         )}

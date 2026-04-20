@@ -11,7 +11,7 @@ import { exportEmploymentLetter, exportLeaveLetter } from "./formalPdfs";
 
 /* ═══════════ APP CONFIG (إعدادات التطبيق) ═══════════ */
 const APP_CONFIG = {
-  VER: "7.07",
+  VER: "7.08",
   NAME: "بصمة HMA",
   FULL_NAME: "نظام الحضور والانصراف الذكي",
   COMPANY: "هاني محمد عسيري للاستشارات الهندسية",
@@ -2978,6 +2978,9 @@ function ProfilePage({ user, branch, workType, onLogout, onTicket, myTickets, da
                 );
               })}
             </Card>
+
+            {/* v7.08 — زر طلب تعديل البيانات */}
+            <EditRequestCard user={user} />
 
             {/* v6.80 — Direct Managers card (Manager 1 + Manager 2) */}
             <ManagersCard user={user} />
@@ -13950,6 +13953,124 @@ function buildS() { return {
   modal: { background: C.card, borderRadius: 24, padding: 24, width: "100%", maxWidth: 380 },
 }; }
 var S = buildS();
+
+/* ═══════════════════════════════════════════════════════════════════
+ * MyProfileCard — v6.83 — ملفي الكامل (واجهة الموظف)
+ * 5 أقسام بتبويبات: شخصية + وظيفية + مالية + عقد ومرفقات + مرافقين
+ * الفلسفة: الموظف يرى ويطلب تعديلات → HR تعتمد عبر HR Tickets
+ * ═══════════════════════════════════════════════════════════════════ */
+
+/* ═══════════════════════════════════════════════════════════════════
+ * v7.08 — EditRequestCard — طلب تعديل بيانات (يتطلب موافقة HR)
+ * ═══════════════════════════════════════════════════════════════════ */
+var EDITABLE_FIELDS = [
+  { key: "phone",            label: "رقم الجوال" },
+  { key: "emergencyPhone",   label: "رقم الطوارئ" },
+  { key: "address",          label: "العنوان" },
+  { key: "email",            label: "البريد الإلكتروني" },
+  { key: "bankName",         label: "اسم البنك" },
+  { key: "iban",             label: "الآيبان" },
+];
+function EditRequestCard({ user }) {
+  var [open, setOpen] = useState(false);
+  var [fieldKey, setFieldKey] = useState(EDITABLE_FIELDS[0].key);
+  var [newValue, setNewValue] = useState("");
+  var [reason, setReason] = useState("");
+  var [saving, setSaving] = useState(false);
+  var [myRequests, setMyRequests] = useState([]);
+  var [loadingReqs, setLoadingReqs] = useState(true);
+
+  async function loadMine() {
+    setLoadingReqs(true);
+    try {
+      var d = await fetch("/api/data?action=employee-edit-list&empId=" + encodeURIComponent(user.id)).then(function(r){ return r.json(); });
+      setMyRequests(Array.isArray(d) ? d : []);
+    } catch(e) {}
+    setLoadingReqs(false);
+  }
+  useEffect(function(){ loadMine(); }, [user && user.id]);
+
+  var currentLbl = (EDITABLE_FIELDS.find(function(f){ return f.key === fieldKey; }) || {}).label || fieldKey;
+  var currentOld = user[fieldKey] || "";
+
+  async function submit() {
+    if (!newValue || !newValue.trim()) { alert("أدخل القيمة الجديدة"); return; }
+    if (String(newValue).trim() === String(currentOld).trim()) { alert("القيمة الجديدة مطابقة للقديمة"); return; }
+    setSaving(true);
+    try {
+      var r = await fetch("/api/data?action=employee-edit-request", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          empId: user.id, empName: user.name || user.username,
+          fieldKey: fieldKey, fieldLabel: currentLbl,
+          oldValue: currentOld, newValue: newValue.trim(),
+          reason: reason.trim(),
+          requestedBy: user.id, requestedByName: user.name || user.username,
+        })
+      }).then(function(x){ return x.json(); });
+      if (r.ok) {
+        alert("✅ أُرسل الطلب لـ HR للاعتماد");
+        setOpen(false); setNewValue(""); setReason("");
+        loadMine();
+      } else alert("فشل: " + (r.error || "غير معروف"));
+    } catch(e) { alert("فشل: " + e.message); }
+    setSaving(false);
+  }
+
+  var pending = myRequests.filter(function(x){ return (x.status || "pending") === "pending"; });
+  var statusMeta = {
+    pending:  { label: "⏳ بانتظار الموافقة", color: "#D97706" },
+    approved: { label: "✅ معتمد",            color: "#16A34A" },
+    rejected: { label: "❌ مرفوض",            color: "#DC2626" },
+  };
+
+  return (
+    <div style={{ background: COLORS.cardBg, borderRadius: 16, padding: SPACING.md, border: "1px solid " + COLORS.cardBorder, marginBottom: SPACING.md }}>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
+        <div style={{ ...TYPOGRAPHY.h3, color: COLORS.textPrimary }}>
+          ✏️ طلبات تعديل البيانات {pending.length > 0 && <span style={{ fontSize: 11, background: "#D97706", color: "#fff", padding: "2px 8px", borderRadius: 10, marginInlineStart: 6 }}>{pending.length}</span>}
+        </div>
+        <button onClick={function(){ setOpen(!open); }} style={{ padding: "6px 12px", background: COLORS.goldLight, color: "#fff", border: "none", borderRadius: 8, fontSize: 11, fontWeight: 800, cursor: "pointer", fontFamily: "inherit" }}>
+          {open ? "إغلاق" : "+ طلب جديد"}
+        </button>
+      </div>
+
+      {open && (
+        <div style={{ padding: 12, background: COLORS.bg, borderRadius: 10, border: "1px solid " + COLORS.cardBorder, marginBottom: 10 }}>
+          <div style={{ fontSize: 11, color: COLORS.textMuted, marginBottom: 6, fontWeight: 700 }}>الحقل المطلوب تعديله</div>
+          <select value={fieldKey} onChange={function(e){ setFieldKey(e.target.value); setNewValue(""); }} style={{ width: "100%", padding: 10, borderRadius: 8, border: "1px solid " + COLORS.cardBorder, fontSize: 13, background: COLORS.cardBg, color: COLORS.textPrimary, marginBottom: 10, fontFamily: "inherit" }}>
+            {EDITABLE_FIELDS.map(function(f){ return <option key={f.key} value={f.key}>{f.label}</option>; })}
+          </select>
+          <div style={{ fontSize: 11, color: COLORS.textMuted, marginBottom: 4 }}>القيمة الحالية:</div>
+          <div style={{ padding: "6px 10px", background: COLORS.cardBg, borderRadius: 6, fontSize: 12, color: COLORS.textPrimary, marginBottom: 10, border: "1px dashed " + COLORS.cardBorder }}>{currentOld || "(غير محدد)"}</div>
+          <div style={{ fontSize: 11, color: COLORS.textMuted, marginBottom: 4, fontWeight: 700 }}>القيمة الجديدة</div>
+          <input value={newValue} onChange={function(e){ setNewValue(e.target.value); }} placeholder="أدخل القيمة الصحيحة" style={{ width: "100%", padding: 10, borderRadius: 8, border: "1px solid " + COLORS.cardBorder, fontSize: 13, background: COLORS.cardBg, color: COLORS.textPrimary, marginBottom: 10, fontFamily: "inherit", boxSizing: "border-box" }} />
+          <div style={{ fontSize: 11, color: COLORS.textMuted, marginBottom: 4 }}>سبب التعديل (اختياري)</div>
+          <textarea value={reason} onChange={function(e){ setReason(e.target.value); }} placeholder="مثال: تغيّر رقم جوالي..." rows={2} style={{ width: "100%", padding: 10, borderRadius: 8, border: "1px solid " + COLORS.cardBorder, fontSize: 12, background: COLORS.cardBg, color: COLORS.textPrimary, marginBottom: 10, fontFamily: "inherit", boxSizing: "border-box", resize: "none" }} />
+          <button onClick={submit} disabled={saving} style={{ width: "100%", padding: 12, background: COLORS.goldLight, color: "#fff", border: "none", borderRadius: 10, fontSize: 13, fontWeight: 900, cursor: saving ? "wait" : "pointer", fontFamily: "inherit" }}>
+            {saving ? "جارٍ الإرسال..." : "📤 إرسال الطلب لـ HR"}
+          </button>
+        </div>
+      )}
+
+      {loadingReqs && <div style={{ padding: 12, textAlign: "center", color: COLORS.textMuted, fontSize: 11 }}>جارٍ التحميل...</div>}
+      {!loadingReqs && myRequests.length === 0 && !open && <div style={{ padding: 10, textAlign: "center", color: COLORS.textMuted, fontSize: 11 }}>لا توجد طلبات تعديل — اضغط "+ طلب جديد" للبدء</div>}
+      {!loadingReqs && myRequests.slice(0, 5).map(function(req){
+        var st = statusMeta[req.status || "pending"];
+        return <div key={req.id} style={{ padding: "8px 10px", background: COLORS.bg, borderRadius: 8, marginBottom: 6, fontSize: 11, border: "1px solid " + COLORS.cardBorder }}>
+          <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 4 }}>
+            <span style={{ fontWeight: 700, color: COLORS.textPrimary }}>{req.fieldLabel}</span>
+            <span style={{ color: st.color, fontWeight: 800 }}>{st.label}</span>
+          </div>
+          <div style={{ fontSize: 10, color: COLORS.textMuted }}>
+            {req.oldValue || "—"} ← {req.newValue || "—"}
+          </div>
+          {req.rejectReason && <div style={{ fontSize: 10, color: "#DC2626", marginTop: 4 }}>💬 {req.rejectReason}</div>}
+        </div>;
+      })}
+    </div>
+  );
+}
 
 /* ═══════════════════════════════════════════════════════════════════
  * MyProfileCard — v6.83 — ملفي الكامل (واجهة الموظف)

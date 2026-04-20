@@ -4287,6 +4287,153 @@ export default async function handler(req, res) {
         return res.json({ ok: true, termination: ts[i] });
       }
 
+      /* ══════════════════════════════════════════════════════════════════
+       * v7.08 — طلبات تعديل بيانات الموظف (Employee Edit Approval Flow)
+       * ══════════════════════════════════════════════════════════════════
+       * من بصمة 9: "المرفقات والبيانات يحتاجون موافقة HR قبل التحديث"
+       * الموظف يعدّل → pending → HR توافق/ترفض → التعديل يُطبَّق
+       */
+
+      /* قائمة طلبات التعديل (كلها أو لموظف واحد، أو معلّقة فقط) */
+      case 'employee-edit-list': {
+        if (req.method !== 'GET') return res.status(405).json({ error: 'GET required' });
+        const { empId, status } = req.query || {};
+        let list = (await dbGet('employee-edit-requests')) || [];
+        if (empId) list = list.filter(x => String(x.empId) === String(empId));
+        if (status) list = list.filter(x => (x.status || 'pending') === status);
+        list.sort((a, b) => new Date(b.requestedAt || 0) - new Date(a.requestedAt || 0));
+        return res.json(list);
+      }
+
+      /* الموظف أو HR يطلب تعديل حقل معين */
+      case 'employee-edit-request': {
+        if (req.method !== 'POST') return res.status(405).json({ error: 'POST required' });
+        const b = req.body || {};
+        const { empId, fieldKey, fieldLabel, oldValue, newValue, reason, requestedBy, requestedByName } = b;
+        if (!empId || !fieldKey) return res.status(400).json({ error: 'empId + fieldKey مطلوبان' });
+        // تحقق من عدم وجود طلب pending لنفس الحقل
+        const list = (await dbGet('employee-edit-requests')) || [];
+        const existing = list.find(x => String(x.empId) === String(empId) && x.fieldKey === fieldKey && (x.status || 'pending') === 'pending');
+        if (existing) {
+          return res.status(400).json({ error: 'يوجد طلب تعديل معلّق لهذا الحقل (#' + existing.id + ')' });
+        }
+        const emps = (await dbGet('employees')) || [];
+        const emp = emps.find(e => String(e.id) === String(empId));
+        const newReq = {
+          id: 'EER' + Date.now(),
+          empId: empId,
+          empName: (emp && emp.name) || b.empName || '',
+          fieldKey: fieldKey,
+          fieldLabel: fieldLabel || fieldKey,
+          oldValue: oldValue !== undefined ? oldValue : (emp ? emp[fieldKey] : null),
+          newValue: newValue,
+          reason: reason || '',
+          status: 'pending',
+          requestedBy: requestedBy || 'unknown',
+          requestedByName: requestedByName || '',
+          requestedAt: new Date().toISOString(),
+        };
+        list.push(newReq);
+        // حد أقصى 1000
+        if (list.length > 1000) list.splice(0, list.length - 1000);
+        await dbSet('employee-edit-requests', list);
+        // إشعار HR
+        try {
+          const notifs = (await dbGet('notifications')) || [];
+          notifs.push({
+            id: 'NTF' + Date.now(),
+            role: 'hr', // لكل HR
+            type: 'employee_edit_request',
+            title: '✏️ طلب تعديل بيانات جديد',
+            body: newReq.empName + ' يطلب تعديل: ' + newReq.fieldLabel,
+            refId: newReq.id,
+            read: false,
+            createdAt: new Date().toISOString(),
+          });
+          await dbSet('notifications', notifs);
+        } catch(e) {}
+        await auditLog(requestedBy || 'employee', 'edit_request', newReq.id, { empId, fieldKey, newValue });
+        return res.json({ ok: true, request: newReq });
+      }
+
+      /* HR توافق على طلب التعديل → يُطبَّق على سجل الموظف */
+      case 'employee-edit-approve': {
+        if (req.method !== 'POST') return res.status(405).json({ error: 'POST required' });
+        const { id, actor, actorName } = req.body || {};
+        if (!id) return res.status(400).json({ error: 'id مطلوب' });
+        const list = (await dbGet('employee-edit-requests')) || [];
+        const i = list.findIndex(x => x.id === id);
+        if (i < 0) return res.status(404).json({ error: 'الطلب غير موجود' });
+        if (list[i].status !== 'pending') return res.status(400).json({ error: 'الطلب ليس معلّقاً' });
+        // طبّق التعديل على سجل الموظف
+        const emps = (await dbGet('employees')) || [];
+        const ei = emps.findIndex(e => String(e.id) === String(list[i].empId));
+        if (ei < 0) return res.status(404).json({ error: 'الموظف غير موجود' });
+        const prevValue = emps[ei][list[i].fieldKey];
+        emps[ei][list[i].fieldKey] = list[i].newValue;
+        emps[ei].updatedAt = new Date().toISOString();
+        await dbSet('employees', emps);
+        // علّم الطلب
+        list[i].status = 'approved';
+        list[i].reviewedBy = actor || 'hr';
+        list[i].reviewedByName = actorName || '';
+        list[i].reviewedAt = new Date().toISOString();
+        list[i].appliedValue = list[i].newValue;
+        list[i].replacedValue = prevValue; // snapshot فعلي لحظة التطبيق
+        await dbSet('employee-edit-requests', list);
+        // إشعار الموظف
+        try {
+          const notifs = (await dbGet('notifications')) || [];
+          notifs.push({
+            id: 'NTF' + Date.now(),
+            empId: list[i].empId,
+            type: 'employee_edit_approved',
+            title: '✅ تم اعتماد تعديل بياناتك',
+            body: list[i].fieldLabel + ': ' + String(list[i].newValue),
+            refId: list[i].id,
+            read: false,
+            createdAt: new Date().toISOString(),
+          });
+          await dbSet('notifications', notifs);
+        } catch(e) {}
+        await auditLog(actor || 'hr', 'edit_approve', id, { empId: list[i].empId, fieldKey: list[i].fieldKey });
+        return res.json({ ok: true, request: list[i], employee: emps[ei] });
+      }
+
+      /* HR ترفض طلب التعديل */
+      case 'employee-edit-reject': {
+        if (req.method !== 'POST') return res.status(405).json({ error: 'POST required' });
+        const { id, actor, actorName, rejectReason } = req.body || {};
+        if (!id) return res.status(400).json({ error: 'id مطلوب' });
+        const list = (await dbGet('employee-edit-requests')) || [];
+        const i = list.findIndex(x => x.id === id);
+        if (i < 0) return res.status(404).json({ error: 'الطلب غير موجود' });
+        if (list[i].status !== 'pending') return res.status(400).json({ error: 'الطلب ليس معلّقاً' });
+        list[i].status = 'rejected';
+        list[i].reviewedBy = actor || 'hr';
+        list[i].reviewedByName = actorName || '';
+        list[i].reviewedAt = new Date().toISOString();
+        list[i].rejectReason = rejectReason || '';
+        await dbSet('employee-edit-requests', list);
+        // إشعار الموظف
+        try {
+          const notifs = (await dbGet('notifications')) || [];
+          notifs.push({
+            id: 'NTF' + Date.now(),
+            empId: list[i].empId,
+            type: 'employee_edit_rejected',
+            title: '❌ رُفض طلب تعديل بياناتك',
+            body: list[i].fieldLabel + (rejectReason ? ' — ' + rejectReason : ''),
+            refId: list[i].id,
+            read: false,
+            createdAt: new Date().toISOString(),
+          });
+          await dbSet('notifications', notifs);
+        } catch(e) {}
+        await auditLog(actor || 'hr', 'edit_reject', id, { empId: list[i].empId, fieldKey: list[i].fieldKey, reason: rejectReason });
+        return res.json({ ok: true, request: list[i] });
+      }
+
       case 'requests': {
         if (req.method === 'GET') {
           let reqs = await dbGet('admin_requests') || [];
