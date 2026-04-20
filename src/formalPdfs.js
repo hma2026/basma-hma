@@ -20,12 +20,12 @@ const FORMAL_CSS = `
     font-size: 12pt;
   }
   .formal-hdr {
-    display: flex; align-items: center; gap: 14px;
-    padding-bottom: 14px; border-bottom: 3px solid #c9a84c;
+    display: flex; align-items: center; gap: 18px;
+    padding-bottom: 16px; border-bottom: 3px solid #c9a84c;
     margin-bottom: 22px;
   }
-  .formal-logo { width: 80px; height: auto; flex-shrink: 0; }
-  .formal-title-ar { font-size: 15pt; font-weight: 900; color: #1a3a6e; }
+  .formal-logo { width: 110px; height: auto; flex-shrink: 0; }
+  .formal-title-ar { font-size: 16pt; font-weight: 900; color: #1a3a6e; }
   .formal-title-en { font-size: 9pt; color: #666; font-family: 'Segoe UI',sans-serif; direction: ltr; text-align: left; }
   .formal-hdr > div { display: flex; flex-direction: column; gap: 4px; flex: 1; }
 

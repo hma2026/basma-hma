@@ -11,7 +11,7 @@ import { exportEmploymentLetter, exportLeaveLetter } from "./formalPdfs";
 
 /* ═══════════ APP CONFIG (إعدادات التطبيق) ═══════════ */
 const APP_CONFIG = {
-  VER: "6.72",
+  VER: "6.74",
   NAME: "بصمة HMA",
   FULL_NAME: "نظام الحضور والانصراف الذكي",
   COMPANY: "هاني محمد عسيري للاستشارات الهندسية",
@@ -1618,9 +1618,11 @@ function OfflineQueueModal({ onClose }) {
 function SplashScreen() {
   return (
     <div style={{ minHeight: "100vh", background: "linear-gradient(180deg,"+C.hdr1+","+C.hdr3+")", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center" }}>
-      <span style={{ fontSize: 52 }} className="basma-pulse">🕐</span>
-      <div style={{ color: "#fff", fontSize: 22, fontWeight: 900, fontFamily: "'Cairo',sans-serif", marginTop: 16 }}>بصمة HMA</div>
-      <div style={{ color: "rgba(255,255,255,.4)", fontSize: 11, marginTop: 8 }}>جارِ التحميل...</div>
+      <div className="basma-pulse" style={{ width: 120, height: 120, borderRadius: 24, background: "#fff", display: "flex", alignItems: "center", justifyContent: "center", padding: 12, boxShadow: "0 8px 32px rgba(0,0,0,0.4)" }}>
+        <img src="/hma-logo.png" alt="HMA" style={{ width: "100%", height: "100%", objectFit: "contain" }} />
+      </div>
+      <div style={{ color: "#fff", fontSize: 22, fontWeight: 900, fontFamily: "'Cairo',sans-serif", marginTop: 20 }}>بصمة HMA</div>
+      <div style={{ color: "rgba(255,255,255,.45)", fontSize: 11, marginTop: 8 }}>جارِ التحميل...</div>
     </div>
   );
 }
@@ -1631,10 +1633,19 @@ function ConsentScreen({ onAccept }) {
     <div style={{ minHeight: "100vh", background: "linear-gradient(180deg," + COLORS.bg1 + "," + COLORS.bg2 + "," + COLORS.bg3 + ")", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", direction: "rtl", fontFamily: TYPOGRAPHY.fontTajawal, padding: SPACING.lg }}>
 
       <div style={{ maxWidth: 420, width: "100%" }}>
-        {/* Icon */}
+        {/* v6.74 — HMA Logo */}
+        <div style={{ textAlign: "center", marginBottom: SPACING.lg }}>
+          <div style={{ width: 100, height: 100, borderRadius: 20, background: "#fff", margin: "0 auto", display: "flex", alignItems: "center", justifyContent: "center", padding: 10, boxShadow: "0 6px 20px rgba(0,0,0,0.2)" }}>
+            <img src="/hma-logo.png" alt="HMA" style={{ width: "100%", height: "100%", objectFit: "contain" }} />
+          </div>
+          <div style={{ fontSize: 16, fontWeight: 900, color: COLORS.textPrimary, marginTop: 12, fontFamily: TYPOGRAPHY.fontCairo }}>بصمة HMA</div>
+          <div style={{ fontSize: 10, color: COLORS.textMuted, marginTop: 3 }}>هاني محمد عسيري للاستشارات الهندسية</div>
+        </div>
+
+        {/* Alert icon */}
         <div style={{ textAlign: "center", marginBottom: SPACING.md }}>
-          <div style={{ width: 56, height: 56, borderRadius: RADIUS.xl, background: COLORS.metallic, border: "1px solid " + COLORS.goldLight, margin: "0 auto", display: "flex", alignItems: "center", justifyContent: "center", boxShadow: SHADOWS.gold }}>
-            <Icons.alert size={28} color={COLORS.goldLight} />
+          <div style={{ width: 48, height: 48, borderRadius: RADIUS.xl, background: COLORS.metallic, border: "1px solid " + COLORS.goldLight, margin: "0 auto", display: "flex", alignItems: "center", justifyContent: "center", boxShadow: SHADOWS.gold }}>
+            <Icons.alert size={24} color={COLORS.goldLight} />
           </div>
         </div>
 
@@ -1689,6 +1700,9 @@ function ConsentScreen({ onAccept }) {
           <div style={{ ...TYPOGRAPHY.tiny, color: COLORS.goldLight, textAlign: "center", marginTop: SPACING.md, lineHeight: 1.8 }}>
             نحرص على حماية حقوقك وخصوصيتك، وضمان الالتزام التام بالأنظمة المعمول بها.
           </div>
+          <div style={{ fontSize: 9, color: COLORS.textMuted, textAlign: "center", marginTop: 8, lineHeight: 1.6 }}>
+            📜 وفق لائحة تنظيم العمل المعتمدة رقم <strong style={{ color: COLORS.goldLight }}>978004</strong>
+          </div>
         </div>
 
         {/* Accept button */}
@@ -1732,11 +1746,14 @@ function LoginScreen({ onLogin, onBiometric, loading }) {
 
   return (
     <div style={{ minHeight: "100vh", background: "linear-gradient(180deg,"+C.hdr1+" 0%,"+C.hdr2+" 50%,"+C.hdr3+" 100%)", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", padding: 24 }}>
-      <div className="basma-fadein" style={{ width: 90, height: 90, borderRadius: 28, background: "rgba(255,255,255,.12)", display: "flex", alignItems: "center", justifyContent: "center", marginBottom: 20, border: "2px solid rgba(255,255,255,.2)" }}>
-        <span style={{ fontSize: 42 }}>🕐</span>
+      <div className="basma-fadein" style={{ width: 110, height: 110, borderRadius: 24, background: "#fff", display: "flex", alignItems: "center", justifyContent: "center", marginBottom: 18, padding: 10, boxShadow: "0 8px 32px rgba(0,0,0,0.35)" }}>
+        <img src="/hma-logo.png" alt="HMA Engineering" style={{ width: "100%", height: "100%", objectFit: "contain" }} />
       </div>
-      <div className="basma-fadein-d1" style={{ color: "#fff", fontSize: 26, fontWeight: 900, fontFamily: "'Cairo',sans-serif", marginBottom: 4 }}>بصمة HMA</div>
-      <div className="basma-fadein-d1" style={{ color: "rgba(255,255,255,.6)", fontSize: 12, fontWeight: 500, marginBottom: 32 }}>نظام الحضور والانصراف الذكي</div>
+      <div className="basma-fadein-d1" style={{ color: "#fff", fontSize: 24, fontWeight: 900, fontFamily: "'Cairo',sans-serif", marginBottom: 4 }}>بصمة HMA</div>
+      <div className="basma-fadein-d1" style={{ color: "rgba(255,255,255,.65)", fontSize: 11, fontWeight: 500, marginBottom: 26, textAlign: "center", lineHeight: 1.6 }}>
+        نظام الحضور والانصراف الذكي<br/>
+        <span style={{ fontSize: 10, opacity: 0.8 }}>هاني محمد عسيري للاستشارات الهندسية</span>
+      </div>
       <div className="basma-fadein-d2" style={{ width: "100%", maxWidth: 340, background: "rgba(255,255,255,.1)", borderRadius: 24, padding: 24, border: "1px solid rgba(255,255,255,.15)" }}>
 
         {/* v6.61 — Biometric quick login button */}
@@ -2619,6 +2636,7 @@ function ReportPage({ user, allAtt, todayAtt, branch, isOffDay, myLeaves, allEmp
 function ProfilePage({ user, branch, workType, onLogout, onTicket, myTickets, darkMode, toggleDark, kadwarNotifs }) {
   var [tab, setTab] = useState(function(){ return localStorage.getItem("basma_profile_tab") || "info"; });
   var [kadwarFlip, setKadwarFlip] = useState(false);
+  var [showAbout, setShowAbout] = useState(false);
   var kn = kadwarNotifs || { tasks: 0, exams: 0, alerts: 0 };
   useEffect(function(){ localStorage.setItem("basma_profile_tab", tab); }, [tab]);
   useEffect(function() {
@@ -2840,15 +2858,125 @@ function ProfilePage({ user, branch, workType, onLogout, onTicket, myTickets, da
           تسجيل خروج
         </Button>
 
-        {/* Footer */}
+        {/* Footer — with HMA logo (v6.73) + clickable to open About (v6.74) */}
         <Card padding={SPACING.md}>
-          <div style={{ textAlign: "center" }}>
+          <div onClick={function(){ setShowAbout(true); }} style={{ textAlign: "center", cursor: "pointer" }}>
+            <div style={{ width: 60, height: 60, margin: "0 auto 10px", borderRadius: 12, background: "#fff", padding: 6, display: "flex", alignItems: "center", justifyContent: "center", boxShadow: "0 2px 10px rgba(0,0,0,0.2)" }}>
+              <img src="/hma-logo.png" alt="HMA" style={{ width: "100%", height: "100%", objectFit: "contain" }} />
+            </div>
             <div style={{ ...TYPOGRAPHY.h3, color: COLORS.goldLight, fontFamily: TYPOGRAPHY.fontCairo }}>بصمة HMA</div>
             <div style={{ ...TYPOGRAPHY.caption, color: COLORS.textMuted, marginTop: SPACING.xs }}>نظام الحضور والانصراف الذكي</div>
             <div style={{ ...TYPOGRAPHY.caption, color: COLORS.textMuted }}>هاني محمد عسيري للاستشارات الهندسية</div>
             <div style={{ ...TYPOGRAPHY.tiny, color: COLORS.textMuted, marginTop: SPACING.sm }}>{"v" + VER + " · b.hma.engineer"}</div>
+            <div style={{ fontSize: 10, color: COLORS.goldLight, marginTop: 6, fontWeight: 700 }}>ℹ️ عن التطبيق ›</div>
           </div>
         </Card>
+
+        {showAbout && <AboutAppModal onClose={function(){ setShowAbout(false); }} onTicket={onTicket} />}
+      </div>
+    </div>
+  );
+}
+
+/* ═══════════ ABOUT APP MODAL (v6.74) ═══════════ */
+function AboutAppModal({ onClose, onTicket }) {
+  var features = [
+    { icon: "🎯", text: "حضور ذكي بـGPS وبصمة الوجه" },
+    { icon: "🏖️", text: "إجازات واستئذانات تلقائية" },
+    { icon: "💬", text: "نظام تواصل داخلي للمهام" },
+    { icon: "🏆", text: "نقاط وإنجازات تحفيزية" },
+    { icon: "📊", text: "تقارير وإحصائيات شاملة" },
+    { icon: "📄", text: "إفادات رسمية PDF" },
+    { icon: "🔐", text: "دخول سريع بالبصمة البيومترية" },
+    { icon: "📡", text: "وضع Offline متكامل" },
+    { icon: "📊", text: "استطلاعات رأي داخلية" },
+    { icon: "🔧", text: "إدارة الأصول والعهد المتقدمة" },
+  ];
+
+  return (
+    <div onClick={onClose} style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.7)", zIndex: 10000, display: "flex", alignItems: "center", justifyContent: "center", padding: 16 }}>
+      <div onClick={function(e){ e.stopPropagation(); }} style={{ background: "linear-gradient(180deg, " + COLORS.bg1 + ", " + COLORS.bg2 + ")", borderRadius: 18, maxWidth: 440, width: "100%", maxHeight: "92vh", overflowY: "auto", border: "1px solid " + COLORS.metallicBorder }}>
+        {/* Hero */}
+        <div style={{ padding: "28px 20px 20px", textAlign: "center", borderBottom: "1px solid " + COLORS.metallicBorder, position: "relative" }}>
+          <button onClick={onClose} style={{ position: "absolute", top: 12, left: 12, background: "rgba(255,255,255,0.08)", border: "none", width: 32, height: 32, borderRadius: 16, fontSize: 18, color: COLORS.textPrimary, cursor: "pointer" }}>×</button>
+          <div style={{ width: 100, height: 100, borderRadius: 20, background: "#fff", margin: "0 auto 14px", padding: 10, display: "flex", alignItems: "center", justifyContent: "center", boxShadow: "0 6px 20px rgba(0,0,0,0.3)" }}>
+            <img src="/hma-logo.png" alt="HMA" style={{ width: "100%", height: "100%", objectFit: "contain" }} />
+          </div>
+          <div style={{ fontSize: 22, fontWeight: 900, color: COLORS.goldLight, fontFamily: TYPOGRAPHY.fontCairo }}>بصمة HMA</div>
+          <div style={{ fontSize: 12, color: COLORS.textMuted, marginTop: 4 }}>نظام الحضور والانصراف الذكي</div>
+          <div style={{ fontSize: 10, color: COLORS.goldLight, marginTop: 8, padding: "4px 12px", borderRadius: 12, background: "rgba(201,168,76,0.15)", display: "inline-block" }}>
+            الإصدار v{VER}
+          </div>
+        </div>
+
+        <div style={{ padding: 16 }}>
+          {/* About the system */}
+          <div style={{ padding: 14, borderRadius: 12, background: COLORS.metallic, border: "1px solid " + COLORS.metallicBorder, marginBottom: 10 }}>
+            <div style={{ fontSize: 13, fontWeight: 800, color: COLORS.goldLight, marginBottom: 8, display: "flex", alignItems: "center", gap: 6 }}>📌 عن النظام</div>
+            <div style={{ fontSize: 11, color: COLORS.textSecondary, lineHeight: 1.9 }}>
+              نظام متكامل لإدارة الحضور والانصراف في مكتب هاني محمد عسيري للاستشارات الهندسية، يدعم إدارة الموارد البشرية، الإجازات، المهام، والتقارير الرسمية. مصمَّم خصيصاً للبيئة السعودية بدعم كامل للعربية.
+            </div>
+          </div>
+
+          {/* Office info */}
+          <div style={{ padding: 14, borderRadius: 12, background: COLORS.metallic, border: "1px solid " + COLORS.metallicBorder, marginBottom: 10 }}>
+            <div style={{ fontSize: 13, fontWeight: 800, color: COLORS.goldLight, marginBottom: 8, display: "flex", alignItems: "center", gap: 6 }}>🏢 عن المكتب</div>
+            <div style={{ fontSize: 11, color: COLORS.textPrimary, lineHeight: 1.9, fontWeight: 600 }}>
+              هاني محمد عسيري للاستشارات الهندسية<br/>
+              <span style={{ fontSize: 9, color: COLORS.textMuted, direction: "ltr", display: "inline-block" }}>H. M. Asiri Engineering Consultant</span>
+            </div>
+            <div style={{ marginTop: 10, display: "flex", flexDirection: "column", gap: 5, fontSize: 10, color: COLORS.textMuted }}>
+              <div>📍 جدة، المملكة العربية السعودية</div>
+              <div>🌐 <a href="https://hma.engineer" target="_blank" rel="noopener" style={{ color: COLORS.goldLight, textDecoration: "none" }}>hma.engineer</a></div>
+              <div>📧 info@hma.sa</div>
+            </div>
+          </div>
+
+          {/* Features */}
+          <div style={{ padding: 14, borderRadius: 12, background: COLORS.metallic, border: "1px solid " + COLORS.metallicBorder, marginBottom: 10 }}>
+            <div style={{ fontSize: 13, fontWeight: 800, color: COLORS.goldLight, marginBottom: 10, display: "flex", alignItems: "center", gap: 6 }}>✨ أبرز الميزات</div>
+            {features.map(function(f, i){
+              return (
+                <div key={i} style={{ padding: "6px 0", fontSize: 11, color: COLORS.textPrimary, display: "flex", alignItems: "center", gap: 8, borderBottom: i < features.length - 1 ? "1px dashed " + COLORS.metallicBorder : "none" }}>
+                  <span style={{ fontSize: 14, flexShrink: 0 }}>{f.icon}</span>
+                  <span style={{ lineHeight: 1.5 }}>{f.text}</span>
+                </div>
+              );
+            })}
+          </div>
+
+          {/* Legal */}
+          <div style={{ padding: 14, borderRadius: 12, background: "rgba(43,94,167,0.08)", border: "1px solid rgba(43,94,167,0.25)", marginBottom: 10 }}>
+            <div style={{ fontSize: 13, fontWeight: 800, color: "#3a7bd5", marginBottom: 8, display: "flex", alignItems: "center", gap: 6 }}>📜 قانوني</div>
+            <div style={{ fontSize: 10, color: COLORS.textSecondary, lineHeight: 1.9 }}>
+              • يُطبَّق النظام وفق <strong style={{ color: COLORS.goldLight }}>لائحة تنظيم العمل المعتمدة رقم 978004</strong><br/>
+              • يلتزم بقوانين وزارة الموارد البشرية والتنمية الاجتماعية<br/>
+              • حقوق النشر © 2026 هاني محمد عسيري للاستشارات الهندسية<br/>
+              • جميع الحقوق محفوظة
+            </div>
+          </div>
+
+          {/* Support */}
+          <div style={{ padding: 14, borderRadius: 12, background: "rgba(16,185,129,0.08)", border: "1px solid rgba(16,185,129,0.25)", marginBottom: 10 }}>
+            <div style={{ fontSize: 13, fontWeight: 800, color: "#10B981", marginBottom: 8, display: "flex", alignItems: "center", gap: 6 }}>📞 الدعم الفني</div>
+            <div style={{ fontSize: 11, color: COLORS.textSecondary, lineHeight: 1.9, marginBottom: 10 }}>
+              إذا واجهت أي مشكلة، يمكنك تقديم تذكرة دعم وسيتواصل معك الفريق.
+            </div>
+            <button onClick={function(){ onClose(); if (onTicket) onTicket(); }} style={{ width: "100%", padding: "10px 14px", borderRadius: 10, background: "#10B981", color: "#fff", border: "none", fontSize: 12, fontWeight: 800, cursor: "pointer", fontFamily: TYPOGRAPHY.fontTajawal }}>
+              📧 تذكرة دعم جديدة
+            </button>
+          </div>
+
+          {/* Credits */}
+          <div style={{ padding: 12, borderRadius: 10, background: "rgba(255,255,255,0.04)", border: "1px dashed " + COLORS.metallicBorder, textAlign: "center" }}>
+            <div style={{ fontSize: 9, color: COLORS.textMuted, lineHeight: 1.8 }}>
+              <strong style={{ color: COLORS.goldLight, fontSize: 10 }}>الإصدار v{VER}</strong><br/>
+              b.hma.engineer<br/>
+              © 2026 HMA Engineering<br/>
+              <span style={{ opacity: 0.7 }}>تطوير وإشراف: هاني محمد عسيري</span>
+            </div>
+          </div>
+        </div>
       </div>
     </div>
   );

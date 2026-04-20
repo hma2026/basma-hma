@@ -5,18 +5,19 @@
   "start_url": "/",
   "display": "standalone",
   "orientation": "portrait",
-  "background_color": "#f0f2f7",
+  "background_color": "#ffffff",
   "theme_color": "#1a3a6e",
   "lang": "ar",
   "dir": "rtl",
   "categories": ["business", "productivity"],
   "icons": [
-    { "src": "/icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any" },
-    { "src": "/icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "maskable" }
+    { "src": "/hma-logo.png", "sizes": "512x512", "type": "image/png", "purpose": "any" },
+    { "src": "/hma-logo.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
+    { "src": "/hma-logo.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" },
+    { "src": "/icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any" }
   ],
   "shortcuts": [
-    { "name": "تسجيل الحضور", "url": "/", "icons": [{ "src": "/icon.svg", "sizes": "any" }] },
-    { "name": "لوحة الإدارة", "url": "/#admin", "icons": [{ "src": "/icon.svg", "sizes": "any" }] },
-    { "name": "تحديث النظام", "url": "/#update", "icons": [{ "src": "/icon.svg", "sizes": "any" }] }
+    { "name": "تسجيل الحضور", "url": "/", "icons": [{ "src": "/hma-logo.png", "sizes": "192x192" }] },
+    { "name": "لوحة الإدارة", "url": "/#admin", "icons": [{ "src": "/hma-logo.png", "sizes": "192x192" }] }
   ]
 }

@@ -188,11 +188,14 @@ function PairingSplash({ onAuthorized }) {
         <div>
           <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 8 }}>
             <div style={{
-              width: 38, height: 38, borderRadius: 10,
-              background: "linear-gradient(135deg,#1a3a6e,#3a7bd5)",
-              color: "#fff", display: "flex", alignItems: "center", justifyContent: "center",
-              fontSize: 18, fontWeight: 900,
-            }}>B</div>
+              width: 44, height: 44, borderRadius: 10,
+              background: "#fff",
+              padding: 4,
+              boxShadow: "0 2px 8px rgba(0,0,0,0.1)",
+              display: "flex", alignItems: "center", justifyContent: "center",
+            }}>
+              <img src="/hma-logo.png" alt="HMA" style={{ width: "100%", height: "100%", objectFit: "contain" }} />
+            </div>
             <div>
               <div style={{ fontSize: 17, fontWeight: 900, color: "#1a3a6e" }}>بصمة HMA · تواصل</div>
               <div style={{ fontSize: 11, color: "#6E6E73" }}>سطح المكتب (Web)</div>
@@ -406,11 +409,13 @@ function DesktopFrame({ session, onLogout }) {
       }}>
         <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
           <div style={{
-            width: 28, height: 28, borderRadius: 7,
-            background: "linear-gradient(135deg,#3a7bd5,#6ab0ff)",
-            color: "#fff", display: "flex", alignItems: "center", justifyContent: "center",
-            fontSize: 14, fontWeight: 900,
-          }}>B</div>
+            width: 32, height: 32, borderRadius: 7,
+            background: "#fff",
+            padding: 3,
+            display: "flex", alignItems: "center", justifyContent: "center",
+          }}>
+            <img src="/hma-logo.png" alt="HMA" style={{ width: "100%", height: "100%", objectFit: "contain" }} />
+          </div>
           <div>
             <div style={{ fontSize: 13, fontWeight: 800, color: "#fff" }}>بصمة HMA · تواصل</div>
             <div style={{ fontSize: 10, color: "rgba(255,255,255,0.6)" }}>سطح المكتب · {session.userName}</div>
