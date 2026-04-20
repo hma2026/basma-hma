@@ -11,7 +11,7 @@ import { exportEmploymentLetter, exportLeaveLetter } from "./formalPdfs";
 
 /* ═══════════ APP CONFIG (إعدادات التطبيق) ═══════════ */
 const APP_CONFIG = {
-  VER: "6.85",
+  VER: "6.86",
   NAME: "بصمة HMA",
   FULL_NAME: "نظام الحضور والانصراف الذكي",
   COMPANY: "هاني محمد عسيري للاستشارات الهندسية",
@@ -14106,10 +14106,13 @@ function MyProfileCard({ user }) {
           { key: "fullNameEn", label: "الاسم بالإنجليزية", type: "text" },
           { key: "idExpiry", label: "تاريخ انتهاء الهوية", type: "date" },
           { key: "dateOfBirth", label: "تاريخ الميلاد", type: "date" },
+          { key: "placeOfBirth", label: "مكان الميلاد", type: "text" },
           { key: "nationality", label: "الجنسية", type: "text" },
           { key: "gender", label: "الجنس", type: "select", options: ["ذكر","أنثى"] },
           { key: "maritalStatus", label: "الحالة الاجتماعية", type: "select", options: ["أعزب","متزوج","مطلق","أرمل"] },
+          { key: "phone2", label: "جوال احتياطي", type: "text" },
           { key: "city", label: "المدينة", type: "text" },
+          { key: "country", label: "الدولة", type: "text" },
           { key: "address", label: "العنوان", type: "textarea" },
           { key: "emergencyContact", label: "جهة اتصال للطوارئ", type: "text" },
         ]}
@@ -14124,17 +14127,24 @@ function MyProfileCard({ user }) {
         title="بياناتي الوظيفية" section="employment"
         data={profile && profile.employment}
         fields={[
-          { key: "hireDate", label: "تاريخ التعيين", type: "date" },
-          { key: "jobGrade", label: "الدرجة الوظيفية", type: "text" },
-          { key: "workType", label: "نوع العمل", type: "select", options: ["دوام كامل","دوام جزئي","عقد مؤقت","استشاري","متدرب"] },
-          { key: "supervisor", label: "المشرف المباشر", type: "text" },
+          { key: "hireDate", label: "تاريخ التعيين", type: "readonly_date" },
+          { key: "workType", label: "نوع العمل", type: "readonly_text" },
+          { key: "managerName", label: "المدير المباشر", type: "readonly_text" },
+          { key: "managerName2", label: "المدير الثاني (فني)", type: "readonly_text" },
+          { key: "supervisorName", label: "المشرف المباشر", type: "readonly_text" },
+          { key: "reportingTo", label: "يرفع تقاريره إلى", type: "readonly_text" },
+          { key: "jobDescription", label: "الوصف الوظيفي", type: "readonly_text" },
+          { key: "workingDays", label: "أيام العمل (أسبوعياً)", type: "readonly_text" },
+          { key: "workingHours", label: "ساعات العمل (يومياً)", type: "readonly_text" },
+          { key: "annualLeaveDays", label: "أيام الإجازة السنوية", type: "readonly_text" },
         ]}
         user={user}
-        requesting={requestingEdit === "employment"}
-        editData={editData} setEditData={setEditData}
-        startRequest={startRequest} cancelRequest={cancelRequest}
-        submitRequest={submitRequest} sending={sending}
-        note="المسمى والقسم والفرع من كوادر — غير قابلة للتعديل"
+        requesting={false}
+        editData={{}} setEditData={function(){}}
+        startRequest={function(){}} cancelRequest={function(){}}
+        submitRequest={function(){}} sending={false}
+        note="البيانات الوظيفية تُدار من كوادر — للتعديل تواصل مع HR"
+        hideEditBtn={true}
       />}
 
       {activeTab === "compensation" && <EmpReadOrRequestSection
@@ -14166,7 +14176,10 @@ function MyProfileCard({ user }) {
           { key: "startDate", label: "تاريخ بداية العقد", type: "readonly_date" },
           { key: "endDate", label: "تاريخ نهاية العقد", type: "readonly_date" },
           { key: "type", label: "نوع العقد", type: "readonly_text" },
+          { key: "duration", label: "مدة العقد", type: "readonly_text" },
           { key: "renewable", label: "قابل للتجديد", type: "readonly_text" },
+          { key: "probationMonths", label: "فترة التجربة (أشهر)", type: "readonly_text" },
+          { key: "probationDays", label: "فترة التجربة (أيام)", type: "readonly_text" },
         ]}
         user={user}
         requesting={false}

@@ -1055,18 +1055,21 @@ export default async function handler(req, res) {
       // ═══ المزامنة الأولية الشاملة (one-time migration) ═══
       case 'kadwar-full-migration': {
         if (req.method !== 'POST') return res.status(405).json({ error: 'POST required' });
-        const { confirm, dryRun } = req.body || {};
+        const { confirm, dryRun, includeAll } = req.body || {};
         if (!confirm) return res.status(400).json({ error: 'confirm: true required — هذه عملية خطيرة تنقل كل البيانات' });
         const summary = {
           startedAt: new Date().toISOString(),
           dryRun: !!dryRun,
+          includeAll: !!includeAll,
           steps: [],
           totals: { employees: 0, imported: 0, skipped: 0, errors: 0 },
         };
         try {
-          // 1. Fetch full export from kadwar
-          summary.steps.push({ step: 'fetch', at: new Date().toISOString() });
-          const kr = await fetch('https://hma.engineer/api/basma-sync?action=full-export', { method: 'GET' });
+          // 1. Fetch full export from kadwar v37.142 (full-export-v2)
+          // active_only=true → فقط الموظفين النشطين (يستبعد المرشحين في توقيع عقد + الاستقالات)
+          const exportUrl = 'https://hma.engineer/api/basma-sync?action=full-export' + (includeAll ? '' : '&active_only=true');
+          summary.steps.push({ step: 'fetch', url: exportUrl, at: new Date().toISOString() });
+          const kr = await fetch(exportUrl, { method: 'GET' });
           if (!kr.ok) {
             summary.error = 'فشل جلب البيانات من كوادر: ' + kr.status;
             return res.status(502).json(summary);
@@ -1077,7 +1080,8 @@ export default async function handler(req, res) {
             return res.status(502).json(summary);
           }
           summary.totals.employees = kd.employees.length;
-          summary.steps.push({ step: 'fetched', count: kd.employees.length, at: new Date().toISOString() });
+          summary.exportVersion = kd.version || 'v1';
+          summary.steps.push({ step: 'fetched', count: kd.employees.length, version: summary.exportVersion, at: new Date().toISOString() });
           if (dryRun) {
             summary.steps.push({ step: 'dry-run-complete', message: 'لم يتم تعديل أي بيانات (dry run)', sample: kd.employees.slice(0, 2) });
             return res.json(summary);
@@ -1153,47 +1157,76 @@ export default async function handler(req, res) {
               profiles[profileKey] = profiles[profileKey] || {};
               const now = new Date().toISOString();
 
-              // Personal — نقل كل الحقول المطابقة
+              // Personal — v37.142: حقول جديدة مضافة
               if (personal && Object.keys(personal).length > 0) {
                 profiles[profileKey].personal = {
                   ...(profiles[profileKey].personal || {}),
-                  // Normalize field names
                   fullName: personal.full_name,
                   fullNameEn: personal.full_name_en,
                   idNumber: personal.id_number,
                   idExpiry: personal.id_expiry,
                   dateOfBirth: personal.dob,
+                  placeOfBirth: personal.place_of_birth,  // v37.142 — جديد
                   nationality: personal.nationality,
                   gender: personal.gender,
                   maritalStatus: personal.marital_status,
                   email: personal.email,
                   phone: personal.phone,
+                  phone2: personal.phone2,                 // v37.142 — جديد
                   address: personal.address,
                   city: personal.city,
+                  country: personal.country,               // v37.142 — جديد
                   dependents: personal.dependents || [],
+                  dependentsCount: personal.dependents_count,  // v37.142 — جديد
                   _migratedFrom: 'kadwar',
                   _migratedAt: now,
                 };
               }
 
-              // Employment
+              // Employment — v37.142: حقول جديدة مضافة
               if (employment && Object.keys(employment).length > 0) {
                 profiles[profileKey].employment = {
                   ...(profiles[profileKey].employment || {}),
                   jobTitle: employment.job_title,
+                  jobTitleId: employment.job_title_id,
+                  jobDescription: employment.job_description,  // v37.142 — جديد
+                  duties: employment.duties || [],             // v37.142 — جديد
                   department: employment.department,
                   branch: employment.branch,
                   hireDate: employment.hire_date,
                   employeeType: employment.employee_type,
+                  workType: employment.work_type,              // v37.142 — جديد
                   status: employment.status,
                   managerId: employment.manager_id,
+                  managerName: employment.manager_name,        // v37.142 — جديد
+                  managerId2: employment.manager_id_2,         // v37.142 — جديد (Matrix)
+                  managerName2: employment.manager_2_name,     // v37.142 — جديد
                   supervisorId: employment.supervisor_id,
+                  supervisorName: employment.supervisor_name,  // v37.142 — جديد
+                  reportingTo: employment.reporting_to,        // v37.142 — جديد
+                  workingDays: employment.working_days,        // v37.142 — جديد
+                  workingHours: employment.working_hours,      // v37.142 — جديد
+                  annualLeaveDays: employment.annual_leave_days, // v37.142 — جديد
                   _migratedFrom: 'kadwar',
                   _migratedAt: now,
                 };
               }
 
-              // Compensation — مع flattening للبدلات
+              // Job Grade — v37.142 (قسم جديد)
+              if (ke.job_grade && (ke.job_grade.code || ke.job_grade.details)) {
+                profiles[profileKey].jobGrade = {
+                  code: ke.job_grade.code,
+                  basic: ke.job_grade.details && ke.job_grade.details.basic,
+                  housing: ke.job_grade.details && ke.job_grade.details.housing,
+                  transport: ke.job_grade.details && ke.job_grade.details.transport,
+                  total: ke.job_grade.details && ke.job_grade.details.total,
+                  bonusCode: ke.job_grade.bonus_code,
+                  _migratedFrom: 'kadwar',
+                  _migratedAt: now,
+                };
+              }
+
+              // Compensation — v37.142: حقول جديدة مضافة
               const comp = ke.compensation || {};
               if (Object.keys(comp).length > 0) {
                 const allowances = comp.allowances || {};
@@ -1205,6 +1238,9 @@ export default async function handler(req, res) {
                   communicationsAllowance: Number(allowances.communication || 0),
                   otherAllowances: Number(allowances.other || 0),
                   fixedDeductions: Number(comp.deductions || 0),
+                  commissions: Number(comp.commissions || 0),  // v37.142 — جديد
+                  totalSalary: Number(comp.total_salary || 0), // v37.142 — جديد
+                  currency: comp.currency || 'SAR',             // v37.142 — جديد
                   iban: comp.iban || '',
                   bankName: comp.bank || '',
                   _migratedFrom: 'kadwar',
@@ -1212,7 +1248,7 @@ export default async function handler(req, res) {
                 };
               }
 
-              // Contract
+              // Contract — v37.142: probation + renewable + duration
               const contract = ke.contract || {};
               if (Object.keys(contract).length > 0) {
                 profiles[profileKey].contract = {
@@ -1221,6 +1257,10 @@ export default async function handler(req, res) {
                   endDate: contract.end,
                   type: contract.type,
                   specialTerms: contract.special_terms,
+                  probationMonths: contract.probation_months,  // v37.142 — جديد
+                  probationDays: contract.probation_days,      // v37.142 — جديد
+                  renewable: contract.renewable,               // v37.142 — جديد
+                  duration: contract.duration,                 // v37.142 — جديد
                   _migratedFrom: 'kadwar',
                   _migratedAt: now,
                 };
@@ -1322,6 +1362,21 @@ export default async function handler(req, res) {
         } catch (e) {
           summary.error = e.message;
           return res.status(500).json(summary);
+        }
+      }
+
+      // ═══ inspect-employee — proxy لاستدعاء تشخيص كوادر لموظف محدد ═══
+      case 'kadwar-inspect-employee': {
+        if (req.method !== 'GET') return res.status(405).json({ error: 'GET required' });
+        const empId = req.query.empId || req.query.id;
+        if (!empId) return res.status(400).json({ error: 'empId required' });
+        try {
+          const kr = await fetch('https://hma.engineer/api/basma-sync?action=inspect-employee&id=' + encodeURIComponent(empId), { method: 'GET' });
+          if (!kr.ok) return res.status(kr.status).json({ error: 'kadwar fetch failed: ' + kr.status });
+          const kd = await kr.json();
+          return res.json({ ok: true, ...kd });
+        } catch (e) {
+          return res.status(502).json({ error: 'تعذر الاتصال بكوادر: ' + e.message });
         }
       }
 

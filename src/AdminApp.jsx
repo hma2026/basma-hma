@@ -4,7 +4,7 @@ import { generateAttendanceReport, generateEmployeeReport, generateMonthlySummar
 import { exportFormalWarning, exportInvestigationRecord, exportAffidavit, exportEmploymentLetter, exportSalaryLetter, exportLeaveLetter } from "./formalPdfs";
 
 const APP = "بصمة HMA";
-const VER = "6.85";
+const VER = "6.86";
 const CO = "هاني محمد عسيري للإستشارات الهندسية";
 const B = { blue: "#2B5EA7", yellow: "#FDD800", red: "#E2192C", black: "#1A1A1A", blueDk: "#1E4478", blueLt: "#EDF3FB", gold: "#D4A017" };
 
@@ -10718,6 +10718,7 @@ function EmployeeFullProfileCard({ emp, t, B }) {
       {[
         { id: "personal", icon: "👤", label: "شخصية" },
         { id: "employment", icon: "💼", label: "وظيفية" },
+        { id: "jobGrade", icon: "🎖️", label: "الدرجة" },
         { id: "compensation", icon: "💰", label: "مالية" },
         { id: "contract", icon: "📄", label: "عقد ومرفقات" },
         { id: "dependents", icon: "👨‍👩‍👧", label: "مرافقين" },
@@ -10748,10 +10749,14 @@ function EmployeeFullProfileCard({ emp, t, B }) {
           { key: "fullNameEn", label: "الاسم بالإنجليزية", type: "text" },
           { key: "idExpiry", label: "تاريخ انتهاء الهوية", type: "date" },
           { key: "dateOfBirth", label: "تاريخ الميلاد", type: "date" },
+          { key: "placeOfBirth", label: "مكان الميلاد", type: "text" },
           { key: "nationality", label: "الجنسية", type: "text" },
           { key: "gender", label: "الجنس", type: "select", options: ["ذكر","أنثى"] },
           { key: "maritalStatus", label: "الحالة الاجتماعية", type: "select", options: ["أعزب","متزوج","مطلق","أرمل"] },
+          { key: "dependentsCount", label: "عدد المرافقين", type: "number" },
+          { key: "phone2", label: "جوال احتياطي", type: "text" },
           { key: "city", label: "المدينة", type: "text" },
+          { key: "country", label: "الدولة", type: "text" },
           { key: "address", label: "العنوان", type: "textarea" },
           { key: "emergencyContact", label: "جهة اتصال للطوارئ (الاسم + الرقم)", type: "text" },
         ]}
@@ -10772,11 +10777,16 @@ function EmployeeFullProfileCard({ emp, t, B }) {
         data={profile && profile.employment}
         fields={[
           { key: "hireDate", label: "تاريخ التعيين", type: "date" },
-          { key: "jobGrade", label: "الدرجة الوظيفية", type: "text" },
-          { key: "workType", label: "نوع العمل", type: "select", options: ["دوام كامل","دوام جزئي","عقد مؤقت","استشاري","متدرب"] },
-          { key: "supervisor", label: "المشرف المباشر (الاسم)", type: "text" },
-          { key: "jobDescription", label: "الوصف الوظيفي", type: "textarea" },
+          { key: "workType", label: "نوع العمل", type: "select", options: ["full_time","part_time","remote","field","mixed","دوام كامل","دوام جزئي","عقد مؤقت","استشاري","متدرب"] },
+          { key: "employeeType", label: "صنف الموظف", type: "text" },
+          { key: "managerName", label: "المدير المباشر (الأول)", type: "text" },
+          { key: "managerName2", label: "المدير الثاني (فني)", type: "text" },
+          { key: "supervisorName", label: "المشرف المباشر", type: "text" },
           { key: "reportingTo", label: "يرفع تقاريره إلى", type: "text" },
+          { key: "jobDescription", label: "الوصف الوظيفي", type: "textarea" },
+          { key: "workingDays", label: "أيام العمل (أسبوعياً)", type: "number" },
+          { key: "workingHours", label: "ساعات العمل (يومياً)", type: "number" },
+          { key: "annualLeaveDays", label: "أيام الإجازة السنوية", type: "number" },
         ]}
         editing={editingSection === "employment"}
         editData={editData}
@@ -10789,6 +10799,43 @@ function EmployeeFullProfileCard({ emp, t, B }) {
         note="المسمى والقسم والفرع يُعدَّلان من كوادر"
       />}
 
+      {/* === JOB GRADE === */}
+      {activeTab === "jobGrade" && <div>
+        <div style={{ fontSize: 13, fontWeight: 800, color: t.tx, marginBottom: 12 }}>🎖️ الدرجة الوظيفية</div>
+        {profile && profile.jobGrade && profile.jobGrade.code ? <div>
+          <div style={{ padding: 16, background: "linear-gradient(135deg, " + B.blue + "15, " + B.blue + "05)", borderRadius: 12, marginBottom: 14, border: "1px solid " + B.blue + "30" }}>
+            <div style={{ fontSize: 11, color: t.txM, fontWeight: 700, marginBottom: 4 }}>رمز الدرجة</div>
+            <div style={{ fontSize: 28, fontWeight: 800, color: B.blue }}>{profile.jobGrade.code}</div>
+          </div>
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
+            <div style={{ padding: 12, background: t.bg, borderRadius: 8, border: "1px solid " + t.sep }}>
+              <div style={{ fontSize: 10, color: t.txM, fontWeight: 700, marginBottom: 4 }}>الراتب الأساسي (من الدرجة)</div>
+              <div style={{ fontSize: 16, fontWeight: 800, color: t.tx }}>{profile.jobGrade.basic != null ? Number(profile.jobGrade.basic).toLocaleString("en-US") + " ريال" : "—"}</div>
+            </div>
+            <div style={{ padding: 12, background: t.bg, borderRadius: 8, border: "1px solid " + t.sep }}>
+              <div style={{ fontSize: 10, color: t.txM, fontWeight: 700, marginBottom: 4 }}>بدل السكن</div>
+              <div style={{ fontSize: 16, fontWeight: 800, color: t.tx }}>{profile.jobGrade.housing != null ? Number(profile.jobGrade.housing).toLocaleString("en-US") + " ريال" : "—"}</div>
+            </div>
+            <div style={{ padding: 12, background: t.bg, borderRadius: 8, border: "1px solid " + t.sep }}>
+              <div style={{ fontSize: 10, color: t.txM, fontWeight: 700, marginBottom: 4 }}>بدل النقل</div>
+              <div style={{ fontSize: 16, fontWeight: 800, color: t.tx }}>{profile.jobGrade.transport != null ? Number(profile.jobGrade.transport).toLocaleString("en-US") + " ريال" : "—"}</div>
+            </div>
+            <div style={{ padding: 12, background: "#16A34A" + "10", borderRadius: 8, border: "1px solid #16A34A30" }}>
+              <div style={{ fontSize: 10, color: "#16A34A", fontWeight: 700, marginBottom: 4 }}>الإجمالي</div>
+              <div style={{ fontSize: 18, fontWeight: 800, color: "#16A34A" }}>{profile.jobGrade.total != null ? Number(profile.jobGrade.total).toLocaleString("en-US") + " ريال" : "—"}</div>
+            </div>
+          </div>
+          {profile.jobGrade.bonusCode && <div style={{ marginTop: 14, padding: 10, background: t.bg, borderRadius: 8, fontSize: 11, color: t.tx2 }}>
+            رمز المكافأة: <strong>{profile.jobGrade.bonusCode}</strong>
+          </div>}
+          <div style={{ marginTop: 14, padding: 10, background: "rgba(59,130,246,0.08)", borderRadius: 8, fontSize: 11, color: B.blue, fontWeight: 600 }}>
+            ℹ️ الدرجة الوظيفية تُدار من كوادر — للتعديل استخدم منصة كوادر
+          </div>
+        </div> : <div style={{ padding: 30, textAlign: "center", color: t.txM, background: t.bg, borderRadius: 10, fontSize: 12 }}>
+          لم يتم تحديد درجة وظيفية لهذا الموظف في كوادر بعد
+        </div>}
+      </div>}
+
       {/* === COMPENSATION === */}
       {activeTab === "compensation" && <ProfileSection
         title="الراتب والبدلات"
@@ -10799,8 +10846,10 @@ function EmployeeFullProfileCard({ emp, t, B }) {
           { key: "housingAllowance", label: "بدل السكن (ريال)", type: "number" },
           { key: "transportAllowance", label: "بدل النقل (ريال)", type: "number" },
           { key: "communicationsAllowance", label: "بدل الاتصالات (ريال)", type: "number" },
-          { key: "fieldAllowance", label: "بدل طبيعة العمل (ريال)", type: "number" },
           { key: "otherAllowances", label: "بدلات أخرى (ريال)", type: "number" },
+          { key: "commissions", label: "العمولات (ريال)", type: "number" },
+          { key: "totalSalary", label: "الإجمالي المحسوب (ريال)", type: "number" },
+          { key: "currency", label: "العملة", type: "text", placeholder: "SAR" },
           { key: "iban", label: "رقم الآيبان (IBAN)", type: "text", placeholder: "SA..." },
           { key: "bankName", label: "اسم البنك", type: "text" },
           { key: "fixedDeductions", label: "الخصومات الثابتة (ريال)", type: "number" },
@@ -10825,9 +10874,11 @@ function EmployeeFullProfileCard({ emp, t, B }) {
           fields={[
             { key: "startDate", label: "تاريخ بداية العقد", type: "date" },
             { key: "endDate", label: "تاريخ نهاية العقد", type: "date" },
-            { key: "type", label: "نوع العقد", type: "select", options: ["دائم","مؤقت","استشاري","تدريب"] },
-            { key: "renewable", label: "قابل للتجديد", type: "select", options: ["نعم","لا"] },
+            { key: "type", label: "نوع العقد", type: "select", options: ["permanent","temporary","consultant","training","دائم","مؤقت","استشاري","تدريب"] },
+            { key: "duration", label: "مدة العقد", type: "text" },
+            { key: "renewable", label: "قابل للتجديد", type: "select", options: [true, false, "نعم", "لا"] },
             { key: "probationMonths", label: "فترة التجربة (أشهر)", type: "number" },
+            { key: "probationDays", label: "فترة التجربة (أيام)", type: "number" },
             { key: "specialTerms", label: "شروط خاصة", type: "textarea" },
           ]}
           editing={editingSection === "contract"}
