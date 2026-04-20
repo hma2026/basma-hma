@@ -11,7 +11,7 @@ import { exportEmploymentLetter, exportLeaveLetter } from "./formalPdfs";
 
 /* ═══════════ APP CONFIG (إعدادات التطبيق) ═══════════ */
 const APP_CONFIG = {
-  VER: "7.15",
+  VER: "7.16",
   NAME: "بصمة HMA",
   FULL_NAME: "نظام الحضور والانصراف الذكي",
   COMPANY: "هاني محمد عسيري للاستشارات الهندسية",
@@ -2889,6 +2889,424 @@ function ManagersCard({ user }) {
   );
 }
 
+/* ═══════════════════════════════════════════════════════════════════
+ * v7.16 — PROFILE TAB VISUAL REDESIGN
+ * Hero + 3 Stats + 3 Accordions (الأساسية / الوظيفية / المرفقات)
+ * ═══════════════════════════════════════════════════════════════════ */
+
+/* ── Helper: Years of service from joinDate (DD/MM/YYYY or YYYY-MM-DD or DD-MM-YYYY) ── */
+function computeYearsOfService(joinDate) {
+  if (!joinDate) return { years: 0, display: "—" };
+  try {
+    var d = null;
+    var s = String(joinDate).trim();
+    // DD/MM/YYYY or DD-MM-YYYY
+    var m1 = s.match(/^(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{4})$/);
+    if (m1) d = new Date(parseInt(m1[3],10), parseInt(m1[2],10)-1, parseInt(m1[1],10));
+    // YYYY-MM-DD
+    var m2 = s.match(/^(\d{4})-(\d{1,2})-(\d{1,2})$/);
+    if (!d && m2) d = new Date(parseInt(m2[1],10), parseInt(m2[2],10)-1, parseInt(m2[3],10));
+    if (!d || isNaN(d.getTime())) return { years: 0, display: "—" };
+
+    var now = new Date();
+    var diffMs = now - d;
+    if (diffMs < 0) return { years: 0, display: "جديد" };
+    var totalDays = diffMs / (1000 * 60 * 60 * 24);
+    var years = Math.floor(totalDays / 365.25);
+    var remainingDays = totalDays - years * 365.25;
+    var months = Math.floor(remainingDays / 30.44);
+    var display;
+    if (years === 0 && months === 0) display = "جديد";
+    else if (years === 0) display = months + "ش";
+    else if (months === 0) display = years + " " + (years === 1 ? "سنة" : years === 2 ? "سنتان" : years <= 10 ? "سنوات" : "سنة");
+    else display = years + "·" + months + "ش";
+    return { years: years, months: months, display: display };
+  } catch(e) { return { years: 0, display: "—" }; }
+}
+
+/* ── ProfileHeroCard — Avatar with gold ring + name + role ── */
+function ProfileHeroCard({ user }) {
+  var typeMap = { office: "مكتبي", field: "ميداني", mixed: "مختلط", remote: "عن بعد" };
+  var typeLabel = typeMap[user.type] || user.type || "—";
+  var initials = (user.name || "؟").trim().split(/\s+/).slice(0, 2).map(function(w){ return w.charAt(0); }).join("");
+
+  return (
+    <div style={{
+      position: "relative",
+      padding: "20px 16px 16px",
+      borderRadius: RADIUS.xl,
+      background: "linear-gradient(135deg, rgba(201,168,76,0.08) 0%, rgba(232,213,163,0.04) 50%, rgba(201,168,76,0.06) 100%)",
+      border: "1px solid " + COLORS.metallicBorder,
+      boxShadow: SHADOWS.button,
+      overflow: "hidden",
+    }}>
+      {/* decorative gold corner */}
+      <div style={{ position: "absolute", top: -30, right: -30, width: 90, height: 90, borderRadius: "50%", background: "radial-gradient(circle, rgba(201,168,76,0.18), transparent 70%)", pointerEvents: "none" }} />
+      <div style={{ position: "absolute", bottom: -40, left: -40, width: 110, height: 110, borderRadius: "50%", background: "radial-gradient(circle, rgba(201,168,76,0.10), transparent 70%)", pointerEvents: "none" }} />
+
+      <div style={{ display: "flex", flexDirection: "column", alignItems: "center", position: "relative", zIndex: 1 }}>
+        {/* Avatar with gold gradient ring */}
+        <div style={{
+          width: 96, height: 96, borderRadius: "50%",
+          padding: 3,
+          background: COLORS.goldGradient,
+          boxShadow: "0 6px 20px rgba(201,168,76,0.35), inset 0 1px 0 rgba(255,255,255,0.5)",
+          marginBottom: SPACING.md,
+        }}>
+          <div style={{
+            width: "100%", height: "100%", borderRadius: "50%",
+            background: COLORS.bg1,
+            display: "flex", alignItems: "center", justifyContent: "center",
+            border: "2px solid rgba(255,255,255,0.15)",
+          }}>
+            <span style={{ fontSize: 28, fontWeight: 900, color: COLORS.goldLight, fontFamily: TYPOGRAPHY.fontCairo, letterSpacing: 1 }}>{initials || "?"}</span>
+          </div>
+        </div>
+
+        {/* Name */}
+        <div style={{ fontSize: 19, fontWeight: 900, color: COLORS.textPrimary, fontFamily: TYPOGRAPHY.fontCairo, textAlign: "center", marginBottom: 4, letterSpacing: 0.2 }}>
+          {user.name || "—"}
+        </div>
+
+        {/* Role + ID pill */}
+        <div style={{ display: "flex", gap: 6, alignItems: "center", flexWrap: "wrap", justifyContent: "center" }}>
+          <span style={{
+            padding: "4px 12px",
+            borderRadius: RADIUS.pill,
+            background: "rgba(201,168,76,0.12)",
+            border: "1px solid rgba(201,168,76,0.25)",
+            fontSize: 11, fontWeight: 700, color: COLORS.goldLight,
+            fontFamily: TYPOGRAPHY.fontTajawal,
+          }}>
+            {user.role || "—"}
+          </span>
+          <span style={{
+            padding: "4px 10px",
+            borderRadius: RADIUS.pill,
+            background: "rgba(255,255,255,0.05)",
+            border: "1px solid " + COLORS.metallicBorder,
+            fontSize: 10, fontWeight: 700, color: COLORS.textMuted,
+            fontFamily: TYPOGRAPHY.fontTajawal,
+          }}>
+            #{user.id}
+          </span>
+          <span style={{
+            padding: "4px 10px",
+            borderRadius: RADIUS.pill,
+            background: "rgba(255,255,255,0.05)",
+            border: "1px solid " + COLORS.metallicBorder,
+            fontSize: 10, fontWeight: 700, color: COLORS.textSecondary,
+            fontFamily: TYPOGRAPHY.fontTajawal,
+          }}>
+            {typeLabel}
+          </span>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/* ── ProfileStatsRow — 3 Big Stats (years / points / leave balance) ── */
+function ProfileStatsRow({ user }) {
+  var [leaveBalance, setLeaveBalance] = useState(null);
+
+  useEffect(function(){
+    if (!user || !user.id) return;
+    fetch("/api/data?action=leave-balance&empId=" + encodeURIComponent(user.id))
+      .then(function(r){ return r.json(); })
+      .then(function(d){
+        if (d && (d.ok || typeof d.balance !== "undefined")) {
+          setLeaveBalance(typeof d.balance === "number" ? d.balance : (d.remaining || d.annual || 0));
+        }
+      })
+      .catch(function(){});
+  }, [user && user.id]);
+
+  var svc = computeYearsOfService(user.joinDate);
+  var points = user.points || 0;
+  var leave = leaveBalance !== null ? leaveBalance : (user.leaveBalance !== undefined ? user.leaveBalance : "—");
+
+  function StatCell({ icon, bigValue, subValue, label, accent }) {
+    return (
+      <div style={{
+        flex: 1, minWidth: 0,
+        padding: "14px 8px",
+        display: "flex", flexDirection: "column", alignItems: "center",
+        textAlign: "center",
+      }}>
+        <div style={{ fontSize: 18, marginBottom: 4, filter: "drop-shadow(0 1px 2px rgba(0,0,0,0.3))" }}>{icon}</div>
+        <div style={{
+          fontSize: 22, fontWeight: 900,
+          color: accent || COLORS.goldLight,
+          fontFamily: TYPOGRAPHY.fontCairo,
+          lineHeight: 1,
+          letterSpacing: -0.5,
+        }}>{bigValue}</div>
+        {subValue && <div style={{ fontSize: 9, fontWeight: 700, color: COLORS.textMuted, marginTop: 2, fontFamily: TYPOGRAPHY.fontTajawal }}>{subValue}</div>}
+        <div style={{ fontSize: 10, fontWeight: 700, color: COLORS.textSecondary, marginTop: 6, fontFamily: TYPOGRAPHY.fontTajawal, lineHeight: 1.2 }}>{label}</div>
+      </div>
+    );
+  }
+
+  return (
+    <Card padding={0} style={{ overflow: "hidden" }}>
+      <div style={{ display: "flex", alignItems: "stretch" }}>
+        <StatCell
+          icon="📅"
+          bigValue={svc.years > 0 ? svc.years : (svc.months || 0)}
+          subValue={svc.years > 0 ? (svc.years === 1 ? "سنة" : svc.years === 2 ? "سنتان" : svc.years <= 10 ? "سنوات" : "سنة") : (svc.months ? "شهر" : "—")}
+          label="سنوات الخدمة"
+          accent={COLORS.goldLight}
+        />
+        <div style={{ width: 1, background: "linear-gradient(180deg, transparent, " + COLORS.metallicBorder + " 30%, " + COLORS.metallicBorder + " 70%, transparent)" }} />
+        <StatCell
+          icon="⭐"
+          bigValue={points}
+          subValue="نقطة"
+          label="رصيد النقاط"
+          accent={COLORS.goldLight}
+        />
+        <div style={{ width: 1, background: "linear-gradient(180deg, transparent, " + COLORS.metallicBorder + " 30%, " + COLORS.metallicBorder + " 70%, transparent)" }} />
+        <StatCell
+          icon="🏖️"
+          bigValue={leave}
+          subValue="يوم"
+          label="رصيد الإجازة"
+          accent={COLORS.success}
+        />
+      </div>
+    </Card>
+  );
+}
+
+/* ── ProfileAccordion — reusable collapsible wrapper ── */
+function ProfileAccordion({ emoji, title, subtitle, badge, defaultOpen, children }) {
+  var [open, setOpen] = useState(!!defaultOpen);
+  return (
+    <Card padding={0} style={{ overflow: "hidden" }}>
+      <button
+        onClick={function(){ setOpen(!open); }}
+        style={{
+          width: "100%",
+          padding: SPACING.md + "px " + SPACING.lg + "px",
+          display: "flex", alignItems: "center", gap: SPACING.md,
+          background: open ? "rgba(201,168,76,0.06)" : "transparent",
+          border: "none",
+          borderBottom: open ? "1px solid " + COLORS.metallicBorder : "none",
+          cursor: "pointer",
+          textAlign: "right",
+          fontFamily: TYPOGRAPHY.fontCairo,
+          transition: "background .2s",
+        }}
+      >
+        <div style={{
+          width: 38, height: 38, borderRadius: RADIUS.md,
+          background: open ? "rgba(201,168,76,0.15)" : COLORS.metallic,
+          border: "1px solid " + (open ? "rgba(201,168,76,0.35)" : COLORS.metallicBorder),
+          display: "flex", alignItems: "center", justifyContent: "center",
+          fontSize: 18, flexShrink: 0,
+        }}>{emoji}</div>
+        <div style={{ flex: 1, minWidth: 0 }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap" }}>
+            <span style={{ ...TYPOGRAPHY.h3, color: COLORS.textPrimary, fontFamily: TYPOGRAPHY.fontCairo }}>{title}</span>
+            {badge && <span style={{ padding: "1px 8px", borderRadius: RADIUS.pill, background: "rgba(226,25,44,0.15)", border: "1px solid rgba(226,25,44,0.3)", fontSize: 9, fontWeight: 800, color: COLORS.textDanger }}>{badge}</span>}
+          </div>
+          {subtitle && <div style={{ fontSize: 10, fontWeight: 600, color: COLORS.textMuted, marginTop: 2, fontFamily: TYPOGRAPHY.fontTajawal }}>{subtitle}</div>}
+        </div>
+        <div style={{
+          fontSize: 18, color: COLORS.goldLight, fontWeight: 900,
+          transform: open ? "rotate(180deg)" : "rotate(0deg)",
+          transition: "transform .25s ease",
+          flexShrink: 0,
+        }}>⌄</div>
+      </button>
+      {open && (
+        <div style={{ padding: SPACING.lg }}>
+          {children}
+        </div>
+      )}
+    </Card>
+  );
+}
+
+/* ── ProfileAttachmentsLite — lightweight attachments list for profile tab ── */
+function ProfileAttachmentsLite({ user }) {
+  var [loading, setLoading] = useState(true);
+  var [attachments, setAttachments] = useState([]);
+  var [msg, setMsg] = useState(null);
+  var [uploading, setUploading] = useState(false);
+  var [uploadType, setUploadType] = useState("id_copy");
+  var [uploadFile, setUploadFile] = useState(null);
+  var [showUpload, setShowUpload] = useState(false);
+
+  var TYPE_LABELS = {
+    id_copy: "صورة الهوية",
+    passport_copy: "صورة الجواز",
+    sce_certificate: "شهادة الهيئة السعودية للمهندسين",
+    education_certificate: "المؤهل العلمي",
+    experience_certificate: "شهادة خبرة",
+    photo: "صورة شخصية",
+    bank_iban: "شهادة الآيبان",
+    contract: "العقد",
+    other: "مستند آخر",
+  };
+
+  async function load() {
+    if (!user || !user.id) { setLoading(false); return; }
+    try {
+      var r = await fetch("/api/data?action=emp-attachments&empId=" + encodeURIComponent(user.id));
+      var d = await r.json();
+      if (d && d.ok) setAttachments(d.attachments || []);
+    } catch(e) {}
+    setLoading(false);
+  }
+  useEffect(function(){ load(); }, [user && user.id]);
+
+  async function doUpload() {
+    if (!uploadFile) { setMsg({ type: "error", text: "اختر ملفاً أولاً" }); return; }
+    if (uploadFile.size > 3 * 1024 * 1024) { setMsg({ type: "error", text: "الحد الأقصى 3 MB" }); return; }
+    setUploading(true);
+    try {
+      var reader = new FileReader();
+      var dataUrl = await new Promise(function(resolve, reject){
+        reader.onload = function(){ resolve(reader.result); };
+        reader.onerror = reject;
+        reader.readAsDataURL(uploadFile);
+      });
+      var r = await fetch("/api/data?action=emp-attachments", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          empId: user.id, type: uploadType, url: dataUrl,
+          fileName: uploadFile.name, fileSize: uploadFile.size,
+          uploadedBy: user.id,
+        })
+      });
+      var d = await r.json();
+      if (d && d.ok) {
+        setMsg({ type: "success", text: "✓ تم الرفع — بانتظار اعتماد HR" });
+        setShowUpload(false); setUploadFile(null);
+        await load();
+      } else {
+        setMsg({ type: "error", text: (d && d.error) || "فشل الرفع" });
+      }
+    } catch(e) {
+      setMsg({ type: "error", text: "فشل: " + e.message });
+    }
+    setUploading(false);
+  }
+
+  if (loading) {
+    return <div style={{ padding: SPACING.md, textAlign: "center", color: COLORS.textMuted, fontSize: 12 }}>جارٍ التحميل...</div>;
+  }
+
+  var approved = attachments.filter(function(a){ return (a.status || "approved") === "approved"; });
+  var pending = attachments.filter(function(a){ return a.status === "pending"; });
+
+  return (
+    <div>
+      {msg && (
+        <div style={{
+          padding: "8px 12px", marginBottom: SPACING.sm, borderRadius: RADIUS.sm,
+          fontSize: 11, fontWeight: 700,
+          background: msg.type === "error" ? "rgba(226,25,44,0.12)" : "rgba(16,185,129,0.12)",
+          color: msg.type === "error" ? COLORS.textDanger : COLORS.success,
+          display: "flex", justifyContent: "space-between", alignItems: "center",
+        }}>
+          <span>{msg.text}</span>
+          <button onClick={function(){ setMsg(null); }} style={{ background: "none", border: "none", color: "inherit", cursor: "pointer", fontSize: 14 }}>✕</button>
+        </div>
+      )}
+
+      {/* Count summary */}
+      <div style={{ display: "flex", gap: SPACING.sm, marginBottom: SPACING.md }}>
+        <div style={{ flex: 1, padding: "8px 10px", borderRadius: RADIUS.md, background: "rgba(16,185,129,0.1)", border: "1px solid rgba(16,185,129,0.25)", textAlign: "center" }}>
+          <div style={{ fontSize: 18, fontWeight: 900, color: COLORS.success, fontFamily: TYPOGRAPHY.fontCairo }}>{approved.length}</div>
+          <div style={{ fontSize: 9, fontWeight: 700, color: COLORS.textMuted, marginTop: 2 }}>مرفقات معتمدة</div>
+        </div>
+        <div style={{ flex: 1, padding: "8px 10px", borderRadius: RADIUS.md, background: "rgba(217,160,23,0.1)", border: "1px solid rgba(217,160,23,0.25)", textAlign: "center" }}>
+          <div style={{ fontSize: 18, fontWeight: 900, color: COLORS.warning, fontFamily: TYPOGRAPHY.fontCairo }}>{pending.length}</div>
+          <div style={{ fontSize: 9, fontWeight: 700, color: COLORS.textMuted, marginTop: 2 }}>بانتظار الاعتماد</div>
+        </div>
+      </div>
+
+      {/* Upload button */}
+      {!showUpload && (
+        <Button variant="secondary" size="md" icon="➕" onClick={function(){ setShowUpload(true); setMsg(null); }}>
+          رفع مرفق جديد
+        </Button>
+      )}
+
+      {showUpload && (
+        <div style={{ padding: SPACING.md, borderRadius: RADIUS.md, background: COLORS.metallic, border: "1px dashed " + COLORS.metallicBorder, marginBottom: SPACING.sm }}>
+          <div style={{ fontSize: 11, fontWeight: 700, color: COLORS.textMuted, marginBottom: 4 }}>نوع المرفق</div>
+          <select
+            value={uploadType}
+            onChange={function(e){ setUploadType(e.target.value); }}
+            style={{ width: "100%", padding: "8px 10px", borderRadius: RADIUS.sm, border: "1px solid " + COLORS.metallicBorder, background: COLORS.bg1, color: COLORS.textPrimary, fontSize: 12, fontFamily: TYPOGRAPHY.fontTajawal, marginBottom: SPACING.sm, boxSizing: "border-box" }}
+          >
+            {Object.keys(TYPE_LABELS).map(function(k){ return <option key={k} value={k}>{TYPE_LABELS[k]}</option>; })}
+          </select>
+          <div style={{ fontSize: 11, fontWeight: 700, color: COLORS.textMuted, marginBottom: 4 }}>الملف (حد أقصى 3 MB)</div>
+          <input
+            type="file"
+            onChange={function(e){ setUploadFile(e.target.files && e.target.files[0]); }}
+            style={{ width: "100%", padding: "6px 8px", borderRadius: RADIUS.sm, border: "1px solid " + COLORS.metallicBorder, background: COLORS.bg1, color: COLORS.textPrimary, fontSize: 11, marginBottom: SPACING.sm, boxSizing: "border-box" }}
+          />
+          <div style={{ display: "flex", gap: SPACING.sm }}>
+            <button
+              onClick={doUpload}
+              disabled={uploading || !uploadFile}
+              style={{ flex: 1, padding: "10px", borderRadius: RADIUS.md, background: uploading ? COLORS.metallic : COLORS.goldGradient, color: COLORS.textOnGold, border: "1px solid " + COLORS.goldLight, fontWeight: 800, fontSize: 12, cursor: uploading ? "wait" : "pointer", fontFamily: TYPOGRAPHY.fontCairo }}
+            >
+              {uploading ? "جارٍ الرفع..." : "📤 رفع"}
+            </button>
+            <button
+              onClick={function(){ setShowUpload(false); setUploadFile(null); setMsg(null); }}
+              style={{ padding: "10px 16px", borderRadius: RADIUS.md, background: "transparent", color: COLORS.textMuted, border: "1px solid " + COLORS.metallicBorder, fontWeight: 700, fontSize: 12, cursor: "pointer", fontFamily: TYPOGRAPHY.fontCairo }}
+            >
+              إلغاء
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* List */}
+      <div style={{ marginTop: SPACING.md, display: "flex", flexDirection: "column", gap: SPACING.xs }}>
+        {attachments.length === 0 && (
+          <div style={{ padding: SPACING.md, textAlign: "center", fontSize: 11, color: COLORS.textMuted, fontStyle: "italic" }}>
+            لا توجد مرفقات بعد — ابدأ برفع مستنداتك
+          </div>
+        )}
+        {attachments.map(function(a, i){
+          var st = a.status || "approved";
+          var stColor = st === "approved" ? COLORS.success : st === "pending" ? COLORS.warning : COLORS.textDanger;
+          var stLabel = st === "approved" ? "✓ معتمد" : st === "pending" ? "⏳ بانتظار" : "✕ مرفوض";
+          return (
+            <div key={a.id || i} style={{
+              display: "flex", alignItems: "center", gap: SPACING.sm,
+              padding: "10px 12px",
+              borderRadius: RADIUS.md,
+              background: "rgba(255,255,255,0.03)",
+              border: "1px solid " + COLORS.metallicBorder,
+            }}>
+              <div style={{ fontSize: 18 }}>📄</div>
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <div style={{ fontSize: 12, fontWeight: 700, color: COLORS.textPrimary, fontFamily: TYPOGRAPHY.fontTajawal, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{TYPE_LABELS[a.type] || a.type || "مستند"}</div>
+                <div style={{ fontSize: 9, color: COLORS.textMuted, marginTop: 1 }}>{a.fileName || ""}</div>
+              </div>
+              <span style={{ fontSize: 9, fontWeight: 800, color: stColor, padding: "2px 6px", borderRadius: RADIUS.pill, background: stColor + "22", border: "1px solid " + stColor + "44", flexShrink: 0 }}>
+                {stLabel}
+              </span>
+              {a.url && <a href={a.url} target="_blank" rel="noreferrer" style={{ fontSize: 10, color: COLORS.goldLight, fontWeight: 800, textDecoration: "none", padding: "2px 6px", flexShrink: 0 }}>عرض ›</a>}
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
 function ProfilePage({ user, branch, workType, onLogout, onTicket, myTickets, darkMode, toggleDark, kadwarNotifs }) {
   // v7.15 — legacy tab IDs remapped to new 5-tab structure
   // Old (v7.14): profile/time/pay/perf/tickets → New (v7.15): profile/records/achievements/pay/legal
@@ -2984,32 +3402,58 @@ function ProfilePage({ user, branch, workType, onLogout, onTicket, myTickets, da
           })}
         </div>
 
-        {/* v7.14 — tab: profile (كان info) — نفس المحتوى بالضبط */}
+        {/* v7.16 — tab: profile (ملفي) — visual redesign: Hero + 3 Stats + 3 Accordions + Objects + Mixed Buttons + Banner */}
         {tab === "profile" && (
           <>
-            <Card>
-              {rows.map(function(row, i) {
-                return (
-                  <div key={row[0]} style={{ display: "flex", justifyContent: "space-between", padding: SPACING.md + "px 0", borderBottom: i < rows.length - 1 ? "1px solid " + COLORS.cardBorder : "none" }}>
-                    <span style={{ ...TYPOGRAPHY.body, fontWeight: 700, color: COLORS.textPrimary }}>{row[1]}</span>
-                    <span style={{ ...TYPOGRAPHY.caption, color: COLORS.textMuted }}>{row[0]}</span>
-                  </div>
-                );
-              })}
-            </Card>
+            {/* 1. HERO — Avatar + name + role */}
+            <ProfileHeroCard user={user} />
 
-            {/* v7.08 — زر طلب تعديل البيانات */}
-            <EditRequestCard user={user} />
+            {/* 2. 3 STATS — سنوات الخدمة · النقاط · رصيد الإجازة */}
+            <ProfileStatsRow user={user} />
 
-            {/* v6.80 — Direct Managers card (Manager 1 + Manager 2) */}
+            {/* 3. THREE ACCORDIONS */}
+            <ProfileAccordion
+              emoji="📋"
+              title="البيانات الأساسية"
+              subtitle="الفرع · الدوام · المسمى · الالتحاق"
+              defaultOpen={true}
+            >
+              <div style={{ display: "flex", flexDirection: "column" }}>
+                {rows.map(function(row, i) {
+                  return (
+                    <div key={row[0]} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "10px 0", borderBottom: i < rows.length - 1 ? "1px solid " + COLORS.cardRowBorder : "none" }}>
+                      <span style={{ ...TYPOGRAPHY.body, fontWeight: 700, color: COLORS.textPrimary, fontFamily: TYPOGRAPHY.fontTajawal }}>{row[1]}</span>
+                      <span style={{ ...TYPOGRAPHY.caption, color: COLORS.textMuted, fontFamily: TYPOGRAPHY.fontTajawal }}>{row[0]}</span>
+                    </div>
+                  );
+                })}
+              </div>
+            </ProfileAccordion>
+
+            <ProfileAccordion
+              emoji="💼"
+              title="البيانات الوظيفية"
+              subtitle="شخصية · وظيفية · مالية · عقد · مرافقين"
+            >
+              <MyProfileCard user={user} />
+            </ProfileAccordion>
+
+            <ProfileAccordion
+              emoji="📎"
+              title="المرفقات والمستندات"
+              subtitle="الهوية · الشهادات · العقد · الآيبان"
+            >
+              <ProfileAttachmentsLite user={user} />
+            </ProfileAccordion>
+
+            {/* 4. OBJECTS — Managers + SCE + Tickets + EditRequests */}
             <ManagersCard user={user} />
-
-            {/* v6.83 — My Full Profile Card */}
-            <MyProfileCard user={user} />
 
             {user.sceNumber && (
               <Card>
-                <div style={{ ...TYPOGRAPHY.h3, color: COLORS.textPrimary, marginBottom: SPACING.md }}>الهيئة السعودية للمهندسين</div>
+                <div style={{ ...TYPOGRAPHY.h3, color: COLORS.textPrimary, marginBottom: SPACING.md, display: "flex", alignItems: "center", gap: 6 }}>
+                  <span>🏛️</span> الهيئة السعودية للمهندسين
+                </div>
                 <div style={{ display: "flex", justifyContent: "space-between", padding: SPACING.sm + "px 0" }}>
                   <span style={{ ...TYPOGRAPHY.body, fontWeight: 700, color: COLORS.textPrimary }}>{user.sceNumber}</span>
                   <span style={{ ...TYPOGRAPHY.caption, color: COLORS.textMuted }}>رقم العضوية</span>
@@ -3021,10 +3465,21 @@ function ProfilePage({ user, branch, workType, onLogout, onTicket, myTickets, da
               </Card>
             )}
 
-            {/* v6.81 — Tickets card with chat thread support */}
             <TicketsCard user={user} myTickets={myTickets} />
 
-            {/* v6.69 — الإعدادات المدمجة */}
+            <div id="edit-request-card-anchor">
+              <EditRequestCard user={user} />
+            </div>
+
+            {/* 5. MIXED BUTTONS */}
+            {/* Manager panel button — hidden in desktop session */}
+            {(user.isManager || user.isAssistant) && !(user && user._desktopSession) && (
+              <Button variant="primary" size="md" icon={<Icons.building size={20} />} onClick={function(){ window.location.hash = "admin"; }}>
+                لوحة الإدارة
+              </Button>
+            )}
+
+            {/* Kadwar flip button */}
             <div className="basma-flip-container">
               <div className={"basma-flip-inner" + (kadwarFlip ? " flipped" : "")} style={{ minHeight: 44 }}>
                 <div className="basma-flip-front">
@@ -3041,34 +3496,56 @@ function ProfilePage({ user, branch, workType, onLogout, onTicket, myTickets, da
               </div>
             </div>
 
-            <BiometricSettingsCard user={user} />
+            {/* Row of 2: تذكرة دعم | تعديل بيانات */}
+            <div style={{ display: "flex", gap: SPACING.sm }}>
+              <div style={{ flex: 1 }}>
+                <Button variant="secondary" size="md" icon={<Icons.alert size={18} />} onClick={onTicket}>
+                  تذكرة دعم
+                </Button>
+              </div>
+              <div style={{ flex: 1 }}>
+                <Button variant="secondary" size="md" icon={<Icons.edit size={18} />} onClick={function(){
+                  var el = document.getElementById("edit-request-card-anchor");
+                  if (el) el.scrollIntoView({ behavior: "smooth", block: "center" });
+                }}>
+                  تعديل بيانات
+                </Button>
+              </div>
+            </div>
 
-            <Card>
-              <div style={{ ...TYPOGRAPHY.h3, color: COLORS.textPrimary, marginBottom: SPACING.md }}>⚙️ الإعدادات</div>
-              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: SPACING.sm + "px 0", borderBottom: "1px solid " + COLORS.cardBorder }}>
-                <span style={{ ...TYPOGRAPHY.bodySm, fontWeight: 600, color: COLORS.textPrimary }}>الوضع الليلي</span>
-                <div onClick={toggleDark} style={{ width: 44, height: 24, borderRadius: 12, background: darkMode ? COLORS.goldLight : COLORS.metallic, border: "1px solid " + COLORS.metallicBorder, position: "relative", cursor: "pointer", transition: "background .3s" }}>
-                  <div style={{ width: 18, height: 18, borderRadius: 9, background: COLORS.white, position: "absolute", top: 3, transition: "all .3s", left: darkMode ? 3 : undefined, right: darkMode ? undefined : 3, boxShadow: "0 1px 3px rgba(0,0,0,.2)" }} />
+            {/* Logout */}
+            <Button variant="danger" size="md" onClick={onLogout}>
+              تسجيل خروج
+            </Button>
+
+            {/* 6. SETTINGS — accordion */}
+            <ProfileAccordion
+              emoji="⚙️"
+              title="الإعدادات"
+              subtitle="المظهر · التذكيرات · بصمة الوجه · ربط الديسكتوب"
+            >
+              <BiometricSettingsCard user={user} />
+
+              <div style={{ marginTop: SPACING.md, padding: SPACING.md, borderRadius: RADIUS.md, background: "rgba(255,255,255,0.03)", border: "1px solid " + COLORS.metallicBorder }}>
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: SPACING.sm + "px 0", borderBottom: "1px solid " + COLORS.cardRowBorder }}>
+                  <span style={{ ...TYPOGRAPHY.bodySm, fontWeight: 600, color: COLORS.textPrimary }}>الوضع الليلي</span>
+                  <div onClick={toggleDark} style={{ width: 44, height: 24, borderRadius: 12, background: darkMode ? COLORS.goldLight : COLORS.metallic, border: "1px solid " + COLORS.metallicBorder, position: "relative", cursor: "pointer", transition: "background .3s" }}>
+                    <div style={{ width: 18, height: 18, borderRadius: 9, background: COLORS.white, position: "absolute", top: 3, transition: "all .3s", left: darkMode ? 3 : undefined, right: darkMode ? undefined : 3, boxShadow: "0 1px 3px rgba(0,0,0,.2)" }} />
+                  </div>
+                </div>
+                <ToggleRow label="تذكير بالحضور" storeKey="remind_in" border={true} />
+                <ToggleRow label="تذكير بالانصراف" storeKey="remind_out" border={true} />
+                <FaceResetRow empId={user.id} />
+                <DesktopPairRow user={user} />
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: SPACING.sm + "px 0", borderTop: "1px solid " + COLORS.cardRowBorder }}>
+                  <span style={{ ...TYPOGRAPHY.bodySm, fontWeight: 600, color: COLORS.textPrimary }}>إصدار التطبيق</span>
+                  <span style={{ ...TYPOGRAPHY.caption, fontWeight: 800, color: COLORS.goldLight }}>{"v" + VER}</span>
                 </div>
               </div>
-              <ToggleRow label="تذكير بالحضور" storeKey="remind_in" border={true} />
-              <ToggleRow label="تذكير بالانصراف" storeKey="remind_out" border={true} />
-              <FaceResetRow empId={user.id} />
-              <DesktopPairRow user={user} />
-              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: SPACING.sm + "px 0", borderTop: "1px solid " + COLORS.cardBorder }}>
-                <span style={{ ...TYPOGRAPHY.bodySm, fontWeight: 600, color: COLORS.textPrimary }}>إصدار التطبيق</span>
-                <span style={{ ...TYPOGRAPHY.caption, fontWeight: 800, color: COLORS.goldLight }}>{"v" + VER}</span>
-              </div>
-            </Card>
+            </ProfileAccordion>
 
+            {/* 7. HELP */}
             <HelpGuideSection />
-
-            {/* v7.15 — إنجازاتي انتقل لتبويب achievements مستقل */}
-            {/* v7.15 — السجل الوظيفي انتقل لتبويب records مع الطلبات والإجازات */}
-
-            <Button variant="secondary" size="md" icon={<Icons.alert size={20} />} onClick={onTicket}>
-              تذكرة دعم جديدة
-            </Button>
           </>
         )}
 
@@ -3136,35 +3613,22 @@ function ProfilePage({ user, branch, workType, onLogout, onTicket, myTickets, da
           </>
         )}
 
-        {/* v7.15 — System actions (admin/logout/footer) shown ONLY in profile tab */}
+        {/* v7.16 — HMA Banner (footer) shown ONLY in profile tab */}
         {tab === "profile" && (
           <>
-            {/* Manager panel button — hidden in desktop session (v6.47) */}
-            {(user.isManager || user.isAssistant) && !(user && user._desktopSession) && (
-              <Button variant="primary" size="md" icon={<Icons.building size={20} />} onClick={function(){ window.location.hash = "admin"; }}>
-                لوحة الإدارة
-              </Button>
-            )}
-
-            {/* Logout */}
-            <Button variant="danger" size="md" onClick={onLogout}>
-              تسجيل خروج
-            </Button>
-
-            {/* Footer — with HMA logo (v6.73) + clickable to open About (v6.74) */}
+            {/* Footer — with HMA logo + clickable to open About */}
             <Card padding={SPACING.md}>
               <div onClick={function(){ setShowAbout(true); }} style={{ textAlign: "center", cursor: "pointer" }}>
-            <div style={{ width: 64, height: 64, margin: "0 auto 10px", borderRadius: "50%", overflow: "hidden", boxShadow: "0 4px 14px rgba(0,0,0,0.3)" }}>
-              <img src="/app-icon-192.png" alt="بصمة HMA" style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }} />
-            </div>
-            <div style={{ ...TYPOGRAPHY.h3, color: COLORS.goldLight, fontFamily: TYPOGRAPHY.fontCairo }}>بصمة HMA</div>
-            <div style={{ ...TYPOGRAPHY.caption, color: COLORS.textMuted, marginTop: SPACING.xs }}>نظام الحضور والانصراف الذكي</div>
-            <div style={{ ...TYPOGRAPHY.caption, color: COLORS.textMuted }}>هاني محمد عسيري للاستشارات الهندسية</div>
-            <div style={{ ...TYPOGRAPHY.tiny, color: COLORS.textMuted, marginTop: SPACING.sm }}>{"v" + VER + " · b.hma.engineer"}</div>
-            <div style={{ fontSize: 10, color: COLORS.goldLight, marginTop: 6, fontWeight: 700 }}>ℹ️ عن التطبيق ›</div>
-          </div>
-        </Card>
-
+                <div style={{ width: 64, height: 64, margin: "0 auto 10px", borderRadius: "50%", overflow: "hidden", boxShadow: "0 4px 14px rgba(0,0,0,0.3)" }}>
+                  <img src="/app-icon-192.png" alt="بصمة HMA" style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }} />
+                </div>
+                <div style={{ ...TYPOGRAPHY.h3, color: COLORS.goldLight, fontFamily: TYPOGRAPHY.fontCairo }}>بصمة HMA</div>
+                <div style={{ ...TYPOGRAPHY.caption, color: COLORS.textMuted, marginTop: SPACING.xs }}>نظام الحضور والانصراف الذكي</div>
+                <div style={{ ...TYPOGRAPHY.caption, color: COLORS.textMuted }}>هاني محمد عسيري للاستشارات الهندسية</div>
+                <div style={{ ...TYPOGRAPHY.tiny, color: COLORS.textMuted, marginTop: SPACING.sm }}>{"v" + VER + " · b.hma.engineer"}</div>
+                <div style={{ fontSize: 10, color: COLORS.goldLight, marginTop: 6, fontWeight: 700 }}>ℹ️ عن التطبيق ›</div>
+              </div>
+            </Card>
           </>
         )}
 
