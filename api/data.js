@@ -4232,6 +4232,61 @@ export default async function handler(req, res) {
         break;
       }
 
+      /* v7.05 — اعتماد إنهاء الخدمة + إعادة دفع لكوادر (الحالة تتغير هناك) */
+      case 'termination-approve': {
+        if (req.method !== 'POST') return res.status(405).json({ error: 'POST required' });
+        const { id, actor } = req.body || {};
+        if (!id) return res.status(400).json({ error: 'id required' });
+        const ts = await dbGet('terminations') || [];
+        const i = ts.findIndex(t => t.id === id);
+        if (i < 0) return res.status(404).json({ error: 'لم يُعثر على سجل إنهاء الخدمة' });
+        if (ts[i].status === 'approved') return res.status(400).json({ error: 'مُعتمد مسبقاً' });
+        if (ts[i].status === 'cancelled') return res.status(400).json({ error: 'ملغي — لا يمكن الاعتماد' });
+        ts[i].status = 'approved';
+        ts[i].approvedAt = new Date().toISOString();
+        ts[i].approvedBy = actor || 'admin';
+        await dbSet('terminations', ts);
+        // إعادة الدفع لكوادر مع الحالة المعتمدة (كوادر يغيّر حالة الموظف تلقائياً عند approved)
+        safeKadwarPush('receive-termination', {
+          employee_id: ts[i].empId,
+          employee_name: ts[i].empName,
+          termination_basma_id: ts[i].id,
+          reason_code: ts[i].reason,
+          reason_label: ts[i].reasonLabel || ts[i].reason,
+          effective_date: ts[i].effectiveDate || ts[i].createdAt,
+          notes: ts[i].notes,
+          initiated_by: ts[i].initiatedBy,
+          approved_by: ts[i].approvedBy,
+          approved_at: ts[i].approvedAt,
+          status: 'approved',
+          created_at: ts[i].createdAt,
+        }).catch(function(){ /* logged */ });
+        await auditLog(actor || 'admin', 'approve_termination', id, { empId: ts[i].empId, reason: ts[i].reason });
+        return res.json({ ok: true, termination: ts[i] });
+      }
+
+      /* v7.05 — إلغاء إنهاء خدمة معلّق (تصحيح خطأ) */
+      case 'termination-cancel': {
+        if (req.method !== 'POST') return res.status(405).json({ error: 'POST required' });
+        const { id, actor, reason } = req.body || {};
+        if (!id) return res.status(400).json({ error: 'id required' });
+        const ts = await dbGet('terminations') || [];
+        const i = ts.findIndex(t => t.id === id);
+        if (i < 0) return res.status(404).json({ error: 'لم يُعثر على سجل إنهاء الخدمة' });
+        if (ts[i].status === 'approved') return res.status(400).json({ error: 'لا يمكن إلغاء إنهاء خدمة مُعتمد' });
+        ts[i].status = 'cancelled';
+        ts[i].cancelledAt = new Date().toISOString();
+        ts[i].cancelledBy = actor || 'admin';
+        ts[i].cancelReason = reason || '';
+        await dbSet('terminations', ts);
+        // إعادة تفعيل حساب الموظف (لأنه تعطّل عند الإنشاء)
+        const emps = await dbGet('employees') || [];
+        const ei = emps.findIndex(e => e.id === ts[i].empId);
+        if (ei >= 0) { emps[ei].terminated = false; delete emps[ei].terminatedAt; await dbSet('employees', emps); }
+        await auditLog(actor || 'admin', 'cancel_termination', id, { empId: ts[i].empId, reason: reason });
+        return res.json({ ok: true, termination: ts[i] });
+      }
+
       case 'requests': {
         if (req.method === 'GET') {
           let reqs = await dbGet('admin_requests') || [];

@@ -4,7 +4,7 @@ import { generateAttendanceReport, generateEmployeeReport, generateMonthlySummar
 import { exportFormalWarning, exportInvestigationRecord, exportAffidavit, exportEmploymentLetter, exportSalaryLetter, exportLeaveLetter } from "./formalPdfs";
 
 const APP = "بصمة HMA";
-const VER = "7.04";
+const VER = "7.05";
 const CO = "هاني محمد عسيري للإستشارات الهندسية";
 const B = { blue: "#2B5EA7", yellow: "#FDD800", red: "#E2192C", black: "#1A1A1A", blueDk: "#1E4478", blueLt: "#EDF3FB", gold: "#D4A017" };
 
@@ -886,7 +886,7 @@ export default function AdminApp() {
         </div>
 
         {/* Auto-check violations */}
-        <div style={{ background: t.card, borderRadius: 14, padding: "18px", border: "1px solid " + t.sep }}>
+        <div style={{ background: t.card, borderRadius: 14, padding: "18px", border: "1px solid " + t.sep, marginBottom: 14 }}>
           <div style={{ fontSize: 14, fontWeight: 700, marginBottom: 8 }}>⚡ فحص المخالفات التلقائي</div>
           <div style={{ fontSize: 11, color: t.txM, marginBottom: 12 }}>يفحص حضور اليوم ويكتشف التأخرات والغياب + يصعّد الإنذارات المتأخرة</div>
           <button onClick={async function() {
@@ -898,6 +898,9 @@ export default function AdminApp() {
           }} style={{ width: "100%", padding: "12px", borderRadius: 10, background: B.blue, color: "#fff", fontSize: 14, fontWeight: 700, border: "none", cursor: "pointer" }}>🔍 فحص الآن</button>
           <div id="auto-check-result" style={{ marginTop: 8 }}></div>
         </div>
+
+        {/* v7.05 — قائمة إنهاءات الخدمة + اعتماد */}
+        <TerminationsList t={t} B={B} emps={safeEmps} />
       </>}
 
       {/* ═══ GEOFENCE ═══ */}
@@ -12896,4 +12899,131 @@ function GeofencePanel({ branches, saveBranches, safeEmps, mapTarget, setMapTarg
       return <MapPicker lat={br.lat} lng={br.lng} radius={br.radius} name={br.name} t={t} onClose={function() { setMapTarget(null); }} onSave={function(lat, lng, rad) { var nb = branches.map(function(x) { return x.id === br.id ? Object.assign({}, x, { lat: lat, lng: lng, radius: rad }) : x; }); saveBranches(nb); setMapTarget(null); }} />;
     })()}
   </>;
+}
+
+/* ═══════════════════════════════════════════════════════════════════
+ * v7.05 — TerminationsList — قائمة + اعتماد إنهاءات الخدمة
+ * ═══════════════════════════════════════════════════════════════════ */
+function TerminationsList({ t, B, emps }) {
+  var [items, setItems] = useState([]);
+  var [loading, setLoading] = useState(true);
+  var [filter, setFilter] = useState("pending"); // pending | approved | all
+  var [busy, setBusy] = useState({});
+
+  async function load() {
+    setLoading(true);
+    try {
+      var d = await fetch("/api/data?action=termination").then(function(r){ return r.json(); });
+      setItems(Array.isArray(d) ? d.slice().reverse() : []);
+    } catch(e) {}
+    setLoading(false);
+  }
+  useEffect(function(){ load(); }, []);
+
+  async function approve(term) {
+    if (!confirm("اعتماد إنهاء خدمة " + term.empName + "؟ سيُدفع لكوادر وتتغيّر حالة الموظف تلقائياً.")) return;
+    setBusy(function(p){ var n = {...p}; n[term.id] = "approve"; return n; });
+    try {
+      var r = await fetch("/api/data?action=termination-approve", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ id: term.id, actor: "admin" })
+      }).then(function(x){ return x.json(); });
+      if (r.ok) { alert("✅ تم الاعتماد + دفع لكوادر"); load(); }
+      else alert("فشل: " + (r.error || "غير معروف"));
+    } catch(e) { alert("فشل: " + e.message); }
+    setBusy(function(p){ var n = {...p}; delete n[term.id]; return n; });
+  }
+
+  async function cancel(term) {
+    var reason = prompt("سبب الإلغاء (اختياري):", "");
+    if (reason === null) return; // user cancelled prompt
+    if (!confirm("إلغاء إنهاء خدمة " + term.empName + "؟ سيُعاد تفعيل حسابه.")) return;
+    setBusy(function(p){ var n = {...p}; n[term.id] = "cancel"; return n; });
+    try {
+      var r = await fetch("/api/data?action=termination-cancel", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ id: term.id, actor: "admin", reason: reason })
+      }).then(function(x){ return x.json(); });
+      if (r.ok) { alert("✅ تم الإلغاء وإعادة تفعيل الحساب"); load(); }
+      else alert("فشل: " + (r.error || "غير معروف"));
+    } catch(e) { alert("فشل: " + e.message); }
+    setBusy(function(p){ var n = {...p}; delete n[term.id]; return n; });
+  }
+
+  var reasonLabels = { resignation: "استقالة", termination: "فصل", contract_end: "انتهاء عقد", retirement: "تقاعد" };
+  var statusLabels = {
+    pending:   { label: "⏳ معلّق",   color: "#D97706", bg: "rgba(217,119,6,0.12)" },
+    approved:  { label: "✅ معتمد",   color: "#16A34A", bg: "rgba(22,163,74,0.12)" },
+    cancelled: { label: "❌ ملغي",    color: "#6B7280", bg: "rgba(107,114,128,0.12)" },
+  };
+
+  var filtered = filter === "all" ? items : items.filter(function(x){ return (x.status || "pending") === filter; });
+  var pendingCount = items.filter(function(x){ return (x.status || "pending") === "pending"; }).length;
+  var approvedCount = items.filter(function(x){ return x.status === "approved"; }).length;
+
+  return <div style={{ background: t.card, borderRadius: 14, padding: 18, border: "1px solid " + t.sep }}>
+    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 14 }}>
+      <div>
+        <div style={{ fontSize: 14, fontWeight: 800, color: t.tx }}>📋 سجل إنهاءات الخدمة</div>
+        <div style={{ fontSize: 11, color: t.txM, marginTop: 4 }}>
+          {pendingCount > 0 && <span style={{ color: "#D97706", fontWeight: 700 }}>⏳ {pendingCount} معلّق • </span>}
+          <span>✅ {approvedCount} معتمد • </span>
+          <span>الإجمالي {items.length}</span>
+        </div>
+      </div>
+      <button onClick={load} style={{ padding: "7px 14px", borderRadius: 8, background: t.bg, border: "1px solid " + t.sep, fontSize: 11, fontWeight: 700, color: t.tx, cursor: "pointer" }}>🔄 تحديث</button>
+    </div>
+
+    <div style={{ display: "flex", gap: 6, marginBottom: 14 }}>
+      {[
+        { id: "pending", label: "⏳ معلّقة", count: pendingCount },
+        { id: "approved", label: "✅ معتمدة", count: approvedCount },
+        { id: "all", label: "الكل", count: items.length },
+      ].map(function(f){
+        var active = filter === f.id;
+        return <button key={f.id} onClick={function(){ setFilter(f.id); }} style={{
+          padding: "8px 14px", borderRadius: 8,
+          background: active ? B.blue : "transparent",
+          color: active ? "#fff" : t.tx, border: "1px solid " + (active ? B.blue : t.sep),
+          fontSize: 11, fontWeight: 700, cursor: "pointer", fontFamily: "inherit",
+        }}>{f.label} ({f.count})</button>;
+      })}
+    </div>
+
+    {loading && <div style={{ padding: 24, textAlign: "center", color: t.txM, fontSize: 12 }}>جارٍ التحميل...</div>}
+
+    {!loading && filtered.length === 0 && <div style={{ padding: 24, textAlign: "center", color: t.txM, fontSize: 12 }}>لا توجد سجلات</div>}
+
+    {!loading && filtered.map(function(term){
+      var st = statusLabels[term.status || "pending"];
+      var reasonLbl = reasonLabels[term.reason] || term.reason;
+      var isBusy = !!busy[term.id];
+      return <div key={term.id} style={{ padding: 14, background: t.bg, borderRadius: 10, border: "1px solid " + t.sep, marginBottom: 8, display: "flex", flexDirection: "column", gap: 8 }}>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 10 }}>
+          <div style={{ flex: 1 }}>
+            <div style={{ fontSize: 13, fontWeight: 800, color: t.tx, marginBottom: 4 }}>{term.empName} <span style={{ fontSize: 10, color: t.txM, fontWeight: 600 }}>({term.empId})</span></div>
+            <div style={{ display: "flex", gap: 6, flexWrap: "wrap", fontSize: 10, color: t.tx2 }}>
+              <span style={{ padding: "2px 8px", borderRadius: 6, background: st.bg, color: st.color, fontWeight: 700 }}>{st.label}</span>
+              <span style={{ padding: "2px 8px", borderRadius: 6, background: B.blue + "15", color: B.blue, fontWeight: 700 }}>📄 {reasonLbl}</span>
+              <span>• أنشأها: {term.initiatedBy || "—"}</span>
+              <span>• {term.createdAt ? new Date(term.createdAt).toLocaleDateString("ar-SA") : "—"}</span>
+            </div>
+            {term.notes && <div style={{ fontSize: 11, color: t.tx2, marginTop: 6, padding: "6px 8px", borderRadius: 6, background: t.card }}>💬 {term.notes}</div>}
+            {term.approvedAt && <div style={{ fontSize: 10, color: "#16A34A", marginTop: 4 }}>✓ اعتمده {term.approvedBy} في {new Date(term.approvedAt).toLocaleString("ar-SA")}</div>}
+            {term.cancelledAt && <div style={{ fontSize: 10, color: "#6B7280", marginTop: 4 }}>✗ ألغاها {term.cancelledBy} في {new Date(term.cancelledAt).toLocaleString("ar-SA")}{term.cancelReason ? " — " + term.cancelReason : ""}</div>}
+          </div>
+        </div>
+        {(term.status || "pending") === "pending" && (
+          <div style={{ display: "flex", gap: 6 }}>
+            <button onClick={function(){ approve(term); }} disabled={isBusy} style={{ flex: 2, padding: "8px 12px", background: "#16A34A", color: "#fff", border: "none", borderRadius: 8, fontSize: 12, fontWeight: 800, cursor: isBusy ? "wait" : "pointer", fontFamily: "inherit" }}>
+              {isBusy && busy[term.id] === "approve" ? "جارٍ..." : "✅ اعتماد (يدفع لكوادر)"}
+            </button>
+            <button onClick={function(){ cancel(term); }} disabled={isBusy} style={{ flex: 1, padding: "8px 12px", background: "transparent", color: t.bad, border: "1px solid " + t.bad, borderRadius: 8, fontSize: 11, fontWeight: 700, cursor: isBusy ? "wait" : "pointer", fontFamily: "inherit" }}>
+              {isBusy && busy[term.id] === "cancel" ? "جارٍ..." : "❌ إلغاء"}
+            </button>
+          </div>
+        )}
+      </div>;
+    })}
+  </div>;
 }
