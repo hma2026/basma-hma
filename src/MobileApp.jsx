@@ -11,7 +11,7 @@ import { exportEmploymentLetter, exportLeaveLetter } from "./formalPdfs";
 
 /* ═══════════ APP CONFIG (إعدادات التطبيق) ═══════════ */
 const APP_CONFIG = {
-  VER: "7.16",
+  VER: "7.17",
   NAME: "بصمة HMA",
   FULL_NAME: "نظام الحضور والانصراف الذكي",
   COMPANY: "هاني محمد عسيري للاستشارات الهندسية",
@@ -3307,6 +3307,304 @@ function ProfileAttachmentsLite({ user }) {
   );
 }
 
+/* ═══════════════════════════════════════════════════════════════════
+ * v7.17 — RECORDS TAB VISUAL REDESIGN (سجلي وطلباتي)
+ * Hero (3 stats + 2 quick actions) + 6 filter chips + filtered content
+ * ═══════════════════════════════════════════════════════════════════ */
+
+/* ── RecordsHero — 3 stats + 2 quick action buttons ── */
+function RecordsHero({ user, onTicket, onRequestLeave }) {
+  var [data, setData] = useState({ openCount: 0, leaveBalance: null, totalRecords: 0, loading: true });
+
+  useEffect(function(){
+    if (!user || !user.id) return;
+    async function loadCounts() {
+      try {
+        var [leaves, perms, preAbs, bal, contracts, violations] = await Promise.all([
+          fetch("/api/data?action=leaves").then(function(r){ return r.json(); }).then(function(d){ return (Array.isArray(d) ? d : []).filter(function(x){ return x.empId === user.id; }); }).catch(function(){ return []; }),
+          fetch("/api/data?action=permissions&empId=" + encodeURIComponent(user.id)).then(function(r){ return r.json(); }).catch(function(){ return []; }),
+          fetch("/api/data?action=pre_absence").then(function(r){ return r.json(); }).then(function(d){ return (Array.isArray(d) ? d : []).filter(function(x){ return x.empId === user.id; }); }).catch(function(){ return []; }),
+          fetch("/api/data?action=leave-balance&empId=" + encodeURIComponent(user.id)).then(function(r){ return r.json(); }).catch(function(){ return null; }),
+          fetch("/api/data?action=emp_records&empId=" + encodeURIComponent(user.id) + "&type=contract").then(function(r){ return r.json(); }).catch(function(){ return []; }),
+          fetch("/api/data?action=violations_v2&empId=" + encodeURIComponent(user.id)).then(function(r){ return r.json(); }).catch(function(){ return []; }),
+        ]);
+        var lvArr = Array.isArray(leaves) ? leaves : [];
+        var pmArr = Array.isArray(perms) ? perms : [];
+        var paArr = Array.isArray(preAbs) ? preAbs : [];
+        var ctrArr = Array.isArray(contracts) ? contracts : [];
+        var vioArr = Array.isArray(violations) ? violations : [];
+        var openCount = [].concat(lvArr, pmArr, paArr).filter(function(x){ return (x.status || "pending") === "pending"; }).length;
+        var totalRecords = lvArr.length + pmArr.length + paArr.length + ctrArr.length + vioArr.length;
+        var balTotal = 0;
+        if (bal && !bal.error) {
+          balTotal = (bal.annual || 0) + (bal.sick || 0) + (bal.emergency || 0) + (bal.personal || 0);
+        }
+        setData({ openCount: openCount, leaveBalance: balTotal, totalRecords: totalRecords, loading: false });
+      } catch(e) {
+        setData({ openCount: 0, leaveBalance: 0, totalRecords: 0, loading: false });
+      }
+    }
+    loadCounts();
+  }, [user && user.id]);
+
+  function StatCell({ icon, value, label, accent, loading }) {
+    return (
+      <div style={{ flex: 1, minWidth: 0, padding: "14px 8px", display: "flex", flexDirection: "column", alignItems: "center", textAlign: "center" }}>
+        <div style={{ fontSize: 18, marginBottom: 4, filter: "drop-shadow(0 1px 2px rgba(0,0,0,0.3))" }}>{icon}</div>
+        <div style={{ fontSize: 22, fontWeight: 900, color: accent, fontFamily: TYPOGRAPHY.fontCairo, lineHeight: 1, letterSpacing: -0.5 }}>
+          {loading ? "…" : value}
+        </div>
+        <div style={{ fontSize: 10, fontWeight: 700, color: COLORS.textSecondary, marginTop: 6, fontFamily: TYPOGRAPHY.fontTajawal, lineHeight: 1.2 }}>{label}</div>
+      </div>
+    );
+  }
+
+  return (
+    <>
+      {/* 3 Stats */}
+      <Card padding={0} style={{ overflow: "hidden" }}>
+        <div style={{ display: "flex", alignItems: "stretch" }}>
+          <StatCell
+            icon="⏳"
+            value={data.openCount}
+            label="طلبات مفتوحة"
+            accent={data.openCount > 0 ? COLORS.warning : COLORS.textMuted}
+            loading={data.loading}
+          />
+          <div style={{ width: 1, background: "linear-gradient(180deg, transparent, " + COLORS.metallicBorder + " 30%, " + COLORS.metallicBorder + " 70%, transparent)" }} />
+          <StatCell
+            icon="🏖️"
+            value={data.leaveBalance !== null ? data.leaveBalance : 0}
+            label="رصيد إجازة"
+            accent={COLORS.success}
+            loading={data.loading}
+          />
+          <div style={{ width: 1, background: "linear-gradient(180deg, transparent, " + COLORS.metallicBorder + " 30%, " + COLORS.metallicBorder + " 70%, transparent)" }} />
+          <StatCell
+            icon="📚"
+            value={data.totalRecords}
+            label="إجمالي السجلات"
+            accent={COLORS.goldLight}
+            loading={data.loading}
+          />
+        </div>
+      </Card>
+
+      {/* 2 Quick action buttons */}
+      <div style={{ display: "flex", gap: SPACING.sm }}>
+        <div style={{ flex: 1 }}>
+          <Button variant="primary" size="md" icon="🏖️" onClick={onRequestLeave}>
+            طلب إجازة جديد
+          </Button>
+        </div>
+        <div style={{ flex: 1 }}>
+          <Button variant="secondary" size="md" icon="🎫" onClick={onTicket}>
+            فتح تذكرة دعم
+          </Button>
+        </div>
+      </div>
+    </>
+  );
+}
+
+/* ── RecordsFilterChips — 6 horizontal chips ── */
+function RecordsFilterChips({ active, onChange }) {
+  var chips = [
+    { id: "open",       emoji: "📬", label: "مفتوحة" },
+    { id: "leaves",     emoji: "🏖️", label: "إجازات" },
+    { id: "contracts",  emoji: "📄", label: "عقود" },
+    { id: "violations", emoji: "⚠️", label: "مخالفات" },
+    { id: "promotions", emoji: "🚀", label: "ترقيات" },
+    { id: "archive",    emoji: "🗄️", label: "أرشيف" },
+  ];
+  return (
+    <div style={{ display: "flex", gap: 6, overflowX: "auto", paddingBottom: 4, WebkitOverflowScrolling: "touch" }}>
+      {chips.map(function(c){
+        var isActive = active === c.id;
+        return (
+          <button
+            key={c.id}
+            onClick={function(){ onChange(c.id); }}
+            style={{
+              flexShrink: 0,
+              padding: "8px 14px",
+              borderRadius: RADIUS.pill,
+              background: isActive ? COLORS.goldGradient : COLORS.metallic,
+              border: "1px solid " + (isActive ? COLORS.goldLight : COLORS.metallicBorder),
+              color: isActive ? COLORS.textOnGold : COLORS.textSecondary,
+              fontWeight: 800,
+              fontSize: 12,
+              cursor: "pointer",
+              fontFamily: TYPOGRAPHY.fontTajawal,
+              boxShadow: isActive ? SHADOWS.gold : SHADOWS.button,
+              display: "flex",
+              alignItems: "center",
+              gap: 6,
+              whiteSpace: "nowrap",
+              transition: "all .2s",
+            }}
+          >
+            <span style={{ fontSize: 14 }}>{c.emoji}</span>
+            <span>{c.label}</span>
+          </button>
+        );
+      })}
+    </div>
+  );
+}
+
+/* ── RecordsArchiveView — closed/archived items across all sources ── */
+function RecordsArchiveView({ user }) {
+  var [loading, setLoading] = useState(true);
+  var [items, setItems] = useState([]);
+
+  useEffect(function(){
+    if (!user || !user.id) return;
+    async function load() {
+      try {
+        var [leaves, perms, preAbs, contracts] = await Promise.all([
+          fetch("/api/data?action=leaves").then(function(r){ return r.json(); }).then(function(d){ return (Array.isArray(d) ? d : []).filter(function(x){ return x.empId === user.id; }); }).catch(function(){ return []; }),
+          fetch("/api/data?action=permissions&empId=" + encodeURIComponent(user.id)).then(function(r){ return r.json(); }).catch(function(){ return []; }),
+          fetch("/api/data?action=pre_absence").then(function(r){ return r.json(); }).then(function(d){ return (Array.isArray(d) ? d : []).filter(function(x){ return x.empId === user.id; }); }).catch(function(){ return []; }),
+          fetch("/api/data?action=emp_records&empId=" + encodeURIComponent(user.id) + "&type=contract").then(function(r){ return r.json(); }).catch(function(){ return []; }),
+        ]);
+        var all = [];
+        (leaves || []).forEach(function(l){ if (l.status === "approved" || l.status === "rejected") all.push({ kind: "leave", icon: "🏖️", title: "إجازة " + (l.type || ""), sub: (l.from || "") + " → " + (l.to || ""), status: l.status, ts: l.ts || l.decidedAt || "" }); });
+        (perms || []).forEach(function(p){ if (p.status === "approved" || p.status === "rejected") all.push({ kind: "permission", icon: "⏱", title: "استئذان", sub: (p.from_time || "") + " → " + (p.to_time || ""), status: p.status, ts: p.ts || "" }); });
+        (preAbs || []).forEach(function(pa){ if (pa.status === "approved" || pa.status === "rejected") all.push({ kind: "preabs", icon: "🏥", title: "إفادة غياب", sub: pa.date || "", status: pa.status, ts: pa.ts || "" }); });
+        (contracts || []).forEach(function(c){ if (c.status !== "active") all.push({ kind: "contract", icon: "📄", title: c.title || "عقد", sub: (c.startDate || "") + " → " + (c.endDate || ""), status: c.status || "ended", ts: c.endDate || c.startDate || "" }); });
+        all.sort(function(a, b){ return (b.ts || "").localeCompare(a.ts || ""); });
+        setItems(all);
+      } catch(e) {}
+      setLoading(false);
+    }
+    load();
+  }, [user && user.id]);
+
+  if (loading) {
+    return <div style={{ padding: SPACING.xl, textAlign: "center", color: COLORS.textMuted, fontSize: 12 }}>جارٍ التحميل...</div>;
+  }
+  if (items.length === 0) {
+    return (
+      <Card padding={SPACING.lg}>
+        <div style={{ textAlign: "center", color: COLORS.textMuted, padding: 20 }}>
+          <div style={{ fontSize: 36, marginBottom: 8 }}>🗄️</div>
+          <div style={{ ...TYPOGRAPHY.body, fontWeight: 700 }}>الأرشيف فارغ</div>
+          <div style={{ ...TYPOGRAPHY.tiny, marginTop: 4 }}>ستظهر هنا السجلات المغلقة (المعتمدة أو المرفوضة أو المنتهية)</div>
+        </div>
+      </Card>
+    );
+  }
+
+  var statusMeta = {
+    approved: { label: "✅ معتمد",  color: COLORS.success },
+    rejected: { label: "❌ مرفوض",  color: COLORS.textDanger },
+    ended:    { label: "📕 منتهي",  color: COLORS.textMuted },
+  };
+
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: SPACING.sm }}>
+      {items.map(function(x, i){
+        var st = statusMeta[x.status] || { label: x.status, color: COLORS.textMuted };
+        return (
+          <div key={i} style={{ padding: "10px 12px", borderRadius: RADIUS.md, background: COLORS.metallic, border: "1px solid " + COLORS.metallicBorder, display: "flex", alignItems: "center", gap: SPACING.sm }}>
+            <div style={{ fontSize: 20, flexShrink: 0 }}>{x.icon}</div>
+            <div style={{ flex: 1, minWidth: 0 }}>
+              <div style={{ fontSize: 12, fontWeight: 800, color: COLORS.textPrimary, fontFamily: TYPOGRAPHY.fontTajawal, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{x.title}</div>
+              <div style={{ fontSize: 10, color: COLORS.textMuted, marginTop: 2 }}>{x.sub}</div>
+            </div>
+            <span style={{ fontSize: 9, fontWeight: 800, color: st.color, padding: "3px 8px", borderRadius: RADIUS.pill, background: st.color + "22", border: "1px solid " + st.color + "44", flexShrink: 0 }}>
+              {st.label}
+            </span>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+/* ── RecordsPromotionsView — standalone promotions list ── */
+function RecordsPromotionsView({ user }) {
+  var [loading, setLoading] = useState(true);
+  var [promotions, setPromotions] = useState([]);
+
+  useEffect(function(){
+    if (!user || !user.id) return;
+    fetch("/api/data?action=emp_records&empId=" + encodeURIComponent(user.id) + "&type=promotion")
+      .then(function(r){ return r.json(); })
+      .then(function(d){ setPromotions(Array.isArray(d) ? d : []); setLoading(false); })
+      .catch(function(){ setLoading(false); });
+  }, [user && user.id]);
+
+  if (loading) return <div style={{ padding: SPACING.xl, textAlign: "center", color: COLORS.textMuted, fontSize: 12 }}>جارٍ التحميل...</div>;
+  if (promotions.length === 0) {
+    return (
+      <Card padding={SPACING.lg}>
+        <div style={{ textAlign: "center", color: COLORS.textMuted, padding: 20 }}>
+          <div style={{ fontSize: 36, marginBottom: 8 }}>🚀</div>
+          <div style={{ ...TYPOGRAPHY.body, fontWeight: 700 }}>لا توجد ترقيات مسجّلة</div>
+          <div style={{ ...TYPOGRAPHY.tiny, marginTop: 4 }}>ستظهر هنا ترقياتك وتدرّجك الوظيفي</div>
+        </div>
+      </Card>
+    );
+  }
+
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: SPACING.sm }}>
+      {promotions.map(function(p, i){
+        return (
+          <div key={p.id || i} style={{ padding: SPACING.md, borderRadius: RADIUS.md, background: "linear-gradient(135deg, rgba(201,168,76,0.08), rgba(232,213,163,0.04))", border: "1px solid rgba(201,168,76,0.3)" }}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 4 }}>
+              <span style={{ fontSize: 13, fontWeight: 900, color: COLORS.goldLight, fontFamily: TYPOGRAPHY.fontCairo }}>{p.title || "ترقية"}</span>
+              <span style={{ fontSize: 10, color: COLORS.textMuted }}>{p.date || p.startDate || "—"}</span>
+            </div>
+            {(p.fromRole || p.toRole) && (
+              <div style={{ fontSize: 11, color: COLORS.textSecondary, fontFamily: TYPOGRAPHY.fontTajawal }}>
+                {p.fromRole || "—"} <span style={{ color: COLORS.goldLight, fontWeight: 800 }}>›</span> {p.toRole || "—"}
+              </div>
+            )}
+            {p.notes && <div style={{ fontSize: 10, color: COLORS.textMuted, marginTop: 4, fontStyle: "italic" }}>{p.notes}</div>}
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+/* ── RecordsHub — container combining Hero + Chips + filtered content ── */
+function RecordsHub({ user, onTicket }) {
+  var [filter, setFilter] = useState(function(){
+    return localStorage.getItem("basma_records_filter") || "open";
+  });
+
+  useEffect(function(){ localStorage.setItem("basma_records_filter", filter); }, [filter]);
+
+  function handleRequestLeave() {
+    // Switch to "إجازات" filter which shows MyLeavesHub (has the leave request form)
+    setFilter("leaves");
+  }
+
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: SPACING.md }}>
+      {/* 1. Hero: 3 stats + 2 quick actions */}
+      <RecordsHero user={user} onTicket={onTicket} onRequestLeave={handleRequestLeave} />
+
+      {/* 2. Filter chips */}
+      <RecordsFilterChips active={filter} onChange={setFilter} />
+
+      {/* 3. Content by filter */}
+      <div>
+        {filter === "open" && <MyRequestsTab user={user} />}
+        {filter === "leaves" && <MyLeavesHub user={user} />}
+        {filter === "contracts" && <EmployeeRecordTab user={user} initialSubTab="contracts" hideSubTabs={true} />}
+        {filter === "violations" && <EmployeeRecordTab user={user} initialSubTab="violations" hideSubTabs={true} />}
+        {filter === "promotions" && <RecordsPromotionsView user={user} />}
+        {filter === "archive" && <RecordsArchiveView user={user} />}
+      </div>
+    </div>
+  );
+}
+
 function ProfilePage({ user, branch, workType, onLogout, onTicket, myTickets, darkMode, toggleDark, kadwarNotifs }) {
   // v7.15 — legacy tab IDs remapped to new 5-tab structure
   // Old (v7.14): profile/time/pay/perf/tickets → New (v7.15): profile/records/achievements/pay/legal
@@ -3575,20 +3873,8 @@ function ProfilePage({ user, branch, workType, onLogout, onTicket, myTickets, da
           </>
         )}
 
-        {/* v7.15 — tab: records (سجلي وطلباتي) — يدمج الإجازات + الطلبات + السجل الوظيفي */}
-        {tab === "records" && (
-          <>
-            <MyRequestsTab user={user} />
-            <div style={{ marginTop: SPACING.lg, paddingTop: SPACING.md, borderTop: "1px dashed " + COLORS.metallicBorder }}>
-              <div style={{ ...TYPOGRAPHY.h3, color: COLORS.textPrimary, fontFamily: TYPOGRAPHY.fontCairo, marginBottom: SPACING.sm, textAlign: "center" }}>🏖️ الإجازات والاستئذانات</div>
-              <MyLeavesHub user={user} />
-            </div>
-            <div style={{ marginTop: SPACING.lg, paddingTop: SPACING.md, borderTop: "1px dashed " + COLORS.metallicBorder }}>
-              <div style={{ ...TYPOGRAPHY.h3, color: COLORS.textPrimary, fontFamily: TYPOGRAPHY.fontCairo, marginBottom: SPACING.sm, textAlign: "center" }}>📚 السجل الوظيفي</div>
-              <EmployeeRecordTab user={user} />
-            </div>
-          </>
-        )}
+        {/* v7.17 — tab: records (سجلي وطلباتي) — visual redesign with Hero + Chips + filtered content */}
+        {tab === "records" && <RecordsHub user={user} onTicket={onTicket} />}
 
         {/* v7.15 — tab: achievements (إنجازاتي مستقل) */}
         {tab === "achievements" && (
@@ -12038,8 +12324,8 @@ function BottomNav({ page, setPage, legalAlerts, tawasulUnread, hrUnread, user }
 
 /* ═══════════ CUSTODY (العهد) ═══════════ */
 /* ═══════════ EMPLOYEE RECORD TAB — السجل الوظيفي الكامل ═══════════ */
-function EmployeeRecordTab({ user }) {
-  var [subTab, setSubTab] = useState("contracts");
+function EmployeeRecordTab({ user, initialSubTab, hideSubTabs }) {
+  var [subTab, setSubTab] = useState(initialSubTab || "contracts");
   var [contracts, setContracts] = useState([]);
   var [leaves, setLeaves] = useState([]);
   var [violations, setViolations] = useState([]);
@@ -12072,14 +12358,16 @@ function EmployeeRecordTab({ user }) {
 
   return (
     <div>
-      <div style={{ display: "flex", gap: 2, marginBottom: SPACING.md, overflowX: "auto" }}>
-        {tabs.map(function(t) {
-          var a = subTab === t.id;
-          return <button key={t.id} onClick={function(){ setSubTab(t.id); }} style={{ flex: 1, padding: "7px 8px", borderRadius: RADIUS.sm, background: a ? COLORS.goldGradient : COLORS.metallic, border: "1px solid " + (a ? COLORS.goldLight : COLORS.metallicBorder), color: a ? COLORS.textOnGold : COLORS.textMuted, ...TYPOGRAPHY.tiny, fontWeight: 800, cursor: "pointer", whiteSpace: "nowrap" }}>
-            {t.l}{t.count > 0 ? " (" + t.count + ")" : ""}
-          </button>;
-        })}
-      </div>
+      {!hideSubTabs && (
+        <div style={{ display: "flex", gap: 2, marginBottom: SPACING.md, overflowX: "auto" }}>
+          {tabs.map(function(t) {
+            var a = subTab === t.id;
+            return <button key={t.id} onClick={function(){ setSubTab(t.id); }} style={{ flex: 1, padding: "7px 8px", borderRadius: RADIUS.sm, background: a ? COLORS.goldGradient : COLORS.metallic, border: "1px solid " + (a ? COLORS.goldLight : COLORS.metallicBorder), color: a ? COLORS.textOnGold : COLORS.textMuted, ...TYPOGRAPHY.tiny, fontWeight: 800, cursor: "pointer", whiteSpace: "nowrap" }}>
+              {t.l}{t.count > 0 ? " (" + t.count + ")" : ""}
+            </button>;
+          })}
+        </div>
+      )}
 
       {loading && <div style={{ textAlign: "center", padding: SPACING.xl, color: COLORS.textMuted }}>جارِ التحميل...</div>}
 
