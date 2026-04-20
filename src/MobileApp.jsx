@@ -11,7 +11,7 @@ import { exportEmploymentLetter, exportLeaveLetter } from "./formalPdfs";
 
 /* ═══════════ APP CONFIG (إعدادات التطبيق) ═══════════ */
 const APP_CONFIG = {
-  VER: "6.90",
+  VER: "6.91",
   NAME: "بصمة HMA",
   FULL_NAME: "نظام الحضور والانصراف الذكي",
   COMPANY: "هاني محمد عسيري للاستشارات الهندسية",
@@ -2932,6 +2932,8 @@ function ProfilePage({ user, branch, workType, onLogout, onTicket, myTickets, da
   // v6.89 — Leave system tabs
   tabs.push({ id: "my_leaves", emoji: "🏖️", label: "إجازاتي" });
   tabs.push({ id: "handover_tasks", emoji: "📥", label: "مهام استلامها" });
+  // v6.91 — My salary (payslips)
+  tabs.push({ id: "my_salary", emoji: "💰", label: "راتبي" });
 
   return (
     <div style={{ flex: 1, paddingBottom: 80, background: "linear-gradient(180deg, "+COLORS.bg1+" 0%, "+COLORS.bg2+" 50%, "+COLORS.bg3+" 100%)", minHeight: "100vh" }}>
@@ -3113,6 +3115,11 @@ function ProfilePage({ user, branch, workType, onLogout, onTicket, myTickets, da
         {/* v6.89 — Handover tasks (received from colleagues) */}
         {tab === "handover_tasks" && (
           <HandoverTasksTab user={user} />
+        )}
+
+        {/* v6.91 — My salary */}
+        {tab === "my_salary" && (
+          <MySalaryTab user={user} />
         )}
 
         {/* Manager panel button — hidden in desktop session (v6.47) */}
@@ -15844,6 +15851,196 @@ function HandoverTasksTab({ user }) {
         </div>;
       })}
     </div>}
+  </div>;
+}
+
+
+/* ═══════════════════════════════════════════════════════════════════
+ * v6.91 — MySalaryTab — كشوف راتبي (للموظف)
+ * ═══════════════════════════════════════════════════════════════════ */
+function MySalaryTab({ user }) {
+  var [loading, setLoading] = useState(true);
+  var [slips, setSlips] = useState([]);
+  var [selected, setSelected] = useState(null);
+
+  async function load() {
+    setLoading(true);
+    try {
+      var r = await fetch("/api/data?action=payroll-my-slips&empId=" + encodeURIComponent(user.id));
+      var d = await r.json();
+      if (d.ok) setSlips(d.slips || []);
+    } catch(e) {}
+    setLoading(false);
+  }
+
+  useEffect(function(){ load(); }, [user && user.id]);
+
+  if (selected) {
+    return <SalarySlipDetail slip={selected} user={user} onClose={function(){setSelected(null);}} />;
+  }
+
+  var statusLabels = {
+    approved: { label: "✓ معتمد", color: "#16A34A" },
+    sent_to_bank: { label: "🏦 أُرسل للبنك", color: "#8B5CF6" },
+    paid: { label: "💰 مدفوع", color: "#059669" },
+  };
+
+  return <div>
+    <div style={{ ...TYPOGRAPHY.h2, color: COLORS.textPrimary, marginBottom: SPACING.md, fontFamily: TYPOGRAPHY.fontCairo }}>
+      💰 راتبي
+    </div>
+
+    <div style={{ padding: 12, background: "rgba(59,130,246,0.08)", borderRadius: 12, marginBottom: SPACING.md, fontSize: 11, color: COLORS.primary, fontWeight: 600, textAlign: "center" }}>
+      ℹ️ تظهر هنا كشوف رواتبك المعتمدة فقط
+    </div>
+
+    {loading ? <div style={{ padding: 40, textAlign: "center", color: COLORS.textMuted }}>جارٍ التحميل...</div> :
+     slips.length === 0 ? <Card>
+       <div style={{ padding: 30, textAlign: "center" }}>
+         <div style={{ fontSize: 48, marginBottom: 10, opacity: 0.4 }}>💰</div>
+         <div style={{ fontSize: 14, fontWeight: 700, color: COLORS.textPrimary, marginBottom: 6 }}>لا توجد كشوف راتب بعد</div>
+         <div style={{ fontSize: 11, color: COLORS.textMuted }}>ستظهر كشوف راتبك هنا عند اعتمادها</div>
+       </div>
+     </Card> :
+     <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+       {slips.map(function(s){
+         var st = statusLabels[s.status] || { label: s.status, color: COLORS.textMuted };
+         return <div key={s.id} onClick={function(){setSelected(s);}} style={{
+           background: COLORS.card, borderRadius: 18, padding: SPACING.md,
+           border: "1px solid " + COLORS.cardBorder, cursor: "pointer",
+           display: "flex", alignItems: "center", gap: 14
+         }}>
+           <div style={{
+             width: 56, height: 56, borderRadius: 16, background: "linear-gradient(135deg, #16A34A30, #16A34A10)",
+             display: "flex", alignItems: "center", justifyContent: "center",
+             flexDirection: "column"
+           }}>
+             <div style={{ fontSize: 10, color: "#16A34A" }}>صافي</div>
+             <div style={{ fontSize: 13, fontWeight: 800, color: "#16A34A" }}>{Number(s.netSalary).toLocaleString("en-US")}</div>
+           </div>
+           <div style={{ flex: 1 }}>
+             <div style={{ fontSize: 14, fontWeight: 800, color: COLORS.textPrimary }}>📅 شهر {s.period}</div>
+             <div style={{ fontSize: 11, color: COLORS.textMuted, marginTop: 4 }}>
+               إجمالي مستحق: {Number(s.totalEarnings).toLocaleString("en-US")} · خصومات: {Number(s.totalDeductions).toLocaleString("en-US")}
+             </div>
+             <div style={{ fontSize: 10, color: st.color, marginTop: 4, fontWeight: 700 }}>{st.label}</div>
+           </div>
+           <div style={{ fontSize: 20, color: COLORS.textMuted }}>‹</div>
+         </div>;
+       })}
+     </div>}
+  </div>;
+}
+
+/* ────── SalarySlipDetail — تفاصيل كشف راتب ────── */
+function SalarySlipDetail({ slip, user, onClose }) {
+  var b = slip.breakdown || {};
+  var earnings = [
+    { label: "الراتب الأساسي", value: b.basic },
+    { label: "بدل السكن", value: b.housing },
+    { label: "بدل النقل", value: b.transport },
+    { label: "بدل الاتصالات", value: b.communication },
+    { label: "بدلات أخرى", value: b.other },
+    { label: "العمولات", value: b.commissions },
+    { label: "ساعات إضافية", value: b.overtime },
+    { label: "مكافأة", value: b.bonus },
+    { label: "إضافات أخرى", value: b.otherAdd },
+  ].filter(function(x){ return x.value && x.value > 0; });
+
+  var deductions = [
+    { label: "خصومات ثابتة", value: b.fixedDeductions },
+    { label: "غياب", value: b.absence },
+    { label: "تأخير", value: b.late },
+    { label: "سُلفة", value: b.advance },
+    { label: "التأمينات", value: b.gosiEmployee },
+    { label: "خصومات أخرى", value: b.otherDed },
+  ].filter(function(x){ return x.value && x.value > 0; });
+
+  return <div style={{ paddingBottom: 40 }}>
+    <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: SPACING.md }}>
+      <button onClick={onClose} style={{
+        width: 36, height: 36, borderRadius: 12, border: "none",
+        background: COLORS.bgSecondary, cursor: "pointer", fontSize: 18
+      }}>×</button>
+      <div style={{ ...TYPOGRAPHY.h3, color: COLORS.textPrimary, fontFamily: TYPOGRAPHY.fontCairo }}>
+        كشف راتب — {slip.period}
+      </div>
+    </div>
+
+    {/* Net salary big card */}
+    <Card>
+      <div style={{ textAlign: "center", padding: 14 }}>
+        <div style={{ fontSize: 11, color: COLORS.textMuted, marginBottom: 6 }}>صافي الراتب</div>
+        <div style={{ fontSize: 42, fontWeight: 800, color: "#16A34A", direction: "ltr" }}>
+          {Number(slip.netSalary).toLocaleString("en-US")}
+        </div>
+        <div style={{ fontSize: 14, color: COLORS.textSecondary, marginTop: 4 }}>ريال سعودي</div>
+      </div>
+    </Card>
+
+    {/* Totals */}
+    <Card>
+      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
+        <div style={{ padding: 10, background: "rgba(34,197,94,0.08)", borderRadius: 10 }}>
+          <div style={{ fontSize: 10, color: "#16A34A", fontWeight: 700 }}>إجمالي المستحقات</div>
+          <div style={{ fontSize: 18, fontWeight: 800, color: "#16A34A" }}>{Number(slip.totalEarnings).toLocaleString("en-US")}</div>
+        </div>
+        <div style={{ padding: 10, background: "rgba(239,68,68,0.08)", borderRadius: 10 }}>
+          <div style={{ fontSize: 10, color: "#DC2626", fontWeight: 700 }}>إجمالي الخصومات</div>
+          <div style={{ fontSize: 18, fontWeight: 800, color: "#DC2626" }}>{Number(slip.totalDeductions).toLocaleString("en-US")}</div>
+        </div>
+      </div>
+    </Card>
+
+    {/* Earnings breakdown */}
+    {earnings.length > 0 && <Card>
+      <div style={{ fontSize: 13, fontWeight: 800, color: "#16A34A", marginBottom: 10 }}>➕ المستحقات</div>
+      <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+        {earnings.map(function(e, i){
+          return <div key={i} style={{
+            display: "flex", justifyContent: "space-between",
+            padding: "8px 10px", background: COLORS.bgSecondary, borderRadius: 8, fontSize: 12
+          }}>
+            <span style={{ color: COLORS.textSecondary }}>{e.label}</span>
+            <strong style={{ color: COLORS.textPrimary }}>{Number(e.value).toLocaleString("en-US")}</strong>
+          </div>;
+        })}
+      </div>
+    </Card>}
+
+    {/* Deductions breakdown */}
+    {deductions.length > 0 && <Card>
+      <div style={{ fontSize: 13, fontWeight: 800, color: "#DC2626", marginBottom: 10 }}>➖ الخصومات</div>
+      <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+        {deductions.map(function(d, i){
+          return <div key={i} style={{
+            display: "flex", justifyContent: "space-between",
+            padding: "8px 10px", background: COLORS.bgSecondary, borderRadius: 8, fontSize: 12
+          }}>
+            <span style={{ color: COLORS.textSecondary }}>{d.label}</span>
+            <strong style={{ color: "#DC2626" }}>{Number(d.value).toLocaleString("en-US")}</strong>
+          </div>;
+        })}
+      </div>
+    </Card>}
+
+    {/* Bank info */}
+    <Card>
+      <div style={{ fontSize: 12, fontWeight: 700, color: COLORS.textPrimary, marginBottom: 8 }}>🏦 معلومات التحويل</div>
+      <div style={{ fontSize: 11, color: COLORS.textSecondary, lineHeight: 1.8 }}>
+        البنك: <strong>{slip.bankName || "—"}</strong><br/>
+        IBAN (آخر 4 أرقام): <strong style={{ fontFamily: "monospace" }}>****{slip.ibanLast4 || "—"}</strong>
+      </div>
+    </Card>
+
+    {/* Status */}
+    <Card>
+      <div style={{ fontSize: 12, fontWeight: 700, color: COLORS.textPrimary, marginBottom: 8 }}>📜 الحالة</div>
+      <div style={{ fontSize: 11, color: COLORS.textSecondary, lineHeight: 1.8 }}>
+        {slip.calculatedAt && <div>تم الاحتساب: {new Date(slip.calculatedAt).toLocaleDateString("ar-SA")}</div>}
+        {slip.sentAt && <div>تم الإرسال للبنك: {new Date(slip.sentAt).toLocaleDateString("ar-SA")}</div>}
+      </div>
+    </Card>
   </div>;
 }
 

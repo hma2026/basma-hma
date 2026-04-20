@@ -147,6 +147,135 @@ async function dbSet(t, d) {
   return await blobSet(t, d);
 }
 
+/* ════════ v6.91 — Payroll Helpers (التشفير + الصلاحيات + الحسابات) ════════ */
+
+// مفتاح التشفير — يُقرأ من env variable أو default آمن
+const PAYROLL_ENCRYPTION_KEY = process.env.PAYROLL_KEY ||
+  crypto.createHash('sha256').update('basma-hma-payroll-v1-secret-2026').digest();
+
+function encryptPayrollField(plaintext) {
+  if (plaintext == null || plaintext === '') return null;
+  try {
+    const iv = crypto.randomBytes(16);
+    const keyBuf = typeof PAYROLL_ENCRYPTION_KEY === 'string'
+      ? Buffer.from(PAYROLL_ENCRYPTION_KEY, 'hex').slice(0, 32)
+      : PAYROLL_ENCRYPTION_KEY.slice(0, 32);
+    const cipher = crypto.createCipheriv('aes-256-cbc', keyBuf, iv);
+    let encrypted = cipher.update(String(plaintext), 'utf8', 'hex');
+    encrypted += cipher.final('hex');
+    return iv.toString('hex') + ':' + encrypted;
+  } catch (e) {
+    console.error('[Encrypt] failed:', e.message);
+    return null;
+  }
+}
+
+function decryptPayrollField(ciphertext) {
+  if (!ciphertext || typeof ciphertext !== 'string' || !ciphertext.includes(':')) return ciphertext;
+  try {
+    const [ivHex, encrypted] = ciphertext.split(':');
+    const iv = Buffer.from(ivHex, 'hex');
+    const keyBuf = typeof PAYROLL_ENCRYPTION_KEY === 'string'
+      ? Buffer.from(PAYROLL_ENCRYPTION_KEY, 'hex').slice(0, 32)
+      : PAYROLL_ENCRYPTION_KEY.slice(0, 32);
+    const decipher = crypto.createDecipheriv('aes-256-cbc', keyBuf, iv);
+    let decrypted = decipher.update(encrypted, 'hex', 'utf8');
+    decrypted += decipher.final('utf8');
+    return decrypted;
+  } catch (e) {
+    console.error('[Decrypt] failed:', e.message);
+    return null;
+  }
+}
+
+// التحقق من صلاحية الوصول للرواتب
+async function canAccessPayroll(userId, action) {
+  // action: 'view_own' | 'view_all' | 'create' | 'edit' | 'approve' | 'send_bank'
+  if (!userId) return { allowed: false, reason: 'no_user' };
+  const emps = await dbGet('employees') || [];
+  const user = emps.find(e => String(e.id) === String(userId));
+  if (!user) return { allowed: false, reason: 'user_not_found' };
+
+  const role = user.accountRole || user.role || '';
+  const isAdmin = !!user.isAdmin;
+  const isHRManager = role === 'hr_manager' || role === 'admin';
+  const isAccountant = role === 'accountant' || role === 'finance_manager';
+
+  // view_own: any employee can see their own payslip
+  if (action === 'view_own') return { allowed: true, user };
+  // view_all / create / edit: HR manager or accountant
+  if (['view_all','create','edit'].includes(action)) {
+    if (isAdmin || isHRManager || isAccountant) return { allowed: true, user };
+    return { allowed: false, reason: 'insufficient_role', role };
+  }
+  // approve / send_bank: HR manager or admin only (not accountant)
+  if (['approve','send_bank'].includes(action)) {
+    if (isAdmin || isHRManager) return { allowed: true, user };
+    return { allowed: false, reason: 'approval_requires_hr_manager', role };
+  }
+  return { allowed: false, reason: 'unknown_action' };
+}
+
+// تسجيل عملية في audit log
+async function auditLog(userId, action, target, details) {
+  try {
+    const log = await dbGet('payroll-audit-log') || [];
+    log.push({
+      id: 'AUDIT' + Date.now() + Math.random().toString(36).slice(2, 6),
+      userId: String(userId || 'system'),
+      action,
+      target: target || null,
+      details: details || null,
+      ts: new Date().toISOString(),
+    });
+    if (log.length > 5000) log.splice(0, log.length - 5000);
+    await dbSet('payroll-audit-log', log);
+  } catch (e) {
+    console.error('[Audit] failed:', e.message);
+  }
+}
+
+// حساب الراتب الشهري من profile + إضافات/خصومات
+function computeMonthlySalary(profile, additions, deductions, attendance) {
+  profile = profile || {};
+  additions = additions || {};
+  deductions = deductions || {};
+  const comp = profile.compensation || {};
+  const jobGrade = profile.jobGrade || {};
+
+  // الأساسي من jobGrade إن وُجد، وإلا من compensation
+  const basic = Number(jobGrade.basic || comp.basicSalary || 0);
+  const housing = Number(jobGrade.housing || comp.housingAllowance || 0);
+  const transport = Number(jobGrade.transport || comp.transportAllowance || 0);
+  const communication = Number(comp.communicationsAllowance || 0);
+  const other = Number(comp.otherAllowances || 0);
+  const commissions = Number(comp.commissions || 0) + Number(additions.commissions || 0);
+  const overtime = Number(additions.overtime || 0);
+  const bonus = Number(additions.bonus || 0);
+  const otherAdd = Number(additions.other || 0);
+
+  const fixedDeductions = Number(comp.fixedDeductions || 0);
+  const absence = Number(deductions.absence || 0);
+  const late = Number(deductions.late || 0);
+  const advance = Number(deductions.advance || 0); // سُلفة
+  const gosiEmployee = Number(deductions.gosi || 0); // التأمينات
+  const otherDed = Number(deductions.other || 0);
+
+  const totalEarnings = basic + housing + transport + communication + other + commissions + overtime + bonus + otherAdd;
+  const totalDeductions = fixedDeductions + absence + late + advance + gosiEmployee + otherDed;
+  const netSalary = totalEarnings - totalDeductions;
+
+  return {
+    breakdown: {
+      basic, housing, transport, communication, other, commissions, overtime, bonus, otherAdd,
+      fixedDeductions, absence, late, advance, gosiEmployee, otherDed,
+    },
+    totalEarnings: Math.round(totalEarnings * 100) / 100,
+    totalDeductions: Math.round(totalDeductions * 100) / 100,
+    netSalary: Math.round(netSalary * 100) / 100,
+  };
+}
+
 /* ════════ v6.83 — Employee Profile Helpers ════════ */
 function sectionLabel(section) {
   const labels = {
@@ -2366,6 +2495,421 @@ export default async function handler(req, res) {
           byStatus,
           pendingM1, pendingDelegates, pendingFinal, approved,
         });
+      }
+
+      /* ═══════════════════════════════════════════════════════════════════
+       * v6.91 — BATCH 4 — نظام الرواتب (PAYROLL SYSTEM)
+       * ═══════════════════════════════════════════════════════════════════
+       * الفلسفة:
+       *   - البيانات المالية الحساسة (IBAN، الراتب) تُشفَّر
+       *   - صلاحيات صارمة (hr_manager + accountant فقط)
+       *   - Audit log كامل
+       *   - Workflow: draft → calculated → reviewed → approved → sent_to_bank → paid
+       *
+       * الجداول:
+       *   - payroll-runs: الدورات الشهرية (2026-04 مثلاً)
+       *   - payroll-slips: كشوف الرواتب الفردية
+       *   - payroll-audit-log: سجل كل العمليات
+       */
+
+      case 'payroll-runs': {
+        // GET — قائمة الدورات
+        if (req.method === 'GET') {
+          const actor = req.query.actor;
+          const access = await canAccessPayroll(actor, 'view_all');
+          if (!access.allowed) return res.status(403).json({ error: 'insufficient permission', reason: access.reason });
+          await auditLog(actor, 'list_runs', null, null);
+          const runs = await dbGet('payroll-runs') || [];
+          runs.sort((a, b) => String(b.period || '').localeCompare(String(a.period || '')));
+          return res.json({ ok: true, runs });
+        }
+        // POST — إنشاء دورة جديدة
+        if (req.method === 'POST') {
+          const { period, actor, note } = req.body || {};
+          if (!period) return res.status(400).json({ error: 'period required (YYYY-MM)' });
+          if (!/^\d{4}-\d{2}$/.test(period)) return res.status(400).json({ error: 'invalid period format' });
+
+          const access = await canAccessPayroll(actor, 'create');
+          if (!access.allowed) return res.status(403).json({ error: 'insufficient permission', reason: access.reason });
+
+          const runs = await dbGet('payroll-runs') || [];
+          if (runs.find(r => r.period === period)) return res.status(400).json({ error: 'الدورة موجودة بالفعل لهذا الشهر' });
+
+          const newRun = {
+            id: 'PR' + Date.now() + Math.random().toString(36).slice(2, 5),
+            period,
+            status: 'draft',
+            note: note || '',
+            slipsCount: 0,
+            totalNetAmount: 0,
+            createdBy: actor,
+            createdAt: new Date().toISOString(),
+            calculatedAt: null,
+            reviewedAt: null,
+            reviewedBy: null,
+            approvedAt: null,
+            approvedBy: null,
+            sentToBankAt: null,
+            sentToBankBy: null,
+            bankFileGeneratedAt: null,
+          };
+          runs.push(newRun);
+          await dbSet('payroll-runs', runs);
+          await auditLog(actor, 'create_run', newRun.id, { period });
+          return res.json({ ok: true, run: newRun });
+        }
+        break;
+      }
+
+      case 'payroll-run-detail': {
+        if (req.method !== 'GET') return res.status(405).json({ error: 'GET required' });
+        const { runId, actor } = req.query;
+        if (!runId) return res.status(400).json({ error: 'runId required' });
+        const access = await canAccessPayroll(actor, 'view_all');
+        if (!access.allowed) return res.status(403).json({ error: 'insufficient permission', reason: access.reason });
+
+        const runs = await dbGet('payroll-runs') || [];
+        const run = runs.find(r => r.id === runId);
+        if (!run) return res.status(404).json({ error: 'run not found' });
+
+        const slips = await dbGet('payroll-slips') || [];
+        const runSlips = slips.filter(s => s.runId === runId).map(s => ({
+          ...s,
+          iban: s.iban ? decryptPayrollField(s.iban) : '',  // فك التشفير عند العرض
+        }));
+
+        await auditLog(actor, 'view_run_detail', runId, null);
+        return res.json({ ok: true, run, slips: runSlips });
+      }
+
+      case 'payroll-calculate': {
+        // POST — احتساب الرواتب تلقائياً للدورة (لكل الموظفين النشطين)
+        if (req.method !== 'POST') return res.status(405).json({ error: 'POST required' });
+        const { runId, actor } = req.body || {};
+        if (!runId) return res.status(400).json({ error: 'runId required' });
+
+        const access = await canAccessPayroll(actor, 'create');
+        if (!access.allowed) return res.status(403).json({ error: 'insufficient permission', reason: access.reason });
+
+        const runs = await dbGet('payroll-runs') || [];
+        const runIdx = runs.findIndex(r => r.id === runId);
+        if (runIdx < 0) return res.status(404).json({ error: 'run not found' });
+        const run = runs[runIdx];
+        if (!['draft','calculated'].includes(run.status)) {
+          return res.status(400).json({ error: 'لا يمكن إعادة الاحتساب بعد الاعتماد' });
+        }
+
+        const emps = await dbGet('employees') || [];
+        const profiles = await dbGet('emp-profiles') || {};
+        const existingSlips = await dbGet('payroll-slips') || [];
+
+        // احذف كشوف هذه الدورة الحالية
+        const otherSlips = existingSlips.filter(s => s.runId !== runId);
+        const newSlips = [];
+        let totalNet = 0;
+
+        const activeEmps = emps.filter(e => (e.status || 'active') === 'active');
+
+        for (const emp of activeEmps) {
+          const profile = profiles[emp.id] || {};
+          const comp = profile.compensation || {};
+          const computation = computeMonthlySalary(profile, {}, {}, null);
+
+          const slip = {
+            id: 'SL' + Date.now() + Math.random().toString(36).slice(2, 5),
+            runId,
+            period: run.period,
+            empId: emp.id,
+            empName: emp.name,
+            jobTitle: (profile.employment && profile.employment.jobTitle) || emp.role || '',
+            department: (profile.employment && profile.employment.department) || emp.department || '',
+            status: 'calculated',
+
+            // Encrypted sensitive fields
+            iban: comp.iban ? encryptPayrollField(comp.iban) : null,
+            bankName: comp.bankName || '',
+
+            // Breakdown
+            breakdown: computation.breakdown,
+            totalEarnings: computation.totalEarnings,
+            totalDeductions: computation.totalDeductions,
+            netSalary: computation.netSalary,
+
+            // Manual adjustments (empty initially)
+            additions: {},
+            deductions: {},
+
+            createdAt: new Date().toISOString(),
+            calculatedAt: new Date().toISOString(),
+            sentAt: null,
+          };
+          newSlips.push(slip);
+          totalNet += computation.netSalary;
+        }
+
+        await dbSet('payroll-slips', [...otherSlips, ...newSlips]);
+
+        run.status = 'calculated';
+        run.calculatedAt = new Date().toISOString();
+        run.slipsCount = newSlips.length;
+        run.totalNetAmount = Math.round(totalNet * 100) / 100;
+        runs[runIdx] = run;
+        await dbSet('payroll-runs', runs);
+
+        await auditLog(actor, 'calculate_run', runId, { slipsCount: newSlips.length, totalNet });
+        return res.json({ ok: true, run, slipsCount: newSlips.length, totalNet });
+      }
+
+      case 'payroll-slip-edit': {
+        // POST — تعديل كشف راتب واحد (إضافات/خصومات)
+        if (req.method !== 'POST') return res.status(405).json({ error: 'POST required' });
+        const { slipId, additions, deductions, actor, note } = req.body || {};
+        if (!slipId) return res.status(400).json({ error: 'slipId required' });
+
+        const access = await canAccessPayroll(actor, 'edit');
+        if (!access.allowed) return res.status(403).json({ error: 'insufficient permission', reason: access.reason });
+
+        const slips = await dbGet('payroll-slips') || [];
+        const idx = slips.findIndex(s => s.id === slipId);
+        if (idx < 0) return res.status(404).json({ error: 'slip not found' });
+        const slip = slips[idx];
+
+        const runs = await dbGet('payroll-runs') || [];
+        const run = runs.find(r => r.id === slip.runId);
+        if (run && ['approved','sent_to_bank','paid'].includes(run.status)) {
+          return res.status(400).json({ error: 'الدورة مُعتمَدة — لا يمكن التعديل' });
+        }
+
+        // Recompute
+        const profiles = await dbGet('emp-profiles') || {};
+        const profile = profiles[slip.empId] || {};
+        const computation = computeMonthlySalary(profile, additions || slip.additions || {}, deductions || slip.deductions || {}, null);
+
+        slip.additions = additions || slip.additions || {};
+        slip.deductions = deductions || slip.deductions || {};
+        slip.breakdown = computation.breakdown;
+        slip.totalEarnings = computation.totalEarnings;
+        slip.totalDeductions = computation.totalDeductions;
+        slip.netSalary = computation.netSalary;
+        slip.editedAt = new Date().toISOString();
+        slip.editedBy = actor;
+        slip.editNote = note || '';
+
+        slips[idx] = slip;
+        await dbSet('payroll-slips', slips);
+
+        // Update run total
+        if (run) {
+          const runSlips = slips.filter(s => s.runId === slip.runId);
+          const newTotal = runSlips.reduce((s, x) => s + (x.netSalary || 0), 0);
+          const runIdx = runs.findIndex(r => r.id === slip.runId);
+          runs[runIdx].totalNetAmount = Math.round(newTotal * 100) / 100;
+          await dbSet('payroll-runs', runs);
+        }
+
+        await auditLog(actor, 'edit_slip', slipId, { additions, deductions, netSalary: slip.netSalary });
+        return res.json({ ok: true, slip: { ...slip, iban: slip.iban ? decryptPayrollField(slip.iban) : '' } });
+      }
+
+      case 'payroll-run-approve': {
+        // POST — HR Manager تعتمد الدورة
+        if (req.method !== 'POST') return res.status(405).json({ error: 'POST required' });
+        const { runId, actor, note } = req.body || {};
+        if (!runId) return res.status(400).json({ error: 'runId required' });
+
+        const access = await canAccessPayroll(actor, 'approve');
+        if (!access.allowed) return res.status(403).json({ error: 'only HR manager can approve', reason: access.reason });
+
+        const runs = await dbGet('payroll-runs') || [];
+        const idx = runs.findIndex(r => r.id === runId);
+        if (idx < 0) return res.status(404).json({ error: 'run not found' });
+        const run = runs[idx];
+        if (run.status !== 'calculated' && run.status !== 'reviewed') {
+          return res.status(400).json({ error: 'يجب احتساب الدورة أولاً' });
+        }
+
+        run.status = 'approved';
+        run.approvedAt = new Date().toISOString();
+        run.approvedBy = actor;
+        run.approvalNote = note || '';
+        runs[idx] = run;
+        await dbSet('payroll-runs', runs);
+
+        // Also update all slips
+        const slips = await dbGet('payroll-slips') || [];
+        slips.forEach(s => {
+          if (s.runId === runId) s.status = 'approved';
+        });
+        await dbSet('payroll-slips', slips);
+
+        await auditLog(actor, 'approve_run', runId, { totalNet: run.totalNetAmount });
+        return res.json({ ok: true, run });
+      }
+
+      case 'payroll-bank-file': {
+        // GET — توليد ملف SAR للبنك (صيغة تحويل مجمع)
+        if (req.method !== 'GET') return res.status(405).json({ error: 'GET required' });
+        const { runId, actor } = req.query;
+        if (!runId) return res.status(400).json({ error: 'runId required' });
+
+        const access = await canAccessPayroll(actor, 'send_bank');
+        if (!access.allowed) return res.status(403).json({ error: 'insufficient permission' });
+
+        const runs = await dbGet('payroll-runs') || [];
+        const runIdx = runs.findIndex(r => r.id === runId);
+        if (runIdx < 0) return res.status(404).json({ error: 'run not found' });
+        const run = runs[runIdx];
+        if (run.status !== 'approved' && run.status !== 'sent_to_bank') {
+          return res.status(400).json({ error: 'يجب اعتماد الدورة أولاً' });
+        }
+
+        const slips = await dbGet('payroll-slips') || [];
+        const runSlips = slips.filter(s => s.runId === runId);
+
+        // Build bank file (CSV format — Saudi banks accept this)
+        // Headers: IBAN, Beneficiary Name, Amount, Currency, Reference, Purpose
+        const lines = ['IBAN,BeneficiaryName,Amount,Currency,Reference,Purpose'];
+        let total = 0;
+        runSlips.forEach(s => {
+          const iban = s.iban ? decryptPayrollField(s.iban) : '';
+          if (!iban) return; // skip employees without IBAN
+          const amount = Number(s.netSalary || 0).toFixed(2);
+          const ref = 'SAL-' + run.period + '-' + s.empId;
+          const purpose = 'Salary ' + run.period;
+          // Escape commas in name
+          const name = (s.empName || '').replace(/,/g, ' ');
+          lines.push(`${iban},${name},${amount},SAR,${ref},${purpose}`);
+          total += Number(s.netSalary || 0);
+        });
+
+        // Update run: mark bank file generated
+        if (!run.bankFileGeneratedAt) {
+          run.bankFileGeneratedAt = new Date().toISOString();
+          runs[runIdx] = run;
+          await dbSet('payroll-runs', runs);
+        }
+
+        await auditLog(actor, 'generate_bank_file', runId, { lineCount: lines.length - 1, total });
+
+        // Return as text
+        res.setHeader('Content-Type', 'text/csv; charset=utf-8');
+        res.setHeader('Content-Disposition', 'attachment; filename="salaries-' + run.period + '.csv"');
+        return res.send(lines.join('\n'));
+      }
+
+      case 'payroll-mark-sent': {
+        // POST — وضع علامة "تم الإرسال للبنك"
+        if (req.method !== 'POST') return res.status(405).json({ error: 'POST required' });
+        const { runId, actor, note } = req.body || {};
+        if (!runId) return res.status(400).json({ error: 'runId required' });
+
+        const access = await canAccessPayroll(actor, 'send_bank');
+        if (!access.allowed) return res.status(403).json({ error: 'insufficient permission' });
+
+        const runs = await dbGet('payroll-runs') || [];
+        const idx = runs.findIndex(r => r.id === runId);
+        if (idx < 0) return res.status(404).json({ error: 'run not found' });
+        const run = runs[idx];
+        if (run.status !== 'approved') return res.status(400).json({ error: 'يجب اعتماد الدورة أولاً' });
+
+        run.status = 'sent_to_bank';
+        run.sentToBankAt = new Date().toISOString();
+        run.sentToBankBy = actor;
+        run.bankNote = note || '';
+        runs[idx] = run;
+        await dbSet('payroll-runs', runs);
+
+        // Update all slips
+        const slips = await dbGet('payroll-slips') || [];
+        slips.forEach(s => {
+          if (s.runId === runId) { s.status = 'sent_to_bank'; s.sentAt = new Date().toISOString(); }
+        });
+        await dbSet('payroll-slips', slips);
+
+        // Notify all employees
+        const notifs = await dbGet('notifications') || [];
+        const runSlips = slips.filter(s => s.runId === runId);
+        runSlips.forEach(s => {
+          notifs.push({
+            id: 'n_sal_' + Date.now() + '_' + s.empId,
+            empId: s.empId,
+            type: 'salary_sent',
+            title: '💰 تم إرسال راتبك للبنك',
+            message: 'راتب شهر ' + run.period + ' — ' + Number(s.netSalary).toFixed(2) + ' ريال',
+            link: '/my/salary',
+            read: false,
+            ts: new Date().toISOString(),
+          });
+        });
+        await dbSet('notifications', notifs);
+
+        await auditLog(actor, 'mark_sent', runId, null);
+        return res.json({ ok: true, run });
+      }
+
+      case 'payroll-my-slips': {
+        // GET — كشوف الموظف الخاصة به (view_own)
+        if (req.method !== 'GET') return res.status(405).json({ error: 'GET required' });
+        const empId = req.query.empId;
+        if (!empId) return res.status(400).json({ error: 'empId required' });
+
+        // view_own: anyone can see their own
+        const slips = await dbGet('payroll-slips') || [];
+        const mySlips = slips.filter(s =>
+          String(s.empId) === String(empId) &&
+          ['approved','sent_to_bank','paid'].includes(s.status)  // only visible after approval
+        );
+
+        const runs = await dbGet('payroll-runs') || [];
+        const enriched = mySlips.map(s => {
+          const run = runs.find(r => r.id === s.runId);
+          // Don't expose IBAN even to the employee (they should know it)
+          const { iban, ...rest } = s;
+          return { ...rest, runStatus: run ? run.status : null, ibanLast4: iban ? (decryptPayrollField(iban) || '').slice(-4) : '' };
+        });
+        enriched.sort((a, b) => String(b.period || '').localeCompare(String(a.period || '')));
+
+        return res.json({ ok: true, slips: enriched });
+      }
+
+      case 'payroll-stats': {
+        // GET — إحصائيات الرواتب (HR dashboard)
+        if (req.method !== 'GET') return res.status(405).json({ error: 'GET required' });
+        const actor = req.query.actor;
+        const access = await canAccessPayroll(actor, 'view_all');
+        if (!access.allowed) return res.status(403).json({ error: 'insufficient permission' });
+
+        const runs = await dbGet('payroll-runs') || [];
+        const slips = await dbGet('payroll-slips') || [];
+
+        const totalRuns = runs.length;
+        const byStatus = {};
+        runs.forEach(r => { byStatus[r.status] = (byStatus[r.status] || 0) + 1; });
+
+        // Last 12 months
+        const monthlyTotals = {};
+        runs.forEach(r => {
+          monthlyTotals[r.period] = (monthlyTotals[r.period] || 0) + (r.totalNetAmount || 0);
+        });
+
+        return res.json({
+          ok: true,
+          totalRuns,
+          totalSlips: slips.length,
+          byStatus,
+          monthlyTotals,
+        });
+      }
+
+      case 'payroll-audit-log': {
+        // GET — عرض سجل الـ audit (admin + hr_manager فقط)
+        if (req.method !== 'GET') return res.status(405).json({ error: 'GET required' });
+        const actor = req.query.actor;
+        const access = await canAccessPayroll(actor, 'approve');  // same permission as approve
+        if (!access.allowed) return res.status(403).json({ error: 'insufficient permission' });
+        const log = await dbGet('payroll-audit-log') || [];
+        const recent = log.slice(-200).reverse();
+        return res.json({ ok: true, count: recent.length, log: recent });
       }
 
       case 'checkin': {

@@ -4,7 +4,7 @@ import { generateAttendanceReport, generateEmployeeReport, generateMonthlySummar
 import { exportFormalWarning, exportInvestigationRecord, exportAffidavit, exportEmploymentLetter, exportSalaryLetter, exportLeaveLetter } from "./formalPdfs";
 
 const APP = "بصمة HMA";
-const VER = "6.90";
+const VER = "6.91";
 const CO = "هاني محمد عسيري للإستشارات الهندسية";
 const B = { blue: "#2B5EA7", yellow: "#FDD800", red: "#E2192C", black: "#1A1A1A", blueDk: "#1E4478", blueLt: "#EDF3FB", gold: "#D4A017" };
 
@@ -520,6 +520,7 @@ export default function AdminApp() {
         { id: "org_hierarchy", icon: "🏢", label: "الهيكل التنظيمي" },
         { id: "leaves", icon: "📋", label: "الإجازات", badge: pending },
         { id: "leave_requests_v2", icon: "🏖️", label: "طلبات الإجازات + تسليم" },
+        { id: "payroll", icon: "💰", label: "الرواتب 🔒" },
         { id: "leave_balances", icon: "💰", label: "أرصدة الإجازات" },
         { id: "letters", icon: "📄", label: "الإفادات" },
         { id: "branches", icon: "🏢", label: "الفروع" },
@@ -1567,6 +1568,7 @@ export default function AdminApp() {
       {tab === "kadwar_sync" && <KadwarSyncPanel t={t} B={B} emps={safeEmps} />}
       {tab === "evaluations_hr" && <EvaluationsHRPanel t={t} B={B} emps={safeEmps} />}
       {tab === "leave_requests_v2" && <LeaveRequestsHRPanel t={t} B={B} emps={safeEmps} />}
+      {tab === "payroll" && <PayrollPanel t={t} B={B} emps={safeEmps} />}
       {tab === "benefits" && <BenefitsPanel t={t} B={B} />}
       {tab === "announcements" && <AnnouncementsPanel t={t} B={B} emps={safeEmps} branches={branches} />}
       {tab === "banners" && <BannersPanel t={t} B={B} />}
@@ -11967,6 +11969,426 @@ function LeaveRequestDetail({ request, emps, onClose, t, B }) {
       ℹ️ لا توجد إجراءات متاحة لك في هذه المرحلة
     </div>}
 
+  </div>;
+}
+
+
+/* ═══════════════════════════════════════════════════════════════════
+ * v6.91 — PayrollPanel — لوحة الرواتب (HR فقط)
+ * ═══════════════════════════════════════════════════════════════════ */
+function PayrollPanel({ t, B, emps }) {
+  var [loading, setLoading] = useState(true);
+  var [runs, setRuns] = useState([]);
+  var [stats, setStats] = useState(null);
+  var [selectedRun, setSelectedRun] = useState(null);
+  var [creatingNew, setCreatingNew] = useState(false);
+  var [newPeriod, setNewPeriod] = useState("");
+  var [msg, setMsg] = useState(null);
+  var [showAudit, setShowAudit] = useState(false);
+  var [auditLog, setAuditLog] = useState([]);
+  var [accessDenied, setAccessDenied] = useState(false);
+
+  // Get current user
+  var currentUser = {};
+  try { currentUser = JSON.parse(localStorage.getItem("basma_user") || "{}"); } catch(e) {}
+  var actorId = currentUser.id;
+
+  async function loadAll() {
+    setLoading(true);
+    try {
+      var [r1, r2] = await Promise.all([
+        fetch("/api/data?action=payroll-runs&actor=" + encodeURIComponent(actorId)).then(function(r){return r.json();}),
+        fetch("/api/data?action=payroll-stats&actor=" + encodeURIComponent(actorId)).then(function(r){return r.json();}),
+      ]);
+      if (r1.error === 'insufficient permission') {
+        setAccessDenied(true);
+        setLoading(false);
+        return;
+      }
+      if (r1.ok) setRuns(r1.runs || []);
+      if (r2.ok) setStats(r2);
+    } catch(e) {
+      setMsg({ type: "error", text: "فشل التحميل: " + e.message });
+    }
+    setLoading(false);
+  }
+
+  useEffect(function(){ loadAll(); }, []);
+
+  async function createRun() {
+    if (!newPeriod || !/^\d{4}-\d{2}$/.test(newPeriod)) {
+      setMsg({ type: "error", text: "أدخل الشهر بصيغة YYYY-MM (مثال: 2026-04)" });
+      return;
+    }
+    try {
+      var r = await fetch("/api/data?action=payroll-runs", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ period: newPeriod, actor: actorId })
+      });
+      var d = await r.json();
+      if (d.ok) {
+        setMsg({ type: "success", text: "✓ تم إنشاء الدورة" });
+        setCreatingNew(false);
+        setNewPeriod("");
+        loadAll();
+      } else {
+        setMsg({ type: "error", text: d.error || "فشل" });
+      }
+    } catch(e) { setMsg({ type: "error", text: "فشل: " + e.message }); }
+  }
+
+  async function loadAudit() {
+    try {
+      var r = await fetch("/api/data?action=payroll-audit-log&actor=" + encodeURIComponent(actorId));
+      var d = await r.json();
+      if (d.ok) setAuditLog(d.log || []);
+    } catch(e) {}
+  }
+
+  if (accessDenied) {
+    return <div style={{ padding: 40, textAlign: "center", maxWidth: 500, margin: "40px auto" }}>
+      <div style={{ fontSize: 60, marginBottom: 16 }}>🔒</div>
+      <div style={{ fontSize: 18, fontWeight: 800, color: t.tx, marginBottom: 10 }}>وصول مقيَّد</div>
+      <div style={{ fontSize: 13, color: t.txM, lineHeight: 1.7 }}>
+        نظام الرواتب يتطلب صلاحية خاصة (مدير موارد بشرية أو محاسب).<br/>
+        إذا كان يجب أن يكون لديك وصول، راجع مدير النظام.
+      </div>
+    </div>;
+  }
+
+  if (selectedRun) {
+    return <PayrollRunDetail run={selectedRun} actorId={actorId} t={t} B={B}
+      onClose={function(){ setSelectedRun(null); loadAll(); }} />;
+  }
+
+  var statusLabels = {
+    draft: { label: "مسودة", color: "#6B7280", bg: "rgba(107,114,128,0.1)" },
+    calculated: { label: "محتسب", color: "#D97706", bg: "rgba(217,119,6,0.1)" },
+    reviewed: { label: "مُراجَع", color: "#06B6D4", bg: "rgba(6,182,212,0.1)" },
+    approved: { label: "معتمد", color: "#16A34A", bg: "rgba(34,197,94,0.1)" },
+    sent_to_bank: { label: "مُرسَل للبنك", color: "#8B5CF6", bg: "rgba(139,92,246,0.1)" },
+    paid: { label: "مدفوع", color: "#059669", bg: "rgba(5,150,105,0.1)" },
+  };
+
+  return <div style={{ padding: 20, maxWidth: 1200, margin: "0 auto" }}>
+
+    {/* Header */}
+    <div style={{ display: "flex", alignItems: "center", gap: 14, marginBottom: 20 }}>
+      <div style={{ fontSize: 32 }}>💰</div>
+      <div style={{ flex: 1 }}>
+        <div style={{ fontSize: 20, fontWeight: 800, color: t.tx }}>نظام الرواتب</div>
+        <div style={{ fontSize: 11, color: t.txM, marginTop: 2 }}>
+          🔒 بيانات مشفَّرة · 🧾 Audit log مُفعَّل · 🏦 توليد ملف بنك SAR
+        </div>
+      </div>
+      <button onClick={function(){ setShowAudit(!showAudit); if (!showAudit) loadAudit(); }} style={{ padding: "8px 14px", borderRadius: 8, background: t.bg, border: "1px solid " + t.sep, fontSize: 12, fontWeight: 700, color: t.tx, cursor: "pointer" }}>🧾 Audit</button>
+      <button onClick={function(){ setCreatingNew(true); }} style={{ padding: "8px 14px", background: B.blue, color: "#fff", border: "none", borderRadius: 8, fontSize: 12, fontWeight: 700, cursor: "pointer" }}>+ دورة جديدة</button>
+    </div>
+
+    {/* Stats */}
+    {stats && <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 12, marginBottom: 18 }}>
+      <div style={{ padding: 14, background: t.card, borderRadius: 12, border: "1px solid " + t.sep }}>
+        <div style={{ fontSize: 10, color: t.txM, fontWeight: 700, marginBottom: 4 }}>📅 عدد الدورات</div>
+        <div style={{ fontSize: 22, fontWeight: 800, color: B.blue }}>{stats.totalRuns || 0}</div>
+      </div>
+      <div style={{ padding: 14, background: t.card, borderRadius: 12, border: "1px solid " + t.sep }}>
+        <div style={{ fontSize: 10, color: t.txM, fontWeight: 700, marginBottom: 4 }}>📄 عدد الكشوف</div>
+        <div style={{ fontSize: 22, fontWeight: 800, color: "#8B5CF6" }}>{stats.totalSlips || 0}</div>
+      </div>
+      <div style={{ padding: 14, background: t.card, borderRadius: 12, border: "1px solid " + t.sep }}>
+        <div style={{ fontSize: 10, color: t.txM, fontWeight: 700, marginBottom: 4 }}>✅ مُعتمدة</div>
+        <div style={{ fontSize: 22, fontWeight: 800, color: "#16A34A" }}>{(stats.byStatus && stats.byStatus.approved) || 0}</div>
+      </div>
+    </div>}
+
+    {/* Audit log panel */}
+    {showAudit && <div style={{ background: t.card, borderRadius: 12, padding: 14, border: "1px solid " + t.sep, marginBottom: 16, maxHeight: 300, overflowY: "auto" }}>
+      <div style={{ fontSize: 13, fontWeight: 800, color: t.tx, marginBottom: 10 }}>🧾 آخر 200 عملية</div>
+      {auditLog.length === 0 ? <div style={{ color: t.txM, fontSize: 11 }}>لا توجد عمليات</div> :
+        <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+          {auditLog.map(function(l){
+            return <div key={l.id} style={{ padding: "6px 8px", background: t.bg, borderRadius: 6, fontSize: 10, display: "flex", gap: 8, fontFamily: "monospace" }}>
+              <span style={{ color: t.txM }}>{new Date(l.ts).toLocaleString("en-US")}</span>
+              <span style={{ color: B.blue, fontWeight: 700 }}>{l.userId}</span>
+              <span style={{ color: t.tx, fontWeight: 700 }}>{l.action}</span>
+              {l.target && <span style={{ color: t.txM }}>→ {l.target}</span>}
+            </div>;
+          })}
+        </div>
+      }
+    </div>}
+
+    {/* Create new run modal */}
+    {creatingNew && <div style={{ padding: 16, background: t.card, borderRadius: 12, border: "2px solid " + B.blue, marginBottom: 16 }}>
+      <div style={{ fontSize: 14, fontWeight: 800, color: t.tx, marginBottom: 10 }}>📅 دورة رواتب جديدة</div>
+      <div style={{ display: "flex", gap: 10, alignItems: "flex-end" }}>
+        <div style={{ flex: 1 }}>
+          <label style={{ display: "block", fontSize: 11, color: t.txM, fontWeight: 700, marginBottom: 4 }}>الشهر (YYYY-MM)</label>
+          <input type="month" value={newPeriod} onChange={function(e){setNewPeriod(e.target.value);}} style={{
+            width: "100%", padding: 10, borderRadius: 8, border: "1px solid " + t.sep,
+            background: t.bg, fontFamily: "inherit", fontSize: 13, boxSizing: "border-box"
+          }} />
+        </div>
+        <button onClick={createRun} style={{ padding: "10px 20px", background: B.blue, color: "#fff", border: "none", borderRadius: 8, fontSize: 12, fontWeight: 700, cursor: "pointer" }}>✓ إنشاء</button>
+        <button onClick={function(){setCreatingNew(false); setNewPeriod("");}} style={{ padding: "10px 14px", background: t.bg, color: t.tx, border: "1px solid " + t.sep, borderRadius: 8, fontSize: 12, fontWeight: 700, cursor: "pointer" }}>إلغاء</button>
+      </div>
+    </div>}
+
+    {msg && <div style={{
+      padding: 10, borderRadius: 8, marginBottom: 14, fontSize: 12, fontWeight: 700,
+      background: msg.type === "error" ? "rgba(239,68,68,0.1)" : "rgba(34,197,94,0.1)",
+      color: msg.type === "error" ? "#DC2626" : "#16A34A"
+    }}>{msg.text}</div>}
+
+    {loading ? <div style={{ padding: 40, textAlign: "center", color: t.txM }}>جارٍ التحميل...</div> :
+     runs.length === 0 ? <div style={{ padding: 40, textAlign: "center", color: t.txM, background: t.card, borderRadius: 12 }}>
+       لا توجد دورات رواتب. اضغط "+ دورة جديدة" للبدء.
+     </div> : <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+       {runs.map(function(r){
+         var st = statusLabels[r.status] || { label: r.status, color: t.txM, bg: t.bg };
+         return <div key={r.id} onClick={function(){setSelectedRun(r);}} style={{
+           background: t.card, borderRadius: 14, padding: 16,
+           border: "1px solid " + t.sep, cursor: "pointer",
+           display: "flex", alignItems: "center", gap: 14
+         }}>
+           <div style={{
+             width: 56, height: 56, borderRadius: 14, background: B.blue + "15",
+             display: "flex", alignItems: "center", justifyContent: "center",
+             fontSize: 20, fontWeight: 800, color: B.blue
+           }}>{r.period.split('-')[1]}</div>
+           <div style={{ flex: 1 }}>
+             <div style={{ fontSize: 16, fontWeight: 800, color: t.tx }}>📅 شهر {r.period}</div>
+             <div style={{ fontSize: 11, color: t.txM, marginTop: 2 }}>
+               {r.slipsCount || 0} موظف · إجمالي صافي: {Number(r.totalNetAmount || 0).toLocaleString("en-US")} ريال
+             </div>
+           </div>
+           <div style={{ padding: "4px 12px", borderRadius: 10, background: st.bg, color: st.color, fontSize: 11, fontWeight: 800 }}>{st.label}</div>
+         </div>;
+       })}
+     </div>}
+  </div>;
+}
+
+/* ────── PayrollRunDetail — تفاصيل دورة رواتب ────── */
+function PayrollRunDetail({ run, actorId, t, B, onClose }) {
+  var [loading, setLoading] = useState(true);
+  var [runData, setRunData] = useState(run);
+  var [slips, setSlips] = useState([]);
+  var [editingSlipId, setEditingSlipId] = useState(null);
+  var [editAdditions, setEditAdditions] = useState({});
+  var [editDeductions, setEditDeductions] = useState({});
+  var [saving, setSaving] = useState(false);
+  var [msg, setMsg] = useState(null);
+
+  async function load() {
+    setLoading(true);
+    try {
+      var r = await fetch("/api/data?action=payroll-run-detail&runId=" + run.id + "&actor=" + encodeURIComponent(actorId));
+      var d = await r.json();
+      if (d.ok) {
+        setRunData(d.run);
+        setSlips(d.slips || []);
+      }
+    } catch(e) { setMsg({ type: "error", text: "فشل: " + e.message }); }
+    setLoading(false);
+  }
+
+  useEffect(function(){ load(); }, []);
+
+  async function calculate() {
+    if (!confirm("احتساب الرواتب سيحذف الكشوف السابقة ويُعيد الحساب. متابعة؟")) return;
+    setSaving(true);
+    try {
+      var r = await fetch("/api/data?action=payroll-calculate", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ runId: run.id, actor: actorId })
+      });
+      var d = await r.json();
+      if (d.ok) {
+        setMsg({ type: "success", text: "✓ تم الاحتساب — " + d.slipsCount + " كشف" });
+        load();
+      } else {
+        setMsg({ type: "error", text: d.error || "فشل" });
+      }
+    } catch(e) { setMsg({ type: "error", text: "فشل: " + e.message }); }
+    setSaving(false);
+  }
+
+  async function approve() {
+    if (!confirm("اعتماد الدورة نهائي — لا يمكن التراجع بعد ذلك. متابعة؟")) return;
+    setSaving(true);
+    try {
+      var r = await fetch("/api/data?action=payroll-run-approve", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ runId: run.id, actor: actorId })
+      });
+      var d = await r.json();
+      if (d.ok) {
+        setMsg({ type: "success", text: "✓ تم الاعتماد" });
+        load();
+      } else { setMsg({ type: "error", text: d.error || "فشل" }); }
+    } catch(e) { setMsg({ type: "error", text: "فشل: " + e.message }); }
+    setSaving(false);
+  }
+
+  async function downloadBankFile() {
+    try {
+      var url = "/api/data?action=payroll-bank-file&runId=" + run.id + "&actor=" + encodeURIComponent(actorId);
+      window.location.href = url;
+    } catch(e) { setMsg({ type: "error", text: "فشل: " + e.message }); }
+  }
+
+  async function markSent() {
+    if (!confirm("وضع علامة 'تم الإرسال للبنك'؟ الموظفون سيحصلون على إشعار.")) return;
+    setSaving(true);
+    try {
+      var r = await fetch("/api/data?action=payroll-mark-sent", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ runId: run.id, actor: actorId })
+      });
+      var d = await r.json();
+      if (d.ok) {
+        setMsg({ type: "success", text: "✓ تم إرسال الإشعارات للموظفين" });
+        load();
+      }
+    } catch(e) { setMsg({ type: "error", text: "فشل: " + e.message }); }
+    setSaving(false);
+  }
+
+  function startEditSlip(slip) {
+    setEditingSlipId(slip.id);
+    setEditAdditions(slip.additions || {});
+    setEditDeductions(slip.deductions || {});
+  }
+
+  async function saveSlipEdit() {
+    setSaving(true);
+    try {
+      var r = await fetch("/api/data?action=payroll-slip-edit", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          slipId: editingSlipId, actor: actorId,
+          additions: editAdditions, deductions: editDeductions
+        })
+      });
+      var d = await r.json();
+      if (d.ok) {
+        setMsg({ type: "success", text: "✓ تم التعديل" });
+        setEditingSlipId(null);
+        setEditAdditions({});
+        setEditDeductions({});
+        load();
+      }
+    } catch(e) { setMsg({ type: "error", text: "فشل: " + e.message }); }
+    setSaving(false);
+  }
+
+  var canCalculate = runData && ['draft','calculated'].includes(runData.status);
+  var canApprove = runData && runData.status === 'calculated';
+  var canDownload = runData && ['approved','sent_to_bank','paid'].includes(runData.status);
+  var canMarkSent = runData && runData.status === 'approved';
+  var isLocked = runData && ['sent_to_bank','paid'].includes(runData.status);
+
+  return <div style={{ padding: 20, maxWidth: 1200, margin: "0 auto" }}>
+    <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 20 }}>
+      <button onClick={onClose} style={{ width: 36, height: 36, borderRadius: 10, border: "1px solid " + t.sep, background: t.card, cursor: "pointer", fontSize: 18 }}>×</button>
+      <div style={{ flex: 1 }}>
+        <div style={{ fontSize: 20, fontWeight: 800, color: t.tx }}>📅 دورة {runData.period}</div>
+        <div style={{ fontSize: 11, color: t.txM }}>
+          الحالة: <strong>{runData.status}</strong> ·
+          صافي الإجمالي: {Number(runData.totalNetAmount || 0).toLocaleString("en-US")} ريال
+        </div>
+      </div>
+    </div>
+
+    {/* Action buttons */}
+    <div style={{ display: "flex", gap: 8, marginBottom: 16, flexWrap: "wrap" }}>
+      {canCalculate && <button onClick={calculate} disabled={saving} style={{ padding: "10px 16px", background: B.blue, color: "#fff", border: "none", borderRadius: 8, fontSize: 12, fontWeight: 700, cursor: "pointer" }}>
+        🧮 احتسب/أعد احتساب
+      </button>}
+      {canApprove && <button onClick={approve} disabled={saving} style={{ padding: "10px 16px", background: "#16A34A", color: "#fff", border: "none", borderRadius: 8, fontSize: 12, fontWeight: 700, cursor: "pointer" }}>
+        ✓ اعتمد نهائياً
+      </button>}
+      {canDownload && <button onClick={downloadBankFile} style={{ padding: "10px 16px", background: "#8B5CF6", color: "#fff", border: "none", borderRadius: 8, fontSize: 12, fontWeight: 700, cursor: "pointer" }}>
+        🏦 تحميل ملف البنك
+      </button>}
+      {canMarkSent && <button onClick={markSent} style={{ padding: "10px 16px", background: "#D97706", color: "#fff", border: "none", borderRadius: 8, fontSize: 12, fontWeight: 700, cursor: "pointer" }}>
+        📤 تم الإرسال للبنك
+      </button>}
+    </div>
+
+    {msg && <div style={{
+      padding: 10, borderRadius: 8, marginBottom: 14, fontSize: 12, fontWeight: 700,
+      background: msg.type === "error" ? "rgba(239,68,68,0.1)" : "rgba(34,197,94,0.1)",
+      color: msg.type === "error" ? "#DC2626" : "#16A34A"
+    }}>{msg.text}</div>}
+
+    {loading ? <div style={{ padding: 40, textAlign: "center", color: t.txM }}>جارٍ التحميل...</div> :
+     slips.length === 0 ? <div style={{ padding: 40, textAlign: "center", color: t.txM, background: t.card, borderRadius: 12 }}>
+       لا توجد كشوف. اضغط "🧮 احتسب" لإنشاء كشوف الموظفين.
+     </div> : <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+       {slips.map(function(s){
+         var isEditing = editingSlipId === s.id;
+         return <div key={s.id} style={{ background: t.card, borderRadius: 12, padding: 14, border: "1px solid " + t.sep }}>
+           <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 10 }}>
+             <div style={{ width: 40, height: 40, borderRadius: 10, background: B.blue + "15", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 16 }}>👤</div>
+             <div style={{ flex: 1 }}>
+               <div style={{ fontSize: 13, fontWeight: 800, color: t.tx }}>{s.empName}</div>
+               <div style={{ fontSize: 10, color: t.txM }}>{s.jobTitle} · {s.department}</div>
+             </div>
+             <div style={{ textAlign: "left" }}>
+               <div style={{ fontSize: 10, color: t.txM }}>الصافي</div>
+               <div style={{ fontSize: 16, fontWeight: 800, color: "#16A34A" }}>{Number(s.netSalary || 0).toLocaleString("en-US")}</div>
+             </div>
+             {!isLocked && !isEditing && <button onClick={function(){startEditSlip(s);}} style={{ padding: "6px 12px", background: t.bg, border: "1px solid " + t.sep, borderRadius: 6, fontSize: 10, fontWeight: 700, cursor: "pointer", color: t.tx }}>✏️ تعديل</button>}
+           </div>
+
+           {/* Breakdown */}
+           <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 6, padding: 10, background: t.bg, borderRadius: 8, fontSize: 11 }}>
+             <div><span style={{ color: t.txM }}>أساسي:</span> <strong>{s.breakdown && s.breakdown.basic}</strong></div>
+             <div><span style={{ color: t.txM }}>سكن:</span> <strong>{s.breakdown && s.breakdown.housing}</strong></div>
+             <div><span style={{ color: t.txM }}>نقل:</span> <strong>{s.breakdown && s.breakdown.transport}</strong></div>
+             <div><span style={{ color: "#16A34A" }}>إجمالي مستحق:</span> <strong>{s.totalEarnings}</strong></div>
+             <div><span style={{ color: "#DC2626" }}>إجمالي خصومات:</span> <strong>{s.totalDeductions}</strong></div>
+             <div><span style={{ color: t.txM }}>IBAN:</span> <strong style={{ fontFamily: "monospace", fontSize: 10 }}>{s.iban ? (s.iban.slice(0, 6) + "..." + s.iban.slice(-4)) : "—"}</strong></div>
+           </div>
+
+           {isEditing && <div style={{ marginTop: 10, padding: 12, background: B.blue + "08", borderRadius: 10, border: "1px dashed " + B.blue + "40" }}>
+             <div style={{ fontSize: 12, fontWeight: 700, color: B.blue, marginBottom: 10 }}>✏️ تعديل — إضافات وخصومات</div>
+             <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8, marginBottom: 10 }}>
+               <div>
+                 <div style={{ fontSize: 10, color: "#16A34A", fontWeight: 700, marginBottom: 4 }}>➕ إضافات</div>
+                 {['overtime','bonus','commissions','other'].map(function(k){
+                   var labels = { overtime: "ساعات إضافية", bonus: "مكافأة", commissions: "عمولة إضافية", other: "أخرى" };
+                   return <div key={k} style={{ display: "flex", gap: 4, marginBottom: 4, alignItems: "center" }}>
+                     <label style={{ flex: 1, fontSize: 10, color: t.tx }}>{labels[k]}:</label>
+                     <input type="number" value={editAdditions[k] || ""} onChange={function(e){
+                       setEditAdditions(function(prev){var n = {...prev}; n[k] = Number(e.target.value) || 0; return n;});
+                     }} style={{ width: 80, padding: "4px 6px", border: "1px solid " + t.sep, borderRadius: 4, fontSize: 10, fontFamily: "inherit" }} />
+                   </div>;
+                 })}
+               </div>
+               <div>
+                 <div style={{ fontSize: 10, color: "#DC2626", fontWeight: 700, marginBottom: 4 }}>➖ خصومات</div>
+                 {['absence','late','advance','gosi','other'].map(function(k){
+                   var labels = { absence: "غياب", late: "تأخير", advance: "سُلفة", gosi: "تأمينات", other: "أخرى" };
+                   return <div key={k} style={{ display: "flex", gap: 4, marginBottom: 4, alignItems: "center" }}>
+                     <label style={{ flex: 1, fontSize: 10, color: t.tx }}>{labels[k]}:</label>
+                     <input type="number" value={editDeductions[k] || ""} onChange={function(e){
+                       setEditDeductions(function(prev){var n = {...prev}; n[k] = Number(e.target.value) || 0; return n;});
+                     }} style={{ width: 80, padding: "4px 6px", border: "1px solid " + t.sep, borderRadius: 4, fontSize: 10, fontFamily: "inherit" }} />
+                   </div>;
+                 })}
+               </div>
+             </div>
+             <div style={{ display: "flex", gap: 6 }}>
+               <button onClick={function(){setEditingSlipId(null); setEditAdditions({}); setEditDeductions({});}} disabled={saving} style={{ flex: 1, padding: 8, background: t.bg, color: t.tx, border: "1px solid " + t.sep, borderRadius: 6, fontSize: 11, fontWeight: 700, cursor: "pointer" }}>إلغاء</button>
+               <button onClick={saveSlipEdit} disabled={saving} style={{ flex: 1, padding: 8, background: "#16A34A", color: "#fff", border: "none", borderRadius: 6, fontSize: 11, fontWeight: 700, cursor: saving ? "wait" : "pointer" }}>{saving ? "..." : "✓ حفظ"}</button>
+             </div>
+           </div>}
+         </div>;
+       })}
+     </div>}
   </div>;
 }
 
