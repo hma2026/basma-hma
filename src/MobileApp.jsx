@@ -11,7 +11,7 @@ import { exportEmploymentLetter, exportLeaveLetter } from "./formalPdfs";
 
 /* ═══════════ APP CONFIG (إعدادات التطبيق) ═══════════ */
 const APP_CONFIG = {
-  VER: "6.93",
+  VER: "6.94",
   NAME: "بصمة HMA",
   FULL_NAME: "نظام الحضور والانصراف الذكي",
   COMPANY: "هاني محمد عسيري للاستشارات الهندسية",
@@ -2919,8 +2919,8 @@ function ProfilePage({ user, branch, workType, onLogout, onTicket, myTickets, da
     { id: "info", emoji: "👤", label: "بياناتي" },
     { id: "requests", emoji: "📋", label: "الطلبات والسجل الوظيفي" },
     { id: "achievements", emoji: "🏆", label: "إنجازاتي" },
-    { id: "deps", emoji: "👨‍👩‍👧", label: "المرافقين" },
-    { id: "docs", emoji: "📎", label: "العهد والمرفقات" },
+    // v6.94 — tab "المرافقين" محذوف: المرافقين يُدارون من "بياناتي" → MyProfileCard → مرافقين
+    { id: "docs", emoji: "📦", label: "العهد" },
     { id: "legal", emoji: "⚖️", label: "القانونية" },
   ];
   // v6.88 — tab التقييمات للمدراء فقط
@@ -3064,20 +3064,18 @@ function ProfilePage({ user, branch, workType, onLogout, onTicket, myTickets, da
           </>
         )}
 
-        {/* v6.69 — العهد والمرفقات (مدموجين) */}
+        {/* v6.94 — tab "العهد" (إزالة المرفقات — تُدار من MyProfileCard → مرفقات) */}
         {tab === "docs" && (
           <>
-            <div style={{ ...TYPOGRAPHY.h3, color: COLORS.textPrimary, fontFamily: TYPOGRAPHY.fontCairo, marginBottom: SPACING.sm, textAlign: "center" }}>📎 المرفقات</div>
-            <Card><AttachmentsTab user={user} /></Card>
-
-            <div style={{ marginTop: SPACING.lg, paddingTop: SPACING.md, borderTop: "1px dashed " + COLORS.metallicBorder }}>
-              <div style={{ ...TYPOGRAPHY.h3, color: COLORS.textPrimary, fontFamily: TYPOGRAPHY.fontCairo, marginBottom: SPACING.sm, textAlign: "center" }}>🗄️ العهد</div>
-              <Card><CustodyTab user={user} /></Card>
+            <div style={{ ...TYPOGRAPHY.h3, color: COLORS.textPrimary, fontFamily: TYPOGRAPHY.fontCairo, marginBottom: SPACING.sm, textAlign: "center" }}>🗄️ العهد</div>
+            <Card><CustodyTab user={user} /></Card>
+            <div style={{ marginTop: SPACING.md, padding: 10, background: "rgba(255,255,255,0.04)", borderRadius: 10, border: "1px dashed " + COLORS.metallicBorder, fontSize: 11, color: COLORS.textMuted, textAlign: "center", lineHeight: 1.7 }}>
+              💡 <strong style={{ color: COLORS.goldLight }}>المرفقات والمستندات الشخصية</strong> تجدها في تبويب <strong style={{ color: COLORS.textPrimary }}>«بياناتي»</strong> → بطاقة ملفي → مرفقات
             </div>
           </>
         )}
 
-        {tab === "deps" && <Card><DependentsTab user={user} /></Card>}
+        {/* v6.94 — tab "deps" محذوف، يُدار من MyProfileCard */}
 
         {/* v6.69 — القانونية (مع السياسات مدموجة) */}
         {tab === "legal" && (
