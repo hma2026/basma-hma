@@ -11,7 +11,7 @@ import { exportEmploymentLetter, exportLeaveLetter } from "./formalPdfs";
 
 /* ═══════════ APP CONFIG (إعدادات التطبيق) ═══════════ */
 const APP_CONFIG = {
-  VER: "6.99",
+  VER: "7.00",
   NAME: "بصمة HMA",
   FULL_NAME: "نظام الحضور والانصراف الذكي",
   COMPANY: "هاني محمد عسيري للاستشارات الهندسية",
@@ -1463,7 +1463,7 @@ function MobileAppInner() {
       {!online && <OfflineBanner />}
 
       <div key={page} style={{ flex: 1, display: "flex", flexDirection: "column", animation: "pageIn .3s ease" }}>
-        {page === "home" && <HomePage user={user} branch={branch} workType={workType} now={now} todayAtt={todayAtt} allAtt={allAtt} gps={gps} gpsDist={gpsDist} streak={streak} loading={loading} refreshing={refreshing} dayState={getDayState()} checkpoints={getCheckpoints()} isOffDay={isOffDay()} pendingCount={myLeaves.filter(function(l){ return l.status === "pending"; }).length + myTickets.filter(function(t){ return t.status === "pending"; }).length} teamToday={teamToday} pwaPrompt={pwaPrompt} onPwaInstall={async function(){ if(pwaPrompt){pwaPrompt.prompt();await pwaPrompt.userChoice;setPwaPrompt(null);} }} onCheckin={requestCheckin} onChallenge={function(pts) { var u = { ...user, points: (user.points||0)+pts }; setUser(u); localStorage.setItem("basma_user", JSON.stringify(u)); showToast("🎉 +" + pts + " نقطة!"); }} onLeave={() => setLeaveModal(true)} onRefresh={refresh} onPreAbsence={function(){ setPreAbsModal(true); }} onManualAtt={function(){ setManualAttModal(true); }} onPermission={function(){ setPermModal(true); }} kadwarNotifs={kadwarNotifs} darkMode={darkMode} announcements={announcements} banners={banners} fieldProjects={fieldProjects} onShowAnnouncements={function(){ setShowAnnModal(true); }} />}
+        {page === "home" && <HomePage user={user} branch={branch} workType={workType} now={now} todayAtt={todayAtt} allAtt={allAtt} gps={gps} gpsDist={gpsDist} streak={streak} loading={loading} refreshing={refreshing} dayState={getDayState()} checkpoints={getCheckpoints()} isOffDay={isOffDay()} pendingCount={myLeaves.filter(function(l){ return l.status === "pending"; }).length + myTickets.filter(function(t){ return t.status === "pending"; }).length} teamToday={teamToday} pwaPrompt={pwaPrompt} onPwaInstall={async function(){ if(pwaPrompt){pwaPrompt.prompt();await pwaPrompt.userChoice;setPwaPrompt(null);} }} onCheckin={requestCheckin} onChallenge={function(pts) { var u = { ...user, points: (user.points||0)+pts }; setUser(u); localStorage.setItem("basma_user", JSON.stringify(u)); showToast("🎉 +" + pts + " نقطة!"); }} onLeave={function(){ setPage("profile"); setTimeout(function(){ localStorage.setItem("basma_profile_tab", "my_leaves"); window.dispatchEvent(new CustomEvent("basma:profile-tab-changed")); }, 50); }} onRefresh={refresh} onPreAbsence={function(){ setPreAbsModal(true); }} onManualAtt={function(){ setManualAttModal(true); }} onPermission={function(){ setPermModal(true); }} kadwarNotifs={kadwarNotifs} darkMode={darkMode} announcements={announcements} banners={banners} fieldProjects={fieldProjects} onShowAnnouncements={function(){ setShowAnnModal(true); }} />}
         {page === "report" && <ReportPage user={user} allAtt={allAtt} todayAtt={todayAtt} branch={branch} isOffDay={isOffDay()} myLeaves={myLeaves} allEmps={allEmps} />}
         {page === "benefits" && <BenefitsPage user={user} />}
         {page === "tawasul" && <TawasulPage user={user} allEmps={allEmps} />}
@@ -11592,9 +11592,14 @@ function MyRequestsTab({ user }) {
         </Card>
       )}
 
-      {/* Quick action buttons */}
-      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 6, marginBottom: 8 }}>
-        <button onClick={function(){ setShowLeave(true); }} style={{ padding: "10px 4px", borderRadius: 10, background: "rgba(8,145,178,0.15)", border: "1px solid rgba(8,145,178,0.4)", color: "#0891B2", fontWeight: 800, fontSize: 11, cursor: "pointer", fontFamily: TYPOGRAPHY.fontTajawal }}>🏖️ طلب إجازة</button>
+      {/* v7.00 — زر "طلب إجازة" نُقل إلى تبويب "إجازاتي" (نظام الإجازات الجديد مع التسليم) */}
+      <div style={{ padding: "10px 14px", marginBottom: 8, borderRadius: 10, background: "rgba(8,145,178,0.08)", border: "1px dashed rgba(8,145,178,0.3)", fontSize: 11, color: COLORS.textMuted, lineHeight: 1.7, textAlign: "center", cursor: "pointer" }}
+        onClick={function(){ localStorage.setItem("basma_profile_tab", "my_leaves"); window.dispatchEvent(new CustomEvent("basma:profile-tab-changed")); }}>
+        🏖️ <strong style={{ color: "#0891B2" }}>لطلب إجازة</strong> — انتقل إلى تبويب <strong style={{ color: COLORS.textPrimary }}>«إجازاتي»</strong> (يدعم تسليم المهام)
+      </div>
+
+      {/* Quick action buttons — 2 columns بعد إزالة الإجازة */}
+      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 6, marginBottom: 8 }}>
         <button onClick={function(){ setShowPerm(true); }} style={{ padding: "10px 4px", borderRadius: 10, background: "rgba(124,58,237,0.15)", border: "1px solid rgba(124,58,237,0.4)", color: "#7C3AED", fontWeight: 800, fontSize: 11, cursor: "pointer", fontFamily: TYPOGRAPHY.fontTajawal }}>⏱ استئذان</button>
         <button onClick={function(){ setShowPreAbs(true); }} style={{ padding: "10px 4px", borderRadius: 10, background: "rgba(217,119,6,0.15)", border: "1px solid rgba(217,119,6,0.4)", color: "#D97706", fontWeight: 800, fontSize: 11, cursor: "pointer", fontFamily: TYPOGRAPHY.fontTajawal }}>🏥 إفادة غياب</button>
       </div>
