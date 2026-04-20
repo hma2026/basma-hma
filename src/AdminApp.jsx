@@ -4,7 +4,7 @@ import { generateAttendanceReport, generateEmployeeReport, generateMonthlySummar
 import { exportFormalWarning, exportInvestigationRecord, exportAffidavit, exportEmploymentLetter, exportSalaryLetter, exportLeaveLetter } from "./formalPdfs";
 
 const APP = "بصمة HMA";
-const VER = "6.82";
+const VER = "6.83";
 const CO = "هاني محمد عسيري للإستشارات الهندسية";
 const B = { blue: "#2B5EA7", yellow: "#FDD800", red: "#E2192C", black: "#1A1A1A", blueDk: "#1E4478", blueLt: "#EDF3FB", gold: "#D4A017" };
 
@@ -571,6 +571,13 @@ export default function AdminApp() {
         { id: "admin_profile", icon: "🔐", label: "حساب المدير" },
       ],
     },
+    {
+      id: "integration",
+      label: "التكامل والمزامنة",
+      items: [
+        { id: "kadwar_sync", icon: "🔗", label: "كوادر — التكامل" },
+      ],
+    },
   ];
 
   // Flatten for internal compatibility
@@ -874,6 +881,9 @@ export default function AdminApp() {
               </div>
               <div style={{ marginTop: 8, padding: "10px", borderRadius: 8, background: B.blueLt, fontSize: 11, fontWeight: 600, color: B.blue }}>النسبة المُصدّرة لكوادر: <strong>{((selEmp.pct)||0)}%</strong></div>
             </div>
+
+            {/* v6.83 — ملف الموظف الكامل */}
+            <EmployeeFullProfileCard emp={selEmp} t={t} B={B} />
           </div>
         </div>
       </>}
@@ -1552,6 +1562,7 @@ export default function AdminApp() {
       {tab === "surveys" && <SurveysPanel t={t} B={B} emps={safeEmps} />}
       {tab === "backup" && <BackupPanel t={t} B={B} />}
       {tab === "hr_tickets" && <HRTicketsPanel t={t} B={B} emps={safeEmps} />}
+      {tab === "kadwar_sync" && <KadwarSyncPanel t={t} B={B} emps={safeEmps} />}
       {tab === "benefits" && <BenefitsPanel t={t} B={B} />}
       {tab === "announcements" && <AnnouncementsPanel t={t} B={B} emps={safeEmps} branches={branches} />}
       {tab === "banners" && <BannersPanel t={t} B={B} />}
@@ -10040,3 +10051,1037 @@ function DataCleanupManager({ t, B }) {
     </div>
   );
 }
+
+
+/* ═══════════════════════════════════════════════════════════════════
+ * KadwarSyncPanel — v6.83 — التكامل مع كوادر v37.141
+ * ═══════════════════════════════════════════════════════════════════ */
+function KadwarSyncPanel({ t, B, emps }) {
+  var [loading, setLoading] = useState(true);
+  var [status, setStatus] = useState(null);
+  var [criteria, setCriteria] = useState(null);
+  var [busy, setBusy] = useState(false);
+  var [busyLabel, setBusyLabel] = useState("");
+  var [msg, setMsg] = useState(null);
+  var [view, setView] = useState("overview"); // overview | criteria | log | migration
+  var [migrationResult, setMigrationResult] = useState(null);
+  var [confirmMigration, setConfirmMigration] = useState(false);
+
+  async function loadStatus() {
+    setLoading(true);
+    try {
+      var r = await fetch("/api/data?action=kadwar-sync-status");
+      var d = await r.json();
+      setStatus(d);
+    } catch(e) {
+      setMsg({ type: "error", text: "فشل تحميل الحالة: " + e.message });
+    }
+    setLoading(false);
+  }
+
+  async function loadCriteria(forceRefresh) {
+    setBusy(true);
+    setBusyLabel(forceRefresh ? "جارٍ التحديث من كوادر..." : "جارٍ جلب المعايير...");
+    try {
+      var url = "/api/data?action=kadwar-eval-criteria" + (forceRefresh ? "&refresh=1" : "");
+      var r = await fetch(url);
+      var d = await r.json();
+      if (d.ok) {
+        setCriteria(d);
+        setMsg({ type: "success", text: forceRefresh ? "✓ تم تحديث المعايير من كوادر" : "✓ تم تحميل المعايير" + (d.fromCache ? " (من الكاش)" : "") });
+        await loadStatus();
+      } else {
+        setMsg({ type: "error", text: d.error || "فشل جلب المعايير" });
+      }
+    } catch(e) {
+      setMsg({ type: "error", text: "فشل: " + e.message });
+    }
+    setBusy(false);
+    setBusyLabel("");
+  }
+
+  async function runMigration(dryRun) {
+    setBusy(true);
+    setBusyLabel(dryRun ? "جارٍ المعاينة..." : "جارٍ المزامنة الشاملة — لا تُغلق الصفحة!");
+    setMigrationResult(null);
+    try {
+      var r = await fetch("/api/data?action=kadwar-full-migration", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ confirm: true, dryRun: !!dryRun })
+      });
+      var d = await r.json();
+      setMigrationResult(d);
+      if (d.ok || d.dryRun) {
+        setMsg({ type: "success", text: dryRun
+          ? "✓ معاينة ناجحة — " + (d.totals && d.totals.employees || 0) + " موظف جاهزون للمزامنة"
+          : "✓ تمت المزامنة بنجاح — " + (d.totals && d.totals.imported || 0) + " موظف"
+        });
+        if (!dryRun) await loadStatus();
+      } else {
+        setMsg({ type: "error", text: d.error || "فشلت المزامنة" });
+      }
+    } catch(e) {
+      setMsg({ type: "error", text: "فشل: " + e.message });
+    }
+    setBusy(false);
+    setBusyLabel("");
+    setConfirmMigration(false);
+  }
+
+  useEffect(function(){
+    loadStatus();
+    // تحميل المعايير تلقائياً من الكاش
+    fetch("/api/data?action=kadwar-eval-criteria").then(function(r){return r.json();}).then(function(d){
+      if (d.ok) setCriteria(d);
+    }).catch(function(){});
+  }, []);
+
+  function fmtDate(iso) {
+    if (!iso) return "—";
+    try { return new Date(iso).toLocaleString("ar-SA", { dateStyle: "short", timeStyle: "short" }); } catch(e) { return iso; }
+  }
+
+  function fmtAge(iso) {
+    if (!iso) return "";
+    var diff = Date.now() - new Date(iso).getTime();
+    var mins = Math.floor(diff / 60000);
+    if (mins < 1) return "الآن";
+    if (mins < 60) return "منذ " + mins + " دقيقة";
+    var hrs = Math.floor(mins / 60);
+    if (hrs < 24) return "منذ " + hrs + " ساعة";
+    return "منذ " + Math.floor(hrs / 24) + " يوم";
+  }
+
+  if (loading) {
+    return <div style={{ padding: 40, textAlign: "center", color: t.txM }}>جارٍ التحميل...</div>;
+  }
+
+  var migration = status && status.migration;
+  var cache = status && status.criteriaCache;
+  var stats = status && status.stats;
+  var positionsWith = criteria && criteria.criteria_by_position ? Object.keys(criteria.criteria_by_position) : [];
+  var positionsWithout = criteria && criteria.positions_without_criteria ? criteria.positions_without_criteria : [];
+
+  // حساب مطابقة الموظفين مع المعايير
+  var empsAnalysis = { withCriteria: 0, withoutCriteria: 0, details: {} };
+  if (emps && Array.isArray(emps) && criteria && criteria.criteria_by_position) {
+    emps.forEach(function(e){
+      var role = e.role || "";
+      if (positionsWith.indexOf(role) >= 0) {
+        empsAnalysis.withCriteria++;
+      } else if (role) {
+        empsAnalysis.withoutCriteria++;
+        empsAnalysis.details[role] = (empsAnalysis.details[role] || 0) + 1;
+      }
+    });
+  }
+
+  return <div style={{ padding: 20, maxWidth: 1200, margin: "0 auto" }}>
+
+    {/* Header */}
+    <div style={{ display: "flex", alignItems: "center", gap: 14, marginBottom: 20 }}>
+      <div style={{ fontSize: 32 }}>🔗</div>
+      <div style={{ flex: 1 }}>
+        <div style={{ fontSize: 20, fontWeight: 800, color: t.tx }}>كوادر — التكامل والمزامنة</div>
+        <div style={{ fontSize: 11, color: t.txM, marginTop: 2 }}>
+          التكامل مع <a href="https://hma.engineer" target="_blank" style={{ color: B.blue, fontWeight: 700, textDecoration: "none" }}>hma.engineer</a> · v37.141 API
+        </div>
+      </div>
+      <button
+        onClick={function(){ loadStatus(); loadCriteria(false); }}
+        disabled={busy}
+        style={{ padding: "8px 14px", borderRadius: 8, background: t.bg, border: "1px solid " + t.sep, fontSize: 12, fontWeight: 700, color: t.tx, cursor: busy ? "wait" : "pointer", fontFamily: "inherit" }}
+      >🔄 تحديث</button>
+    </div>
+
+    {/* Message */}
+    {msg && <div style={{
+      padding: "10px 14px", borderRadius: 8, marginBottom: 14, fontSize: 12, fontWeight: 700,
+      background: msg.type === "error" ? "rgba(239,68,68,0.1)" : msg.type === "success" ? "rgba(34,197,94,0.1)" : "rgba(59,130,246,0.1)",
+      color: msg.type === "error" ? "#DC2626" : msg.type === "success" ? "#16A34A" : "#2563EB",
+      border: "1px solid " + (msg.type === "error" ? "rgba(239,68,68,0.3)" : msg.type === "success" ? "rgba(34,197,94,0.3)" : "rgba(59,130,246,0.3)"),
+      display: "flex", justifyContent: "space-between", alignItems: "center",
+    }}>
+      <span>{msg.text}</span>
+      <button onClick={function(){setMsg(null);}} style={{ background: "none", border: "none", fontSize: 16, color: "inherit", cursor: "pointer" }}>✕</button>
+    </div>}
+
+    {/* Busy overlay */}
+    {busy && <div style={{ padding: "14px 18px", background: "rgba(37,99,235,0.1)", border: "1px solid rgba(37,99,235,0.3)", borderRadius: 10, marginBottom: 14, fontSize: 13, fontWeight: 700, color: "#2563EB", textAlign: "center" }}>
+      ⏳ {busyLabel || "جارٍ المعالجة..."}
+    </div>}
+
+    {/* Tabs */}
+    <div style={{ display: "flex", gap: 4, marginBottom: 18, borderBottom: "2px solid " + t.sep }}>
+      {[
+        { id: "overview", icon: "📊", label: "نظرة عامة" },
+        { id: "criteria", icon: "🎯", label: "معايير التقييم", badge: positionsWith.length || null },
+        { id: "migration", icon: "🚀", label: "المزامنة الشاملة" },
+        { id: "log", icon: "📜", label: "سجل العمليات", badge: stats && stats.total },
+      ].map(function(v){
+        var active = view === v.id;
+        return <button key={v.id} onClick={function(){setView(v.id);}} style={{
+          padding: "10px 16px", background: active ? B.blue : "transparent", color: active ? "#fff" : t.tx,
+          border: "none", borderRadius: "8px 8px 0 0", fontSize: 12, fontWeight: 700, cursor: "pointer",
+          fontFamily: "inherit", display: "flex", alignItems: "center", gap: 6, position: "relative", bottom: -2,
+        }}>
+          <span>{v.icon}</span>
+          <span>{v.label}</span>
+          {v.badge != null && <span style={{ background: active ? "rgba(255,255,255,0.25)" : B.blue + "25", color: active ? "#fff" : B.blue, padding: "1px 7px", borderRadius: 10, fontSize: 10, fontWeight: 800 }}>{v.badge}</span>}
+        </button>;
+      })}
+    </div>
+
+    {/* ═══ OVERVIEW TAB ═══ */}
+    {view === "overview" && <div>
+      {/* Status cards */}
+      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 14, marginBottom: 18 }}>
+
+        {/* Migration status */}
+        <div style={{ background: t.card, borderRadius: 14, padding: 18, border: "1px solid " + t.sep }}>
+          <div style={{ fontSize: 11, color: t.txM, fontWeight: 700, marginBottom: 8 }}>🚀 المزامنة الأولية</div>
+          {migration && migration.completedAt ? <>
+            <div style={{ fontSize: 22, fontWeight: 800, color: "#16A34A", marginBottom: 4 }}>✓ مكتملة</div>
+            <div style={{ fontSize: 11, color: t.txM }}>
+              {fmtDate(migration.completedAt)} · {fmtAge(migration.completedAt)}
+            </div>
+            {migration.totals && <div style={{ fontSize: 11, color: t.tx2, marginTop: 8, padding: "6px 10px", background: t.bg, borderRadius: 6 }}>
+              📊 {migration.totals.imported} موظف منقول · {migration.totals.errors || 0} خطأ
+            </div>}
+          </> : <>
+            <div style={{ fontSize: 18, fontWeight: 800, color: "#D97706", marginBottom: 4 }}>⚠ لم تتم بعد</div>
+            <div style={{ fontSize: 11, color: t.txM }}>اذهب لتبويب "المزامنة الشاملة" لبدء النقل من كوادر</div>
+          </>}
+        </div>
+
+        {/* Criteria cache */}
+        <div style={{ background: t.card, borderRadius: 14, padding: 18, border: "1px solid " + t.sep }}>
+          <div style={{ fontSize: 11, color: t.txM, fontWeight: 700, marginBottom: 8 }}>🎯 معايير التقييم</div>
+          {cache ? <>
+            <div style={{ fontSize: 22, fontWeight: 800, color: B.blue, marginBottom: 4 }}>{cache.positionsWithCriteria} مسمى</div>
+            <div style={{ fontSize: 11, color: t.txM }}>آخر تحديث: {fmtAge(cache.fetchedAt)}</div>
+            {cache.positionsWithoutCriteria > 0 && <div style={{ fontSize: 11, color: "#D97706", marginTop: 8, padding: "6px 10px", background: "rgba(217,119,6,0.1)", borderRadius: 6, fontWeight: 700 }}>
+              ⚠ {cache.positionsWithoutCriteria} مسمى بدون معايير
+            </div>}
+          </> : <>
+            <div style={{ fontSize: 18, fontWeight: 800, color: "#D97706", marginBottom: 4 }}>— غير محملة</div>
+            <button onClick={function(){ loadCriteria(true); }} disabled={busy} style={{ marginTop: 8, padding: "6px 12px", background: B.blue, color: "#fff", border: "none", borderRadius: 6, fontSize: 11, fontWeight: 700, cursor: "pointer", fontFamily: "inherit" }}>جلب الآن من كوادر</button>
+          </>}
+        </div>
+      </div>
+
+      {/* Employees analysis */}
+      {criteria && emps && <div style={{ background: t.card, borderRadius: 14, padding: 18, border: "1px solid " + t.sep, marginBottom: 14 }}>
+        <div style={{ fontSize: 13, fontWeight: 800, color: t.tx, marginBottom: 12 }}>📋 تحليل الموظفين مقابل المعايير</div>
+        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 12, marginBottom: 12 }}>
+          <div style={{ padding: 14, background: "rgba(34,197,94,0.08)", borderRadius: 10, textAlign: "center" }}>
+            <div style={{ fontSize: 24, fontWeight: 800, color: "#16A34A" }}>{empsAnalysis.withCriteria}</div>
+            <div style={{ fontSize: 10, color: t.txM, marginTop: 4 }}>موظف بمعايير تقييم</div>
+          </div>
+          <div style={{ padding: 14, background: "rgba(217,119,6,0.08)", borderRadius: 10, textAlign: "center" }}>
+            <div style={{ fontSize: 24, fontWeight: 800, color: "#D97706" }}>{empsAnalysis.withoutCriteria}</div>
+            <div style={{ fontSize: 10, color: t.txM, marginTop: 4 }}>موظف بدون معايير</div>
+          </div>
+          <div style={{ padding: 14, background: "rgba(37,99,235,0.08)", borderRadius: 10, textAlign: "center" }}>
+            <div style={{ fontSize: 24, fontWeight: 800, color: B.blue }}>{emps.length}</div>
+            <div style={{ fontSize: 10, color: t.txM, marginTop: 4 }}>إجمالي الموظفين</div>
+          </div>
+        </div>
+        {Object.keys(empsAnalysis.details).length > 0 && <div style={{ marginTop: 12, padding: 12, background: "rgba(217,119,6,0.05)", borderRadius: 8, border: "1px dashed rgba(217,119,6,0.3)" }}>
+          <div style={{ fontSize: 11, fontWeight: 700, color: "#D97706", marginBottom: 8 }}>⚠ المسميات التي تحتاج معايير في كوادر:</div>
+          <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
+            {Object.keys(empsAnalysis.details).map(function(role){
+              return <div key={role} style={{ padding: "4px 10px", background: "#fff", borderRadius: 6, fontSize: 11, fontWeight: 600, color: t.tx, border: "1px solid " + t.sep }}>
+                {role} <span style={{ color: "#D97706", fontWeight: 800 }}>({empsAnalysis.details[role]})</span>
+              </div>;
+            })}
+          </div>
+          <div style={{ fontSize: 10, color: t.txM, marginTop: 10, fontWeight: 600 }}>
+            💡 يُفضَّل إضافة معايير لهذه المسميات في كوادر لضمان تقييم دقيق
+          </div>
+        </div>}
+      </div>}
+
+      {/* Sync stats */}
+      {stats && <div style={{ background: t.card, borderRadius: 14, padding: 18, border: "1px solid " + t.sep }}>
+        <div style={{ fontSize: 13, fontWeight: 800, color: t.tx, marginBottom: 12 }}>📊 إحصائيات المزامنة</div>
+        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 10 }}>
+          <div><div style={{ fontSize: 20, fontWeight: 800, color: t.tx }}>{stats.total}</div><div style={{ fontSize: 10, color: t.txM }}>إجمالي العمليات</div></div>
+          <div><div style={{ fontSize: 20, fontWeight: 800, color: "#16A34A" }}>{stats.success}</div><div style={{ fontSize: 10, color: t.txM }}>نجحت</div></div>
+          <div><div style={{ fontSize: 20, fontWeight: 800, color: "#DC2626" }}>{stats.failed}</div><div style={{ fontSize: 10, color: t.txM }}>فشلت</div></div>
+        </div>
+      </div>}
+    </div>}
+
+    {/* ═══ CRITERIA TAB ═══ */}
+    {view === "criteria" && <div>
+      <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 14 }}>
+        <div style={{ flex: 1 }}>
+          <div style={{ fontSize: 14, fontWeight: 800, color: t.tx }}>🎯 معايير التقييم — من كوادر</div>
+          <div style={{ fontSize: 11, color: t.txM, marginTop: 2 }}>
+            {cache ? "آخر تحديث: " + fmtAge(cache.fetchedAt) + " (يتحدث تلقائياً كل ساعة)" : "غير محملة بعد"}
+          </div>
+        </div>
+        <button onClick={function(){ loadCriteria(true); }} disabled={busy} style={{ padding: "8px 14px", background: B.blue, color: "#fff", border: "none", borderRadius: 8, fontSize: 12, fontWeight: 700, cursor: busy ? "wait" : "pointer", fontFamily: "inherit" }}>
+          🔄 تحديث من كوادر
+        </button>
+      </div>
+
+      {!criteria && <div style={{ padding: 40, textAlign: "center", color: t.txM, background: t.card, borderRadius: 12 }}>
+        لم يتم جلب المعايير بعد. اضغط "تحديث من كوادر" للبدء.
+      </div>}
+
+      {criteria && positionsWith.length === 0 && <div style={{ padding: 40, textAlign: "center", color: "#D97706", background: "rgba(217,119,6,0.08)", borderRadius: 12, border: "1px dashed rgba(217,119,6,0.3)" }}>
+        ⚠ لم يُعرَّف أي مسمى بمعاييره في كوادر بعد. اذهب لكوادر لإضافة المعايير.
+      </div>}
+
+      {criteria && positionsWith.length > 0 && <>
+        <div style={{ fontSize: 11, color: t.txM, fontWeight: 700, marginBottom: 10 }}>المسميات التي لها معايير ({positionsWith.length}):</div>
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill,minmax(320px,1fr))", gap: 12, marginBottom: 20 }}>
+          {positionsWith.map(function(pos){
+            var p = criteria.criteria_by_position[pos];
+            var critArr = p && p.criteria ? p.criteria : [];
+            var totalWeight = critArr.reduce(function(s,c){return s+(c.weight||0);}, 0);
+            return <div key={pos} style={{ background: t.card, borderRadius: 12, padding: 14, border: "1px solid " + t.sep }}>
+              <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 10 }}>
+                <div style={{ fontSize: 13, fontWeight: 800, color: t.tx }}>{pos}</div>
+                <div style={{ fontSize: 10, color: t.txM, padding: "2px 8px", background: t.bg, borderRadius: 10, fontWeight: 700 }}>v{p.version || 1}</div>
+              </div>
+              <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+                {critArr.map(function(c, i){
+                  var pct = totalWeight ? (c.weight / totalWeight * 100).toFixed(0) : c.weight;
+                  return <div key={i} style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 11 }}>
+                    <div style={{ flex: 1, color: t.tx, fontWeight: 600 }}>{c.label || c.id}</div>
+                    <div style={{ padding: "2px 8px", background: B.blue + "15", color: B.blue, borderRadius: 10, fontSize: 10, fontWeight: 800 }}>{c.weight}%</div>
+                  </div>;
+                })}
+              </div>
+              {totalWeight !== 100 && <div style={{ marginTop: 10, fontSize: 10, color: "#D97706", fontWeight: 700 }}>
+                ⚠ مجموع الأوزان: {totalWeight}% (يُفضَّل أن يكون 100%)
+              </div>}
+            </div>;
+          })}
+        </div>
+      </>}
+
+      {positionsWithout.length > 0 && <>
+        <div style={{ fontSize: 11, color: "#D97706", fontWeight: 700, marginBottom: 10 }}>⚠ مسميات بدون معايير في كوادر ({positionsWithout.length}):</div>
+        <div style={{ background: "rgba(217,119,6,0.08)", borderRadius: 12, padding: 14, border: "1px dashed rgba(217,119,6,0.3)", display: "flex", flexWrap: "wrap", gap: 6 }}>
+          {positionsWithout.map(function(p){
+            return <div key={p} style={{ padding: "5px 12px", background: "#fff", borderRadius: 6, fontSize: 11, fontWeight: 600, color: t.tx, border: "1px solid " + t.sep }}>{p}</div>;
+          })}
+        </div>
+      </>}
+    </div>}
+
+    {/* ═══ MIGRATION TAB ═══ */}
+    {view === "migration" && <div>
+      <div style={{ background: t.card, borderRadius: 14, padding: 18, border: "1px solid " + t.sep, marginBottom: 14 }}>
+        <div style={{ fontSize: 14, fontWeight: 800, color: t.tx, marginBottom: 6 }}>🚀 المزامنة الشاملة (One-Time Migration)</div>
+        <div style={{ fontSize: 11, color: t.txM, lineHeight: 1.7, marginBottom: 14 }}>
+          هذه العملية تُنقَل فيها <strong>كل بيانات الموظفين</strong> من كوادر إلى بصمة. تتم <strong>مرة واحدة فقط</strong>.<br/>
+          البيانات المنقولة: بيانات شخصية · وظيفية · راتب · بدلات · عقود · تقييمات سابقة.<br/>
+          بعد نجاحها، بصمة تصبح <strong>المصدر الرئيسي</strong> لكل هذه البيانات.
+        </div>
+
+        {migration && migration.completedAt && <div style={{
+          padding: 14, background: "rgba(34,197,94,0.08)", border: "1px solid rgba(34,197,94,0.3)",
+          borderRadius: 10, marginBottom: 14, fontSize: 12, color: "#16A34A", fontWeight: 700
+        }}>
+          ✓ تمت المزامنة بنجاح في {fmtDate(migration.completedAt)}<br/>
+          {migration.totals && <span style={{ fontWeight: 600, fontSize: 11 }}>{migration.totals.imported} موظف تم نقلهم · {migration.totals.errors || 0} خطأ</span>}
+          <div style={{ marginTop: 8, fontSize: 10, color: t.txM, fontWeight: 600 }}>
+            💡 يمكنك تكرار العملية لتحديث البيانات من كوادر، لكن تعديلات بصمة الجديدة قد تُستبدل.
+          </div>
+        </div>}
+
+        {!migration || !migration.completedAt ? <div style={{
+          padding: 14, background: "rgba(217,119,6,0.08)", border: "1px solid rgba(217,119,6,0.3)",
+          borderRadius: 10, marginBottom: 14, fontSize: 12, color: "#D97706", fontWeight: 700
+        }}>
+          ⚠ المزامنة الأولية لم تتم بعد. ابدأ بـ <strong>"معاينة"</strong> لرؤية البيانات التي ستُنقل.
+        </div> : null}
+
+        <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
+          <button
+            onClick={function(){ runMigration(true); }}
+            disabled={busy}
+            style={{ padding: "10px 16px", background: "#fff", color: B.blue, border: "2px solid " + B.blue, borderRadius: 8, fontSize: 12, fontWeight: 800, cursor: busy ? "wait" : "pointer", fontFamily: "inherit" }}
+          >👁 معاينة (dry-run) — بدون حفظ</button>
+
+          <button
+            onClick={function(){ setConfirmMigration(true); }}
+            disabled={busy}
+            style={{ padding: "10px 16px", background: confirmMigration ? "#DC2626" : B.blue, color: "#fff", border: "none", borderRadius: 8, fontSize: 12, fontWeight: 800, cursor: busy ? "wait" : "pointer", fontFamily: "inherit" }}
+          >
+            {confirmMigration ? "⚠ اضغط مرة ثانية للتأكيد النهائي" : "🚀 تنفيذ المزامنة الشاملة"}
+          </button>
+
+          {confirmMigration && <button
+            onClick={function(){ runMigration(false); }}
+            disabled={busy}
+            style={{ padding: "10px 16px", background: "#DC2626", color: "#fff", border: "none", borderRadius: 8, fontSize: 12, fontWeight: 800, cursor: busy ? "wait" : "pointer", fontFamily: "inherit", animation: "pulse 1.5s infinite" }}
+          >✓ نعم، نفّذ الآن</button>}
+
+          {confirmMigration && <button
+            onClick={function(){ setConfirmMigration(false); }}
+            style={{ padding: "10px 16px", background: t.bg, color: t.tx, border: "1px solid " + t.sep, borderRadius: 8, fontSize: 12, fontWeight: 700, cursor: "pointer", fontFamily: "inherit" }}
+          >إلغاء</button>}
+        </div>
+      </div>
+
+      {/* Migration result */}
+      {migrationResult && <div style={{ background: t.card, borderRadius: 14, padding: 18, border: "1px solid " + t.sep }}>
+        <div style={{ fontSize: 13, fontWeight: 800, color: t.tx, marginBottom: 12 }}>
+          {migrationResult.dryRun ? "👁 نتائج المعاينة" : "📊 نتائج المزامنة"}
+        </div>
+        {migrationResult.totals && <div style={{ display: "grid", gridTemplateColumns: "repeat(4,1fr)", gap: 10, marginBottom: 14 }}>
+          <div style={{ padding: 12, background: "rgba(59,130,246,0.08)", borderRadius: 8, textAlign: "center" }}>
+            <div style={{ fontSize: 22, fontWeight: 800, color: B.blue }}>{migrationResult.totals.employees || 0}</div>
+            <div style={{ fontSize: 10, color: t.txM, marginTop: 2 }}>من كوادر</div>
+          </div>
+          <div style={{ padding: 12, background: "rgba(34,197,94,0.08)", borderRadius: 8, textAlign: "center" }}>
+            <div style={{ fontSize: 22, fontWeight: 800, color: "#16A34A" }}>{migrationResult.totals.imported || 0}</div>
+            <div style={{ fontSize: 10, color: t.txM, marginTop: 2 }}>تم استيراد</div>
+          </div>
+          <div style={{ padding: 12, background: "rgba(100,116,139,0.08)", borderRadius: 8, textAlign: "center" }}>
+            <div style={{ fontSize: 22, fontWeight: 800, color: t.txM }}>{migrationResult.totals.skipped || 0}</div>
+            <div style={{ fontSize: 10, color: t.txM, marginTop: 2 }}>تم التخطي</div>
+          </div>
+          <div style={{ padding: 12, background: "rgba(239,68,68,0.08)", borderRadius: 8, textAlign: "center" }}>
+            <div style={{ fontSize: 22, fontWeight: 800, color: "#DC2626" }}>{migrationResult.totals.errors || 0}</div>
+            <div style={{ fontSize: 10, color: t.txM, marginTop: 2 }}>أخطاء</div>
+          </div>
+        </div>}
+        {migrationResult.steps && migrationResult.steps.length > 0 && <div>
+          <div style={{ fontSize: 11, color: t.txM, fontWeight: 700, marginBottom: 8 }}>📜 خطوات العملية:</div>
+          {migrationResult.steps.map(function(s, i){
+            return <div key={i} style={{ fontSize: 10, color: t.tx2, padding: "4px 10px", background: t.bg, borderRadius: 4, marginBottom: 3, fontFamily: "monospace" }}>
+              {i+1}. [{s.step}] {s.message || s.count || ""} {s.at ? "(" + fmtAge(s.at) + ")" : ""}
+            </div>;
+          })}
+        </div>}
+        {migrationResult.dryRun && migrationResult.steps && <div style={{ marginTop: 14, padding: 12, background: "rgba(59,130,246,0.08)", borderRadius: 8, border: "1px dashed rgba(59,130,246,0.3)", fontSize: 11, color: B.blue, fontWeight: 700, textAlign: "center" }}>
+          💡 هذه معاينة — لم يُحفظ أي شيء. اضغط "تنفيذ المزامنة الشاملة" للتطبيق الفعلي.
+        </div>}
+      </div>}
+    </div>}
+
+    {/* ═══ LOG TAB ═══ */}
+    {view === "log" && <div>
+      <div style={{ fontSize: 13, fontWeight: 800, color: t.tx, marginBottom: 10 }}>📜 سجل آخر 50 عملية مزامنة</div>
+      {(!status || !status.recentSyncs || status.recentSyncs.length === 0) ? <div style={{ padding: 40, textAlign: "center", color: t.txM, background: t.card, borderRadius: 12 }}>
+        لا توجد عمليات مزامنة بعد
+      </div> : <div style={{ background: t.card, borderRadius: 12, border: "1px solid " + t.sep, overflow: "hidden" }}>
+        {status.recentSyncs.map(function(s, i){
+          var actionIcons = { "push-update": "📤", "push-new-employee": "➕", "push-evaluation": "📊", "full-migration": "🚀" };
+          var actionLabels = { "push-update": "تحديث موظف", "push-new-employee": "إضافة موظف", "push-evaluation": "إرسال تقييم", "full-migration": "مزامنة شاملة" };
+          return <div key={s.id || i} style={{ padding: "10px 14px", borderBottom: i < status.recentSyncs.length-1 ? "1px solid " + t.sep : "none", display: "flex", alignItems: "center", gap: 10 }}>
+            <div style={{ fontSize: 16 }}>{actionIcons[s.action] || "🔗"}</div>
+            <div style={{ flex: 1 }}>
+              <div style={{ fontSize: 12, fontWeight: 700, color: t.tx }}>
+                {actionLabels[s.action] || s.action}
+                {s.employee_id && <span style={{ marginRight: 8, color: t.txM, fontWeight: 600 }}>· {s.employee_id}</span>}
+                {s.full_name && <span style={{ marginRight: 4, color: t.txM, fontWeight: 600 }}>({s.full_name})</span>}
+              </div>
+              <div style={{ fontSize: 10, color: t.txM, marginTop: 2 }}>{fmtDate(s.ts)}{s.error ? " · ❌ " + s.error : ""}</div>
+            </div>
+            <div style={{ padding: "3px 10px", borderRadius: 10, fontSize: 10, fontWeight: 800, background: s.success ? "rgba(34,197,94,0.15)" : "rgba(239,68,68,0.15)", color: s.success ? "#16A34A" : "#DC2626" }}>
+              {s.success ? "✓ نجح" : "✕ فشل"}
+            </div>
+          </div>;
+        })}
+      </div>}
+    </div>}
+
+  </div>;
+}
+
+
+/* ═══════════════════════════════════════════════════════════════════
+ * EmployeeFullProfileCard — v6.83 — ملف الموظف الكامل
+ * 5 تبويبات: شخصية + وظيفية + مالية + عقد/مرفقات + مرافقين
+ * ═══════════════════════════════════════════════════════════════════ */
+function EmployeeFullProfileCard({ emp, t, B }) {
+  var [loading, setLoading] = useState(true);
+  var [profile, setProfile] = useState(null);
+  var [completeness, setCompleteness] = useState(null);
+  var [attachments, setAttachments] = useState([]);
+  var [activeTab, setActiveTab] = useState("personal");
+  var [editingSection, setEditingSection] = useState(null); // which section being edited
+  var [editData, setEditData] = useState({});
+  var [saving, setSaving] = useState(false);
+  var [msg, setMsg] = useState(null);
+  var [showUploadModal, setShowUploadModal] = useState(false);
+  var [uploadType, setUploadType] = useState("id_copy");
+  var [uploadFile, setUploadFile] = useState(null);
+
+  async function loadProfile() {
+    if (!emp || !emp.id) return;
+    setLoading(true);
+    try {
+      var r = await fetch("/api/data?action=emp-profile&empId=" + encodeURIComponent(emp.id));
+      var d = await r.json();
+      if (d.ok) {
+        setProfile(d.profile || {});
+        setCompleteness(d.completeness || null);
+      }
+      var ra = await fetch("/api/data?action=emp-attachments&empId=" + encodeURIComponent(emp.id));
+      var da = await ra.json();
+      if (da.ok) setAttachments(da.attachments || []);
+    } catch(e) {
+      setMsg({ type: "error", text: "فشل تحميل الملف: " + e.message });
+    }
+    setLoading(false);
+  }
+
+  useEffect(function(){ loadProfile(); }, [emp && emp.id]);
+
+  function startEdit(section) {
+    setEditingSection(section);
+    setEditData(profile && profile[section] ? { ...profile[section] } : {});
+    setMsg(null);
+  }
+
+  function cancelEdit() {
+    setEditingSection(null);
+    setEditData({});
+  }
+
+  async function saveSection() {
+    setSaving(true);
+    try {
+      var r = await fetch("/api/data?action=emp-profile", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          empId: emp.id,
+          section: editingSection,
+          data: editData,
+          source: "hr_direct",
+          requestedBy: "hr"
+        })
+      });
+      var d = await r.json();
+      if (d.ok) {
+        setMsg({ type: "success", text: "✓ تم حفظ البيانات" });
+        setEditingSection(null);
+        setEditData({});
+        await loadProfile();
+      } else {
+        setMsg({ type: "error", text: d.error || "فشل الحفظ" });
+      }
+    } catch(e) {
+      setMsg({ type: "error", text: "فشل: " + e.message });
+    }
+    setSaving(false);
+  }
+
+  async function uploadAttachment() {
+    if (!uploadFile) { setMsg({ type: "error", text: "اختر ملفاً أولاً" }); return; }
+    setSaving(true);
+    try {
+      // Convert file to base64 data URL (small files < 1MB)
+      var reader = new FileReader();
+      var dataUrl = await new Promise(function(resolve, reject){
+        reader.onload = function(){ resolve(reader.result); };
+        reader.onerror = reject;
+        reader.readAsDataURL(uploadFile);
+      });
+      var r = await fetch("/api/data?action=emp-attachments", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          empId: emp.id,
+          type: uploadType,
+          url: dataUrl,
+          fileName: uploadFile.name,
+          fileSize: uploadFile.size,
+          uploadedBy: "hr"
+        })
+      });
+      var d = await r.json();
+      if (d.ok) {
+        setMsg({ type: "success", text: "✓ تم رفع المرفق" });
+        setShowUploadModal(false);
+        setUploadFile(null);
+        await loadProfile();
+      } else {
+        setMsg({ type: "error", text: d.error || "فشل الرفع" });
+      }
+    } catch(e) {
+      setMsg({ type: "error", text: "فشل: " + e.message });
+    }
+    setSaving(false);
+  }
+
+  async function verifyAttachment(att) {
+    try {
+      var r = await fetch("/api/data?action=emp-attachments", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          empId: emp.id,
+          attachmentId: att.id,
+          status: "verified",
+          verifiedBy: "hr"
+        })
+      });
+      var d = await r.json();
+      if (d.ok) {
+        setMsg({ type: "success", text: "✓ تم الاعتماد" });
+        await loadProfile();
+      }
+    } catch(e) { setMsg({ type: "error", text: "فشل: " + e.message }); }
+  }
+
+  async function deleteAttachment(attId) {
+    if (!confirm("هل تريد حذف هذا المرفق؟")) return;
+    try {
+      var r = await fetch("/api/data?action=emp-attachments", {
+        method: "DELETE",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ empId: emp.id, attachmentId: attId })
+      });
+      var d = await r.json();
+      if (d.ok) {
+        setMsg({ type: "success", text: "✓ تم الحذف" });
+        await loadProfile();
+      }
+    } catch(e) { setMsg({ type: "error", text: "فشل: " + e.message }); }
+  }
+
+  if (loading) {
+    return <div style={{ background: t.card, borderRadius: 14, padding: 20, border: "1px solid " + t.sep, marginTop: 12, textAlign: "center", color: t.txM }}>
+      جارٍ تحميل الملف الكامل...
+    </div>;
+  }
+
+  var levelColors = {
+    complete: "#16A34A",
+    good: "#3B82F6",
+    needs_attention: "#D97706",
+    incomplete: "#F59E0B",
+    critical: "#DC2626",
+  };
+  var levelLabels = {
+    complete: "✓ مكتمل",
+    good: "جيد",
+    needs_attention: "يحتاج عناية",
+    incomplete: "غير مكتمل",
+    critical: "حرج",
+  };
+
+  return <div style={{ background: t.card, borderRadius: 14, padding: 0, border: "1px solid " + t.sep, marginTop: 12, overflow: "hidden" }}>
+
+    {/* Header with completeness */}
+    <div style={{ padding: 16, borderBottom: "1px solid " + t.sep, background: "linear-gradient(135deg, rgba(59,130,246,0.05), rgba(124,58,237,0.03))" }}>
+      <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 10 }}>
+        <div style={{ fontSize: 20 }}>📋</div>
+        <div style={{ flex: 1 }}>
+          <div style={{ fontSize: 14, fontWeight: 800, color: t.tx }}>ملف الموظف الكامل</div>
+          <div style={{ fontSize: 10, color: t.txM, marginTop: 1 }}>بيانات شخصية · وظيفية · مالية · عقد · مرافقين</div>
+        </div>
+        {completeness && <div style={{ textAlign: "center" }}>
+          <div style={{ fontSize: 22, fontWeight: 800, color: levelColors[completeness.level] }}>{completeness.score}%</div>
+          <div style={{ fontSize: 9, fontWeight: 700, color: levelColors[completeness.level] }}>{levelLabels[completeness.level]}</div>
+        </div>}
+      </div>
+      {completeness && completeness.score < 100 && <div style={{ background: "rgba(255,255,255,0.6)", borderRadius: 8, padding: 8, fontSize: 10, color: t.tx2 }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 4 }}>
+          <span style={{ color: levelColors[completeness.level], fontWeight: 700 }}>💡 ينقص الملف:</span>
+          <span style={{ color: t.txM, fontSize: 9 }}>{completeness.missing.length} حقل</span>
+        </div>
+        <div style={{ display: "flex", flexWrap: "wrap", gap: 4 }}>
+          {completeness.missing.slice(0, 8).map(function(m, i){
+            return <span key={i} style={{ padding: "2px 7px", background: "#fff", borderRadius: 4, fontSize: 9, color: t.txM, border: "1px solid " + t.sep }}>{m.label}</span>;
+          })}
+          {completeness.missing.length > 8 && <span style={{ padding: "2px 7px", fontSize: 9, color: t.txM }}>+ {completeness.missing.length - 8}</span>}
+        </div>
+      </div>}
+    </div>
+
+    {/* Message */}
+    {msg && <div style={{
+      padding: "8px 14px", margin: "8px 12px", borderRadius: 6, fontSize: 11, fontWeight: 700,
+      background: msg.type === "error" ? "rgba(239,68,68,0.1)" : "rgba(34,197,94,0.1)",
+      color: msg.type === "error" ? "#DC2626" : "#16A34A",
+      display: "flex", justifyContent: "space-between", alignItems: "center"
+    }}>
+      <span>{msg.text}</span>
+      <button onClick={function(){setMsg(null);}} style={{ background: "none", border: "none", fontSize: 13, color: "inherit", cursor: "pointer" }}>✕</button>
+    </div>}
+
+    {/* Tabs */}
+    <div style={{ display: "flex", borderBottom: "1px solid " + t.sep, overflowX: "auto" }}>
+      {[
+        { id: "personal", icon: "👤", label: "شخصية" },
+        { id: "employment", icon: "💼", label: "وظيفية" },
+        { id: "compensation", icon: "💰", label: "مالية" },
+        { id: "contract", icon: "📄", label: "عقد ومرفقات" },
+        { id: "dependents", icon: "👨‍👩‍👧", label: "مرافقين" },
+      ].map(function(tb){
+        var active = activeTab === tb.id;
+        return <button key={tb.id} onClick={function(){setActiveTab(tb.id); cancelEdit();}} style={{
+          padding: "12px 14px", background: active ? "rgba(59,130,246,0.08)" : "transparent",
+          color: active ? B.blue : t.tx, border: "none", borderBottom: "2px solid " + (active ? B.blue : "transparent"),
+          fontSize: 11, fontWeight: 700, cursor: "pointer", fontFamily: "inherit", whiteSpace: "nowrap",
+          display: "flex", alignItems: "center", gap: 5
+        }}>
+          <span>{tb.icon}</span>
+          <span>{tb.label}</span>
+        </button>;
+      })}
+    </div>
+
+    {/* Content */}
+    <div style={{ padding: 16 }}>
+
+      {/* === PERSONAL === */}
+      {activeTab === "personal" && <ProfileSection
+        title="البيانات الشخصية"
+        section="personal"
+        data={profile && profile.personal}
+        fields={[
+          { key: "fullNameParts", label: "الاسم الرباعي الكامل", type: "name4" },
+          { key: "idExpiry", label: "تاريخ انتهاء الهوية", type: "date" },
+          { key: "dateOfBirth", label: "تاريخ الميلاد", type: "date" },
+          { key: "nationality", label: "الجنسية", type: "text" },
+          { key: "maritalStatus", label: "الحالة الاجتماعية", type: "select", options: ["أعزب","متزوج","مطلق","أرمل"] },
+          { key: "address", label: "العنوان", type: "textarea" },
+          { key: "emergencyContact", label: "جهة اتصال للطوارئ (الاسم + الرقم)", type: "text" },
+        ]}
+        editing={editingSection === "personal"}
+        editData={editData}
+        setEditData={setEditData}
+        startEdit={startEdit}
+        cancelEdit={cancelEdit}
+        saveSection={saveSection}
+        saving={saving}
+        t={t} B={B}
+      />}
+
+      {/* === EMPLOYMENT === */}
+      {activeTab === "employment" && <ProfileSection
+        title="البيانات الوظيفية"
+        section="employment"
+        data={profile && profile.employment}
+        fields={[
+          { key: "hireDate", label: "تاريخ التعيين", type: "date" },
+          { key: "jobGrade", label: "الدرجة الوظيفية", type: "text" },
+          { key: "workType", label: "نوع العمل", type: "select", options: ["دوام كامل","دوام جزئي","عقد مؤقت","استشاري","متدرب"] },
+          { key: "supervisor", label: "المشرف المباشر (الاسم)", type: "text" },
+          { key: "jobDescription", label: "الوصف الوظيفي", type: "textarea" },
+          { key: "reportingTo", label: "يرفع تقاريره إلى", type: "text" },
+        ]}
+        editing={editingSection === "employment"}
+        editData={editData}
+        setEditData={setEditData}
+        startEdit={startEdit}
+        cancelEdit={cancelEdit}
+        saveSection={saveSection}
+        saving={saving}
+        t={t} B={B}
+        note="المسمى والقسم والفرع يُعدَّلان من كوادر"
+      />}
+
+      {/* === COMPENSATION === */}
+      {activeTab === "compensation" && <ProfileSection
+        title="الراتب والبدلات"
+        section="compensation"
+        data={profile && profile.compensation}
+        fields={[
+          { key: "basicSalary", label: "الراتب الأساسي (ريال)", type: "number" },
+          { key: "housingAllowance", label: "بدل السكن (ريال)", type: "number" },
+          { key: "transportAllowance", label: "بدل النقل (ريال)", type: "number" },
+          { key: "communicationsAllowance", label: "بدل الاتصالات (ريال)", type: "number" },
+          { key: "fieldAllowance", label: "بدل طبيعة العمل (ريال)", type: "number" },
+          { key: "otherAllowances", label: "بدلات أخرى (ريال)", type: "number" },
+          { key: "iban", label: "رقم الآيبان (IBAN)", type: "text", placeholder: "SA..." },
+          { key: "bankName", label: "اسم البنك", type: "text" },
+          { key: "fixedDeductions", label: "الخصومات الثابتة (ريال)", type: "number" },
+        ]}
+        editing={editingSection === "compensation"}
+        editData={editData}
+        setEditData={setEditData}
+        startEdit={startEdit}
+        cancelEdit={cancelEdit}
+        saveSection={saveSection}
+        saving={saving}
+        t={t} B={B}
+        sensitive={true}
+      />}
+
+      {/* === CONTRACT & ATTACHMENTS === */}
+      {activeTab === "contract" && <div>
+        <ProfileSection
+          title="العقد"
+          section="contract"
+          data={profile && profile.contract}
+          fields={[
+            { key: "startDate", label: "تاريخ بداية العقد", type: "date" },
+            { key: "endDate", label: "تاريخ نهاية العقد", type: "date" },
+            { key: "type", label: "نوع العقد", type: "select", options: ["دائم","مؤقت","استشاري","تدريب"] },
+            { key: "renewable", label: "قابل للتجديد", type: "select", options: ["نعم","لا"] },
+            { key: "probationMonths", label: "فترة التجربة (أشهر)", type: "number" },
+            { key: "specialTerms", label: "شروط خاصة", type: "textarea" },
+          ]}
+          editing={editingSection === "contract"}
+          editData={editData}
+          setEditData={setEditData}
+          startEdit={startEdit}
+          cancelEdit={cancelEdit}
+          saveSection={saveSection}
+          saving={saving}
+          t={t} B={B}
+        />
+
+        {/* Attachments */}
+        <div style={{ marginTop: 20, paddingTop: 16, borderTop: "1px solid " + t.sep }}>
+          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 12 }}>
+            <div style={{ fontSize: 13, fontWeight: 800, color: t.tx }}>📎 المرفقات ({attachments.length})</div>
+            <button onClick={function(){setShowUploadModal(true);}} style={{ padding: "6px 12px", background: B.blue, color: "#fff", border: "none", borderRadius: 6, fontSize: 11, fontWeight: 700, cursor: "pointer", fontFamily: "inherit" }}>
+              📤 رفع مرفق
+            </button>
+          </div>
+          {attachments.length === 0 ? <div style={{ padding: 20, textAlign: "center", color: t.txM, background: t.bg, borderRadius: 8, fontSize: 12 }}>
+            لا توجد مرفقات بعد
+          </div> : <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+            {attachments.map(function(att){
+              var typeLabels = {
+                id_copy: "🪪 صورة الهوية",
+                contract_copy: "📄 نسخة العقد",
+                iban_copy: "🏦 صورة الآيبان",
+                qualification: "🎓 الشهادة العلمية",
+                profile_photo: "📸 الصورة الشخصية",
+                insurance_card: "🏥 بطاقة التأمين",
+                experience_cert: "💼 شهادة خبرة",
+                driving_license: "🚗 رخصة القيادة",
+                other: "📎 أخرى",
+              };
+              var label = typeLabels[att.type] || att.type;
+              return <div key={att.id} style={{ padding: 10, background: t.bg, borderRadius: 8, display: "flex", alignItems: "center", gap: 10, border: "1px solid " + t.sep }}>
+                <div style={{ fontSize: 14 }}>{label.split(" ")[0]}</div>
+                <div style={{ flex: 1 }}>
+                  <div style={{ fontSize: 12, fontWeight: 700, color: t.tx }}>{label}</div>
+                  <div style={{ fontSize: 10, color: t.txM, marginTop: 2 }}>
+                    {att.fileName} · {att.fileSize ? Math.round(att.fileSize/1024) + " KB" : ""}
+                  </div>
+                </div>
+                <div style={{ padding: "2px 8px", borderRadius: 4, fontSize: 9, fontWeight: 800, background: att.status === "verified" ? "rgba(34,197,94,0.15)" : "rgba(217,119,6,0.15)", color: att.status === "verified" ? "#16A34A" : "#D97706" }}>
+                  {att.status === "verified" ? "✓ معتمد" : "⏳ بانتظار اعتماد"}
+                </div>
+                {att.url && <a href={att.url} target="_blank" style={{ padding: "4px 8px", background: "#fff", border: "1px solid " + t.sep, borderRadius: 4, fontSize: 10, fontWeight: 700, color: t.tx, textDecoration: "none" }}>👁 عرض</a>}
+                {att.status !== "verified" && <button onClick={function(){verifyAttachment(att);}} style={{ padding: "4px 8px", background: "#16A34A", color: "#fff", border: "none", borderRadius: 4, fontSize: 10, fontWeight: 700, cursor: "pointer", fontFamily: "inherit" }}>✓ اعتماد</button>}
+                <button onClick={function(){deleteAttachment(att.id);}} style={{ padding: "4px 8px", background: "rgba(239,68,68,0.1)", color: "#DC2626", border: "none", borderRadius: 4, fontSize: 10, fontWeight: 700, cursor: "pointer", fontFamily: "inherit" }}>🗑</button>
+              </div>;
+            })}
+          </div>}
+        </div>
+      </div>}
+
+      {/* === DEPENDENTS === */}
+      {activeTab === "dependents" && <DependentsEditor
+        empId={emp.id}
+        dependents={profile && profile.dependents && profile.dependents.list ? profile.dependents.list : []}
+        onSave={async function(newList){
+          try {
+            var r = await fetch("/api/data?action=emp-profile", {
+              method: "PUT",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ empId: emp.id, section: "dependents", data: { list: newList }, source: "hr_direct", requestedBy: "hr" })
+            });
+            var d = await r.json();
+            if (d.ok) {
+              setMsg({ type: "success", text: "✓ تم حفظ قائمة المرافقين" });
+              await loadProfile();
+            }
+          } catch(e) { setMsg({ type: "error", text: "فشل: " + e.message }); }
+        }}
+        t={t} B={B}
+      />}
+    </div>
+
+    {/* Upload Modal */}
+    {showUploadModal && <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.5)", zIndex: 9999, display: "flex", alignItems: "center", justifyContent: "center", padding: 16 }} onClick={function(e){ if (e.target === e.currentTarget) setShowUploadModal(false); }}>
+      <div style={{ background: t.card, borderRadius: 14, padding: 20, maxWidth: 500, width: "100%", maxHeight: "90vh", overflowY: "auto" }}>
+        <div style={{ fontSize: 15, fontWeight: 800, color: t.tx, marginBottom: 14 }}>📤 رفع مرفق جديد</div>
+        <div style={{ marginBottom: 12 }}>
+          <label style={{ display: "block", fontSize: 11, fontWeight: 700, color: t.tx2, marginBottom: 5 }}>نوع المرفق</label>
+          <select value={uploadType} onChange={function(e){setUploadType(e.target.value);}} style={{ width: "100%", padding: "9px 10px", borderRadius: 8, border: "1px solid " + t.sep, background: t.card, fontFamily: "inherit", fontSize: 12 }}>
+            <option value="id_copy">🪪 صورة الهوية</option>
+            <option value="contract_copy">📄 نسخة العقد</option>
+            <option value="iban_copy">🏦 صورة الآيبان</option>
+            <option value="qualification">🎓 الشهادة العلمية</option>
+            <option value="profile_photo">📸 الصورة الشخصية</option>
+            <option value="insurance_card">🏥 بطاقة التأمين</option>
+            <option value="experience_cert">💼 شهادة خبرة</option>
+            <option value="driving_license">🚗 رخصة القيادة</option>
+            <option value="other">📎 أخرى</option>
+          </select>
+        </div>
+        <div style={{ marginBottom: 14 }}>
+          <label style={{ display: "block", fontSize: 11, fontWeight: 700, color: t.tx2, marginBottom: 5 }}>الملف</label>
+          <input type="file" accept="image/*,.pdf" onChange={function(e){ setUploadFile(e.target.files[0]); }} style={{ width: "100%", padding: 8, fontSize: 11 }} />
+          {uploadFile && <div style={{ fontSize: 10, color: t.txM, marginTop: 4 }}>{uploadFile.name} · {Math.round(uploadFile.size/1024)} KB</div>}
+        </div>
+        <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}>
+          <button onClick={function(){setShowUploadModal(false); setUploadFile(null);}} style={{ padding: "9px 16px", background: t.bg, color: t.tx, border: "1px solid " + t.sep, borderRadius: 8, fontSize: 12, fontWeight: 700, cursor: "pointer", fontFamily: "inherit" }}>إلغاء</button>
+          <button onClick={uploadAttachment} disabled={saving || !uploadFile} style={{ padding: "9px 16px", background: B.blue, color: "#fff", border: "none", borderRadius: 8, fontSize: 12, fontWeight: 700, cursor: (saving || !uploadFile) ? "wait" : "pointer", fontFamily: "inherit", opacity: (saving || !uploadFile) ? 0.6 : 1 }}>{saving ? "..." : "📤 رفع"}</button>
+        </div>
+      </div>
+    </div>}
+  </div>;
+}
+
+/* ────── ProfileSection — قسم بيانات قابل للتعديل ────── */
+function ProfileSection({ title, section, data, fields, editing, editData, setEditData, startEdit, cancelEdit, saveSection, saving, t, B, note, sensitive }) {
+  return <div>
+    <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 12 }}>
+      <div>
+        <div style={{ fontSize: 13, fontWeight: 800, color: t.tx }}>{title}</div>
+        {note && <div style={{ fontSize: 10, color: t.txM, marginTop: 2 }}>ℹ {note}</div>}
+        {sensitive && <div style={{ fontSize: 10, color: "#D97706", marginTop: 2, fontWeight: 700 }}>🔒 بيانات حساسة — يتم اعتمادها بصلاحية خاصة</div>}
+      </div>
+      {!editing ? <button onClick={function(){startEdit(section);}} style={{ padding: "6px 14px", background: B.blue, color: "#fff", border: "none", borderRadius: 6, fontSize: 11, fontWeight: 700, cursor: "pointer", fontFamily: "inherit" }}>✏️ تعديل</button> : <div style={{ display: "flex", gap: 6 }}>
+        <button onClick={cancelEdit} disabled={saving} style={{ padding: "6px 12px", background: t.bg, color: t.tx, border: "1px solid " + t.sep, borderRadius: 6, fontSize: 11, fontWeight: 700, cursor: "pointer", fontFamily: "inherit" }}>إلغاء</button>
+        <button onClick={saveSection} disabled={saving} style={{ padding: "6px 14px", background: "#16A34A", color: "#fff", border: "none", borderRadius: 6, fontSize: 11, fontWeight: 700, cursor: saving ? "wait" : "pointer", fontFamily: "inherit" }}>{saving ? "..." : "✓ حفظ"}</button>
+      </div>}
+    </div>
+
+    <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
+      {fields.map(function(f){
+        var val = editing ? editData[f.key] : (data && data[f.key]);
+        return <div key={f.key} style={{ gridColumn: f.type === "textarea" ? "1 / -1" : "auto" }}>
+          <label style={{ display: "block", fontSize: 10, color: t.txM, fontWeight: 700, marginBottom: 4 }}>{f.label}</label>
+          {!editing ? <ProfileReadField value={val} type={f.type} t={t} /> : <ProfileEditField field={f} value={val} onChange={function(v){ setEditData(function(prev){ var n = { ...prev }; n[f.key] = v; return n; }); }} t={t} />}
+        </div>;
+      })}
+    </div>
+  </div>;
+}
+
+/* ────── ProfileReadField — عرض بيان ────── */
+function ProfileReadField({ value, type, t }) {
+  if (value == null || value === "") {
+    return <div style={{ padding: "7px 10px", background: t.bg, borderRadius: 6, fontSize: 11, color: t.txM, fontStyle: "italic", border: "1px dashed " + t.sep }}>— غير مُدخل —</div>;
+  }
+  if (type === "name4" && typeof value === "object") {
+    var parts = [value.first, value.second, value.third, value.fourth, value.family].filter(Boolean);
+    return <div style={{ padding: "7px 10px", background: t.bg, borderRadius: 6, fontSize: 11, fontWeight: 700, color: t.tx }}>{parts.join(" ") || "—"}</div>;
+  }
+  if (type === "textarea") {
+    return <div style={{ padding: "8px 10px", background: t.bg, borderRadius: 6, fontSize: 11, color: t.tx, whiteSpace: "pre-wrap", minHeight: 50 }}>{value}</div>;
+  }
+  if (type === "date" && value) {
+    try {
+      var d = new Date(value);
+      return <div style={{ padding: "7px 10px", background: t.bg, borderRadius: 6, fontSize: 11, fontWeight: 700, color: t.tx }}>{d.toLocaleDateString("ar-SA")}</div>;
+    } catch(e) {}
+  }
+  if (type === "number") {
+    return <div style={{ padding: "7px 10px", background: t.bg, borderRadius: 6, fontSize: 11, fontWeight: 700, color: t.tx }}>{Number(value).toLocaleString("en-US")}</div>;
+  }
+  return <div style={{ padding: "7px 10px", background: t.bg, borderRadius: 6, fontSize: 11, fontWeight: 700, color: t.tx }}>{String(value)}</div>;
+}
+
+/* ────── ProfileEditField — تعديل بيان ────── */
+function ProfileEditField({ field, value, onChange, t }) {
+  var common = { width: "100%", padding: "8px 10px", borderRadius: 6, border: "1px solid " + t.sep, fontFamily: "inherit", fontSize: 11, background: "#fff" };
+  if (field.type === "name4") {
+    var v = value || {};
+    return <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 6 }}>
+      {[["first","الأول"],["second","الثاني"],["third","الثالث"],["fourth","الرابع"],["family","العائلة"]].map(function(p){
+        return <input key={p[0]} placeholder={p[1]} value={v[p[0]] || ""} onChange={function(e){ var nv = { ...v }; nv[p[0]] = e.target.value; onChange(nv); }} style={common} />;
+      })}
+    </div>;
+  }
+  if (field.type === "textarea") {
+    return <textarea value={value || ""} onChange={function(e){onChange(e.target.value);}} rows={3} style={{ ...common, resize: "vertical" }} />;
+  }
+  if (field.type === "select") {
+    return <select value={value || ""} onChange={function(e){onChange(e.target.value);}} style={common}>
+      <option value="">-- اختر --</option>
+      {field.options.map(function(o){ return <option key={o} value={o}>{o}</option>; })}
+    </select>;
+  }
+  if (field.type === "number") {
+    return <input type="number" value={value || ""} onChange={function(e){onChange(e.target.value === "" ? "" : Number(e.target.value));}} placeholder={field.placeholder || "0"} style={common} />;
+  }
+  if (field.type === "date") {
+    return <input type="date" value={value || ""} onChange={function(e){onChange(e.target.value);}} style={common} />;
+  }
+  return <input type="text" value={value || ""} onChange={function(e){onChange(e.target.value);}} placeholder={field.placeholder || ""} style={common} />;
+}
+
+/* ────── DependentsEditor — محرر المرافقين ────── */
+function DependentsEditor({ empId, dependents, onSave, t, B }) {
+  var [list, setList] = useState(dependents || []);
+  var [editing, setEditing] = useState(false);
+
+  useEffect(function(){ setList(dependents || []); }, [dependents]);
+
+  function addRow() {
+    setList(function(prev){ return [...prev, { name: "", relationship: "", dob: "", hasInsurance: false }]; });
+    setEditing(true);
+  }
+  function updateRow(i, key, val) {
+    setList(function(prev){ var n = [...prev]; n[i] = { ...n[i], [key]: val }; return n; });
+  }
+  function removeRow(i) {
+    setList(function(prev){ return prev.filter(function(_, idx){ return idx !== i; }); });
+  }
+  function save() {
+    onSave(list);
+    setEditing(false);
+  }
+
+  return <div>
+    <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 12 }}>
+      <div style={{ fontSize: 13, fontWeight: 800, color: t.tx }}>👨‍👩‍👧 المرافقون ({list.length})</div>
+      {!editing ? <div style={{ display: "flex", gap: 6 }}>
+        <button onClick={function(){setEditing(true);}} style={{ padding: "6px 12px", background: B.blue, color: "#fff", border: "none", borderRadius: 6, fontSize: 11, fontWeight: 700, cursor: "pointer", fontFamily: "inherit" }}>✏️ تعديل</button>
+        <button onClick={addRow} style={{ padding: "6px 12px", background: "#16A34A", color: "#fff", border: "none", borderRadius: 6, fontSize: 11, fontWeight: 700, cursor: "pointer", fontFamily: "inherit" }}>+ إضافة</button>
+      </div> : <div style={{ display: "flex", gap: 6 }}>
+        <button onClick={function(){setList(dependents || []); setEditing(false);}} style={{ padding: "6px 12px", background: t.bg, color: t.tx, border: "1px solid " + t.sep, borderRadius: 6, fontSize: 11, fontWeight: 700, cursor: "pointer", fontFamily: "inherit" }}>إلغاء</button>
+        <button onClick={save} style={{ padding: "6px 14px", background: "#16A34A", color: "#fff", border: "none", borderRadius: 6, fontSize: 11, fontWeight: 700, cursor: "pointer", fontFamily: "inherit" }}>✓ حفظ</button>
+      </div>}
+    </div>
+
+    {list.length === 0 ? <div style={{ padding: 20, textAlign: "center", color: t.txM, background: t.bg, borderRadius: 8, fontSize: 12 }}>
+      لا يوجد مرافقون مسجّلون
+    </div> : <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+      {list.map(function(d, i){
+        if (!editing) {
+          return <div key={i} style={{ padding: 10, background: t.bg, borderRadius: 8, display: "flex", alignItems: "center", gap: 10, border: "1px solid " + t.sep }}>
+            <div style={{ width: 32, height: 32, borderRadius: 16, background: B.blue + "20", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 14 }}>👤</div>
+            <div style={{ flex: 1 }}>
+              <div style={{ fontSize: 12, fontWeight: 700, color: t.tx }}>{d.name || "—"}</div>
+              <div style={{ fontSize: 10, color: t.txM, marginTop: 2 }}>{d.relationship || "—"} · {d.dob || "—"}</div>
+            </div>
+            {d.hasInsurance && <span style={{ padding: "2px 8px", borderRadius: 4, fontSize: 9, fontWeight: 700, background: "rgba(34,197,94,0.15)", color: "#16A34A" }}>🏥 تأمين</span>}
+          </div>;
+        }
+        return <div key={i} style={{ padding: 10, background: t.bg, borderRadius: 8, border: "1px solid " + t.sep }}>
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 6, marginBottom: 6 }}>
+            <input placeholder="الاسم" value={d.name || ""} onChange={function(e){updateRow(i, "name", e.target.value);}} style={{ padding: "7px 10px", borderRadius: 6, border: "1px solid " + t.sep, fontFamily: "inherit", fontSize: 11, background: "#fff" }} />
+            <select value={d.relationship || ""} onChange={function(e){updateRow(i, "relationship", e.target.value);}} style={{ padding: "7px 10px", borderRadius: 6, border: "1px solid " + t.sep, fontFamily: "inherit", fontSize: 11, background: "#fff" }}>
+              <option value="">-- صلة القرابة --</option>
+              <option>زوجة</option><option>زوج</option><option>ابن</option><option>ابنة</option><option>والد</option><option>والدة</option><option>أخ</option><option>أخت</option>
+            </select>
+          </div>
+          <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
+            <input type="date" value={d.dob || ""} onChange={function(e){updateRow(i, "dob", e.target.value);}} style={{ flex: 1, padding: "7px 10px", borderRadius: 6, border: "1px solid " + t.sep, fontFamily: "inherit", fontSize: 11, background: "#fff" }} />
+            <label style={{ fontSize: 11, display: "flex", alignItems: "center", gap: 4, color: t.tx, fontWeight: 600 }}>
+              <input type="checkbox" checked={!!d.hasInsurance} onChange={function(e){updateRow(i, "hasInsurance", e.target.checked);}} />
+              تأمين
+            </label>
+            <button onClick={function(){removeRow(i);}} style={{ padding: "6px 10px", background: "rgba(239,68,68,0.1)", color: "#DC2626", border: "none", borderRadius: 4, fontSize: 10, fontWeight: 700, cursor: "pointer", fontFamily: "inherit" }}>🗑</button>
+          </div>
+        </div>;
+      })}
+    </div>}
+  </div>;
+}
+

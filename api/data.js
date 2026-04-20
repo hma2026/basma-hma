@@ -147,6 +147,122 @@ async function dbSet(t, d) {
   return await blobSet(t, d);
 }
 
+/* ════════ v6.83 — Employee Profile Helpers ════════ */
+function sectionLabel(section) {
+  const labels = {
+    personal: 'البيانات الشخصية',
+    employment: 'البيانات الوظيفية',
+    compensation: 'الراتب والبدلات',
+    contract: 'العقد',
+    dependents: 'المرافقون',
+    system: 'إعدادات النظام',
+  };
+  return labels[section] || section;
+}
+
+// حساب نسبة اكتمال بيانات الموظف (0-100)
+// فلسفة التدريج: تنبيه فقط، لا يرفض شيئاً
+function computeCompleteness(emp, profile, attachments) {
+  profile = profile || {};
+  attachments = attachments || [];
+  const missing = [];
+  let filled = 0;
+  let total = 0;
+
+  // ═══ بيانات شخصية أساسية (وزن 30%) ═══
+  const personalFields = [
+    { key: 'fullNameParts', path: 'personal.fullNameParts', label: 'الاسم الرباعي الكامل', weight: 3 },
+    { key: 'idNumber', path: 'emp.idNumber', label: 'رقم الهوية', weight: 3 },
+    { key: 'idExpiry', path: 'personal.idExpiry', label: 'تاريخ انتهاء الهوية', weight: 2 },
+    { key: 'dateOfBirth', path: 'personal.dateOfBirth', label: 'تاريخ الميلاد', weight: 2 },
+    { key: 'nationality', path: 'personal.nationality', label: 'الجنسية', weight: 2 },
+    { key: 'maritalStatus', path: 'personal.maritalStatus', label: 'الحالة الاجتماعية', weight: 1 },
+    { key: 'phone', path: 'emp.phone', label: 'رقم الجوال', weight: 3 },
+    { key: 'email', path: 'emp.email', label: 'البريد الإلكتروني', weight: 2 },
+    { key: 'address', path: 'personal.address', label: 'العنوان', weight: 1 },
+    { key: 'emergencyContact', path: 'personal.emergencyContact', label: 'جهة اتصال الطوارئ', weight: 2 },
+  ];
+
+  personalFields.forEach(f => {
+    total += f.weight;
+    const val = f.path.startsWith('emp.') ? emp[f.path.split('.')[1]] : (profile.personal && profile.personal[f.key]);
+    if (val && (typeof val !== 'object' || Object.keys(val).length > 0)) {
+      filled += f.weight;
+    } else {
+      missing.push({ section: 'personal', key: f.key, label: f.label });
+    }
+  });
+
+  // ═══ بيانات وظيفية (وزن 15%) ═══
+  const employmentFields = [
+    { key: 'role', path: 'emp.role', label: 'المسمى الوظيفي', weight: 2 },
+    { key: 'department', path: 'emp.department', label: 'القسم', weight: 1 },
+    { key: 'branch', path: 'emp.branch', label: 'الفرع', weight: 1 },
+    { key: 'hireDate', path: 'employment.hireDate', label: 'تاريخ التعيين', weight: 2 },
+  ];
+
+  employmentFields.forEach(f => {
+    total += f.weight;
+    const val = f.path.startsWith('emp.') ? emp[f.path.split('.')[1]] : (profile.employment && profile.employment[f.key]);
+    if (val) filled += f.weight;
+    else missing.push({ section: 'employment', key: f.key, label: f.label });
+  });
+
+  // ═══ الراتب والبدلات (وزن 20%) ═══
+  const compFields = [
+    { key: 'basicSalary', label: 'الراتب الأساسي', weight: 3 },
+    { key: 'housingAllowance', label: 'بدل السكن', weight: 2 },
+    { key: 'transportAllowance', label: 'بدل النقل', weight: 1 },
+    { key: 'iban', label: 'رقم الآيبان', weight: 3 },
+    { key: 'bankName', label: 'اسم البنك', weight: 1 },
+  ];
+
+  compFields.forEach(f => {
+    total += f.weight;
+    const val = profile.compensation && profile.compensation[f.key];
+    if (val !== undefined && val !== null && val !== '') filled += f.weight;
+    else missing.push({ section: 'compensation', key: f.key, label: f.label });
+  });
+
+  // ═══ العقد (وزن 15%) ═══
+  const contractFields = [
+    { key: 'startDate', label: 'تاريخ بداية العقد', weight: 2 },
+    { key: 'type', label: 'نوع العقد', weight: 1 },
+  ];
+
+  contractFields.forEach(f => {
+    total += f.weight;
+    const val = profile.contract && profile.contract[f.key];
+    if (val) filled += f.weight;
+    else missing.push({ section: 'contract', key: f.key, label: f.label });
+  });
+
+  // ═══ مرفقات أساسية (وزن 20%) ═══
+  const requiredAttachments = [
+    { type: 'id_copy', label: 'صورة الهوية', weight: 3 },
+    { type: 'contract_copy', label: 'نسخة العقد', weight: 3 },
+    { type: 'iban_copy', label: 'صورة الآيبان', weight: 2 },
+    { type: 'qualification', label: 'الشهادة العلمية', weight: 1 },
+    { type: 'profile_photo', label: 'الصورة الشخصية', weight: 1 },
+  ];
+
+  requiredAttachments.forEach(a => {
+    total += a.weight;
+    const exists = attachments.some(att => att.type === a.type && att.status === 'verified');
+    if (exists) filled += a.weight;
+    else missing.push({ section: 'attachments', key: a.type, label: a.label });
+  });
+
+  const score = total > 0 ? Math.round((filled / total) * 100) : 0;
+  let level = 'critical';
+  if (score >= 90) level = 'complete';
+  else if (score >= 70) level = 'good';
+  else if (score >= 50) level = 'needs_attention';
+  else if (score >= 30) level = 'incomplete';
+
+  return { score, missing, level, filled, total };
+}
+
 /* ────── Cloudflare R2 via AWS SigV4 ────── */
 async function r2Sign(method, path, body, contentType) {
   var host = R2_ACCOUNT_ID + '.r2.cloudflarestorage.com';
@@ -563,6 +679,479 @@ export default async function handler(req, res) {
           return res.json({ ok: true });
         }
         break;
+      }
+
+      /* ═══════════ v6.83 — EMPLOYEE FULL PROFILE (Batch 1) ═══════════
+       * ملف الموظف الكامل — بعد نقل الملكية من كوادر إلى بصمة
+       * Schema موسّع: personal + employment + compensation + contract + dependents + attachments
+       * فلسفة التدريج: لا رفض — فقط تنبيهات completeness
+       */
+      case 'emp-profile': {
+        // GET ?action=emp-profile&empId=X — جلب الملف الكامل
+        if (req.method === 'GET') {
+          const empId = req.query.empId;
+          if (!empId) return res.status(400).json({ error: 'empId required' });
+          const emps = await dbGet('employees') || [];
+          const emp = emps.find(e => e.id === empId || e.idNumber === empId);
+          if (!emp) return res.status(404).json({ error: 'employee not found' });
+          // Load extended profile (separate key to keep main employees record lean)
+          const profiles = await dbGet('emp-profiles') || {};
+          const profile = profiles[emp.id] || {};
+          // Compute completeness
+          const completeness = computeCompleteness(emp, profile);
+          return res.json({ ok: true, emp, profile, completeness });
+        }
+        // PUT — حفظ تحديث (من HR أو من الموظف كطلب)
+        if (req.method === 'PUT') {
+          const { empId, section, data, source, requestedBy } = req.body || {};
+          if (!empId || !section || !data) return res.status(400).json({ error: 'empId + section + data required' });
+          // sections: personal | employment | compensation | contract | dependents
+          const validSections = ['personal', 'employment', 'compensation', 'contract', 'dependents', 'system'];
+          if (!validSections.includes(section)) return res.status(400).json({ error: 'invalid section' });
+          const emps = await dbGet('employees') || [];
+          const ei = emps.findIndex(e => e.id === empId || e.idNumber === empId);
+          if (ei < 0) return res.status(404).json({ error: 'employee not found' });
+          const empKey = emps[ei].id;
+          const profiles = await dbGet('emp-profiles') || {};
+          if (!profiles[empKey]) profiles[empKey] = {};
+          // source: 'hr_direct' = HR عدّل مباشرة (يُحفظ فوراً)
+          //         'employee_request' = الموظف طلب تعديل (يذهب لـ tickets للاعتماد)
+          if (source === 'employee_request') {
+            // Create an HR ticket for approval
+            const tickets = await dbGet('hr-tickets') || [];
+            const tId = 'TKT' + Date.now();
+            tickets.push({
+              id: tId,
+              initiatedBy: 'employee',
+              createdBy: requestedBy || empId,
+              createdByRole: 'employee',
+              category: 'profile_update',
+              template: null,
+              subject: 'طلب تعديل ' + sectionLabel(section),
+              priority: 'normal',
+              status: 'open',
+              requiresReply: true,
+              pendingProfileUpdate: { section, data },  // المنتظر اعتماد
+              messages: [{
+                id: 'M' + Date.now(),
+                ts: new Date().toISOString(),
+                by: requestedBy || empId,
+                byRole: 'employee',
+                text: 'طلب تحديث بيانات قسم: ' + sectionLabel(section),
+                attachments: []
+              }],
+              createdAt: new Date().toISOString(),
+              lastActivity: new Date().toISOString(),
+            });
+            await dbSet('hr-tickets', tickets);
+            return res.json({ ok: true, pending: true, ticketId: tId, message: 'تم إرسال طلبك للموارد البشرية للاعتماد' });
+          }
+          // HR direct update — save immediately
+          profiles[empKey][section] = { ...(profiles[empKey][section] || {}), ...data, _updatedAt: new Date().toISOString(), _updatedBy: requestedBy || 'hr' };
+          await dbSet('emp-profiles', profiles);
+          return res.json({ ok: true, saved: true });
+        }
+        break;
+      }
+
+      case 'emp-attachments': {
+        // GET ?empId=X — قائمة المرفقات
+        if (req.method === 'GET') {
+          const empId = req.query.empId;
+          if (!empId) return res.status(400).json({ error: 'empId required' });
+          const attachments = await dbGet('emp-attachments') || {};
+          return res.json({ ok: true, attachments: attachments[empId] || [] });
+        }
+        // POST — إضافة مرفق جديد
+        if (req.method === 'POST') {
+          const { empId, type, url, fileName, fileSize, uploadedBy } = req.body || {};
+          if (!empId || !type || !url) return res.status(400).json({ error: 'empId + type + url required' });
+          const attachments = await dbGet('emp-attachments') || {};
+          if (!attachments[empId]) attachments[empId] = [];
+          const att = {
+            id: 'ATT' + Date.now(),
+            type, url, fileName: fileName || 'attachment', fileSize: fileSize || 0,
+            uploadedBy: uploadedBy || empId,
+            uploadedAt: new Date().toISOString(),
+            status: uploadedBy === 'hr' ? 'verified' : 'pending',
+            verifiedBy: uploadedBy === 'hr' ? uploadedBy : null,
+            verifiedAt: uploadedBy === 'hr' ? new Date().toISOString() : null,
+            expiryDate: null,
+          };
+          attachments[empId].push(att);
+          await dbSet('emp-attachments', attachments);
+          return res.json({ ok: true, attachment: att });
+        }
+        // PUT — تحديث حالة (اعتماد من HR)
+        if (req.method === 'PUT') {
+          const { empId, attachmentId, status, verifiedBy, expiryDate } = req.body || {};
+          if (!empId || !attachmentId || !status) return res.status(400).json({ error: 'empId + attachmentId + status required' });
+          const attachments = await dbGet('emp-attachments') || {};
+          const arr = attachments[empId] || [];
+          const ai = arr.findIndex(a => a.id === attachmentId);
+          if (ai < 0) return res.status(404).json({ error: 'attachment not found' });
+          arr[ai].status = status;
+          if (status === 'verified') {
+            arr[ai].verifiedBy = verifiedBy || 'hr';
+            arr[ai].verifiedAt = new Date().toISOString();
+          }
+          if (expiryDate) arr[ai].expiryDate = expiryDate;
+          attachments[empId] = arr;
+          await dbSet('emp-attachments', attachments);
+          return res.json({ ok: true });
+        }
+        // DELETE — حذف مرفق
+        if (req.method === 'DELETE') {
+          const { empId, attachmentId } = req.body || {};
+          if (!empId || !attachmentId) return res.status(400).json({ error: 'empId + attachmentId required' });
+          const attachments = await dbGet('emp-attachments') || {};
+          attachments[empId] = (attachments[empId] || []).filter(a => a.id !== attachmentId);
+          await dbSet('emp-attachments', attachments);
+          return res.json({ ok: true });
+        }
+        break;
+      }
+
+      case 'emp-approve-update': {
+        // POST — HR توافق على طلب تعديل موظف معلّق في ticket
+        if (req.method !== 'POST') return res.status(405).json({ error: 'POST required' });
+        const { ticketId, approvedBy, decision, note } = req.body || {};
+        if (!ticketId || !decision) return res.status(400).json({ error: 'ticketId + decision required' });
+        const tickets = await dbGet('hr-tickets') || [];
+        const ti = tickets.findIndex(t => t.id === ticketId);
+        if (ti < 0) return res.status(404).json({ error: 'ticket not found' });
+        const tk = tickets[ti];
+        if (!tk.pendingProfileUpdate) return res.status(400).json({ error: 'no pending update' });
+        if (decision === 'approve') {
+          // Apply the update
+          const { section, data } = tk.pendingProfileUpdate;
+          const empId = tk.createdBy;
+          const profiles = await dbGet('emp-profiles') || {};
+          if (!profiles[empId]) profiles[empId] = {};
+          profiles[empId][section] = { ...(profiles[empId][section] || {}), ...data, _updatedAt: new Date().toISOString(), _updatedBy: approvedBy || 'hr', _approvedVia: ticketId };
+          await dbSet('emp-profiles', profiles);
+          tk.status = 'resolved';
+          tk.messages.push({
+            id: 'M' + Date.now(), ts: new Date().toISOString(),
+            by: approvedBy || 'hr', byRole: 'hr',
+            text: '✅ تم اعتماد طلبك وتحديث البيانات.' + (note ? '\n\n' + note : ''),
+            attachments: []
+          });
+        } else {
+          // Reject
+          tk.status = 'resolved';
+          tk.messages.push({
+            id: 'M' + Date.now(), ts: new Date().toISOString(),
+            by: approvedBy || 'hr', byRole: 'hr',
+            text: '❌ تم رفض طلبك.' + (note ? '\n\nالسبب: ' + note : ''),
+            attachments: []
+          });
+        }
+        delete tk.pendingProfileUpdate;
+        tk.lastActivity = new Date().toISOString();
+        tickets[ti] = tk;
+        await dbSet('hr-tickets', tickets);
+        return res.json({ ok: true });
+      }
+
+      case 'emp-completeness': {
+        // GET — تقرير اكتمال البيانات لكل الموظفين (للوحة HR)
+        if (req.method !== 'GET') return res.status(405).json({ error: 'GET required' });
+        const emps = await dbGet('employees') || [];
+        const profiles = await dbGet('emp-profiles') || {};
+        const attachments = await dbGet('emp-attachments') || {};
+        const report = emps.map(e => {
+          const prof = profiles[e.id] || {};
+          const atts = attachments[e.id] || [];
+          const c = computeCompleteness(e, prof, atts);
+          return {
+            id: e.id, name: e.name, role: e.role, department: e.department, branch: e.branch,
+            completeness: c.score, missing: c.missing, level: c.level
+          };
+        });
+        // Summary
+        const totalEmps = report.length;
+        const avgCompleteness = totalEmps ? Math.round(report.reduce((s, r) => s + r.completeness, 0) / totalEmps) : 0;
+        const fullyComplete = report.filter(r => r.completeness >= 90).length;
+        const needsAttention = report.filter(r => r.completeness < 60).length;
+        return res.json({
+          ok: true,
+          summary: { totalEmps, avgCompleteness, fullyComplete, needsAttention },
+          employees: report
+        });
+      }
+
+      /* ═══════════════ v6.83 — KADWAR INTEGRATION (Batch 2) ═══════════════
+       * التكامل مع كوادر v37.141:
+       *   - استقبال معايير التقييم من كوادر (GET eval-criteria)
+       *   - إرسال تحديثات الموظف لكوادر (POST receive-employee-update)
+       *   - إرسال موظف جديد لكوادر (POST receive-new-employee)
+       *   - إرسال التقييمات لكوادر (POST receive-evaluation)
+       *   - المزامنة الأولية الشاملة (GET full-export)
+       */
+
+      // ═══ جلب معايير التقييم من كوادر (cache محلي) ═══
+      case 'kadwar-eval-criteria': {
+        // GET — يُعيد المعايير من cache الـ local، ويُحدّث من كوادر إن طُلب
+        if (req.method === 'GET') {
+          const forceRefresh = req.query.refresh === '1';
+          const cached = await dbGet('kadwar-eval-criteria-cache');
+          const cacheAge = cached && cached._fetchedAt ? (Date.now() - new Date(cached._fetchedAt).getTime()) : Infinity;
+          const CACHE_TTL = 60 * 60 * 1000; // ساعة واحدة
+          if (!forceRefresh && cached && cacheAge < CACHE_TTL) {
+            return res.json({ ok: true, fromCache: true, cacheAgeMs: cacheAge, ...cached });
+          }
+          // Fetch fresh from kadwar
+          try {
+            const kr = await fetch('https://hma.engineer/api/basma-sync?action=eval-criteria', { method: 'GET' });
+            if (!kr.ok) {
+              // Return stale cache if fetch failed
+              if (cached) return res.json({ ok: true, fromCache: true, stale: true, error: 'kadwar fetch failed: ' + kr.status, ...cached });
+              return res.status(502).json({ error: 'فشل الاتصال بكوادر: ' + kr.status });
+            }
+            const kd = await kr.json();
+            const toCache = { ...kd, _fetchedAt: new Date().toISOString() };
+            await dbSet('kadwar-eval-criteria-cache', toCache);
+            return res.json({ ok: true, fromCache: false, ...toCache });
+          } catch (e) {
+            if (cached) return res.json({ ok: true, fromCache: true, stale: true, error: e.message, ...cached });
+            return res.status(502).json({ error: 'تعذر الاتصال بكوادر: ' + e.message });
+          }
+        }
+        break;
+      }
+
+      // ═══ إرسال تحديث موظف لكوادر (فوري، بعد موافقة HR) ═══
+      case 'kadwar-push-update': {
+        if (req.method !== 'POST') return res.status(405).json({ error: 'POST required' });
+        const { employee_id, update_type, fields, updated_by, updated_by_name, reason } = req.body || {};
+        if (!employee_id || !update_type || !fields) return res.status(400).json({ error: 'employee_id + update_type + fields required' });
+        try {
+          const kr = await fetch('https://hma.engineer/api/basma-sync?action=receive-employee-update', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              employee_id,
+              update_type,
+              fields,
+              updated_by: updated_by || 'hr',
+              updated_by_name: updated_by_name || 'الموارد البشرية',
+              updated_at: new Date().toISOString(),
+              reason: reason || 'تحديث من بصمة'
+            })
+          });
+          const kd = await kr.json();
+          // Log the push attempt
+          const log = await dbGet('kadwar-sync-log') || [];
+          log.push({
+            id: 'KSL' + Date.now(),
+            ts: new Date().toISOString(),
+            action: 'push-update',
+            employee_id, update_type,
+            success: kr.ok,
+            response: kd,
+          });
+          if (log.length > 500) log.splice(0, log.length - 500); // keep last 500
+          await dbSet('kadwar-sync-log', log);
+          if (!kr.ok) return res.status(502).json({ error: 'كوادر رفض التحديث', detail: kd });
+          return res.json({ ok: true, kadwar_response: kd });
+        } catch (e) {
+          const log = await dbGet('kadwar-sync-log') || [];
+          log.push({
+            id: 'KSL' + Date.now(),
+            ts: new Date().toISOString(),
+            action: 'push-update',
+            employee_id, update_type,
+            success: false,
+            error: e.message,
+          });
+          await dbSet('kadwar-sync-log', log);
+          return res.status(502).json({ error: 'تعذر الاتصال بكوادر: ' + e.message });
+        }
+      }
+
+      // ═══ إرسال موظف جديد لكوادر (حالة استثنائية — بعد موافقة المدير العام) ═══
+      case 'kadwar-push-new-employee': {
+        if (req.method !== 'POST') return res.status(405).json({ error: 'POST required' });
+        const payload = req.body || {};
+        const required = ['basma_employee_id', 'full_name', 'id_number', 'job_title'];
+        for (const r of required) {
+          if (!payload[r]) return res.status(400).json({ error: `missing required field: ${r}` });
+        }
+        try {
+          const kr = await fetch('https://hma.engineer/api/basma-sync?action=receive-new-employee', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              ...payload,
+              created_at: new Date().toISOString(),
+            })
+          });
+          const kd = await kr.json();
+          const log = await dbGet('kadwar-sync-log') || [];
+          log.push({
+            id: 'KSL' + Date.now(),
+            ts: new Date().toISOString(),
+            action: 'push-new-employee',
+            employee_id: payload.basma_employee_id,
+            full_name: payload.full_name,
+            success: kr.ok,
+            response: kd,
+          });
+          await dbSet('kadwar-sync-log', log);
+          if (!kr.ok) return res.status(502).json({ error: 'كوادر رفض الموظف الجديد', detail: kd });
+          return res.json({ ok: true, kadwar_response: kd });
+        } catch (e) {
+          return res.status(502).json({ error: 'تعذر الاتصال بكوادر: ' + e.message });
+        }
+      }
+
+      // ═══ إرسال نتيجة تقييم لكوادر ═══
+      case 'kadwar-push-evaluation': {
+        if (req.method !== 'POST') return res.status(405).json({ error: 'POST required' });
+        const payload = req.body || {};
+        if (!payload.employee_id || !payload.evaluation_type || !payload.total_score) {
+          return res.status(400).json({ error: 'employee_id + evaluation_type + total_score required' });
+        }
+        try {
+          const kr = await fetch('https://hma.engineer/api/basma-sync?action=receive-evaluation', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              ...payload,
+              created_at: payload.created_at || new Date().toISOString(),
+            })
+          });
+          const kd = await kr.json();
+          const log = await dbGet('kadwar-sync-log') || [];
+          log.push({
+            id: 'KSL' + Date.now(),
+            ts: new Date().toISOString(),
+            action: 'push-evaluation',
+            employee_id: payload.employee_id,
+            evaluation_type: payload.evaluation_type,
+            total_score: payload.total_score,
+            success: kr.ok,
+            response: kd,
+          });
+          await dbSet('kadwar-sync-log', log);
+          if (!kr.ok) return res.status(502).json({ error: 'كوادر رفض التقييم', detail: kd });
+          return res.json({ ok: true, kadwar_response: kd });
+        } catch (e) {
+          return res.status(502).json({ error: 'تعذر الاتصال بكوادر: ' + e.message });
+        }
+      }
+
+      // ═══ المزامنة الأولية الشاملة (one-time migration) ═══
+      case 'kadwar-full-migration': {
+        if (req.method !== 'POST') return res.status(405).json({ error: 'POST required' });
+        const { confirm, dryRun } = req.body || {};
+        if (!confirm) return res.status(400).json({ error: 'confirm: true required — هذه عملية خطيرة تنقل كل البيانات' });
+        const summary = {
+          startedAt: new Date().toISOString(),
+          dryRun: !!dryRun,
+          steps: [],
+          totals: { employees: 0, imported: 0, skipped: 0, errors: 0 },
+        };
+        try {
+          // 1. Fetch full export from kadwar
+          summary.steps.push({ step: 'fetch', at: new Date().toISOString() });
+          const kr = await fetch('https://hma.engineer/api/basma-sync?action=full-export', { method: 'GET' });
+          if (!kr.ok) {
+            summary.error = 'فشل جلب البيانات من كوادر: ' + kr.status;
+            return res.status(502).json(summary);
+          }
+          const kd = await kr.json();
+          if (!kd.employees || !Array.isArray(kd.employees)) {
+            summary.error = 'بنية البيانات المستلمة من كوادر غير صحيحة';
+            return res.status(502).json(summary);
+          }
+          summary.totals.employees = kd.employees.length;
+          summary.steps.push({ step: 'fetched', count: kd.employees.length, at: new Date().toISOString() });
+          if (dryRun) {
+            summary.steps.push({ step: 'dry-run-complete', message: 'لم يتم تعديل أي بيانات (dry run)', sample: kd.employees.slice(0, 2) });
+            return res.json(summary);
+          }
+          // 2. Apply to basma employees + profiles
+          const existingEmps = await dbGet('employees') || [];
+          const profiles = await dbGet('emp-profiles') || {};
+          const existingById = Object.fromEntries(existingEmps.map(e => [e.id, e]));
+          const updatedEmps = [...existingEmps];
+          for (const ke of kd.employees) {
+            try {
+              const kId = ke.id || ke.idNumber || ke.uid;
+              if (!kId) { summary.totals.errors++; continue; }
+              // Find or create employee in basma
+              const existing = existingById[kId];
+              const baseEmp = existing || { id: kId };
+              const mergedEmp = {
+                ...baseEmp,
+                idNumber: ke.id_number || ke.idNumber || baseEmp.idNumber,
+                name: ke.full_name || ke.fullName || baseEmp.name,
+                email: (ke.personal && ke.personal.email) || ke.email || baseEmp.email,
+                phone: (ke.personal && ke.personal.phone) || ke.phone || baseEmp.phone,
+                role: (ke.employment && ke.employment.job_title) || ke.job_title || baseEmp.role,
+                department: (ke.employment && ke.employment.department) || ke.department || baseEmp.department,
+                branch: (ke.employment && ke.employment.branch) || ke.branch || baseEmp.branch,
+              };
+              if (existing) {
+                const idx = updatedEmps.findIndex(e => e.id === kId);
+                if (idx >= 0) updatedEmps[idx] = mergedEmp;
+              } else {
+                updatedEmps.push(mergedEmp);
+              }
+              // Build extended profile
+              profiles[kId] = profiles[kId] || {};
+              if (ke.personal) profiles[kId].personal = { ...(profiles[kId].personal || {}), ...ke.personal, _migratedFrom: 'kadwar', _migratedAt: new Date().toISOString() };
+              if (ke.employment) profiles[kId].employment = { ...(profiles[kId].employment || {}), ...ke.employment, _migratedFrom: 'kadwar' };
+              if (ke.compensation) profiles[kId].compensation = { ...(profiles[kId].compensation || {}), ...ke.compensation, _migratedFrom: 'kadwar' };
+              if (ke.contract) profiles[kId].contract = { ...(profiles[kId].contract || {}), ...ke.contract, _migratedFrom: 'kadwar' };
+              summary.totals.imported++;
+            } catch (err) {
+              summary.totals.errors++;
+            }
+          }
+          // 3. Save
+          await dbSet('employees', updatedEmps);
+          await dbSet('emp-profiles', profiles);
+          // 4. Mark migration as done
+          await dbSet('kadwar-migration-status', {
+            completedAt: new Date().toISOString(),
+            totals: summary.totals,
+            kadwar_export_date: kd.export_date,
+          });
+          summary.steps.push({ step: 'saved', at: new Date().toISOString() });
+          summary.completedAt = new Date().toISOString();
+          summary.ok = true;
+          return res.json(summary);
+        } catch (e) {
+          summary.error = e.message;
+          return res.status(500).json(summary);
+        }
+      }
+
+      // ═══ حالة المزامنة + السجل ═══
+      case 'kadwar-sync-status': {
+        if (req.method !== 'GET') return res.status(405).json({ error: 'GET required' });
+        const migrationStatus = await dbGet('kadwar-migration-status');
+        const log = await dbGet('kadwar-sync-log') || [];
+        const criteriaCache = await dbGet('kadwar-eval-criteria-cache');
+        const recent = log.slice(-50).reverse(); // آخر 50 عملية
+        const summary = {
+          migration: migrationStatus || { completedAt: null, notStarted: true },
+          criteriaCache: criteriaCache ? {
+            fetchedAt: criteriaCache._fetchedAt,
+            positionsWithCriteria: criteriaCache.criteria_by_position ? Object.keys(criteriaCache.criteria_by_position).length : 0,
+            positionsWithoutCriteria: criteriaCache.positions_without_criteria ? criteriaCache.positions_without_criteria.length : 0,
+          } : null,
+          recentSyncs: recent,
+          stats: {
+            total: log.length,
+            success: log.filter(l => l.success).length,
+            failed: log.filter(l => !l.success).length,
+          }
+        };
+        return res.json({ ok: true, ...summary });
       }
 
       case 'checkin': {
