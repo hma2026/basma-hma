@@ -4,7 +4,7 @@ import { generateAttendanceReport, generateEmployeeReport, generateMonthlySummar
 import { exportFormalWarning, exportInvestigationRecord, exportAffidavit, exportEmploymentLetter, exportSalaryLetter, exportLeaveLetter } from "./formalPdfs";
 
 const APP = "بصمة HMA";
-const VER = "7.09";
+const VER = "7.10";
 const CO = "هاني محمد عسيري للإستشارات الهندسية";
 const B = { blue: "#2B5EA7", yellow: "#FDD800", red: "#E2192C", black: "#1A1A1A", blueDk: "#1E4478", blueLt: "#EDF3FB", gold: "#D4A017" };
 
@@ -10534,7 +10534,11 @@ function EmployeeFullProfileCard({ emp, t, B }) {
       <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 10 }}>
         <div style={{ fontSize: 20 }}>📋</div>
         <div style={{ flex: 1 }}>
-          <div style={{ fontSize: 14, fontWeight: 800, color: t.tx }}>ملف الموظف الكامل</div>
+          <div style={{ fontSize: 14, fontWeight: 800, color: t.tx, display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+            <span>ملف الموظف الكامل</span>
+            {/* v7.10 — Local lock badge */}
+            <LocalLockBadge emp={emp} t={t} B={B} onUnlocked={loadProfile} />
+          </div>
           <div style={{ fontSize: 10, color: t.txM, marginTop: 1 }}>بيانات شخصية · وظيفية · مالية · عقد · مرافقين</div>
         </div>
         {completeness && <div style={{ textAlign: "center" }}>
@@ -12507,7 +12511,8 @@ function SettingsHub({ t, B, emps, onLogout, onOpenOldSettings }) {
         { id: "benefits",      icon: "🏅", label: "الامتيازات" },
         { id: "system",        icon: "🛠️", label: "إعدادات النظام" },
         { id: "emp_edits",     icon: "✏️", label: "تعديلات موظفين" },
-        { id: "attachments",   icon: "📎", label: "أنواع المرفقات" },
+        { id: "attach_queue",  icon: "📎", label: "مرفقات معلّقة" },
+        { id: "attachments",   icon: "🗂", label: "أنواع المرفقات" },
         { id: "faces",         icon: "📸", label: "بصمات الوجه" },
         { id: "cleanup",       icon: "🧹", label: "تنظيف البيانات" },
         { id: "advanced",      icon: "📨", label: "إعدادات متقدمة" },
@@ -12519,6 +12524,8 @@ function SettingsHub({ t, B, emps, onLogout, onOpenOldSettings }) {
     {sub === "benefits" && <BenefitsPanel t={t} B={B} />}
     {sub === "system" && <SystemSettingsPanel t={t} B={B} />}
     {sub === "emp_edits" && <EmployeeEditsPanel t={t} B={B} actorName="HR" />}
+    {/* v7.10 — Pending attachments central queue */}
+    {sub === "attach_queue" && <PendingAttachmentsQueue t={t} B={B} />}
     {/* v6.98 — مكوّنات يتيمة من tab "settings" القديم تم نقلها هنا */}
     {sub === "attachments" && <AttachmentTypesManager t={t} B={B} />}
     {sub === "faces" && <FacesManager t={t} B={B} emps={emps} />}
@@ -13220,6 +13227,185 @@ function EmployeeEditsPanel({ t, B, actorName }) {
             </button>
           </div>
         )}
+      </div>;
+    })}
+  </div>;
+}
+
+/* ═══════════════════════════════════════════════════════════════════
+ * v7.10 — PendingAttachmentsQueue — HR يراجع المرفقات المعلّقة
+ * ═══════════════════════════════════════════════════════════════════ */
+function PendingAttachmentsQueue({ t, B }) {
+  var [items, setItems] = useState([]);
+  var [loading, setLoading] = useState(true);
+  var [busy, setBusy] = useState({});
+
+  async function load() {
+    setLoading(true);
+    try {
+      var d = await fetch("/api/data?action=emp-attachments-pending").then(function(r){ return r.json(); });
+      setItems(d.pending || []);
+    } catch(e) {}
+    setLoading(false);
+  }
+  useEffect(function(){ load(); }, []);
+
+  async function approve(att) {
+    setBusy(function(p){ var n = {...p}; n[att.id] = "approve"; return n; });
+    try {
+      var r = await fetch("/api/data?action=emp-attachments", {
+        method: "PUT", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ empId: att.empId, attachmentId: att.id, status: "verified", verifiedBy: "hr" })
+      }).then(function(x){ return x.json(); });
+      if (r.ok) { load(); }
+      else alert("فشل: " + (r.error || "غير معروف"));
+    } catch(e) { alert("فشل: " + e.message); }
+    setBusy(function(p){ var n = {...p}; delete n[att.id]; return n; });
+  }
+
+  async function reject(att) {
+    var reason = prompt("سبب الرفض:", "");
+    if (!reason) return;
+    setBusy(function(p){ var n = {...p}; n[att.id] = "reject"; return n; });
+    try {
+      var r = await fetch("/api/data?action=emp-attachment-reject", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ empId: att.empId, attachmentId: att.id, reason: reason, actor: "hr" })
+      }).then(function(x){ return x.json(); });
+      if (r.ok) { load(); }
+      else alert("فشل: " + (r.error || "غير معروف"));
+    } catch(e) { alert("فشل: " + e.message); }
+    setBusy(function(p){ var n = {...p}; delete n[att.id]; return n; });
+  }
+
+  var typeLabels = {
+    id_copy: "صورة الهوية", passport: "جواز السفر", iqama: "الإقامة",
+    contract: "العقد", cv: "السيرة الذاتية", certificate: "شهادة",
+    license: "رخصة مهنية", medical: "فحص طبي", other: "أخرى",
+  };
+
+  return (
+    <div style={{ background: t.card, borderRadius: 14, padding: 18, border: "1px solid " + t.sep }}>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 14 }}>
+        <div>
+          <div style={{ fontSize: 14, fontWeight: 800, color: t.tx }}>📎 المرفقات المعلّقة</div>
+          <div style={{ fontSize: 11, color: t.txM, marginTop: 4 }}>{items.length} بانتظار الاعتماد</div>
+        </div>
+        <button onClick={load} style={{ padding: "7px 14px", borderRadius: 8, background: t.bg, border: "1px solid " + t.sep, fontSize: 11, fontWeight: 700, color: t.tx, cursor: "pointer" }}>🔄 تحديث</button>
+      </div>
+
+      {loading && <div style={{ padding: 24, textAlign: "center", color: t.txM, fontSize: 12 }}>جارٍ التحميل...</div>}
+
+      {!loading && items.length === 0 && (
+        <div style={{ padding: 30, textAlign: "center", color: t.txM, fontSize: 13 }}>
+          <div style={{ fontSize: 28, marginBottom: 8 }}>✅</div>
+          <div>لا توجد مرفقات معلّقة — كل شيء معتمد</div>
+        </div>
+      )}
+
+      {!loading && items.map(function(att){
+        var isBusy = !!busy[att.id];
+        return <div key={att.id} style={{ padding: 14, background: t.bg, borderRadius: 10, border: "1px solid " + t.sep, marginBottom: 8 }}>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 10, flexWrap: "wrap" }}>
+            <div style={{ flex: 1, minWidth: 200 }}>
+              <div style={{ fontSize: 13, fontWeight: 800, color: t.tx, marginBottom: 4 }}>{att.empName} <span style={{ fontSize: 10, color: t.txM, fontWeight: 600 }}>({att.empId})</span></div>
+              <div style={{ display: "flex", gap: 6, flexWrap: "wrap", fontSize: 10, color: t.tx2, marginBottom: 6 }}>
+                <span style={{ padding: "2px 8px", borderRadius: 6, background: B.blue + "15", color: B.blue, fontWeight: 700 }}>📄 {typeLabels[att.type] || att.type}</span>
+                <span>• {att.empDept}</span>
+                <span>• رُفع {new Date(att.uploadedAt).toLocaleDateString("ar-SA")}</span>
+              </div>
+              <div style={{ fontSize: 11, color: t.tx2 }}>📎 {att.fileName}</div>
+              <a href={att.url} target="_blank" rel="noreferrer" style={{ fontSize: 11, color: B.blue, textDecoration: "none", display: "inline-block", marginTop: 4 }}>🔗 فتح الملف ←</a>
+            </div>
+            <div style={{ display: "flex", gap: 6 }}>
+              <button onClick={function(){ approve(att); }} disabled={isBusy} style={{ padding: "8px 14px", background: "#16A34A", color: "#fff", border: "none", borderRadius: 8, fontSize: 12, fontWeight: 800, cursor: isBusy ? "wait" : "pointer", fontFamily: "inherit" }}>
+                {isBusy && busy[att.id] === "approve" ? "..." : "✅ اعتماد"}
+              </button>
+              <button onClick={function(){ reject(att); }} disabled={isBusy} style={{ padding: "8px 12px", background: "transparent", color: t.bad, border: "1px solid " + t.bad, borderRadius: 8, fontSize: 11, fontWeight: 700, cursor: isBusy ? "wait" : "pointer", fontFamily: "inherit" }}>
+                {isBusy && busy[att.id] === "reject" ? "..." : "❌ رفض"}
+              </button>
+            </div>
+          </div>
+        </div>;
+      })}
+    </div>
+  );
+}
+
+/* ═══════════════════════════════════════════════════════════════════
+ * v7.10 — LocalLockBadge — يظهر على موظف مقفول محلياً
+ * ═══════════════════════════════════════════════════════════════════ */
+function LocalLockBadge({ emp, t, B, onUnlocked }) {
+  var [busy, setBusy] = useState(false);
+  if (!emp || !emp.localLocked) return null;
+
+  async function unlock() {
+    if (!confirm("إلغاء القفل المحلي على " + emp.name + "؟\nسيسمح لكوادر بتحديث بياناته.")) return;
+    setBusy(true);
+    try {
+      var r = await fetch("/api/data?action=emp-unlock", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ empId: emp.id, actor: "hr" })
+      }).then(function(x){ return x.json(); });
+      if (r.ok) { alert("✅ تم فك القفل"); if (onUnlocked) onUnlocked(); }
+      else alert("فشل: " + (r.error || "غير معروف"));
+    } catch(e) { alert("فشل: " + e.message); }
+    setBusy(false);
+  }
+
+  return <div style={{
+    padding: "6px 10px", borderRadius: 999,
+    background: B.yellow + "20", border: "1px solid " + B.yellow + "60",
+    color: "#92400e", fontSize: 10, fontWeight: 800, cursor: "pointer",
+    display: "inline-flex", alignItems: "center", gap: 6,
+  }} onClick={unlock} title={(emp.localLockReason || "معدّل محلياً") + " — اضغط لفك القفل"}>
+    <span>🔒</span>
+    <span>قفل محلي</span>
+    {busy && <span>...</span>}
+  </div>;
+}
+
+/* ═══════════════════════════════════════════════════════════════════
+ * v7.10 — DepartmentHistoryView — عرض تاريخ الأقسام للموظف
+ * ═══════════════════════════════════════════════════════════════════ */
+function DepartmentHistoryView({ empId, t, B }) {
+  var [history, setHistory] = useState([]);
+  var [loading, setLoading] = useState(true);
+
+  useEffect(function(){
+    if (!empId) return;
+    fetch("/api/data?action=emp-profile&empId=" + encodeURIComponent(empId))
+      .then(function(r){ return r.json(); })
+      .then(function(d){
+        var h = (d.profile && d.profile.department_history) || [];
+        setHistory(h.slice().reverse()); // newest first
+        setLoading(false);
+      })
+      .catch(function(){ setLoading(false); });
+  }, [empId]);
+
+  if (loading) return <div style={{ fontSize: 11, color: t.txM, textAlign: "center", padding: 14 }}>جارٍ التحميل...</div>;
+  if (history.length === 0) return <div style={{ fontSize: 11, color: t.txM, textAlign: "center", padding: 14 }}>لا يوجد تاريخ أقسام بعد — التعديل الأول يُسجَّل عند تغيير القسم</div>;
+
+  return <div>
+    <div style={{ fontSize: 12, fontWeight: 800, color: t.tx, marginBottom: 10 }}>🗂 تاريخ الأقسام ({history.length})</div>
+    {history.map(function(h, idx){
+      var active = !h.to;
+      return <div key={idx} style={{ padding: 10, background: active ? B.green + "15" : t.bg, borderRadius: 8, marginBottom: 6, border: "1px solid " + (active ? B.green + "40" : t.sep) }}>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 10 }}>
+          <div style={{ flex: 1 }}>
+            <div style={{ fontSize: 13, fontWeight: 800, color: t.tx, marginBottom: 2 }}>
+              {active && <span style={{ padding: "1px 6px", borderRadius: 4, background: B.green, color: "#fff", fontSize: 9, marginInlineEnd: 6 }}>نشط</span>}
+              {h.dept}
+            </div>
+            {h.role && <div style={{ fontSize: 11, color: t.tx2 }}>🎯 {h.role}</div>}
+          </div>
+          <div style={{ fontSize: 10, color: t.txM, textAlign: "left" }}>
+            <div>من: {h.from ? new Date(h.from).toLocaleDateString("ar-SA") : "—"}</div>
+            <div>إلى: {h.to ? new Date(h.to).toLocaleDateString("ar-SA") : "الآن"}</div>
+            {h.changedBy && <div style={{ marginTop: 2 }}>بواسطة: {h.changedBy}</div>}
+          </div>
+        </div>
       </div>;
     })}
   </div>;

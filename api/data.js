@@ -1027,11 +1027,112 @@ export default async function handler(req, res) {
             return res.json({ ok: true, pending: true, ticketId: tId, message: 'تم إرسال طلبك للموارد البشرية للاعتماد' });
           }
           // HR direct update — save immediately
+          // v7.10 — Department history tracking (if section=employment and dept changed)
+          var deptChanged = false;
+          var oldDept = null;
+          var newDept = null;
+          if (section === 'employment' && data.department) {
+            var prevEmployment = profiles[empKey].employment || {};
+            oldDept = prevEmployment.department || emps[ei].department || null;
+            newDept = data.department;
+            deptChanged = oldDept !== newDept;
+          }
+
           profiles[empKey][section] = { ...(profiles[empKey][section] || {}), ...data, _updatedAt: new Date().toISOString(), _updatedBy: requestedBy || 'hr' };
+
+          // Track dept history
+          if (deptChanged) {
+            var history = profiles[empKey].department_history || [];
+            // Close current entry (set 'to')
+            var nowIso = new Date().toISOString();
+            for (var hh = 0; hh < history.length; hh++) {
+              if (!history[hh].to) {
+                history[hh].to = nowIso;
+              }
+            }
+            // Add new entry
+            history.push({
+              dept: newDept,
+              from: nowIso,
+              to: null,
+              role: data.jobTitle || (profiles[empKey].employment && profiles[empKey].employment.jobTitle) || emps[ei].jobTitle || null,
+              changedBy: requestedBy || 'hr',
+            });
+            profiles[empKey].department_history = history;
+          }
+
           await dbSet('emp-profiles', profiles);
-          return res.json({ ok: true, saved: true });
+
+          // v7.10 — Set local lock flag on employee (flags them as locally edited — Kadwar sync will skip)
+          if (!emps[ei].localLocked || deptChanged) {
+            emps[ei].localLocked = true;
+            emps[ei].localLockedAt = new Date().toISOString();
+            emps[ei].localLockedBy = requestedBy || 'hr';
+            emps[ei].localLockReason = deptChanged ? 'تغيير قسم (dept history)' : 'تعديل محلي من HR';
+            await dbSet('employees', emps);
+          }
+
+          return res.json({ ok: true, saved: true, localLocked: true, deptHistoryUpdated: deptChanged });
         }
         break;
+      }
+
+      /* v7.10 — Unlock local edit (HR/admin only) */
+      case 'emp-unlock': {
+        if (req.method !== 'POST') return res.status(405).json({ error: 'POST required' });
+        const { empId, actor } = req.body || {};
+        if (!empId) return res.status(400).json({ error: 'empId required' });
+        const emps = await dbGet('employees') || [];
+        const ei = emps.findIndex(e => e.id === empId || e.idNumber === empId);
+        if (ei < 0) return res.status(404).json({ error: 'employee not found' });
+        emps[ei].localLocked = false;
+        emps[ei].localUnlockedAt = new Date().toISOString();
+        emps[ei].localUnlockedBy = actor || 'hr';
+        await dbSet('employees', emps);
+        await auditLog(actor || 'hr', 'emp_unlock', empId, {});
+        return res.json({ ok: true });
+      }
+
+      /* v7.10 — List all pending attachments across all employees (HR queue) */
+      case 'emp-attachments-pending': {
+        if (req.method !== 'GET') return res.status(405).json({ error: 'GET required' });
+        const attachments = await dbGet('emp-attachments') || {};
+        const emps = await dbGet('employees') || [];
+        const empsMap = {};
+        emps.forEach(function(e){ empsMap[e.id] = e; });
+        const pending = [];
+        Object.keys(attachments).forEach(function(empId){
+          var arr = attachments[empId] || [];
+          arr.filter(function(a){ return a.status === 'pending'; }).forEach(function(att){
+            var emp = empsMap[empId] || {};
+            pending.push(Object.assign({}, att, {
+              empId: empId,
+              empName: emp.name || empId,
+              empDept: emp.department || '—',
+            }));
+          });
+        });
+        // Sort oldest first
+        pending.sort(function(a, b){ return String(a.uploadedAt).localeCompare(String(b.uploadedAt)); });
+        return res.json({ pending: pending, count: pending.length });
+      }
+
+      /* v7.10 — Reject attachment with reason */
+      case 'emp-attachment-reject': {
+        if (req.method !== 'POST') return res.status(405).json({ error: 'POST required' });
+        const { empId, attachmentId, reason, actor } = req.body || {};
+        if (!empId || !attachmentId) return res.status(400).json({ error: 'empId + attachmentId required' });
+        const attachments = await dbGet('emp-attachments') || {};
+        const arr = attachments[empId] || [];
+        const ai = arr.findIndex(a => a.id === attachmentId);
+        if (ai < 0) return res.status(404).json({ error: 'attachment not found' });
+        arr[ai].status = 'rejected';
+        arr[ai].rejectedBy = actor || 'hr';
+        arr[ai].rejectedAt = new Date().toISOString();
+        arr[ai].rejectionReason = reason || '';
+        attachments[empId] = arr;
+        await dbSet('emp-attachments', attachments);
+        return res.json({ ok: true });
       }
 
       case 'emp-attachments': {
