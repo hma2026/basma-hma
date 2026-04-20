@@ -4,7 +4,7 @@ import { generateAttendanceReport, generateEmployeeReport, generateMonthlySummar
 import { exportFormalWarning, exportInvestigationRecord, exportAffidavit, exportEmploymentLetter, exportSalaryLetter, exportLeaveLetter } from "./formalPdfs";
 
 const APP = "بصمة HMA";
-const VER = "6.53";
+const VER = "6.62";
 const CO = "هاني محمد عسيري للإستشارات الهندسية";
 const B = { blue: "#2B5EA7", yellow: "#FDD800", red: "#E2192C", black: "#1A1A1A", blueDk: "#1E4478", blueLt: "#EDF3FB", gold: "#D4A017" };
 
@@ -519,6 +519,8 @@ export default function AdminApp() {
         { id: "leave_balances", icon: "💰", label: "أرصدة الإجازات" },
         { id: "letters", icon: "📄", label: "الإفادات" },
         { id: "branches", icon: "🏢", label: "الفروع" },
+        { id: "att_insights", icon: "📈", label: "ذكاء الحضور" },
+        { id: "system_settings", icon: "⚙️", label: "إعدادات النظام" },
         { id: "admin_requests", icon: "📝", label: "الطلبات" },
         { id: "complaints", icon: "📣", label: "الشكاوى", badge: badgeCounts.complaints },
         { id: "investigations", icon: "🔍", label: "التحقيقات", badge: badgeCounts.investigations },
@@ -534,6 +536,7 @@ export default function AdminApp() {
       items: [
         { id: "tawasul", icon: "🤝", label: "نظام تواصل" },
         { id: "custody_admin", icon: "📦", label: "العهد" },
+        { id: "asset_management", icon: "🔧", label: "إدارة الأصول" },
         { id: "tracking", icon: "🛰️", label: "تتبّع الحركة" },
         { id: "geofence", icon: "📍", label: "النطاق الجغرافي" },
         { id: "reports", icon: "📄", label: "التقارير" },
@@ -962,6 +965,7 @@ export default function AdminApp() {
 
       {/* ═══ CUSTODY ADMIN ═══ */}
       {tab === "custody_admin" && <CustodyPanel t={t} B={B} emps={safeEmps} />}
+      {tab === "asset_management" && <AssetManagementPanel t={t} B={B} emps={safeEmps} />}
 
       {/* ═══ REPORTS ═══ */}
       {tab === "reports" && <>
@@ -1465,6 +1469,8 @@ export default function AdminApp() {
       {tab === "leave_balances" && <LeaveBalancesPanel t={t} B={B} emps={safeEmps} />}
       {tab === "letters" && <LettersPanel t={t} B={B} emps={safeEmps} />}
       {tab === "branches" && <BranchesPanel t={t} B={B} />}
+      {tab === "att_insights" && <AttendanceInsightsPanel t={t} B={B} emps={safeEmps} />}
+      {tab === "system_settings" && <SystemSettingsPanel t={t} B={B} />}
       {tab === "benefits" && <BenefitsPanel t={t} B={B} />}
       {tab === "announcements" && <AnnouncementsPanel t={t} B={B} emps={safeEmps} branches={branches} />}
       {tab === "banners" && <BannersPanel t={t} B={B} />}
@@ -2200,6 +2206,647 @@ function LeaveHistoryModal({ t, B, emp, leaves, onClose }) {
   );
 }
 
+/* ═══ SYSTEM SETTINGS — إعدادات النظام العامة (v6.55) ═══ */
+function SystemSettingsPanel({ t, B }) {
+  var [settings, setSettings] = useState(null);
+  var [draft, setDraft] = useState(null);
+  var [loading, setLoading] = useState(true);
+  var [saving, setSaving] = useState(false);
+  var [saved, setSaved] = useState(false);
+
+  async function load() {
+    setLoading(true);
+    try {
+      var r = await fetch("/api/data?action=settings");
+      var d = await r.json();
+      var defaults = {
+        // Attendance grace
+        lateGraceMinutes: 15,
+        autoCheckoutHours: 11,
+        // Late penalties thresholds
+        lateWarningThreshold: 3,
+        absentWarningThreshold: 2,
+        breakViolationThreshold: 3,
+        // Break rules
+        breakWindowStart: "12:30",
+        breakWindowEnd: "13:00",
+        breakGraceMinutes: 5,
+        // Leave rules
+        defaultAnnualLeave: 21,
+        defaultSickLeave: 30,
+        defaultEmergencyLeave: 5,
+        defaultPersonalLeave: 0,
+        annualLeaveCarryOver: false,
+        maxCarryOverDays: 0,
+        // Work types defaults
+        fullTimeHours: 8,
+        flexContractHours: 9,
+        // Notifications
+        dailyReminderTime: "08:00",
+        dailyReminderEnabled: true,
+        // Face recognition
+        faceMatchThreshold: 55,
+        // Legal
+        companyName: "مكتب هاني محمد عسيري للاستشارات الهندسية",
+        lawReference: "978004",
+      };
+      var merged = Object.assign(defaults, d || {});
+      setSettings(merged);
+      setDraft(Object.assign({}, merged));
+    } catch(e) {}
+    setLoading(false);
+  }
+
+  useEffect(function(){ load(); }, []);
+
+  async function save() {
+    setSaving(true);
+    try {
+      var r = await fetch("/api/data?action=settings", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(draft),
+      });
+      var d = await r.json();
+      if (d && d.ok) {
+        setSettings(Object.assign({}, draft));
+        setSaved(true);
+        setTimeout(function(){ setSaved(false); }, 3000);
+      } else {
+        alert("فشل الحفظ");
+      }
+    } catch(e) { alert("خطأ: " + (e.message || "")); }
+    setSaving(false);
+  }
+
+  function reset() {
+    if (window.confirm("إعادة الإعدادات إلى القيم الحالية المحفوظة؟")) {
+      setDraft(Object.assign({}, settings));
+    }
+  }
+
+  function upd(k, v) { setDraft(Object.assign({}, draft, (function(){ var x = {}; x[k] = v; return x; })())); }
+
+  if (loading || !draft) return <div style={{ padding: 30, textAlign: "center", color: t.txM }}>جارِ التحميل...</div>;
+
+  var hasChanges = JSON.stringify(settings) !== JSON.stringify(draft);
+
+  var inputStyle = { width: "100%", padding: "9px 12px", borderRadius: 8, border: "1px solid " + t.sep, background: t.inp, color: t.tx, fontSize: 12, outline: "none", boxSizing: "border-box", fontFamily: "inherit" };
+  var lblStyle = { fontSize: 10, color: t.txM, fontWeight: 700, marginBottom: 4 };
+  var hintStyle = { fontSize: 9, color: t.txM, marginTop: 4, fontStyle: "italic" };
+
+  function Section(props) {
+    return (
+      <div style={{ background: t.card, borderRadius: 14, padding: 16, border: "1px solid " + t.sep, marginBottom: 14 }}>
+        <div style={{ fontSize: 13, fontWeight: 800, color: B.blue, marginBottom: 12, paddingBottom: 8, borderBottom: "1px solid " + t.sep, display: "flex", alignItems: "center", gap: 6 }}>
+          <span>{props.icon}</span><span>{props.title}</span>
+        </div>
+        {props.children}
+      </div>
+    );
+  }
+
+  function Field(props) {
+    return (
+      <div style={{ marginBottom: 10 }}>
+        <div style={lblStyle}>{props.label}</div>
+        {props.children}
+        {props.hint && <div style={hintStyle}>{props.hint}</div>}
+      </div>
+    );
+  }
+
+  return (
+    <div style={{ maxWidth: 900 }}>
+      {/* Header */}
+      <div style={{ background: "linear-gradient(135deg, " + B.blue + " 0%, " + B.blueDk + " 100%)", borderRadius: 16, padding: "20px 22px", marginBottom: 16, color: "#fff", boxShadow: "0 4px 20px rgba(43,94,167,0.25)", display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 12 }}>
+        <div>
+          <div style={{ fontSize: 20, fontWeight: 800, marginBottom: 4 }}>⚙️ إعدادات النظام</div>
+          <div style={{ fontSize: 11, opacity: 0.9 }}>قواعد الحضور والجزاءات والإشعارات — تطبّق فوراً</div>
+        </div>
+        {saved && <div style={{ padding: "8px 14px", borderRadius: 10, background: "#10B981", color: "#fff", fontSize: 12, fontWeight: 800 }}>✓ تم الحفظ</div>}
+      </div>
+
+      {/* Section 1: Attendance */}
+      <Section icon="⏰" title="قواعد الحضور">
+        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
+          <Field label="فترة السماح للتأخير (دقائق)" hint="بعدها يُعدّ الموظف متأخراً">
+            <input type="number" min="0" max="60" value={draft.lateGraceMinutes} onChange={function(e){ upd("lateGraceMinutes", parseInt(e.target.value, 10) || 0); }} style={inputStyle} />
+          </Field>
+          <Field label="الانصراف التلقائي بعد (ساعات)" hint="لو لم يسجل انصراف، يُسجّل تلقائياً">
+            <input type="number" min="6" max="24" value={draft.autoCheckoutHours} onChange={function(e){ upd("autoCheckoutHours", parseInt(e.target.value, 10) || 11); }} style={inputStyle} />
+          </Field>
+        </div>
+      </Section>
+
+      {/* Section 2: Break */}
+      <Section icon="☕" title="قواعد الاستراحة">
+        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 10 }}>
+          <Field label="بداية النافذة" hint="الوقت الإلزامي">
+            <input type="time" value={draft.breakWindowStart} onChange={function(e){ upd("breakWindowStart", e.target.value); }} style={inputStyle} />
+          </Field>
+          <Field label="نهاية النافذة">
+            <input type="time" value={draft.breakWindowEnd} onChange={function(e){ upd("breakWindowEnd", e.target.value); }} style={inputStyle} />
+          </Field>
+          <Field label="دقائق السماح ±" hint="قبل وبعد النافذة">
+            <input type="number" min="0" max="30" value={draft.breakGraceMinutes} onChange={function(e){ upd("breakGraceMinutes", parseInt(e.target.value, 10) || 5); }} style={inputStyle} />
+          </Field>
+        </div>
+      </Section>
+
+      {/* Section 3: Auto-Warning thresholds */}
+      <Section icon="⚠️" title="عتبات الإنذارات التلقائية">
+        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 10 }}>
+          <Field label="إنذار بعد عدد تأخيرات" hint="خلال 30 يوماً">
+            <input type="number" min="1" max="10" value={draft.lateWarningThreshold} onChange={function(e){ upd("lateWarningThreshold", parseInt(e.target.value, 10) || 3); }} style={inputStyle} />
+          </Field>
+          <Field label="إنذار بعد عدد أيام غياب" hint="خلال 30 يوماً">
+            <input type="number" min="1" max="10" value={draft.absentWarningThreshold} onChange={function(e){ upd("absentWarningThreshold", parseInt(e.target.value, 10) || 2); }} style={inputStyle} />
+          </Field>
+          <Field label="إنذار بعد مخالفات استراحة" hint="خلال 30 يوماً">
+            <input type="number" min="1" max="10" value={draft.breakViolationThreshold} onChange={function(e){ upd("breakViolationThreshold", parseInt(e.target.value, 10) || 3); }} style={inputStyle} />
+          </Field>
+        </div>
+      </Section>
+
+      {/* Section 4: Leaves defaults */}
+      <Section icon="🏖️" title="أرصدة الإجازات الافتراضية (أيام/سنة)">
+        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr 1fr", gap: 10 }}>
+          <Field label="سنوية 🏖️">
+            <input type="number" min="0" max="60" value={draft.defaultAnnualLeave} onChange={function(e){ upd("defaultAnnualLeave", parseInt(e.target.value, 10) || 21); }} style={inputStyle} />
+          </Field>
+          <Field label="مرضية 🏥">
+            <input type="number" min="0" max="365" value={draft.defaultSickLeave} onChange={function(e){ upd("defaultSickLeave", parseInt(e.target.value, 10) || 30); }} style={inputStyle} />
+          </Field>
+          <Field label="طارئة ⚡">
+            <input type="number" min="0" max="30" value={draft.defaultEmergencyLeave} onChange={function(e){ upd("defaultEmergencyLeave", parseInt(e.target.value, 10) || 5); }} style={inputStyle} />
+          </Field>
+          <Field label="شخصية 👤">
+            <input type="number" min="0" max="30" value={draft.defaultPersonalLeave} onChange={function(e){ upd("defaultPersonalLeave", parseInt(e.target.value, 10) || 0); }} style={inputStyle} />
+          </Field>
+        </div>
+        <div style={{ marginTop: 10, padding: 10, borderRadius: 8, background: t.bg, border: "1px solid " + t.sep }}>
+          <label style={{ display: "flex", alignItems: "center", gap: 8, cursor: "pointer", fontSize: 12, color: t.tx }}>
+            <input type="checkbox" checked={!!draft.annualLeaveCarryOver} onChange={function(e){ upd("annualLeaveCarryOver", e.target.checked); }} />
+            <span>السماح بترحيل الإجازة السنوية للسنة التالية</span>
+          </label>
+          {draft.annualLeaveCarryOver && (
+            <div style={{ marginTop: 8, marginRight: 24 }}>
+              <div style={lblStyle}>الحد الأقصى للأيام المُرحَّلة</div>
+              <input type="number" min="0" max="30" value={draft.maxCarryOverDays} onChange={function(e){ upd("maxCarryOverDays", parseInt(e.target.value, 10) || 0); }} style={Object.assign({}, inputStyle, { maxWidth: 120 })} />
+            </div>
+          )}
+        </div>
+      </Section>
+
+      {/* Section 5: Work types */}
+      <Section icon="💼" title="ساعات العمل الافتراضية">
+        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
+          <Field label="دوام كامل (ساعات/يوم)">
+            <input type="number" min="4" max="12" step="0.5" value={draft.fullTimeHours} onChange={function(e){ upd("fullTimeHours", parseFloat(e.target.value) || 8); }} style={inputStyle} />
+          </Field>
+          <Field label="عقد مرن (ساعات/يوم)">
+            <input type="number" min="4" max="14" step="0.5" value={draft.flexContractHours} onChange={function(e){ upd("flexContractHours", parseFloat(e.target.value) || 9); }} style={inputStyle} />
+          </Field>
+        </div>
+      </Section>
+
+      {/* Section 6: Notifications */}
+      <Section icon="🔔" title="الإشعارات والتذكيرات">
+        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
+          <Field label="وقت تذكير الحضور اليومي" hint="قبل موعد الدوام">
+            <input type="time" value={draft.dailyReminderTime} onChange={function(e){ upd("dailyReminderTime", e.target.value); }} style={inputStyle} />
+          </Field>
+          <Field label="تفعيل التذكير اليومي">
+            <label style={{ display: "flex", alignItems: "center", gap: 8, padding: "9px 12px", borderRadius: 8, border: "1px solid " + t.sep, background: t.inp, cursor: "pointer", fontSize: 12 }}>
+              <input type="checkbox" checked={!!draft.dailyReminderEnabled} onChange={function(e){ upd("dailyReminderEnabled", e.target.checked); }} />
+              <span style={{ color: t.tx }}>{draft.dailyReminderEnabled ? "مفعَّل" : "معطَّل"}</span>
+            </label>
+          </Field>
+        </div>
+      </Section>
+
+      {/* Section 7: Face recognition */}
+      <Section icon="👤" title="التعرف على الوجه">
+        <Field label={"عتبة المطابقة: " + draft.faceMatchThreshold + "%"} hint="النسبة المطلوبة لاعتبار الوجه مطابقاً — زيادتها تعني صرامة أكبر">
+          <input type="range" min="30" max="95" step="5" value={draft.faceMatchThreshold} onChange={function(e){ upd("faceMatchThreshold", parseInt(e.target.value, 10)); }} style={{ width: "100%", accentColor: B.blue }} />
+          <div style={{ display: "flex", justifyContent: "space-between", fontSize: 9, color: t.txM, marginTop: 4 }}>
+            <span>30% (متساهل)</span>
+            <span>65% (متوازن)</span>
+            <span>95% (صارم)</span>
+          </div>
+        </Field>
+      </Section>
+
+      {/* Section 8: Legal */}
+      <Section icon="📜" title="بيانات قانونية">
+        <Field label="اسم المكتب (يظهر في PDFs)">
+          <input type="text" value={draft.companyName} onChange={function(e){ upd("companyName", e.target.value); }} style={inputStyle} />
+        </Field>
+        <Field label="رقم اعتماد لائحة العمل">
+          <input type="text" value={draft.lawReference} onChange={function(e){ upd("lawReference", e.target.value); }} style={inputStyle} />
+        </Field>
+      </Section>
+
+      {/* Action bar */}
+      <div style={{ position: "sticky", bottom: 0, padding: 14, background: t.card, borderRadius: 14, border: "1px solid " + (hasChanges ? B.gold : t.sep), display: "flex", gap: 10, alignItems: "center", boxShadow: "0 -4px 20px rgba(0,0,0,0.08)" }}>
+        <div style={{ flex: 1, fontSize: 11, color: hasChanges ? B.gold : t.txM, fontWeight: 700 }}>
+          {hasChanges ? "⚠️ تغييرات غير محفوظة" : "✓ جميع التغييرات محفوظة"}
+        </div>
+        <button onClick={reset} disabled={!hasChanges || saving} style={{ padding: "10px 16px", borderRadius: 10, background: t.bg, color: t.tx, border: "1px solid " + t.sep, fontSize: 12, fontWeight: 700, cursor: hasChanges ? "pointer" : "default", opacity: hasChanges ? 1 : 0.5, fontFamily: "inherit" }}>↺ إعادة</button>
+        <button onClick={save} disabled={!hasChanges || saving} style={{ padding: "10px 24px", borderRadius: 10, background: hasChanges ? B.blue : t.sep, color: "#fff", border: "none", fontSize: 13, fontWeight: 800, cursor: hasChanges && !saving ? "pointer" : "default", fontFamily: "inherit" }}>
+          {saving ? "جارِ الحفظ..." : "💾 حفظ الإعدادات"}
+        </button>
+      </div>
+    </div>
+  );
+}
+
+/* ═══ ATTENDANCE INSIGHTS — ذكاء الحضور وتصدير الرواتب (v6.54) ═══ */
+function AttendanceInsightsPanel({ t, B, emps }) {
+  var [attendance, setAttendance] = useState([]);
+  var [leaves, setLeaves] = useState([]);
+  var [violations, setViolations] = useState([]);
+  var [loading, setLoading] = useState(true);
+  var [locks, setLocks] = useState([]); // v6.58
+  var [month, setMonth] = useState(function(){
+    var now = new Date();
+    return now.getFullYear() + "-" + String(now.getMonth() + 1).padStart(2, "0");
+  });
+  var [livePulse, setLivePulse] = useState({ present: [], late: [], onBreak: [], notIn: [], onLeave: [] });
+
+  async function loadAll() {
+    setLoading(true);
+    try {
+      var [att, lv, viosV2, lks] = await Promise.all([
+        fetch("/api/data?action=attendance").then(function(r){ return r.json(); }).catch(function(){ return []; }),
+        fetch("/api/data?action=leaves").then(function(r){ return r.json(); }).catch(function(){ return []; }),
+        fetch("/api/data?action=violations_v2").then(function(r){ return r.json(); }).catch(function(){ return []; }),
+        fetch("/api/data?action=attendance-locks").then(function(r){ return r.json(); }).catch(function(){ return []; }),
+      ]);
+      setAttendance(Array.isArray(att) ? att : []);
+      setLeaves(Array.isArray(lv) ? lv : []);
+      setViolations(Array.isArray(viosV2) ? viosV2 : []);
+      setLocks(Array.isArray(lks) ? lks : []);
+    } catch(e) {}
+    setLoading(false);
+  }
+
+  var currentLock = locks.find(function(l){ return l.month === month; });
+
+  async function toggleLock() {
+    if (currentLock) {
+      if (!window.confirm("فك قفل شهر " + month + "؟ سيتاح التعديل على سجل الحضور مرة أخرى.")) return;
+      try {
+        var r = await fetch("/api/data?action=attendance-locks", {
+          method: "DELETE",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ month: month }),
+        });
+        if (r.ok) { alert("✓ تم فك القفل"); loadAll(); }
+      } catch(e) {}
+    } else {
+      var note = window.prompt("ملاحظة (اختياري) — مثال: معالجة الرواتب شهر " + month + ":", "معالجة الرواتب");
+      if (note === null) return;
+      try {
+        var r = await fetch("/api/data?action=attendance-locks", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ month: month, note: note }),
+        });
+        var d = await r.json();
+        if (d.ok) { alert("🔒 تم قفل شهر " + month); loadAll(); }
+        else alert("خطأ: " + (d.error || ""));
+      } catch(e) {}
+    }
+  }
+
+  useEffect(function(){ loadAll(); }, []);
+
+  // Compute live pulse every 30 sec
+  useEffect(function(){
+    function updatePulse() {
+      var todayStr = new Date().toISOString().split("T")[0];
+      var todayAtt = attendance.filter(function(a){
+        return (a.date === todayStr) || (a.ts && a.ts.startsWith(todayStr));
+      });
+      var todayLeaves = leaves.filter(function(l){
+        if (l.status !== "approved") return false;
+        return (l.from && l.from <= todayStr && l.to && l.to >= todayStr);
+      });
+
+      var present = [], late = [], onBreak = [], notIn = [], onLeave = [];
+      emps.forEach(function(e){
+        var myLeave = todayLeaves.find(function(l){ return l.empId === e.id; });
+        if (myLeave) { onLeave.push({ emp: e, leave: myLeave }); return; }
+        var myAtt = todayAtt.filter(function(a){ return a.empId === e.id; });
+        var checkin = myAtt.find(function(a){ return a.type === "checkin"; });
+        var checkout = myAtt.find(function(a){ return a.type === "checkout"; });
+        var breakStart = myAtt.find(function(a){ return a.type === "break_start"; });
+        var breakEnd = myAtt.find(function(a){ return a.type === "break_end"; });
+        if (!checkin) { notIn.push(e); return; }
+        if (checkout) return; // already left
+        if (breakStart && !breakEnd) { onBreak.push(e); return; }
+        // Check if late (after 8:30 by default)
+        var checkinTime = new Date(checkin.ts);
+        if (checkinTime.getHours() >= 9 || (checkinTime.getHours() === 8 && checkinTime.getMinutes() > 45)) {
+          late.push(e);
+        } else {
+          present.push(e);
+        }
+      });
+      setLivePulse({ present: present, late: late, onBreak: onBreak, notIn: notIn, onLeave: onLeave });
+    }
+    updatePulse();
+    var interval = setInterval(updatePulse, 30000);
+    return function(){ clearInterval(interval); };
+  }, [attendance, leaves, emps]);
+
+  // Compute monthly stats per employee
+  function computeMonthlyStats(empId) {
+    var monthPrefix = month; // "2026-04"
+    var monthAtt = attendance.filter(function(a){
+      var dt = a.date || (a.ts && a.ts.split("T")[0]) || "";
+      return a.empId === empId && dt.startsWith(monthPrefix);
+    });
+    var monthLeaves = leaves.filter(function(l){
+      return l.empId === empId && l.status === "approved" && (l.from || "").startsWith(monthPrefix);
+    });
+    var monthVios = violations.filter(function(v){
+      return v.empId === empId && (v.createdAt || "").startsWith(monthPrefix);
+    });
+
+    // Group by date
+    var byDate = {};
+    monthAtt.forEach(function(a){
+      var dt = a.date || (a.ts && a.ts.split("T")[0]);
+      if (!dt) return;
+      if (!byDate[dt]) byDate[dt] = { checkin: null, checkout: null, breakS: null, breakE: null };
+      if (a.type === "checkin") byDate[dt].checkin = a;
+      if (a.type === "checkout") byDate[dt].checkout = a;
+      if (a.type === "break_start") byDate[dt].breakS = a;
+      if (a.type === "break_end") byDate[dt].breakE = a;
+    });
+
+    var workDays = 0, lateDays = 0, absentDays = 0;
+    var totalMinutes = 0, lateMinutes = 0;
+    Object.keys(byDate).forEach(function(dt){
+      var day = byDate[dt];
+      if (!day.checkin) { absentDays++; return; }
+      workDays++;
+      var cin = new Date(day.checkin.ts);
+      // Late if after 8:45
+      if (cin.getHours() >= 9 || (cin.getHours() === 8 && cin.getMinutes() > 45)) {
+        lateDays++;
+        var lateMin = (cin.getHours() * 60 + cin.getMinutes()) - (8 * 60 + 30);
+        if (lateMin > 0) lateMinutes += lateMin;
+      }
+      if (day.checkout) {
+        var cout = new Date(day.checkout.ts);
+        var workMin = (cout - cin) / 60000;
+        // Subtract break
+        if (day.breakS && day.breakE) {
+          var brMin = (new Date(day.breakE.ts) - new Date(day.breakS.ts)) / 60000;
+          if (brMin > 0) workMin -= brMin;
+        }
+        if (workMin > 0) totalMinutes += workMin;
+      }
+    });
+
+    var leaveDays = monthLeaves.reduce(function(sum, l){ return sum + (l.days || 1); }, 0);
+
+    return {
+      workDays: workDays,
+      lateDays: lateDays,
+      absentDays: absentDays,
+      leaveDays: leaveDays,
+      workHours: (totalMinutes / 60).toFixed(1),
+      lateMinutes: lateMinutes,
+      violations: monthVios.length,
+      penalty: monthVios.filter(function(v){ return v.penaltyCode && v.penaltyCode.indexOf("DEDUCT") >= 0; }).length,
+    };
+  }
+
+  function exportPayrollCSV() {
+    var header = ["الرقم", "الاسم", "الفرع", "المسمى", "أيام العمل", "أيام التأخير", "أيام الغياب", "أيام الإجازة", "مجموع ساعات العمل", "دقائق التأخير", "عدد المخالفات", "جزاءات خصم"];
+    var rows = [header.join(",")];
+    emps.forEach(function(e){
+      var s = computeMonthlyStats(e.id);
+      rows.push([
+        '"' + (e.id || '') + '"',
+        '"' + (e.name || '').replace(/"/g, '""') + '"',
+        '"' + (e.branch || '') + '"',
+        '"' + (e.role || '') + '"',
+        s.workDays,
+        s.lateDays,
+        s.absentDays,
+        s.leaveDays,
+        s.workHours,
+        s.lateMinutes,
+        s.violations,
+        s.penalty,
+      ].join(","));
+    });
+    var csv = "\uFEFF" + rows.join("\n"); // BOM for Arabic Excel support
+    var blob = new Blob([csv], { type: "text/csv;charset=utf-8" });
+    var url = URL.createObjectURL(blob);
+    var a = document.createElement("a");
+    a.href = url;
+    a.download = "كشف_راتب_" + month + ".csv";
+    a.click();
+    URL.revokeObjectURL(url);
+  }
+
+  if (loading) return <div style={{ padding: 30, textAlign: "center", color: t.txM }}>جارِ تحليل البيانات...</div>;
+
+  var pulseCards = [
+    { key: "present", label: "حضور منتظم", icon: "✅", color: "#10B981", list: livePulse.present },
+    { key: "late", label: "متأخرون", icon: "⏰", color: "#F59E0B", list: livePulse.late },
+    { key: "onBreak", label: "استراحة", icon: "☕", color: "#0EA5E9", list: livePulse.onBreak },
+    { key: "onLeave", label: "إجازة", icon: "🏖️", color: "#7C3AED", list: livePulse.onLeave },
+    { key: "notIn", label: "لم يحضر بعد", icon: "❌", color: "#DC2626", list: livePulse.notIn },
+  ];
+
+  return (
+    <div style={{ maxWidth: 1100 }}>
+      {/* Header */}
+      <div style={{ background: "linear-gradient(135deg, " + B.blue + " 0%, " + B.blueDk + " 100%)", borderRadius: 16, padding: "20px 22px", marginBottom: 16, color: "#fff", boxShadow: "0 4px 20px rgba(43,94,167,0.25)" }}>
+        <div style={{ fontSize: 20, fontWeight: 800, marginBottom: 4 }}>📈 ذكاء الحضور</div>
+        <div style={{ fontSize: 11, opacity: 0.9 }}>نبض حي · تحليل شهري · تصدير كشف الرواتب</div>
+      </div>
+
+      {/* Live Pulse */}
+      <div style={{ background: t.card, borderRadius: 14, padding: 16, border: "1px solid " + t.sep, marginBottom: 14 }}>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>
+          <div style={{ fontSize: 14, fontWeight: 800, color: t.tx }}>🔴 نبض الآن (Live)</div>
+          <div style={{ fontSize: 10, color: t.txM, display: "flex", alignItems: "center", gap: 6 }}>
+            <span style={{ width: 8, height: 8, borderRadius: "50%", background: "#10B981", display: "inline-block", animation: "pulse 2s ease-in-out infinite" }}></span>
+            يتحدث كل 30 ثانية
+          </div>
+        </div>
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(170px, 1fr))", gap: 10 }}>
+          {pulseCards.map(function(card){
+            return (
+              <div key={card.key} style={{ padding: 14, borderRadius: 12, background: card.color + "10", border: "1px solid " + card.color + "30" }}>
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 6 }}>
+                  <div style={{ fontSize: 20 }}>{card.icon}</div>
+                  <div style={{ fontSize: 24, fontWeight: 900, color: card.color }}>{card.list.length}</div>
+                </div>
+                <div style={{ fontSize: 11, fontWeight: 800, color: card.color, marginBottom: 6 }}>{card.label}</div>
+                {card.list.length > 0 && (
+                  <div style={{ fontSize: 9, color: t.tx2, lineHeight: 1.6, maxHeight: 70, overflow: "hidden" }}>
+                    {card.list.slice(0, 3).map(function(item){
+                      var n = item.emp ? item.emp.name : item.name;
+                      return n;
+                    }).filter(Boolean).join("، ")}
+                    {card.list.length > 3 && " + " + (card.list.length - 3) + " آخرين"}
+                  </div>
+                )}
+              </div>
+            );
+          })}
+        </div>
+      </div>
+
+      {/* Monthly analysis + payroll export */}
+      <div style={{ background: t.card, borderRadius: 14, padding: 16, border: "1px solid " + t.sep, marginBottom: 14 }}>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12, flexWrap: "wrap", gap: 10 }}>
+          <div>
+            <div style={{ fontSize: 14, fontWeight: 800, color: t.tx }}>📊 تحليل شهري وكشف الرواتب</div>
+            {currentLock && (
+              <div style={{ fontSize: 10, color: "#DC2626", fontWeight: 700, marginTop: 4, display: "flex", alignItems: "center", gap: 4 }}>
+                🔒 مقفل بواسطة {currentLock.lockedBy} في {new Date(currentLock.lockedAt).toLocaleDateString("ar-SA")}
+                {currentLock.note && " · " + currentLock.note}
+              </div>
+            )}
+          </div>
+          <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
+            <input type="month" value={month} onChange={function(e){ setMonth(e.target.value); }} style={{ padding: "8px 12px", borderRadius: 8, border: "1px solid " + t.sep, background: t.inp, color: t.tx, fontSize: 12, fontFamily: "inherit", outline: "none" }} />
+            <button onClick={toggleLock} style={{ padding: "8px 14px", borderRadius: 8, background: currentLock ? "#DC2626" : "#F59E0B", color: "#fff", border: "none", fontSize: 11, fontWeight: 800, cursor: "pointer", fontFamily: "inherit" }}>
+              {currentLock ? "🔓 فك القفل" : "🔒 قفل الشهر"}
+            </button>
+            <button onClick={exportPayrollCSV} style={{ padding: "8px 16px", borderRadius: 8, background: "#10B981", color: "#fff", border: "none", fontSize: 12, fontWeight: 800, cursor: "pointer", fontFamily: "inherit" }}>
+              📥 تصدير CSV
+            </button>
+          </div>
+        </div>
+        <div style={{ overflowX: "auto" }}>
+          <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 11 }}>
+            <thead>
+              <tr style={{ background: B.blue + "15" }}>
+                <th style={{ padding: 10, textAlign: "right", fontWeight: 800, color: B.blue }}>الموظف</th>
+                <th style={{ padding: 10, textAlign: "center", fontWeight: 800, color: B.blue }}>أيام العمل</th>
+                <th style={{ padding: 10, textAlign: "center", fontWeight: 800, color: B.blue }}>التأخير</th>
+                <th style={{ padding: 10, textAlign: "center", fontWeight: 800, color: B.blue }}>الغياب</th>
+                <th style={{ padding: 10, textAlign: "center", fontWeight: 800, color: B.blue }}>الإجازة</th>
+                <th style={{ padding: 10, textAlign: "center", fontWeight: 800, color: B.blue }}>ساعات العمل</th>
+                <th style={{ padding: 10, textAlign: "center", fontWeight: 800, color: B.blue }}>دقائق التأخير</th>
+                <th style={{ padding: 10, textAlign: "center", fontWeight: 800, color: B.blue }}>المخالفات</th>
+              </tr>
+            </thead>
+            <tbody>
+              {emps.map(function(e, i){
+                var s = computeMonthlyStats(e.id);
+                return (
+                  <tr key={e.id} style={{ borderBottom: "1px solid " + t.sep, background: i % 2 === 0 ? t.bg : "transparent" }}>
+                    <td style={{ padding: 10, fontWeight: 700, color: t.tx }}>{e.name}</td>
+                    <td style={{ padding: 10, textAlign: "center", color: "#10B981", fontWeight: 800 }}>{s.workDays}</td>
+                    <td style={{ padding: 10, textAlign: "center", color: s.lateDays > 0 ? "#F59E0B" : t.txM, fontWeight: s.lateDays > 0 ? 800 : 400 }}>{s.lateDays}</td>
+                    <td style={{ padding: 10, textAlign: "center", color: s.absentDays > 0 ? "#DC2626" : t.txM, fontWeight: s.absentDays > 0 ? 800 : 400 }}>{s.absentDays}</td>
+                    <td style={{ padding: 10, textAlign: "center", color: "#7C3AED", fontWeight: s.leaveDays > 0 ? 800 : 400 }}>{s.leaveDays}</td>
+                    <td style={{ padding: 10, textAlign: "center", color: t.tx, fontWeight: 700 }}>{s.workHours}</td>
+                    <td style={{ padding: 10, textAlign: "center", color: s.lateMinutes > 0 ? "#F59E0B" : t.txM }}>{s.lateMinutes}</td>
+                    <td style={{ padding: 10, textAlign: "center", color: s.violations > 0 ? "#DC2626" : t.txM, fontWeight: s.violations > 0 ? 800 : 400 }}>{s.violations}</td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      {/* Insights / patterns */}
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(250px, 1fr))", gap: 12 }}>
+        {/* Top 3 most punctual */}
+        <div style={{ background: t.card, borderRadius: 14, padding: 16, border: "1px solid " + t.sep }}>
+          <div style={{ fontSize: 13, fontWeight: 800, color: "#10B981", marginBottom: 10 }}>🏆 الأكثر انضباطاً</div>
+          {(function(){
+            var ranked = emps.map(function(e){ return { e: e, s: computeMonthlyStats(e.id) }; })
+              .filter(function(x){ return x.s.workDays > 0; })
+              .sort(function(a,b){ return a.s.lateDays - b.s.lateDays || a.s.lateMinutes - b.s.lateMinutes; })
+              .slice(0, 3);
+            return ranked.map(function(x, i){
+              return (
+                <div key={x.e.id} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "6px 0", borderBottom: i < 2 ? "1px solid " + t.sep : "none" }}>
+                  <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                    <span style={{ fontSize: 16 }}>{["🥇","🥈","🥉"][i]}</span>
+                    <span style={{ fontSize: 12, fontWeight: 700, color: t.tx }}>{x.e.name}</span>
+                  </div>
+                  <span style={{ fontSize: 11, color: "#10B981", fontWeight: 800 }}>{x.s.lateDays} تأخير</span>
+                </div>
+              );
+            });
+          })()}
+        </div>
+        {/* Needs attention */}
+        <div style={{ background: t.card, borderRadius: 14, padding: 16, border: "1px solid " + t.sep }}>
+          <div style={{ fontSize: 13, fontWeight: 800, color: "#DC2626", marginBottom: 10 }}>⚠️ يحتاج متابعة</div>
+          {(function(){
+            var ranked = emps.map(function(e){ return { e: e, s: computeMonthlyStats(e.id) }; })
+              .filter(function(x){ return x.s.lateDays > 0 || x.s.absentDays > 0 || x.s.violations > 0; })
+              .sort(function(a,b){ return (b.s.lateDays + b.s.absentDays * 2 + b.s.violations * 3) - (a.s.lateDays + a.s.absentDays * 2 + a.s.violations * 3); })
+              .slice(0, 3);
+            if (ranked.length === 0) return <div style={{ fontSize: 11, color: t.txM, padding: 10 }}>✓ لا مشاكل هذا الشهر</div>;
+            return ranked.map(function(x, i){
+              return (
+                <div key={x.e.id} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "6px 0", borderBottom: i < ranked.length - 1 ? "1px solid " + t.sep : "none" }}>
+                  <span style={{ fontSize: 12, fontWeight: 700, color: t.tx }}>{x.e.name}</span>
+                  <div style={{ fontSize: 10, color: t.txM }}>
+                    {x.s.lateDays > 0 && <span style={{ color: "#F59E0B", fontWeight: 800 }}>⏰{x.s.lateDays} </span>}
+                    {x.s.absentDays > 0 && <span style={{ color: "#DC2626", fontWeight: 800 }}>❌{x.s.absentDays} </span>}
+                    {x.s.violations > 0 && <span style={{ color: "#DC2626", fontWeight: 800 }}>⚖️{x.s.violations}</span>}
+                  </div>
+                </div>
+              );
+            });
+          })()}
+        </div>
+        {/* Overall stats */}
+        <div style={{ background: t.card, borderRadius: 14, padding: 16, border: "1px solid " + t.sep }}>
+          <div style={{ fontSize: 13, fontWeight: 800, color: B.blue, marginBottom: 10 }}>📊 إحصائيات الشهر</div>
+          {(function(){
+            var totals = { workDays: 0, lateDays: 0, absentDays: 0, leaveDays: 0, workHours: 0, lateMinutes: 0 };
+            emps.forEach(function(e){
+              var s = computeMonthlyStats(e.id);
+              totals.workDays += s.workDays;
+              totals.lateDays += s.lateDays;
+              totals.absentDays += s.absentDays;
+              totals.leaveDays += s.leaveDays;
+              totals.workHours += parseFloat(s.workHours || 0);
+              totals.lateMinutes += s.lateMinutes;
+            });
+            var punctualityRate = totals.workDays > 0 ? Math.round(((totals.workDays - totals.lateDays) / totals.workDays) * 100) : 0;
+            return (
+              <div style={{ fontSize: 11, color: t.tx, lineHeight: 2 }}>
+                <div>📅 <strong>{totals.workDays}</strong> إجمالي أيام حضور</div>
+                <div>⏰ <strong>{totals.lateDays}</strong> يوم تأخير (<strong>{totals.lateMinutes}</strong> دقيقة)</div>
+                <div>❌ <strong>{totals.absentDays}</strong> يوم غياب</div>
+                <div>🏖️ <strong>{totals.leaveDays}</strong> يوم إجازة</div>
+                <div>⏱ <strong>{totals.workHours.toFixed(0)}</strong> إجمالي ساعات العمل</div>
+                <div style={{ marginTop: 6, padding: "6px 10px", borderRadius: 6, background: punctualityRate >= 90 ? "rgba(16,185,129,0.15)" : punctualityRate >= 75 ? "rgba(245,158,11,0.15)" : "rgba(220,38,38,0.15)", color: punctualityRate >= 90 ? "#10B981" : punctualityRate >= 75 ? "#F59E0B" : "#DC2626", fontWeight: 800, textAlign: "center" }}>
+                  نسبة الانضباط: {punctualityRate}%
+                </div>
+              </div>
+            );
+          })()}
+        </div>
+      </div>
+
+      <style>{`@keyframes pulse { 0%,100% { opacity: 1; } 50% { opacity: 0.5; } }`}</style>
+    </div>
+  );
+}
+
 /* ═══ BRANCHES PANEL — إدارة الفروع (v6.53) ═══ */
 function BranchesPanel({ t, B }) {
   var [branches, setBranches] = useState([]);
@@ -2445,6 +3092,757 @@ function BranchesPanel({ t, B }) {
           </div>
         </div>
       )}
+    </div>
+  );
+}
+
+/* ═══════════════════════════════════════════════════════════════
+   ASSET MANAGEMENT — إدارة الأصول المتقدمة (v6.60)
+   تتبع الصيانة الدورية + الضمان + تكاليف التشغيل + حالة الأصل
+   ═══════════════════════════════════════════════════════════════ */
+var ASSET_STATUS_META = {
+  operational:    { label: "يعمل",          icon: "✅", color: "#10B981" },
+  in_maintenance: { label: "تحت الصيانة",   icon: "🔧", color: "#F59E0B" },
+  broken:         { label: "معطل",          icon: "❌", color: "#DC2626" },
+  lost:           { label: "مفقود",         icon: "❓", color: "#6B7280" },
+  retired:        { label: "متقاعد",        icon: "📦", color: "#64748B" },
+};
+
+var MAINT_TYPE_META = {
+  routine:    { label: "صيانة دورية",  icon: "🔄", color: "#0891B2" },
+  repair:     { label: "إصلاح",        icon: "🔧", color: "#F59E0B" },
+  inspection: { label: "فحص",          icon: "🔍", color: "#7C3AED" },
+  upgrade:    { label: "ترقية",        icon: "⬆️", color: "#10B981" },
+};
+
+function AssetManagementPanel({ t, B, emps }) {
+  var [assets, setAssets] = useState([]);
+  var [maintLogs, setMaintLogs] = useState([]);
+  var [warranty, setWarranty] = useState({ expiringSoon: [], expired: [], active: [], noWarranty: [] });
+  var [maintDue, setMaintDue] = useState({ overdue: [], upcoming: [] });
+  var [loading, setLoading] = useState(true);
+  var [view, setView] = useState("overview"); // overview | assets | maintenance | warranty | costs
+  var [selectedAsset, setSelectedAsset] = useState(null);
+  var [filterStatus, setFilterStatus] = useState("all");
+  var [search, setSearch] = useState("");
+
+  async function loadAll() {
+    setLoading(true);
+    try {
+      var [ass, warr, md] = await Promise.all([
+        fetch("/api/data?action=custody").then(function(r){ return r.json(); }).catch(function(){ return []; }),
+        fetch("/api/data?action=custody-warranty").then(function(r){ return r.json(); }).catch(function(){ return { expiringSoon: [], expired: [], active: [], noWarranty: [] }; }),
+        fetch("/api/data?action=custody-maintenance-due").then(function(r){ return r.json(); }).catch(function(){ return { overdue: [], upcoming: [] }; }),
+      ]);
+      var assetsList = (Array.isArray(ass) ? ass : []).filter(function(c){ return c.type === 'asset'; });
+      setAssets(assetsList);
+      setWarranty(warr || { expiringSoon: [], expired: [], active: [], noWarranty: [] });
+      setMaintDue(md || { overdue: [], upcoming: [] });
+    } catch(e) {}
+    setLoading(false);
+  }
+
+  useEffect(function(){ loadAll(); }, []);
+
+  async function loadMaintForAsset(assetId) {
+    try {
+      var r = await fetch("/api/data?action=custody_maintenance&custodyId=" + encodeURIComponent(assetId));
+      var d = await r.json();
+      setMaintLogs(Array.isArray(d) ? d : []);
+    } catch(e) { setMaintLogs([]); }
+  }
+
+  async function updateStatus(assetId, newStatus, reason) {
+    try {
+      await fetch("/api/data?action=custody-status", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ custodyId: assetId, status: newStatus, reason: reason || "" }),
+      });
+      await loadAll();
+      if (selectedAsset && selectedAsset.id === assetId) {
+        var updated = assets.find(function(a){ return a.id === assetId; });
+        if (updated) setSelectedAsset(updated);
+      }
+    } catch(e) { alert("فشل التحديث"); }
+  }
+
+  // Filter
+  var filteredAssets = assets.filter(function(a){
+    if (filterStatus !== "all" && (a.operationalStatus || "operational") !== filterStatus) return false;
+    if (search.trim()) {
+      var s = search.toLowerCase();
+      return (a.name || "").toLowerCase().includes(s) || (a.serialNumber || "").toLowerCase().includes(s) || (a.empName || "").toLowerCase().includes(s);
+    }
+    return true;
+  });
+
+  // Stats
+  var stats = {
+    total: assets.length,
+    operational: assets.filter(function(a){ return !a.operationalStatus || a.operationalStatus === "operational"; }).length,
+    broken: assets.filter(function(a){ return a.operationalStatus === "broken"; }).length,
+    inMaint: assets.filter(function(a){ return a.operationalStatus === "in_maintenance"; }).length,
+    lost: assets.filter(function(a){ return a.operationalStatus === "lost"; }).length,
+    retired: assets.filter(function(a){ return a.operationalStatus === "retired"; }).length,
+  };
+
+  var totalValue = assets.reduce(function(sum, a){ return sum + (parseFloat(a.purchaseCost) || 0); }, 0);
+
+  if (loading) return <div style={{ padding: 30, textAlign: "center", color: t.txM }}>جارِ التحميل...</div>;
+
+  return (
+    <div style={{ maxWidth: 1100 }}>
+      {/* Header */}
+      <div style={{ background: "linear-gradient(135deg, " + B.blue + " 0%, " + B.blueDk + " 100%)", borderRadius: 16, padding: "20px 22px", marginBottom: 16, color: "#fff", boxShadow: "0 4px 20px rgba(43,94,167,0.25)" }}>
+        <div style={{ fontSize: 20, fontWeight: 800, marginBottom: 4 }}>🔧 إدارة الأصول المتقدمة</div>
+        <div style={{ fontSize: 11, opacity: 0.9 }}>صيانة دورية · ضمان · تكاليف تشغيل · حالة الأصل</div>
+      </div>
+
+      {/* Tabs */}
+      <div style={{ display: "flex", gap: 6, marginBottom: 14, flexWrap: "wrap" }}>
+        {[
+          { id: "overview", icon: "📊", label: "نظرة عامة" },
+          { id: "assets", icon: "📦", label: "الأصول", count: assets.length },
+          { id: "maintenance", icon: "🔧", label: "الصيانة", count: maintDue.overdue.length + maintDue.upcoming.length },
+          { id: "warranty", icon: "🛡️", label: "الضمان", count: warranty.expiringSoon.length + warranty.expired.length },
+        ].map(function(v){
+          var active = view === v.id;
+          return (
+            <button key={v.id} onClick={function(){ setView(v.id); }} style={{ padding: "9px 14px", borderRadius: 10, background: active ? B.blue : t.card, color: active ? "#fff" : t.tx, border: "1px solid " + (active ? B.blue : t.sep), fontSize: 12, fontWeight: 700, cursor: "pointer", fontFamily: "inherit", display: "flex", alignItems: "center", gap: 5 }}>
+              <span>{v.icon}</span><span>{v.label}</span>
+              {v.count !== undefined && v.count > 0 && (
+                <span style={{ padding: "1px 7px", borderRadius: 8, background: active ? "rgba(255,255,255,0.25)" : B.red, color: "#fff", fontSize: 10, fontWeight: 800 }}>{v.count}</span>
+              )}
+            </button>
+          );
+        })}
+      </div>
+
+      {/* Overview */}
+      {view === "overview" && (
+        <>
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(150px, 1fr))", gap: 10, marginBottom: 14 }}>
+            <div style={{ padding: 14, borderRadius: 12, background: t.card, border: "1px solid " + t.sep, borderTop: "3px solid " + B.blue }}>
+              <div style={{ fontSize: 10, color: t.txM, fontWeight: 700 }}>📦 إجمالي الأصول</div>
+              <div style={{ fontSize: 24, fontWeight: 900, color: B.blue, marginTop: 4 }}>{stats.total}</div>
+            </div>
+            <div style={{ padding: 14, borderRadius: 12, background: t.card, border: "1px solid " + t.sep, borderTop: "3px solid #10B981" }}>
+              <div style={{ fontSize: 10, color: t.txM, fontWeight: 700 }}>✅ يعمل</div>
+              <div style={{ fontSize: 24, fontWeight: 900, color: "#10B981", marginTop: 4 }}>{stats.operational}</div>
+            </div>
+            <div style={{ padding: 14, borderRadius: 12, background: t.card, border: "1px solid " + t.sep, borderTop: "3px solid #F59E0B" }}>
+              <div style={{ fontSize: 10, color: t.txM, fontWeight: 700 }}>🔧 تحت الصيانة</div>
+              <div style={{ fontSize: 24, fontWeight: 900, color: "#F59E0B", marginTop: 4 }}>{stats.inMaint}</div>
+            </div>
+            <div style={{ padding: 14, borderRadius: 12, background: t.card, border: "1px solid " + t.sep, borderTop: "3px solid #DC2626" }}>
+              <div style={{ fontSize: 10, color: t.txM, fontWeight: 700 }}>❌ معطل</div>
+              <div style={{ fontSize: 24, fontWeight: 900, color: "#DC2626", marginTop: 4 }}>{stats.broken}</div>
+            </div>
+            <div style={{ padding: 14, borderRadius: 12, background: t.card, border: "1px solid " + t.sep, borderTop: "3px solid " + B.gold }}>
+              <div style={{ fontSize: 10, color: t.txM, fontWeight: 700 }}>💰 القيمة الإجمالية</div>
+              <div style={{ fontSize: 20, fontWeight: 900, color: B.gold, marginTop: 4 }}>{totalValue.toLocaleString("ar-SA")} <span style={{ fontSize: 10, fontWeight: 600 }}>ر.س</span></div>
+            </div>
+          </div>
+
+          {/* Alerts section */}
+          {(maintDue.overdue.length > 0 || warranty.expired.length > 0) && (
+            <div style={{ marginBottom: 14, padding: 14, borderRadius: 12, background: "rgba(220,38,38,0.08)", border: "1px solid rgba(220,38,38,0.25)" }}>
+              <div style={{ fontSize: 13, fontWeight: 800, color: "#DC2626", marginBottom: 10 }}>🚨 تنبيهات عاجلة</div>
+              {maintDue.overdue.length > 0 && (
+                <div style={{ fontSize: 11, color: t.tx, marginBottom: 6 }}>
+                  🔧 <strong>{maintDue.overdue.length}</strong> أصل متأخر الصيانة · {maintDue.overdue.slice(0, 3).map(function(m){ return m.itemName; }).join("، ")}
+                </div>
+              )}
+              {warranty.expired.length > 0 && (
+                <div style={{ fontSize: 11, color: t.tx }}>
+                  🛡️ <strong>{warranty.expired.length}</strong> أصل انتهى ضمانه
+                </div>
+              )}
+            </div>
+          )}
+
+          {(maintDue.upcoming.length > 0 || warranty.expiringSoon.length > 0) && (
+            <div style={{ marginBottom: 14, padding: 14, borderRadius: 12, background: "rgba(245,158,11,0.08)", border: "1px solid rgba(245,158,11,0.25)" }}>
+              <div style={{ fontSize: 13, fontWeight: 800, color: "#F59E0B", marginBottom: 10 }}>⚠️ تنبيهات قريبة (خلال 7-30 يوم)</div>
+              {maintDue.upcoming.length > 0 && (
+                <div style={{ fontSize: 11, color: t.tx, marginBottom: 6 }}>
+                  🔧 <strong>{maintDue.upcoming.length}</strong> صيانة قادمة قريباً
+                </div>
+              )}
+              {warranty.expiringSoon.length > 0 && (
+                <div style={{ fontSize: 11, color: t.tx }}>
+                  🛡️ <strong>{warranty.expiringSoon.length}</strong> ضمان ينتهي قريباً
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* Breakdown by category */}
+          <div style={{ padding: 16, borderRadius: 12, background: t.card, border: "1px solid " + t.sep }}>
+            <div style={{ fontSize: 13, fontWeight: 800, color: t.tx, marginBottom: 12 }}>📊 توزيع الأصول حسب الحالة</div>
+            {Object.keys(ASSET_STATUS_META).map(function(key){
+              var meta = ASSET_STATUS_META[key];
+              var count = assets.filter(function(a){
+                return (a.operationalStatus || "operational") === key;
+              }).length;
+              var pct = stats.total > 0 ? Math.round((count / stats.total) * 100) : 0;
+              return (
+                <div key={key} style={{ marginBottom: 8 }}>
+                  <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 4, fontSize: 11 }}>
+                    <span style={{ color: t.tx, fontWeight: 700 }}>{meta.icon} {meta.label}</span>
+                    <span style={{ color: meta.color, fontWeight: 800 }}>{count} ({pct}%)</span>
+                  </div>
+                  <div style={{ height: 6, borderRadius: 3, background: t.bg, overflow: "hidden" }}>
+                    <div style={{ height: "100%", width: pct + "%", background: meta.color, transition: "width 0.5s" }}></div>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </>
+      )}
+
+      {/* Assets list */}
+      {view === "assets" && (
+        <>
+          <div style={{ display: "flex", gap: 10, marginBottom: 12, flexWrap: "wrap" }}>
+            <input type="text" placeholder="🔍 بحث بالاسم/السيريال/الموظف..." value={search} onChange={function(e){ setSearch(e.target.value); }} style={{ flex: 1, minWidth: 200, padding: "10px 14px", borderRadius: 10, border: "1px solid " + t.sep, background: t.inp, color: t.tx, fontSize: 12, fontFamily: "inherit", outline: "none" }} />
+            <select value={filterStatus} onChange={function(e){ setFilterStatus(e.target.value); }} style={{ padding: "10px 14px", borderRadius: 10, border: "1px solid " + t.sep, background: "#fff", color: "#000", fontSize: 12, fontWeight: 600, cursor: "pointer" }}>
+              <option value="all">كل الحالات</option>
+              {Object.keys(ASSET_STATUS_META).map(function(k){ return <option key={k} value={k}>{ASSET_STATUS_META[k].label}</option>; })}
+            </select>
+          </div>
+
+          {filteredAssets.length === 0 ? (
+            <div style={{ padding: 30, textAlign: "center", color: t.txM, fontSize: 12, background: t.card, borderRadius: 12, border: "1px solid " + t.sep }}>لا يوجد أصول مطابقة</div>
+          ) : (
+            <div style={{ display: "grid", gap: 8 }}>
+              {filteredAssets.map(function(a){
+                var status = ASSET_STATUS_META[a.operationalStatus || "operational"];
+                return (
+                  <div key={a.id} onClick={function(){ setSelectedAsset(a); loadMaintForAsset(a.id); }} style={{ padding: 12, borderRadius: 12, background: t.card, border: "1px solid " + t.sep, cursor: "pointer", display: "flex", alignItems: "center", gap: 12 }}>
+                    <div style={{ width: 48, height: 48, borderRadius: 10, background: status.color + "20", color: status.color, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 22, flexShrink: 0 }}>{status.icon}</div>
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <div style={{ fontSize: 13, fontWeight: 800, color: t.tx }}>{a.name}</div>
+                      <div style={{ fontSize: 10, color: t.txM, marginTop: 2, fontFamily: "monospace" }}>{a.serialNumber || "—"}</div>
+                      <div style={{ fontSize: 10, color: t.txM, marginTop: 2 }}>
+                        👤 {a.empName || "غير مُسند"}
+                        {a.purchaseCost ? " · 💰 " + parseFloat(a.purchaseCost).toLocaleString("ar-SA") + " ر.س" : ""}
+                      </div>
+                    </div>
+                    <div style={{ padding: "5px 10px", borderRadius: 8, background: status.color + "20", color: status.color, fontSize: 10, fontWeight: 800, whiteSpace: "nowrap" }}>
+                      {status.label}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </>
+      )}
+
+      {/* Maintenance view */}
+      {view === "maintenance" && (
+        <>
+          {maintDue.overdue.length > 0 && (
+            <div style={{ marginBottom: 14, padding: 14, borderRadius: 12, background: "rgba(220,38,38,0.08)", border: "1px solid rgba(220,38,38,0.3)" }}>
+              <div style={{ fontSize: 13, fontWeight: 800, color: "#DC2626", marginBottom: 10 }}>🚨 صيانات متأخرة ({maintDue.overdue.length})</div>
+              {maintDue.overdue.map(function(m){
+                return (
+                  <div key={m.id} style={{ padding: 10, borderRadius: 8, background: t.card, marginBottom: 6, border: "1px solid " + t.sep }}>
+                    <div style={{ fontSize: 12, fontWeight: 700, color: t.tx }}>{m.itemName}</div>
+                    <div style={{ fontSize: 10, color: t.txM, marginTop: 2 }}>
+                      الموعد: <strong style={{ color: "#DC2626" }}>{new Date(m.nextDueDate).toLocaleDateString("ar-SA")}</strong>
+                      {m.empName && " · 👤 " + m.empName}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+
+          {maintDue.upcoming.length > 0 && (
+            <div style={{ marginBottom: 14, padding: 14, borderRadius: 12, background: "rgba(245,158,11,0.08)", border: "1px solid rgba(245,158,11,0.3)" }}>
+              <div style={{ fontSize: 13, fontWeight: 800, color: "#F59E0B", marginBottom: 10 }}>⚠️ صيانات قادمة ({maintDue.upcoming.length})</div>
+              {maintDue.upcoming.map(function(m){
+                return (
+                  <div key={m.id} style={{ padding: 10, borderRadius: 8, background: t.card, marginBottom: 6, border: "1px solid " + t.sep }}>
+                    <div style={{ fontSize: 12, fontWeight: 700, color: t.tx }}>{m.itemName}</div>
+                    <div style={{ fontSize: 10, color: t.txM, marginTop: 2 }}>
+                      الموعد: <strong style={{ color: "#F59E0B" }}>{new Date(m.nextDueDate).toLocaleDateString("ar-SA")}</strong>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+
+          {maintDue.overdue.length === 0 && maintDue.upcoming.length === 0 && (
+            <div style={{ padding: 30, textAlign: "center", color: t.txM, fontSize: 12, background: t.card, borderRadius: 12, border: "1px solid " + t.sep }}>
+              <div style={{ fontSize: 32, marginBottom: 8 }}>✅</div>
+              <div>جميع الصيانات محدَّثة — لا توجد صيانات متأخرة أو قادمة قريباً</div>
+            </div>
+          )}
+        </>
+      )}
+
+      {/* Warranty view */}
+      {view === "warranty" && (
+        <>
+          {warranty.expired.length > 0 && (
+            <div style={{ marginBottom: 14 }}>
+              <div style={{ fontSize: 13, fontWeight: 800, color: "#DC2626", marginBottom: 8 }}>🔴 انتهى ضمانها ({warranty.expired.length})</div>
+              {warranty.expired.map(function(a){
+                return (
+                  <div key={a.id} style={{ padding: 10, borderRadius: 8, background: "rgba(220,38,38,0.08)", marginBottom: 6, border: "1px solid rgba(220,38,38,0.3)" }}>
+                    <div style={{ fontSize: 12, fontWeight: 700, color: t.tx }}>{a.name}</div>
+                    <div style={{ fontSize: 10, color: t.txM, marginTop: 2 }}>انتهى: {new Date(a.warrantyEnd).toLocaleDateString("ar-SA")} · {a.warrantyProvider || "—"}</div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+
+          {warranty.expiringSoon.length > 0 && (
+            <div style={{ marginBottom: 14 }}>
+              <div style={{ fontSize: 13, fontWeight: 800, color: "#F59E0B", marginBottom: 8 }}>🟡 ينتهي قريباً خلال 30 يوم ({warranty.expiringSoon.length})</div>
+              {warranty.expiringSoon.map(function(a){
+                return (
+                  <div key={a.id} style={{ padding: 10, borderRadius: 8, background: "rgba(245,158,11,0.08)", marginBottom: 6, border: "1px solid rgba(245,158,11,0.3)" }}>
+                    <div style={{ fontSize: 12, fontWeight: 700, color: t.tx }}>{a.name}</div>
+                    <div style={{ fontSize: 10, color: t.txM, marginTop: 2 }}>ينتهي: {new Date(a.warrantyEnd).toLocaleDateString("ar-SA")} · {a.warrantyProvider || "—"}</div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+
+          {warranty.active.length > 0 && (
+            <div style={{ marginBottom: 14 }}>
+              <div style={{ fontSize: 13, fontWeight: 800, color: "#10B981", marginBottom: 8 }}>🟢 ضمان نشط ({warranty.active.length})</div>
+              <div style={{ fontSize: 10, color: t.txM }}>
+                {warranty.active.map(function(a){ return a.name; }).slice(0, 5).join("، ")}
+                {warranty.active.length > 5 && " +" + (warranty.active.length - 5) + " آخرين"}
+              </div>
+            </div>
+          )}
+
+          {warranty.noWarranty.length > 0 && (
+            <div style={{ marginTop: 14, padding: 12, borderRadius: 10, background: t.bg, border: "1px dashed " + t.sep, fontSize: 11, color: t.txM }}>
+              ℹ️ <strong>{warranty.noWarranty.length}</strong> أصل بدون بيانات ضمان — يمكنك إضافتها من تفاصيل كل أصل
+            </div>
+          )}
+        </>
+      )}
+
+      {/* Asset detail modal */}
+      {selectedAsset && (
+        <AssetDetailModal t={t} B={B} asset={selectedAsset} maintLogs={maintLogs} onClose={function(){ setSelectedAsset(null); setMaintLogs([]); }} onUpdated={function(){ loadAll(); if (selectedAsset) loadMaintForAsset(selectedAsset.id); }} onStatusChange={updateStatus} />
+      )}
+    </div>
+  );
+}
+
+function AssetDetailModal({ t, B, asset, maintLogs, onClose, onUpdated, onStatusChange }) {
+  var [activeTab, setActiveTab] = useState("info");
+  var [showAddMaint, setShowAddMaint] = useState(false);
+  var [showEditWarranty, setShowEditWarranty] = useState(false);
+  var [tco, setTco] = useState(null);
+
+  useEffect(function(){
+    if (activeTab === "costs") {
+      fetch("/api/data?action=custody-tco&custodyId=" + encodeURIComponent(asset.id))
+        .then(function(r){ return r.json(); })
+        .then(function(d){ if (!d.error) setTco(d); })
+        .catch(function(){});
+    }
+  }, [activeTab, asset.id]);
+
+  var status = ASSET_STATUS_META[asset.operationalStatus || "operational"];
+
+  return (
+    <div onClick={onClose} style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.55)", zIndex: 9999, display: "flex", alignItems: "center", justifyContent: "center", padding: 12 }}>
+      <div onClick={function(e){ e.stopPropagation(); }} style={{ background: t.card, borderRadius: 18, maxWidth: 700, width: "100%", maxHeight: "94vh", overflowY: "auto" }}>
+        {/* Header */}
+        <div style={{ padding: "18px 20px", borderBottom: "1px solid " + t.sep, display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+            <div style={{ width: 44, height: 44, borderRadius: 10, background: status.color + "20", color: status.color, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 22 }}>{status.icon}</div>
+            <div>
+              <div style={{ fontSize: 15, fontWeight: 800, color: t.tx }}>{asset.name}</div>
+              <div style={{ fontSize: 10, color: t.txM, marginTop: 2, fontFamily: "monospace" }}>{asset.serialNumber || "—"}</div>
+            </div>
+          </div>
+          <button onClick={onClose} style={{ background: "none", border: "none", fontSize: 22, color: t.txM, cursor: "pointer" }}>×</button>
+        </div>
+
+        {/* Status change buttons */}
+        <div style={{ padding: 14, borderBottom: "1px solid " + t.sep, background: t.bg }}>
+          <div style={{ fontSize: 10, color: t.txM, marginBottom: 6, fontWeight: 700 }}>تغيير الحالة:</div>
+          <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+            {Object.keys(ASSET_STATUS_META).map(function(k){
+              var m = ASSET_STATUS_META[k];
+              var active = (asset.operationalStatus || "operational") === k;
+              return (
+                <button key={k} onClick={function(){
+                  if (active) return;
+                  var reason = window.prompt("سبب تغيير الحالة إلى " + m.label + " (اختياري):");
+                  if (reason !== null) onStatusChange(asset.id, k, reason);
+                }} disabled={active} style={{ padding: "6px 10px", borderRadius: 6, background: active ? m.color : t.card, color: active ? "#fff" : t.tx, border: "1px solid " + m.color, fontSize: 10, fontWeight: 700, cursor: active ? "default" : "pointer", fontFamily: "inherit", opacity: active ? 1 : 0.75 }}>
+                  {m.icon} {m.label}
+                </button>
+              );
+            })}
+          </div>
+        </div>
+
+        {/* Tabs */}
+        <div style={{ display: "flex", gap: 2, padding: "10px 14px", borderBottom: "1px solid " + t.sep }}>
+          {[
+            { id: "info", label: "معلومات" },
+            { id: "maintenance", label: "الصيانة", count: maintLogs.length },
+            { id: "warranty", label: "الضمان" },
+            { id: "costs", label: "التكاليف" },
+            { id: "history", label: "السجل" },
+          ].map(function(ti){
+            var active = activeTab === ti.id;
+            return (
+              <button key={ti.id} onClick={function(){ setActiveTab(ti.id); }} style={{ flex: 1, padding: "7px 4px", borderRadius: 8, background: active ? B.blue + "20" : "transparent", color: active ? B.blue : t.txM, border: "none", fontSize: 11, fontWeight: 700, cursor: "pointer", fontFamily: "inherit" }}>
+                {ti.label} {ti.count !== undefined && ti.count > 0 && <span style={{ fontSize: 9, opacity: 0.7 }}>({ti.count})</span>}
+              </button>
+            );
+          })}
+        </div>
+
+        <div style={{ padding: 16 }}>
+          {activeTab === "info" && (
+            <>
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10, fontSize: 12 }}>
+                {[
+                  ["العلامة التجارية", asset.brand],
+                  ["الموديل", asset.model],
+                  ["الفئة", asset.category],
+                  ["الحالة عند الاستلام", asset.condition],
+                  ["الموظف المسؤول", asset.empName],
+                  ["تاريخ الشراء", asset.purchaseDate ? new Date(asset.purchaseDate).toLocaleDateString("ar-SA") : null],
+                  ["سعر الشراء", asset.purchaseCost ? parseFloat(asset.purchaseCost).toLocaleString("ar-SA") + " ر.س" : null],
+                ].filter(function(x){ return x[1]; }).map(function(row, i){
+                  return (
+                    <div key={i} style={{ padding: 10, borderRadius: 8, background: t.bg, border: "1px solid " + t.sep }}>
+                      <div style={{ fontSize: 10, color: t.txM, fontWeight: 700 }}>{row[0]}</div>
+                      <div style={{ fontSize: 12, color: t.tx, fontWeight: 700, marginTop: 3 }}>{row[1]}</div>
+                    </div>
+                  );
+                })}
+              </div>
+              {asset.statusNote && (
+                <div style={{ marginTop: 12, padding: 10, borderRadius: 8, background: "rgba(245,158,11,0.1)", border: "1px solid rgba(245,158,11,0.3)", fontSize: 11, color: "#D97706" }}>
+                  📝 {asset.statusNote}
+                </div>
+              )}
+            </>
+          )}
+
+          {activeTab === "maintenance" && (
+            <>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>
+                <div style={{ fontSize: 12, fontWeight: 700, color: t.tx }}>{maintLogs.length} سجل صيانة</div>
+                <button onClick={function(){ setShowAddMaint(true); }} style={{ padding: "7px 12px", borderRadius: 8, background: B.blue, color: "#fff", border: "none", fontSize: 11, fontWeight: 800, cursor: "pointer", fontFamily: "inherit" }}>+ إضافة صيانة</button>
+              </div>
+              {maintLogs.length === 0 ? (
+                <div style={{ padding: 30, textAlign: "center", color: t.txM, fontSize: 11 }}>لا يوجد سجلات صيانة بعد</div>
+              ) : (
+                maintLogs.slice().sort(function(a,b){ return (b.date || "").localeCompare(a.date || ""); }).map(function(m){
+                  var mt = MAINT_TYPE_META[m.type] || MAINT_TYPE_META.routine;
+                  return (
+                    <div key={m.id} style={{ padding: 12, borderRadius: 10, background: t.bg, marginBottom: 8, border: "1px solid " + t.sep, borderRight: "3px solid " + mt.color }}>
+                      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 6 }}>
+                        <div style={{ display: "inline-flex", alignItems: "center", gap: 5, padding: "2px 8px", borderRadius: 6, background: mt.color + "20", color: mt.color, fontSize: 10, fontWeight: 800 }}>
+                          {mt.icon} {mt.label}
+                        </div>
+                        <div style={{ fontSize: 10, color: t.txM }}>{new Date(m.date).toLocaleDateString("ar-SA")}</div>
+                      </div>
+                      <div style={{ fontSize: 12, color: t.tx, marginBottom: 4, fontWeight: 600 }}>{m.description}</div>
+                      <div style={{ fontSize: 10, color: t.txM, display: "flex", gap: 10, flexWrap: "wrap" }}>
+                        {m.cost > 0 && <span>💰 {parseFloat(m.cost).toLocaleString("ar-SA")} ر.س</span>}
+                        {m.vendor && <span>🏢 {m.vendor}</span>}
+                        {m.nextDueDate && <span style={{ color: "#F59E0B", fontWeight: 700 }}>📅 التالي: {new Date(m.nextDueDate).toLocaleDateString("ar-SA")}</span>}
+                      </div>
+                      {m.notes && <div style={{ marginTop: 6, fontSize: 10, color: t.txM, fontStyle: "italic" }}>"{m.notes}"</div>}
+                    </div>
+                  );
+                })
+              )}
+            </>
+          )}
+
+          {activeTab === "warranty" && (
+            <>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>
+                <div style={{ fontSize: 12, fontWeight: 700, color: t.tx }}>🛡️ بيانات الضمان</div>
+                <button onClick={function(){ setShowEditWarranty(true); }} style={{ padding: "7px 12px", borderRadius: 8, background: B.blue, color: "#fff", border: "none", fontSize: 11, fontWeight: 800, cursor: "pointer", fontFamily: "inherit" }}>
+                  {asset.warrantyEnd ? "✎ تعديل" : "+ إضافة ضمان"}
+                </button>
+              </div>
+              {asset.warrantyEnd ? (
+                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
+                  <div style={{ padding: 10, borderRadius: 8, background: t.bg, border: "1px solid " + t.sep }}>
+                    <div style={{ fontSize: 10, color: t.txM, fontWeight: 700 }}>بداية الضمان</div>
+                    <div style={{ fontSize: 12, color: t.tx, fontWeight: 700, marginTop: 3 }}>{asset.warrantyStart ? new Date(asset.warrantyStart).toLocaleDateString("ar-SA") : "—"}</div>
+                  </div>
+                  <div style={{ padding: 10, borderRadius: 8, background: t.bg, border: "1px solid " + t.sep }}>
+                    <div style={{ fontSize: 10, color: t.txM, fontWeight: 700 }}>نهاية الضمان</div>
+                    <div style={{ fontSize: 12, color: t.tx, fontWeight: 700, marginTop: 3 }}>{new Date(asset.warrantyEnd).toLocaleDateString("ar-SA")}</div>
+                  </div>
+                  {asset.warrantyProvider && (
+                    <div style={{ padding: 10, borderRadius: 8, background: t.bg, border: "1px solid " + t.sep, gridColumn: "span 2" }}>
+                      <div style={{ fontSize: 10, color: t.txM, fontWeight: 700 }}>مزوّد الضمان</div>
+                      <div style={{ fontSize: 12, color: t.tx, fontWeight: 700, marginTop: 3 }}>{asset.warrantyProvider}</div>
+                    </div>
+                  )}
+                </div>
+              ) : (
+                <div style={{ padding: 20, textAlign: "center", color: t.txM, fontSize: 11 }}>لا توجد بيانات ضمان — أضف الضمان لتتبع تاريخ انتهائه</div>
+              )}
+            </>
+          )}
+
+          {activeTab === "costs" && tco && (
+            <>
+              <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(140px, 1fr))", gap: 10, marginBottom: 14 }}>
+                <div style={{ padding: 12, borderRadius: 10, background: B.blue + "15", border: "1px solid " + B.blue + "40", textAlign: "center" }}>
+                  <div style={{ fontSize: 10, color: t.txM, fontWeight: 700 }}>💰 سعر الشراء</div>
+                  <div style={{ fontSize: 18, fontWeight: 900, color: B.blue, marginTop: 4 }}>{tco.purchaseCost.toLocaleString("ar-SA")}</div>
+                  <div style={{ fontSize: 9, color: t.txM }}>ر.س</div>
+                </div>
+                <div style={{ padding: 12, borderRadius: 10, background: "rgba(245,158,11,0.15)", border: "1px solid rgba(245,158,11,0.4)", textAlign: "center" }}>
+                  <div style={{ fontSize: 10, color: t.txM, fontWeight: 700 }}>🔧 إجمالي الصيانة</div>
+                  <div style={{ fontSize: 18, fontWeight: 900, color: "#F59E0B", marginTop: 4 }}>{tco.maintenanceCost.toLocaleString("ar-SA")}</div>
+                  <div style={{ fontSize: 9, color: t.txM }}>{tco.maintenanceCount} عملية</div>
+                </div>
+                <div style={{ padding: 12, borderRadius: 10, background: "rgba(220,38,38,0.15)", border: "1px solid rgba(220,38,38,0.4)", textAlign: "center" }}>
+                  <div style={{ fontSize: 10, color: t.txM, fontWeight: 700 }}>💸 التكلفة الإجمالية</div>
+                  <div style={{ fontSize: 18, fontWeight: 900, color: "#DC2626", marginTop: 4 }}>{tco.totalCost.toLocaleString("ar-SA")}</div>
+                  <div style={{ fontSize: 9, color: t.txM }}>ر.س</div>
+                </div>
+                {tco.ageYears > 0 && (
+                  <div style={{ padding: 12, borderRadius: 10, background: "rgba(124,58,237,0.15)", border: "1px solid rgba(124,58,237,0.4)", textAlign: "center" }}>
+                    <div style={{ fontSize: 10, color: t.txM, fontWeight: 700 }}>🗓 عمر الأصل</div>
+                    <div style={{ fontSize: 18, fontWeight: 900, color: "#7C3AED", marginTop: 4 }}>{tco.ageYears}</div>
+                    <div style={{ fontSize: 9, color: t.txM }}>سنة</div>
+                  </div>
+                )}
+              </div>
+
+              {Object.keys(tco.byType || {}).length > 0 && (
+                <div style={{ padding: 12, borderRadius: 10, background: t.bg, border: "1px solid " + t.sep }}>
+                  <div style={{ fontSize: 12, fontWeight: 800, color: t.tx, marginBottom: 8 }}>📊 التكلفة حسب النوع</div>
+                  {Object.keys(tco.byType).map(function(type){
+                    var mt = MAINT_TYPE_META[type] || MAINT_TYPE_META.routine;
+                    var cost = tco.byType[type];
+                    var pct = tco.maintenanceCost > 0 ? Math.round((cost / tco.maintenanceCost) * 100) : 0;
+                    return (
+                      <div key={type} style={{ marginBottom: 8 }}>
+                        <div style={{ display: "flex", justifyContent: "space-between", fontSize: 11, marginBottom: 3 }}>
+                          <span style={{ color: t.tx, fontWeight: 700 }}>{mt.icon} {mt.label}</span>
+                          <span style={{ color: mt.color, fontWeight: 800 }}>{cost.toLocaleString("ar-SA")} ر.س ({pct}%)</span>
+                        </div>
+                        <div style={{ height: 5, borderRadius: 3, background: t.card, overflow: "hidden" }}>
+                          <div style={{ height: "100%", width: pct + "%", background: mt.color }}></div>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </>
+          )}
+
+          {activeTab === "history" && (
+            <>
+              <div style={{ fontSize: 12, fontWeight: 800, color: t.tx, marginBottom: 10 }}>📜 تاريخ تغيّرات الحالة</div>
+              {!asset.statusHistory || asset.statusHistory.length === 0 ? (
+                <div style={{ padding: 20, textAlign: "center", color: t.txM, fontSize: 11 }}>لا يوجد تاريخ حالات</div>
+              ) : (
+                asset.statusHistory.slice().reverse().map(function(h, i){
+                  var from = ASSET_STATUS_META[h.previousStatus] || ASSET_STATUS_META.operational;
+                  var to = ASSET_STATUS_META[h.status] || ASSET_STATUS_META.operational;
+                  return (
+                    <div key={i} style={{ padding: 10, borderRadius: 8, background: t.bg, marginBottom: 6, border: "1px solid " + t.sep }}>
+                      <div style={{ fontSize: 11, fontWeight: 700, color: t.tx, display: "flex", alignItems: "center", gap: 6, marginBottom: 4 }}>
+                        <span style={{ color: from.color }}>{from.icon} {from.label}</span>
+                        <span>→</span>
+                        <span style={{ color: to.color }}>{to.icon} {to.label}</span>
+                      </div>
+                      <div style={{ fontSize: 9, color: t.txM }}>
+                        {new Date(h.changedAt).toLocaleString("ar-SA")} · بواسطة {h.changedBy || "—"}
+                      </div>
+                      {h.reason && <div style={{ fontSize: 10, color: t.txM, marginTop: 4, fontStyle: "italic" }}>"{h.reason}"</div>}
+                    </div>
+                  );
+                })
+              )}
+            </>
+          )}
+        </div>
+
+        {showAddMaint && <AddMaintenanceModal t={t} B={B} assetId={asset.id} onClose={function(){ setShowAddMaint(false); }} onSaved={function(){ setShowAddMaint(false); onUpdated(); }} />}
+        {showEditWarranty && <EditWarrantyModal t={t} B={B} asset={asset} onClose={function(){ setShowEditWarranty(false); }} onSaved={function(){ setShowEditWarranty(false); onUpdated(); }} />}
+      </div>
+    </div>
+  );
+}
+
+function AddMaintenanceModal({ t, B, assetId, onClose, onSaved }) {
+  var [type, setType] = useState("routine");
+  var [description, setDescription] = useState("");
+  var [cost, setCost] = useState("");
+  var [vendor, setVendor] = useState("");
+  var [date, setDate] = useState(new Date().toISOString().split("T")[0]);
+  var [nextDueDate, setNextDueDate] = useState("");
+  var [notes, setNotes] = useState("");
+  var [saving, setSaving] = useState(false);
+
+  async function save() {
+    if (!description) { alert("وصف الصيانة مطلوب"); return; }
+    setSaving(true);
+    try {
+      await fetch("/api/data?action=custody_maintenance", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          custodyId: assetId, type: type, description: description,
+          cost: cost, vendor: vendor, date: date, nextDueDate: nextDueDate || null,
+          notes: notes, doneBy: "admin",
+        }),
+      });
+      onSaved();
+    } catch(e) { alert("خطأ"); }
+    setSaving(false);
+  }
+
+  var inputStyle = { width: "100%", padding: "9px 12px", borderRadius: 8, border: "1px solid " + t.sep, background: t.inp, color: t.tx, fontSize: 12, outline: "none", boxSizing: "border-box", fontFamily: "inherit" };
+
+  return (
+    <div onClick={onClose} style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.6)", zIndex: 10000, display: "flex", alignItems: "center", justifyContent: "center", padding: 12 }}>
+      <div onClick={function(e){ e.stopPropagation(); }} style={{ background: t.card, borderRadius: 16, maxWidth: 500, width: "100%", maxHeight: "90vh", overflowY: "auto" }}>
+        <div style={{ padding: "16px 20px", borderBottom: "1px solid " + t.sep, display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+          <div style={{ fontSize: 15, fontWeight: 800, color: t.tx }}>🔧 إضافة صيانة</div>
+          <button onClick={onClose} style={{ background: "none", border: "none", fontSize: 20, color: t.txM, cursor: "pointer" }}>×</button>
+        </div>
+        <div style={{ padding: 16 }}>
+          <div style={{ marginBottom: 10 }}>
+            <div style={{ fontSize: 10, color: t.txM, fontWeight: 700, marginBottom: 4 }}>نوع الصيانة</div>
+            <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+              {Object.keys(MAINT_TYPE_META).map(function(k){
+                var m = MAINT_TYPE_META[k];
+                var active = type === k;
+                return (
+                  <button key={k} onClick={function(){ setType(k); }} style={{ flex: 1, minWidth: 100, padding: "8px 10px", borderRadius: 8, background: active ? m.color : t.bg, color: active ? "#fff" : t.tx, border: "1px solid " + (active ? m.color : t.sep), fontSize: 11, fontWeight: 700, cursor: "pointer", fontFamily: "inherit" }}>
+                    {m.icon} {m.label}
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+
+          <div style={{ marginBottom: 10 }}>
+            <div style={{ fontSize: 10, color: t.txM, fontWeight: 700, marginBottom: 4 }}>الوصف *</div>
+            <textarea value={description} onChange={function(e){ setDescription(e.target.value); }} placeholder="مثال: تغيير زيت، استبدال بطارية، فحص دوري..." style={Object.assign({}, inputStyle, { minHeight: 60, resize: "vertical" })} />
+          </div>
+
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10, marginBottom: 10 }}>
+            <div>
+              <div style={{ fontSize: 10, color: t.txM, fontWeight: 700, marginBottom: 4 }}>التكلفة (ر.س)</div>
+              <input type="number" value={cost} onChange={function(e){ setCost(e.target.value); }} placeholder="0" style={inputStyle} />
+            </div>
+            <div>
+              <div style={{ fontSize: 10, color: t.txM, fontWeight: 700, marginBottom: 4 }}>مزوّد الخدمة</div>
+              <input type="text" value={vendor} onChange={function(e){ setVendor(e.target.value); }} placeholder="اسم المحل/الفني" style={inputStyle} />
+            </div>
+            <div>
+              <div style={{ fontSize: 10, color: t.txM, fontWeight: 700, marginBottom: 4 }}>تاريخ الصيانة</div>
+              <input type="date" value={date} onChange={function(e){ setDate(e.target.value); }} style={inputStyle} />
+            </div>
+            <div>
+              <div style={{ fontSize: 10, color: t.txM, fontWeight: 700, marginBottom: 4 }}>تاريخ الصيانة القادمة</div>
+              <input type="date" value={nextDueDate} onChange={function(e){ setNextDueDate(e.target.value); }} style={inputStyle} />
+            </div>
+          </div>
+
+          <div style={{ marginBottom: 10 }}>
+            <div style={{ fontSize: 10, color: t.txM, fontWeight: 700, marginBottom: 4 }}>ملاحظات</div>
+            <textarea value={notes} onChange={function(e){ setNotes(e.target.value); }} style={Object.assign({}, inputStyle, { minHeight: 50, resize: "vertical" })} />
+          </div>
+        </div>
+        <div style={{ padding: "12px 20px", borderTop: "1px solid " + t.sep, display: "flex", gap: 10 }}>
+          <button onClick={onClose} style={{ flex: 1, padding: 10, borderRadius: 10, background: t.bg, color: t.tx, border: "1px solid " + t.sep, fontSize: 12, fontWeight: 700, cursor: "pointer", fontFamily: "inherit" }}>إلغاء</button>
+          <button onClick={save} disabled={saving} style={{ flex: 2, padding: 10, borderRadius: 10, background: B.blue, color: "#fff", border: "none", fontSize: 12, fontWeight: 800, cursor: "pointer", fontFamily: "inherit" }}>
+            {saving ? "جارِ الحفظ..." : "✓ حفظ"}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function EditWarrantyModal({ t, B, asset, onClose, onSaved }) {
+  var [warrantyStart, setWarrantyStart] = useState(asset.warrantyStart || "");
+  var [warrantyEnd, setWarrantyEnd] = useState(asset.warrantyEnd || "");
+  var [warrantyProvider, setWarrantyProvider] = useState(asset.warrantyProvider || "");
+  var [warrantyNote, setWarrantyNote] = useState(asset.warrantyNote || "");
+  var [saving, setSaving] = useState(false);
+
+  async function save() {
+    if (!warrantyEnd) { alert("تاريخ انتهاء الضمان مطلوب"); return; }
+    setSaving(true);
+    try {
+      await fetch("/api/data?action=custody-warranty", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ custodyId: asset.id, warrantyStart: warrantyStart, warrantyEnd: warrantyEnd, warrantyProvider: warrantyProvider, warrantyNote: warrantyNote }),
+      });
+      onSaved();
+    } catch(e) { alert("خطأ"); }
+    setSaving(false);
+  }
+
+  var inputStyle = { width: "100%", padding: "9px 12px", borderRadius: 8, border: "1px solid " + t.sep, background: t.inp, color: t.tx, fontSize: 12, outline: "none", boxSizing: "border-box", fontFamily: "inherit" };
+
+  return (
+    <div onClick={onClose} style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.6)", zIndex: 10000, display: "flex", alignItems: "center", justifyContent: "center", padding: 12 }}>
+      <div onClick={function(e){ e.stopPropagation(); }} style={{ background: t.card, borderRadius: 16, maxWidth: 460, width: "100%" }}>
+        <div style={{ padding: "16px 20px", borderBottom: "1px solid " + t.sep, display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+          <div style={{ fontSize: 15, fontWeight: 800, color: t.tx }}>🛡️ تعديل الضمان</div>
+          <button onClick={onClose} style={{ background: "none", border: "none", fontSize: 20, color: t.txM, cursor: "pointer" }}>×</button>
+        </div>
+        <div style={{ padding: 16 }}>
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10, marginBottom: 10 }}>
+            <div>
+              <div style={{ fontSize: 10, color: t.txM, fontWeight: 700, marginBottom: 4 }}>بداية الضمان</div>
+              <input type="date" value={warrantyStart} onChange={function(e){ setWarrantyStart(e.target.value); }} style={inputStyle} />
+            </div>
+            <div>
+              <div style={{ fontSize: 10, color: t.txM, fontWeight: 700, marginBottom: 4 }}>نهاية الضمان *</div>
+              <input type="date" value={warrantyEnd} onChange={function(e){ setWarrantyEnd(e.target.value); }} style={inputStyle} />
+            </div>
+          </div>
+          <div style={{ marginBottom: 10 }}>
+            <div style={{ fontSize: 10, color: t.txM, fontWeight: 700, marginBottom: 4 }}>مزوّد الضمان</div>
+            <input type="text" value={warrantyProvider} onChange={function(e){ setWarrantyProvider(e.target.value); }} placeholder="مثال: HP Saudi Arabia" style={inputStyle} />
+          </div>
+          <div style={{ marginBottom: 10 }}>
+            <div style={{ fontSize: 10, color: t.txM, fontWeight: 700, marginBottom: 4 }}>ملاحظات</div>
+            <textarea value={warrantyNote} onChange={function(e){ setWarrantyNote(e.target.value); }} placeholder="رقم البوليصة، شروط خاصة..." style={Object.assign({}, inputStyle, { minHeight: 50, resize: "vertical" })} />
+          </div>
+        </div>
+        <div style={{ padding: "12px 20px", borderTop: "1px solid " + t.sep, display: "flex", gap: 10 }}>
+          <button onClick={onClose} style={{ flex: 1, padding: 10, borderRadius: 10, background: t.bg, color: t.tx, border: "1px solid " + t.sep, fontSize: 12, fontWeight: 700, cursor: "pointer", fontFamily: "inherit" }}>إلغاء</button>
+          <button onClick={save} disabled={saving} style={{ flex: 2, padding: 10, borderRadius: 10, background: B.blue, color: "#fff", border: "none", fontSize: 12, fontWeight: 800, cursor: "pointer", fontFamily: "inherit" }}>
+            {saving ? "جارِ الحفظ..." : "✓ حفظ"}
+          </button>
+        </div>
+      </div>
     </div>
   );
 }

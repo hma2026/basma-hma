@@ -11,7 +11,7 @@ import { exportEmploymentLetter, exportLeaveLetter } from "./formalPdfs";
 
 /* ═══════════ APP CONFIG (إعدادات التطبيق) ═══════════ */
 const APP_CONFIG = {
-  VER: "6.53",
+  VER: "6.62",
   NAME: "بصمة HMA",
   FULL_NAME: "نظام الحضور والانصراف الذكي",
   COMPANY: "هاني محمد عسيري للاستشارات الهندسية",
@@ -186,6 +186,101 @@ async function api(action, opts = {}) {
   return r.json();
 }
 
+/* v6.62 — Offline Queue System
+   يحفظ الطلبات المُؤجَّلة في localStorage ويرسلها عند عودة الاتصال */
+const OFFLINE_QUEUE_KEY = "basma_offline_queue";
+
+function queueOfflineRequest(action, opts) {
+  try {
+    var queue = JSON.parse(localStorage.getItem(OFFLINE_QUEUE_KEY) || "[]");
+    var item = {
+      id: "Q" + Date.now() + "_" + Math.random().toString(36).substr(2, 6),
+      action: action,
+      opts: opts,
+      queuedAt: new Date().toISOString(),
+      attempts: 0,
+      lastError: null,
+    };
+    queue.push(item);
+    localStorage.setItem(OFFLINE_QUEUE_KEY, JSON.stringify(queue));
+    // Try to register background sync
+    if ('serviceWorker' in navigator && 'SyncManager' in window) {
+      navigator.serviceWorker.ready.then(function(reg){
+        return reg.sync.register('basma-queue-sync');
+      }).catch(function(){});
+    }
+    return item;
+  } catch(e) {
+    console.error("Queue save failed:", e);
+    return null;
+  }
+}
+
+function getOfflineQueue() {
+  try { return JSON.parse(localStorage.getItem(OFFLINE_QUEUE_KEY) || "[]"); }
+  catch(e) { return []; }
+}
+
+function removeFromQueue(id) {
+  try {
+    var queue = getOfflineQueue().filter(function(q){ return q.id !== id; });
+    localStorage.setItem(OFFLINE_QUEUE_KEY, JSON.stringify(queue));
+  } catch(e) {}
+}
+
+function updateQueueItem(id, updates) {
+  try {
+    var queue = getOfflineQueue();
+    var idx = queue.findIndex(function(q){ return q.id === id; });
+    if (idx >= 0) {
+      queue[idx] = Object.assign({}, queue[idx], updates);
+      localStorage.setItem(OFFLINE_QUEUE_KEY, JSON.stringify(queue));
+    }
+  } catch(e) {}
+}
+
+async function processOfflineQueue() {
+  if (!navigator.onLine) return { success: 0, failed: 0, remaining: 0 };
+  var queue = getOfflineQueue();
+  if (queue.length === 0) return { success: 0, failed: 0, remaining: 0 };
+
+  var successCount = 0, failedCount = 0;
+  for (var i = 0; i < queue.length; i++) {
+    var item = queue[i];
+    try {
+      var result = await api(item.action, item.opts);
+      if (result && !result.error) {
+        removeFromQueue(item.id);
+        successCount++;
+      } else {
+        updateQueueItem(item.id, { attempts: (item.attempts || 0) + 1, lastError: result.error || "unknown" });
+        failedCount++;
+      }
+    } catch(e) {
+      updateQueueItem(item.id, { attempts: (item.attempts || 0) + 1, lastError: e.message });
+      failedCount++;
+    }
+  }
+  return { success: successCount, failed: failedCount, remaining: getOfflineQueue().length };
+}
+
+/* Smart API wrapper: queue mutations if offline */
+async function apiWithQueue(action, opts) {
+  if (!navigator.onLine && opts && opts.method && opts.method !== "GET") {
+    var queued = queueOfflineRequest(action, opts);
+    return { _queued: true, queueId: queued && queued.id, ok: true, offline: true };
+  }
+  try {
+    return await api(action, opts);
+  } catch(e) {
+    if (opts && opts.method && opts.method !== "GET") {
+      var queued = queueOfflineRequest(action, opts);
+      return { _queued: true, queueId: queued && queued.id, ok: true, offline: true };
+    }
+    throw e;
+  }
+}
+
 /* ── Date Helpers ── */
 const AR_DAYS = ["الأحد","الاثنين","الثلاثاء","الأربعاء","الخميس","الجمعة","السبت"];
 const AR_MONTHS = ["يناير","فبراير","مارس","أبريل","مايو","يونيو","يوليو","أغسطس","سبتمبر","أكتوبر","نوفمبر","ديسمبر"];
@@ -210,6 +305,22 @@ function formatTimeStr(ts) {
 }
 
 function todayStr() { return new Date().toISOString().split("T")[0]; }
+
+/* v6.61 — WebAuthn base64url helpers */
+function base64urlToUint8Array(base64url) {
+  var padding = "=".repeat((4 - (base64url.length % 4)) % 4);
+  var base64 = (base64url + padding).replace(/-/g, "+").replace(/_/g, "/");
+  var raw = window.atob(base64);
+  var arr = new Uint8Array(raw.length);
+  for (var i = 0; i < raw.length; i++) arr[i] = raw.charCodeAt(i);
+  return arr;
+}
+
+function uint8ArrayToBase64url(arr) {
+  var str = "";
+  for (var i = 0; i < arr.length; i++) str += String.fromCharCode(arr[i]);
+  return window.btoa(str).replace(/\+/g, "-").replace(/\//g, "_").replace(/=/g, "");
+}
 
 function timeToMin(str) {
   const [h, m] = str.split(":").map(Number);
@@ -260,6 +371,51 @@ const CRITERIA_WEIGHTS = {
 
 /* ── Membership Note ── */
 const MEMBERSHIP_NOTE = "هذه العضوية مقياس ذاتي تلقائي لانضباط الموظف والتزامه باستخدام وسائل وتطبيقات المكتب — وليست مقياساً للأداء الوظيفي السنوي.";
+
+/* ═══ ACHIEVEMENTS — إنجازات وشارات (v6.57) ═══ */
+const ACHIEVEMENTS = [
+  // Attendance streaks
+  { id: "first_day",      icon: "🎯", name: "أول يوم", desc: "سجّلت أول حضور في بصمة",       points: 10,  category: "attendance" },
+  { id: "streak_7",       icon: "🔥", name: "أسبوع كامل", desc: "7 أيام حضور متتالية",        points: 50,  category: "attendance" },
+  { id: "streak_30",      icon: "💎", name: "شهر ذهبي", desc: "30 يوم حضور متتالي",           points: 200, category: "attendance" },
+  { id: "streak_90",      icon: "👑", name: "ربع سنة ملكي", desc: "90 يوم حضور متتالي",       points: 500, category: "attendance" },
+  // Punctuality
+  { id: "early_bird_10",  icon: "🌅", name: "بكير الطير", desc: "10 مرات حضور قبل 8:00",       points: 40,  category: "punctuality" },
+  { id: "zero_late_month",icon: "⏰", name: "انضباط كامل", desc: "شهر بدون أي تأخير",           points: 150, category: "punctuality" },
+  // Engagement
+  { id: "profile_complete", icon: "✅", name: "ملف مكتمل", desc: "أكملت كل بيانات ملفك",      points: 30,  category: "engagement" },
+  { id: "face_registered",icon: "👤", name: "بصمة الوجه", desc: "سجّلت بصمة الوجه",             points: 25,  category: "engagement" },
+  { id: "push_enabled",   icon: "🔔", name: "إشعارات مفعّلة", desc: "فعّلت الإشعارات على جهازك", points: 20, category: "engagement" },
+  // Tawasul
+  { id: "first_task",     icon: "📋", name: "أول مهمة", desc: "أنشأت أول مهمة في تواصل",       points: 15,  category: "tawasul" },
+  { id: "task_pro",       icon: "⚡", name: "منفذ مهام", desc: "أنجزت 20 مهمة",                 points: 100, category: "tawasul" },
+  { id: "task_hero",      icon: "🏆", name: "بطل المهام", desc: "أنجزت 100 مهمة",              points: 400, category: "tawasul" },
+  // Leadership (managers)
+  { id: "mentor",         icon: "🧑‍🏫", name: "مرشد", desc: "وافقت على 10 طلبات لفريقك",       points: 60,  category: "leadership" },
+];
+
+function getUnlockedAchievements(user, stats) {
+  stats = stats || {};
+  var unlocked = [];
+  ACHIEVEMENTS.forEach(function(a){
+    var isUnlocked = false;
+    if (a.id === "first_day" && stats.totalDays >= 1) isUnlocked = true;
+    else if (a.id === "streak_7" && stats.maxStreak >= 7) isUnlocked = true;
+    else if (a.id === "streak_30" && stats.maxStreak >= 30) isUnlocked = true;
+    else if (a.id === "streak_90" && stats.maxStreak >= 90) isUnlocked = true;
+    else if (a.id === "early_bird_10" && stats.earlyCheckins >= 10) isUnlocked = true;
+    else if (a.id === "zero_late_month" && stats.zeroLateMonth) isUnlocked = true;
+    else if (a.id === "profile_complete" && stats.profileComplete) isUnlocked = true;
+    else if (a.id === "face_registered" && stats.hasFace) isUnlocked = true;
+    else if (a.id === "push_enabled" && stats.pushEnabled) isUnlocked = true;
+    else if (a.id === "first_task" && stats.tasksCreated >= 1) isUnlocked = true;
+    else if (a.id === "task_pro" && stats.tasksCompleted >= 20) isUnlocked = true;
+    else if (a.id === "task_hero" && stats.tasksCompleted >= 100) isUnlocked = true;
+    else if (a.id === "mentor" && stats.approvalsGiven >= 10) isUnlocked = true;
+    unlocked.push(Object.assign({}, a, { unlocked: isUnlocked }));
+  });
+  return unlocked;
+}
 
 function haversine(lat1, lon1, lat2, lon2) {
   const R = 6371e3, toRad = x => x * Math.PI / 180;
@@ -608,12 +764,32 @@ function MobileAppInner() {
   }, []);
 
   useEffect(() => {
-    const on = () => setOnline(true);
+    const on = async () => {
+      setOnline(true);
+      // v6.62 — Process offline queue on reconnect
+      var result = await processOfflineQueue();
+      if (result.success > 0) {
+        showToast("✅ تم إرسال " + result.success + " عملية كانت في انتظار الاتصال");
+        // Trigger data reload
+        if (user) loadData(user);
+      }
+    };
     const off = () => setOnline(false);
     window.addEventListener("online", on);
     window.addEventListener("offline", off);
+    // Also listen for messages from service worker
+    if ('serviceWorker' in navigator) {
+      navigator.serviceWorker.addEventListener('message', function(e){
+        if (e.data && e.data.type === 'sync-queue') on();
+      });
+    }
+    // Process queue on mount if online and has items
+    if (navigator.onLine) {
+      var queue = getOfflineQueue();
+      if (queue.length > 0) on();
+    }
     return () => { window.removeEventListener("online", on); window.removeEventListener("offline", off); };
-  }, []);
+  }, [user]);
 
   // PWA install prompt
   useEffect(() => {
@@ -1058,6 +1234,63 @@ function MobileAppInner() {
     finally { setLoading(false); }
   }
 
+  // v6.61 — Biometric login (WebAuthn)
+  async function handleBiometricLogin() {
+    setLoading(true);
+    try {
+      var lastEmpId = localStorage.getItem("basma_biometric_empId");
+      if (!lastEmpId) { setLoading(false); return "لا يوجد بصمة مسجّلة على هذا الجهاز"; }
+
+      // 1. Get challenge from server
+      var cRes = await fetch("/api/data?action=biometric-login-challenge", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ empId: lastEmpId }),
+      });
+      var cData = await cRes.json();
+      if (!cRes.ok) { setLoading(false); return cData.error || "خطأ"; }
+
+      // 2. Prompt user for biometric
+      var publicKey = {
+        challenge: base64urlToUint8Array(cData.challenge),
+        allowCredentials: (cData.allowCredentials || []).map(function(c){
+          return { type: c.type, id: base64urlToUint8Array(c.id), transports: c.transports };
+        }),
+        timeout: cData.timeout || 60000,
+        userVerification: cData.userVerification || "required",
+      };
+      var assertion = await navigator.credentials.get({ publicKey: publicKey });
+
+      // 3. Send assertion to server
+      var credential = {
+        id: assertion.id,
+        rawId: uint8ArrayToBase64url(new Uint8Array(assertion.rawId)),
+        type: assertion.type,
+        response: {
+          authenticatorData: uint8ArrayToBase64url(new Uint8Array(assertion.response.authenticatorData)),
+          clientDataJSON: uint8ArrayToBase64url(new Uint8Array(assertion.response.clientDataJSON)),
+          signature: uint8ArrayToBase64url(new Uint8Array(assertion.response.signature)),
+        },
+      };
+      var vRes = await fetch("/api/data?action=biometric-login-verify", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ empId: lastEmpId, credential: credential }),
+      });
+      var vData = await vRes.json();
+      if (!vRes.ok || !vData.ok) { setLoading(false); return vData.error || "فشل التحقق"; }
+
+      setUser(vData.employee);
+      localStorage.setItem("basma_user", JSON.stringify(vData.employee));
+      await loadData(vData.employee);
+      setInitDone(true);
+      return null;
+    } catch(e) {
+      console.error("Biometric login failed:", e);
+      return e.message || "فشل الدخول بالبصمة";
+    } finally { setLoading(false); }
+  }
+
   function requestCheckin(type, label) { setConfirmModal({ type, label }); }
 
   function confirmCheckin() {
@@ -1126,7 +1359,16 @@ function MobileAppInner() {
         return;
       }
 
-      var r = await api("checkin", { method: "POST", body: checkinBody });
+      var r = await apiWithQueue("checkin", { method: "POST", body: checkinBody });
+      if (r._queued) {
+        // Offline - saved to queue
+        setTodayAtt(function(prev) { return [].concat(prev, [{ id: "PENDING_" + Date.now(), empId: user.id, type: type, ts: new Date().toISOString(), _queued: true }]); });
+        var offlineLabels = { checkin: "💾 سُجّل حضورك محلياً — سيُرسل عند عودة الاتصال", break_start: "💾 استراحة مسجّلة محلياً", break_end: "💾 عودة مسجّلة محلياً", checkout: "💾 انصراف مسجّل محلياً" };
+        showToast(offlineLabels[type] || "💾 سُجّل محلياً");
+        if (navigator.vibrate) navigator.vibrate([100, 50, 100]);
+        setLoading(false);
+        return;
+      }
       if (r.ok) {
         setTodayAtt(function(prev) { return [].concat(prev, [r.record]); });
         var labels = { checkin: MASCOT.done, break_start: "بداية الاستراحة ☕", break_end: "تم تسجيل العودة 🔄", checkout: "تم تسجيل الانصراف 🌙" };
@@ -1191,22 +1433,23 @@ function MobileAppInner() {
   }
 
   if (!initDone) return <SplashScreen />;
-  if (!user) return <LoginScreen onLogin={handleLogin} loading={loading} />;
+  if (!user) return <LoginScreen onLogin={handleLogin} onBiometric={handleBiometricLogin} loading={loading} />;
   if (!consentGiven) return <ConsentScreen onAccept={function(){ localStorage.setItem("basma_consent_date", new Date().toISOString()); setConsentGiven(true); }} />;
 
   return (
     <div style={Object.assign({}, S.phone, isDesktopSession ? { maxWidth: 860, width: "100%" } : {})}>
-      {!online && <div style={{ background: C.red, color: "#fff", textAlign: "center", padding: "6px 0", fontSize: 11, fontWeight: 700 }}>⚠️ لا يوجد اتصال بالإنترنت</div>}
+      {!online && <OfflineBanner />}
 
       <div key={page} style={{ flex: 1, display: "flex", flexDirection: "column", animation: "pageIn .3s ease" }}>
         {page === "home" && <HomePage user={user} branch={branch} workType={workType} now={now} todayAtt={todayAtt} allAtt={allAtt} gps={gps} gpsDist={gpsDist} streak={streak} loading={loading} refreshing={refreshing} dayState={getDayState()} checkpoints={getCheckpoints()} isOffDay={isOffDay()} pendingCount={myLeaves.filter(function(l){ return l.status === "pending"; }).length + myTickets.filter(function(t){ return t.status === "pending"; }).length} teamToday={teamToday} pwaPrompt={pwaPrompt} onPwaInstall={async function(){ if(pwaPrompt){pwaPrompt.prompt();await pwaPrompt.userChoice;setPwaPrompt(null);} }} onCheckin={requestCheckin} onChallenge={function(pts) { var u = { ...user, points: (user.points||0)+pts }; setUser(u); localStorage.setItem("basma_user", JSON.stringify(u)); showToast("🎉 +" + pts + " نقطة!"); }} onLeave={() => setLeaveModal(true)} onRefresh={refresh} onPreAbsence={function(){ setPreAbsModal(true); }} onManualAtt={function(){ setManualAttModal(true); }} onPermission={function(){ setPermModal(true); }} kadwarNotifs={kadwarNotifs} darkMode={darkMode} announcements={announcements} banners={banners} fieldProjects={fieldProjects} onShowAnnouncements={function(){ setShowAnnModal(true); }} />}
         {page === "report" && <ReportPage user={user} allAtt={allAtt} todayAtt={todayAtt} branch={branch} isOffDay={isOffDay()} myLeaves={myLeaves} allEmps={allEmps} />}
         {page === "benefits" && <BenefitsPage user={user} />}
         {page === "tawasul" && <TawasulPage user={user} allEmps={allEmps} />}
+        {page === "team" && <MyTeamPage user={user} allEmps={allEmps} />}
         {page === "profile" && <ProfilePage user={user} branch={branch} workType={workType} onLogout={logout} onTicket={() => setTicketModal(true)} myTickets={myTickets} darkMode={darkMode} toggleDark={toggleDark} kadwarNotifs={kadwarNotifs} />}
       </div>
 
-      {!isDesktopSession && <BottomNav page={page} setPage={setPage} legalAlerts={legalAlerts} tawasulUnread={tawasulUnread} />}
+      {!isDesktopSession && <BottomNav page={page} setPage={setPage} legalAlerts={legalAlerts} tawasulUnread={tawasulUnread} user={user} />}
 
       {/* Notification Bell — floating */}
       {user && unreadCount > 0 && !showNotifs && (
@@ -1232,15 +1475,141 @@ function MobileAppInner() {
       {confirmModal && <ConfirmModal label={confirmModal.label} onConfirm={confirmCheckin} onCancel={() => setConfirmModal(null)} />}
       {faceModal && <FaceModal empId={user.id} onVerified={(photo) => doCheckin(faceModal.type, photo)} onSkip={() => doCheckin(faceModal.type)} onCancel={() => setFaceModal(null)} />}
       {challengeOpen && <ChallengeModal user={user} onClose={() => setChallengeOpen(false)} onPoints={(pts) => { const u = { ...user, points: (user.points||0)+pts }; setUser(u); localStorage.setItem("basma_user", JSON.stringify(u)); showToast("🎉 +" + pts + " نقطة!"); }} />}
-      {leaveModal && <LeaveModal user={user} onClose={() => setLeaveModal(false)} onSubmit={async (data) => { try { await api("leaves", { method: "POST", body: { empId: user.id, ...data } }); setLeaveModal(false); showToast("تم إرسال طلب الإجازة ✓"); } catch { showToast("خطأ في الإرسال", "error"); } }} />}
-      {ticketModal && <TicketModal user={user} onClose={() => setTicketModal(false)} onSubmit={async (data) => { try { await api("tickets", { method: "POST", body: { empId: user.id, empName: user.name, ...data } }); setTicketModal(false); showToast("تم إرسال التذكرة ✓"); } catch { showToast("خطأ في الإرسال", "error"); } }} />}
+      {leaveModal && <LeaveModal user={user} onClose={() => setLeaveModal(false)} onSubmit={async (data) => { try { var r = await apiWithQueue("leaves", { method: "POST", body: { empId: user.id, ...data } }); setLeaveModal(false); showToast(r._queued ? "💾 طلب الإجازة محفوظ محلياً — سيُرسل عند عودة الاتصال" : "تم إرسال طلب الإجازة ✓"); } catch { showToast("خطأ في الإرسال", "error"); } }} />}
+      {ticketModal && <TicketModal user={user} onClose={() => setTicketModal(false)} onSubmit={async (data) => { try { var r = await apiWithQueue("tickets", { method: "POST", body: { empId: user.id, empName: user.name, ...data } }); setTicketModal(false); showToast(r._queued ? "💾 التذكرة محفوظة محلياً" : "تم إرسال التذكرة ✓"); } catch { showToast("خطأ في الإرسال", "error"); } }} />}
       {daySummary && <DaySummaryModal todayAtt={todayAtt} branch={branch} user={user} onClose={() => setDaySummary(false)} />}
-      {preAbsModal && <PreAbsenceModal allEmps={allEmps} user={user} onClose={function(){ setPreAbsModal(false); }} onSubmit={async function(data) { try { await api("pre_absence", { method: "POST", body: { ...data, reportedBy: user.id } }); setPreAbsModal(false); showToast("✅ تم تسجيل الإفادة المسبقة"); } catch(e) { showToast("خطأ في الإرسال", "error"); } }} />}
+      {preAbsModal && <PreAbsenceModal allEmps={allEmps} user={user} onClose={function(){ setPreAbsModal(false); }} onSubmit={async function(data) { try { var r = await apiWithQueue("pre_absence", { method: "POST", body: { ...data, reportedBy: user.id } }); setPreAbsModal(false); showToast(r._queued ? "💾 إفادة الغياب محفوظة محلياً" : "✅ تم تسجيل الإفادة المسبقة"); } catch(e) { showToast("خطأ في الإرسال", "error"); } }} />}
       {manualAttModal && <ManualAttModal allEmps={allEmps} user={user} onClose={function(){ setManualAttModal(false); }} onSubmit={async function(data) { try { await api("manual_checkin", { method: "POST", body: { ...data, adminId: user.id } }); setManualAttModal(false); showToast("✅ تم التحضير اليدوي"); loadData(user); } catch(e) { showToast("خطأ", "error"); } }} />}
-      {permModal && <PermissionModal user={user} branch={branch} onClose={function(){ setPermModal(false); }} onSubmit={async function(data) { try { await api("permissions", { method: "POST", body: { empId: user.id, ...data, date: todayStr() } }); setPermModal(false); showToast("✅ تم إرسال طلب الإذن"); } catch(e) { showToast("خطأ في الإرسال", "error"); } }} />}
+      {permModal && <PermissionModal user={user} branch={branch} onClose={function(){ setPermModal(false); }} onSubmit={async function(data) { try { var r = await apiWithQueue("permissions", { method: "POST", body: { empId: user.id, ...data, date: todayStr() } }); setPermModal(false); showToast(r._queued ? "💾 طلب الاستئذان محفوظ محلياً" : "✅ تم إرسال طلب الإذن"); } catch(e) { showToast("خطأ في الإرسال", "error"); } }} />}
       {showAnnModal && <AnnouncementsModal announcements={announcements} user={user} onClose={function(){ setShowAnnModal(false); }} onRead={async function(id){
         try { await fetch("/api/data?action=announcement-read", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ empId: user.id, announcementId: id }) }); } catch(e) {}
       }} />}
+    </div>
+  );
+}
+
+/* ═══════════ OFFLINE BANNER (v6.62) ═══════════ */
+function OfflineBanner() {
+  var [queueCount, setQueueCount] = useState(function(){ return getOfflineQueue().length; });
+  var [showDetails, setShowDetails] = useState(false);
+
+  useEffect(function(){
+    var interval = setInterval(function(){
+      setQueueCount(getOfflineQueue().length);
+    }, 2000);
+    // Listen for storage changes
+    var onStorage = function(e){
+      if (e.key === OFFLINE_QUEUE_KEY) setQueueCount(getOfflineQueue().length);
+    };
+    window.addEventListener("storage", onStorage);
+    return function(){
+      clearInterval(interval);
+      window.removeEventListener("storage", onStorage);
+    };
+  }, []);
+
+  return (
+    <>
+      <div onClick={function(){ if (queueCount > 0) setShowDetails(true); }} style={{ background: "linear-gradient(135deg, #ef4444, #dc2626)", color: "#fff", textAlign: "center", padding: "8px 12px", fontSize: 11, fontWeight: 700, cursor: queueCount > 0 ? "pointer" : "default", display: "flex", alignItems: "center", justifyContent: "center", gap: 8 }}>
+        <span style={{ fontSize: 14 }}>📡</span>
+        <span>لا يوجد اتصال بالإنترنت</span>
+        {queueCount > 0 && (
+          <span style={{ padding: "2px 8px", borderRadius: 8, background: "rgba(255,255,255,0.25)", fontSize: 10, fontWeight: 800 }}>
+            {queueCount} في الانتظار ›
+          </span>
+        )}
+      </div>
+
+      {showDetails && <OfflineQueueModal onClose={function(){ setShowDetails(false); }} />}
+    </>
+  );
+}
+
+function OfflineQueueModal({ onClose }) {
+  var [queue, setQueue] = useState(getOfflineQueue());
+  var [processing, setProcessing] = useState(false);
+
+  var actionLabels = {
+    checkin: "تسجيل حضور/انصراف",
+    leaves: "طلب إجازة",
+    permissions: "طلب استئذان",
+    pre_absence: "إفادة غياب بعذر",
+    complaints: "تقديم شكوى",
+    tawasul: "إنشاء مهمة تواصل",
+    subscribe_push: "تفعيل إشعارات",
+  };
+
+  function getLabel(item) {
+    return actionLabels[item.action] || item.action;
+  }
+
+  async function retryNow() {
+    if (!navigator.onLine) {
+      alert("لا يزال الاتصال مقطوعاً");
+      return;
+    }
+    setProcessing(true);
+    var result = await processOfflineQueue();
+    setQueue(getOfflineQueue());
+    setProcessing(false);
+    if (result.success > 0) alert("✅ تم إرسال " + result.success + " عملية");
+    if (result.failed > 0) alert("⚠️ فشل " + result.failed + " عملية");
+  }
+
+  function remove(id) {
+    if (!window.confirm("حذف هذه العملية من قائمة الانتظار؟ لن تُرسل")) return;
+    removeFromQueue(id);
+    setQueue(getOfflineQueue());
+  }
+
+  return (
+    <div onClick={onClose} style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.7)", zIndex: 10000, display: "flex", alignItems: "center", justifyContent: "center", padding: 16 }}>
+      <div onClick={function(e){ e.stopPropagation(); }} style={{ background: COLORS.bg1, borderRadius: 18, maxWidth: 400, width: "100%", maxHeight: "85vh", overflowY: "auto", border: "1px solid " + COLORS.metallicBorder }}>
+        <div style={{ padding: "18px 20px", borderBottom: "1px solid " + COLORS.metallicBorder, display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+          <div>
+            <div style={{ fontSize: 15, fontWeight: 800, color: COLORS.textPrimary }}>📡 قائمة الانتظار</div>
+            <div style={{ fontSize: 10, color: COLORS.textMuted, marginTop: 2 }}>{queue.length} عملية مُؤجَّلة — ستُرسل عند عودة الاتصال</div>
+          </div>
+          <button onClick={onClose} style={{ background: "none", border: "none", fontSize: 22, color: COLORS.textMuted, cursor: "pointer" }}>×</button>
+        </div>
+        <div style={{ padding: 14 }}>
+          {queue.length === 0 ? (
+            <div style={{ padding: 20, textAlign: "center", color: COLORS.textMuted, fontSize: 12 }}>✓ لا توجد عمليات معلّقة</div>
+          ) : (
+            <>
+              {queue.map(function(item){
+                return (
+                  <div key={item.id} style={{ padding: 12, borderRadius: 10, background: COLORS.metallic, marginBottom: 8, border: "1px solid " + COLORS.metallicBorder }}>
+                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 6 }}>
+                      <div style={{ flex: 1 }}>
+                        <div style={{ fontSize: 12, fontWeight: 700, color: COLORS.textPrimary }}>⏳ {getLabel(item)}</div>
+                        <div style={{ fontSize: 9, color: COLORS.textMuted, marginTop: 3 }}>
+                          تم حفظها: {new Date(item.queuedAt).toLocaleString("ar-SA")}
+                        </div>
+                        {item.attempts > 0 && (
+                          <div style={{ fontSize: 9, color: "#F59E0B", marginTop: 3 }}>
+                            محاولات فاشلة: {item.attempts}
+                            {item.lastError && " · " + item.lastError}
+                          </div>
+                        )}
+                      </div>
+                      <button onClick={function(){ remove(item.id); }} style={{ padding: "4px 8px", borderRadius: 6, background: "transparent", color: "#DC2626", border: "1px solid rgba(220,38,38,0.4)", fontSize: 10, fontWeight: 700, cursor: "pointer", fontFamily: TYPOGRAPHY.fontTajawal }}>🗑</button>
+                    </div>
+                  </div>
+                );
+              })}
+
+              <button onClick={retryNow} disabled={processing || !navigator.onLine} style={{ width: "100%", marginTop: 8, padding: "12px", borderRadius: 10, background: navigator.onLine ? "#10B981" : COLORS.metallic, color: navigator.onLine ? "#fff" : COLORS.textMuted, border: "none", fontSize: 12, fontWeight: 800, cursor: navigator.onLine && !processing ? "pointer" : "default", fontFamily: TYPOGRAPHY.fontTajawal }}>
+                {processing ? "⏳ جارِ الإرسال..." : navigator.onLine ? "🔄 أعد المحاولة الآن" : "⏸ بدون اتصال — الانتظار"}
+              </button>
+            </>
+          )}
+
+          <div style={{ marginTop: 12, padding: 10, borderRadius: 8, background: "rgba(59,130,246,0.08)", border: "1px solid rgba(59,130,246,0.25)", fontSize: 10, color: "#3B82F6", lineHeight: 1.7 }}>
+            💡 التطبيق يحاول الإرسال تلقائياً عند عودة الإنترنت
+          </div>
+        </div>
+      </div>
     </div>
   );
 }
@@ -1332,10 +1701,19 @@ function ConsentScreen({ onAccept }) {
 }
 
 /* ═══════════ LOGIN ═══════════ */
-function LoginScreen({ onLogin, loading }) {
+function LoginScreen({ onLogin, onBiometric, loading }) {
   const [username, setUsername] = useState(function(){ return localStorage.getItem("basma_last_username") || ""; });
   const [password, setPassword] = useState("");
   const [err, setErr] = useState("");
+  // v6.61 — Check if biometric is available for this device
+  const [bioAvailable] = useState(function(){
+    var empId = localStorage.getItem("basma_biometric_empId");
+    var empName = localStorage.getItem("basma_biometric_empName");
+    if (!empId) return null;
+    // Also check browser support
+    if (typeof window === "undefined" || !window.PublicKeyCredential) return null;
+    return { empId: empId, empName: empName || empId };
+  });
 
   async function submit() {
     setErr("");
@@ -1343,6 +1721,12 @@ function LoginScreen({ onLogin, loading }) {
     var cleanUser = username.toLowerCase().trim();
     localStorage.setItem("basma_last_username", cleanUser);
     const e = await onLogin(cleanUser, password);
+    if (e) setErr(e);
+  }
+
+  async function submitBio() {
+    setErr("");
+    const e = await onBiometric();
     if (e) setErr(e);
   }
 
@@ -1354,6 +1738,24 @@ function LoginScreen({ onLogin, loading }) {
       <div className="basma-fadein-d1" style={{ color: "#fff", fontSize: 26, fontWeight: 900, fontFamily: "'Cairo',sans-serif", marginBottom: 4 }}>بصمة HMA</div>
       <div className="basma-fadein-d1" style={{ color: "rgba(255,255,255,.6)", fontSize: 12, fontWeight: 500, marginBottom: 32 }}>نظام الحضور والانصراف الذكي</div>
       <div className="basma-fadein-d2" style={{ width: "100%", maxWidth: 340, background: "rgba(255,255,255,.1)", borderRadius: 24, padding: 24, border: "1px solid rgba(255,255,255,.15)" }}>
+
+        {/* v6.61 — Biometric quick login button */}
+        {bioAvailable && (
+          <>
+            <button onClick={submitBio} disabled={loading} style={{ width: "100%", padding: "16px 14px", borderRadius: 16, background: "linear-gradient(135deg, rgba(245,158,11,0.95), rgba(217,119,6,0.95))", color: "#000", fontSize: 14, fontWeight: 800, fontFamily: "'Cairo',sans-serif", border: "none", cursor: loading ? "default" : "pointer", display: "flex", alignItems: "center", justifyContent: "center", gap: 8, boxShadow: "0 4px 15px rgba(0,0,0,0.2)" }}>
+              <span style={{ fontSize: 22 }}>👤</span>
+              <div style={{ textAlign: "center" }}>
+                <div>دخول سريع بالبصمة</div>
+                <div style={{ fontSize: 10, fontWeight: 600, opacity: 0.75, marginTop: 2 }}>{bioAvailable.empName}</div>
+              </div>
+            </button>
+            <div style={{ textAlign: "center", margin: "14px 0 12px", color: "rgba(255,255,255,.4)", fontSize: 11, fontWeight: 600 }}>
+              <span style={{ display: "inline-block", padding: "0 12px", background: "linear-gradient(135deg,"+C.hdr1+","+C.hdr2+")" }}>أو الدخول اليدوي</span>
+              <div style={{ height: 1, background: "rgba(255,255,255,0.15)", marginTop: -10, position: "relative", zIndex: -1 }}></div>
+            </div>
+          </>
+        )}
+
         <label style={{ display: "block", fontSize: 11, fontWeight: 700, color: "rgba(255,255,255,.85)", marginBottom: 6, fontFamily: "'Cairo',sans-serif" }}>اسم المستخدم</label>
         <input value={username} onChange={e => setUsername(e.target.value)} placeholder="admin أو البريد" autoCapitalize="none" autoCorrect="off" style={S.loginInput} />
         <label style={{ display: "block", fontSize: 11, fontWeight: 700, color: "rgba(255,255,255,.85)", marginTop: 12, marginBottom: 6, fontFamily: "'Cairo',sans-serif" }}>كلمة المرور</label>
@@ -1373,6 +1775,189 @@ function LoginScreen({ onLogin, loading }) {
 }
 
 /* ═══════════ HOME ═══════════ */
+/* ═══ GM KPI CARD — لوحة انضباط للمدير العام في الجوال (v6.59)
+   نطاق هذه البطاقة هو بصمة فقط: نقاط وانضباط.
+   KPIs الأداء الوظيفي التفصيلية مصدرها كوادر (HMA HR) — لا تظهر هنا. ═══ */
+function GMKPICard({ user }) {
+  var [stats, setStats] = useState(null);
+  var [loading, setLoading] = useState(true);
+  var [expanded, setExpanded] = useState(false);
+
+  async function load() {
+    setLoading(true);
+    try {
+      var today = new Date().toISOString().split("T")[0];
+      var monthPrefix = today.substring(0, 7);
+      var [emps, att, lv] = await Promise.all([
+        fetch("/api/data?action=employees").then(function(r){ return r.json(); }).catch(function(){ return []; }),
+        fetch("/api/data?action=attendance").then(function(r){ return r.json(); }).catch(function(){ return []; }),
+        fetch("/api/data?action=leaves").then(function(r){ return r.json(); }).catch(function(){ return []; }),
+      ]);
+
+      var allEmps = Array.isArray(emps) ? emps : [];
+      var totalEmps = allEmps.length;
+
+      // ───── اليوم: من حضر، من تأخر، من لم يحضر، من في إجازة ─────
+      var todayAtt = (att || []).filter(function(a){
+        var dt = a.date || (a.ts && a.ts.split("T")[0]) || "";
+        return dt === today;
+      });
+      var todayCheckins = todayAtt.filter(function(a){ return a.type === "checkin"; });
+      var presentIds = new Set(todayCheckins.map(function(a){ return a.empId; }));
+
+      var lateToday = 0;
+      todayCheckins.forEach(function(a){
+        var cin = new Date(a.ts);
+        if (cin.getHours() >= 9 || (cin.getHours() === 8 && cin.getMinutes() > 45)) lateToday++;
+      });
+
+      var onLeaveIds = new Set();
+      (lv || []).forEach(function(l){
+        if (l.status === "approved" && (l.from || "") <= today && (l.to || "") >= today) {
+          onLeaveIds.add(l.empId);
+        }
+      });
+
+      var absentCount = 0;
+      allEmps.forEach(function(e){
+        if (presentIds.has(e.id)) return;
+        if (onLeaveIds.has(e.id)) return;
+        absentCount++;
+      });
+
+      // ───── الشهر: نسبة الانضباط العامة ─────
+      var monthCheckins = (att || []).filter(function(a){
+        var dt = a.date || (a.ts && a.ts.split("T")[0]) || "";
+        return a.type === "checkin" && dt.startsWith(monthPrefix);
+      });
+      var monthLates = 0;
+      monthCheckins.forEach(function(a){
+        var cin = new Date(a.ts);
+        if (cin.getHours() >= 9 || (cin.getHours() === 8 && cin.getMinutes() > 45)) monthLates++;
+      });
+      var monthPunctuality = monthCheckins.length > 0
+        ? Math.round(((monthCheckins.length - monthLates) / monthCheckins.length) * 100)
+        : 100;
+
+      // ───── إجمالي النقاط للفريق ─────
+      var totalPoints = allEmps.reduce(function(sum, e){ return sum + (e.points || 0); }, 0);
+      var avgPoints = totalEmps > 0 ? Math.round(totalPoints / totalEmps) : 0;
+
+      // أعلى 3 موظفين بالنقاط
+      var topByPoints = allEmps.slice().sort(function(a, b){
+        return (b.points || 0) - (a.points || 0);
+      }).slice(0, 3);
+
+      setStats({
+        totalEmps: totalEmps,
+        presentCount: presentIds.size,
+        lateToday: lateToday,
+        absentCount: absentCount,
+        onLeaveCount: onLeaveIds.size,
+        monthPunctuality: monthPunctuality,
+        monthLates: monthLates,
+        monthCheckins: monthCheckins.length,
+        totalPoints: totalPoints,
+        avgPoints: avgPoints,
+        topByPoints: topByPoints,
+      });
+    } catch(e) {}
+    setLoading(false);
+  }
+
+  useEffect(function(){ load(); }, []);
+
+  if (loading || !stats) return null;
+
+  var punctColor = stats.monthPunctuality >= 90 ? "#10B981" : stats.monthPunctuality >= 75 ? "#F59E0B" : "#DC2626";
+  var presentPct = stats.totalEmps > 0 ? Math.round((stats.presentCount / stats.totalEmps) * 100) : 0;
+
+  return (
+    <div style={{ marginBottom: 10, background: "linear-gradient(135deg, rgba(124,58,237,0.15), rgba(91,33,182,0.08))", borderRadius: 14, padding: 14, border: "1px solid rgba(124,58,237,0.35)" }}>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 10 }}>
+        <div>
+          <div style={{ fontSize: 13, fontWeight: 800, color: "#c4b5fd", display: "flex", alignItems: "center", gap: 5 }}>
+            👔 نظرة المدير العام
+          </div>
+          <div style={{ fontSize: 9, color: COLORS.textMuted, marginTop: 2 }}>
+            بيانات بصمة فقط — الأداء التفصيلي في كوادر
+          </div>
+        </div>
+        <button onClick={function(){ setExpanded(!expanded); }} style={{ padding: "5px 10px", borderRadius: 8, background: "rgba(124,58,237,0.2)", color: "#c4b5fd", border: "none", fontSize: 10, fontWeight: 700, cursor: "pointer", fontFamily: TYPOGRAPHY.fontTajawal }}>
+          {expanded ? "↑ أقل" : "↓ تفاصيل"}
+        </button>
+      </div>
+
+      {/* Today's quick row — always visible */}
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 6, marginBottom: expanded ? 10 : 0 }}>
+        <div style={{ padding: 8, borderRadius: 8, background: "rgba(16,185,129,0.12)", textAlign: "center" }}>
+          <div style={{ fontSize: 18, fontWeight: 900, color: "#10B981" }}>{stats.presentCount}</div>
+          <div style={{ fontSize: 9, color: COLORS.textMuted, fontWeight: 700 }}>✅ حضور</div>
+        </div>
+        <div style={{ padding: 8, borderRadius: 8, background: "rgba(245,158,11,0.12)", textAlign: "center" }}>
+          <div style={{ fontSize: 18, fontWeight: 900, color: "#F59E0B" }}>{stats.lateToday}</div>
+          <div style={{ fontSize: 9, color: COLORS.textMuted, fontWeight: 700 }}>⏰ تأخير</div>
+        </div>
+        <div style={{ padding: 8, borderRadius: 8, background: "rgba(220,38,38,0.12)", textAlign: "center" }}>
+          <div style={{ fontSize: 18, fontWeight: 900, color: "#DC2626" }}>{stats.absentCount}</div>
+          <div style={{ fontSize: 9, color: COLORS.textMuted, fontWeight: 700 }}>❌ غياب</div>
+        </div>
+        <div style={{ padding: 8, borderRadius: 8, background: "rgba(124,58,237,0.12)", textAlign: "center" }}>
+          <div style={{ fontSize: 18, fontWeight: 900, color: "#7C3AED" }}>{stats.onLeaveCount}</div>
+          <div style={{ fontSize: 9, color: COLORS.textMuted, fontWeight: 700 }}>🏖️ إجازة</div>
+        </div>
+      </div>
+
+      {expanded && (
+        <>
+          {/* Monthly punctuality */}
+          <div style={{ padding: 10, borderRadius: 10, background: "rgba(255,255,255,0.04)", marginBottom: 8, border: "1px solid rgba(255,255,255,0.08)" }}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 6 }}>
+              <div style={{ fontSize: 11, color: COLORS.textPrimary, fontWeight: 700 }}>📊 انضباط الشهر</div>
+              <div style={{ fontSize: 15, fontWeight: 900, color: punctColor }}>{stats.monthPunctuality}%</div>
+            </div>
+            <div style={{ height: 5, borderRadius: 3, background: "rgba(255,255,255,0.1)", overflow: "hidden", marginBottom: 4 }}>
+              <div style={{ height: "100%", width: stats.monthPunctuality + "%", background: punctColor, transition: "width 0.5s" }}></div>
+            </div>
+            <div style={{ fontSize: 9, color: COLORS.textMuted }}>
+              {stats.monthCheckins} حضور · {stats.monthLates} تأخير · نسبة حضور اليوم {presentPct}%
+            </div>
+          </div>
+
+          {/* Points summary */}
+          <div style={{ padding: 10, borderRadius: 10, background: "rgba(255,255,255,0.04)", marginBottom: 8, border: "1px solid rgba(255,255,255,0.08)" }}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 6 }}>
+              <div style={{ fontSize: 11, color: COLORS.textPrimary, fontWeight: 700 }}>⭐ إجمالي نقاط الفريق</div>
+              <div style={{ fontSize: 15, fontWeight: 900, color: COLORS.goldLight }}>{stats.totalPoints.toLocaleString("ar-SA")}</div>
+            </div>
+            <div style={{ fontSize: 9, color: COLORS.textMuted }}>
+              متوسط النقاط لكل موظف: <strong style={{ color: COLORS.goldLight }}>{stats.avgPoints}</strong>
+            </div>
+          </div>
+
+          {/* Top 3 by points */}
+          {stats.topByPoints.length > 0 && (
+            <div style={{ padding: 10, borderRadius: 10, background: "rgba(255,255,255,0.04)", border: "1px solid rgba(255,255,255,0.08)" }}>
+              <div style={{ fontSize: 11, color: COLORS.textPrimary, fontWeight: 700, marginBottom: 8 }}>🏆 الأعلى انضباطاً (حسب نقاط بصمة)</div>
+              {stats.topByPoints.map(function(e, i){
+                return (
+                  <div key={e.id} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "4px 0", borderBottom: i < stats.topByPoints.length - 1 ? "1px dashed rgba(255,255,255,0.08)" : "none" }}>
+                    <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                      <span style={{ fontSize: 13 }}>{["🥇", "🥈", "🥉"][i] || "•"}</span>
+                      <span style={{ fontSize: 11, fontWeight: 700, color: COLORS.textPrimary, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", maxWidth: 150 }}>{e.name || "—"}</span>
+                    </div>
+                    <span style={{ fontSize: 11, fontWeight: 800, color: COLORS.goldLight }}>⭐ {e.points || 0}</span>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </>
+      )}
+    </div>
+  );
+}
+
 function HomePage({ user, branch, workType, now, todayAtt, allAtt, gps, gpsDist, streak, loading, refreshing, dayState, checkpoints, isOffDay, pendingCount, teamToday, pwaPrompt, onPwaInstall, onCheckin, onChallenge, onLeave, onRefresh, onPreAbsence, onManualAtt, onPermission, kadwarNotifs, darkMode, announcements, banners, fieldProjects, onShowAnnouncements }) {
   const { time, sec, ampm } = formatTime(now);
   const badge = memberBadge(user.points || 0);
@@ -1504,6 +2089,8 @@ function HomePage({ user, branch, workType, now, todayAtt, allAtt, gps, gpsDist,
           );
         })}
         <InvestigationBanner user={user} /><MembershipFreezeNotice user={user} /><BranchHolidayBanner branch={branch} /><OccasionBanner user={user} />
+        {/* v6.59 — General Manager KPIs card (visible only to GM/admin) */}
+        {(user.isGeneralManager || user.isAdmin) && <GMKPICard user={user} />}
       </div>
 
       {/* Clock centered */}
@@ -1929,6 +2516,7 @@ function ProfilePage({ user, branch, workType, onLogout, onTicket, myTickets, da
   var tabs = [
     { id: "info", icon: <Icons.user size={18} />, label: "بياناتي" },
     { id: "requests", icon: <Icons.clipboard size={18} />, label: "طلباتي" },
+    { id: "policies", icon: <Icons.clipboard size={18} />, label: "السياسات" },
     { id: "deps", icon: <Icons.user size={18} />, label: "المرافقين" },
     { id: "docs", icon: <Icons.clipboard size={18} />, label: "المرفقات" },
     { id: "custody", icon: <Icons.building size={18} />, label: "العهد" },
@@ -1982,6 +2570,8 @@ function ProfilePage({ user, branch, workType, onLogout, onTicket, myTickets, da
 
             <MembershipCard points={user.points || 0} />
             <PointsLogCard user={user} allAtt={[]} />
+            <AchievementsCard user={user} />
+            <BiometricSettingsCard user={user} />
 
             {/* كوادر — flippable card (moved from home) */}
             <div className="basma-flip-container">
@@ -2066,6 +2656,7 @@ function ProfilePage({ user, branch, workType, onLogout, onTicket, myTickets, da
         {tab === "record" && <EmployeeRecordTab user={user} />}
         {tab === "legal" && <LegalTab user={user} />}
         {tab === "requests" && <MyRequestsTab user={user} />}
+        {tab === "policies" && <PoliciesTab user={user} />}
 
         {/* Manager panel button — hidden in desktop session (v6.47) */}
         {(user.isManager || user.isAssistant) && !(user && user._desktopSession) && (
@@ -9372,14 +9963,419 @@ function NotificationPanel({ notifications, onClose, onMarkRead, onGoToLegal }) 
   );
 }
 
-function BottomNav({ page, setPage, legalAlerts, tawasulUnread }) {
+/* ═══════════ MY TEAM PAGE — لوحة مدير الفريق (v6.56) ═══════════ */
+function MyTeamPage({ user, allEmps }) {
+  var [tab, setTab] = useState("today"); // today | requests | stats
+  var [hierarchy, setHierarchy] = useState({});
+  var [attendance, setAttendance] = useState([]);
+  var [leaves, setLeaves] = useState([]);
+  var [permissions, setPermissions] = useState([]);
+  var [preAbsences, setPreAbsences] = useState([]);
+  var [loading, setLoading] = useState(true);
+  var [aiSummary, setAiSummary] = useState("");
+  var [aiLoading, setAiLoading] = useState(false);
+
+  var myId = user && (user.id || user.username);
+  var isAdmin = user && (user.isAdmin || user.isGeneralManager || user.role === "admin");
+
+  // Collect user's aliases
+  var myAliases = React.useMemo(function(){
+    var s = new Set();
+    [user && user.id, user && user.email, user && user.username, user && user.kadwarId, user && user.idNumber].forEach(function(x){
+      if (x) s.add(String(x).toLowerCase());
+    });
+    return s;
+  }, [user]);
+
+  async function loadAll() {
+    setLoading(true);
+    try {
+      var [tl, att, lv, pm, pa] = await Promise.all([
+        fetch("/api/data?action=tawasul-list").then(function(r){ return r.json(); }).catch(function(){ return null; }),
+        fetch("/api/data?action=attendance").then(function(r){ return r.json(); }).catch(function(){ return []; }),
+        fetch("/api/data?action=leaves").then(function(r){ return r.json(); }).catch(function(){ return []; }),
+        fetch("/api/data?action=permissions").then(function(r){ return r.json(); }).catch(function(){ return []; }),
+        fetch("/api/data?action=pre_absence").then(function(r){ return r.json(); }).catch(function(){ return []; }),
+      ]);
+      if (tl && tl.hierarchy) setHierarchy(tl.hierarchy);
+      setAttendance(Array.isArray(att) ? att : []);
+      setLeaves(Array.isArray(lv) ? lv : []);
+      setPermissions(Array.isArray(pm) ? pm : []);
+      setPreAbsences(Array.isArray(pa) ? pa : []);
+    } catch(e) {}
+    setLoading(false);
+  }
+
+  useEffect(function(){ loadAll(); }, []);
+
+  // Build subordinates list
+  var subordinates = React.useMemo(function(){
+    var result = new Set();
+    if (!hierarchy || Object.keys(hierarchy).length === 0) {
+      if (isAdmin && allEmps) {
+        return allEmps.filter(function(e){ return !myAliases.has(String(e.id || '').toLowerCase()); });
+      }
+      return [];
+    }
+    var reverse = {};
+    Object.keys(hierarchy).forEach(function(empKey){
+      var mgr = String(hierarchy[empKey]).toLowerCase();
+      if (!reverse[mgr]) reverse[mgr] = [];
+      reverse[mgr].push(empKey);
+    });
+    var queue = [];
+    myAliases.forEach(function(alias){
+      if (reverse[alias]) queue.push.apply(queue, reverse[alias]);
+    });
+    while (queue.length > 0) {
+      var cur = queue.shift();
+      if (result.has(cur)) continue;
+      result.add(cur);
+      var curLower = String(cur).toLowerCase();
+      if (reverse[curLower]) queue.push.apply(queue, reverse[curLower]);
+    }
+    if (result.size === 0 && isAdmin && allEmps) {
+      return allEmps.filter(function(e){ return !myAliases.has(String(e.id || '').toLowerCase()); });
+    }
+    // Map IDs to employee objects
+    var list = [];
+    result.forEach(function(id){
+      var emp = (allEmps || []).find(function(e){ return String(e.id) === String(id); });
+      if (emp) list.push(emp);
+      else list.push({ id: id, name: "موظف " + id });
+    });
+    return list;
+  }, [hierarchy, myAliases, allEmps, isAdmin]);
+
+  // Today's status per subordinate
+  function getEmpToday(empId) {
+    var today = new Date().toISOString().split("T")[0];
+    var empAtt = attendance.filter(function(a){
+      var dt = a.date || (a.ts && a.ts.split("T")[0]) || "";
+      return a.empId === empId && dt === today;
+    });
+    var checkin = empAtt.find(function(a){ return a.type === "checkin"; });
+    var checkout = empAtt.find(function(a){ return a.type === "checkout"; });
+    var breakS = empAtt.find(function(a){ return a.type === "break_start"; });
+    var breakE = empAtt.find(function(a){ return a.type === "break_end"; });
+
+    var myLeave = leaves.find(function(l){
+      return l.empId === empId && l.status === "approved" && (l.from || "") <= today && (l.to || "") >= today;
+    });
+    if (myLeave) return { status: "onLeave", leave: myLeave, label: "في إجازة", color: "#7C3AED", icon: "🏖️" };
+    if (!checkin) return { status: "absent", label: "لم يحضر", color: "#DC2626", icon: "❌" };
+    if (checkout) return { status: "left", label: "انصرف", checkin: checkin, checkout: checkout, color: "#64748B", icon: "🌙" };
+    if (breakS && !breakE) return { status: "onBreak", label: "في استراحة", checkin: checkin, color: "#0EA5E9", icon: "☕" };
+    var cin = new Date(checkin.ts);
+    if (cin.getHours() >= 9 || (cin.getHours() === 8 && cin.getMinutes() > 45)) {
+      return { status: "late", label: "متأخر", checkin: checkin, color: "#F59E0B", icon: "⏰" };
+    }
+    return { status: "present", label: "حاضر", checkin: checkin, color: "#10B981", icon: "✅" };
+  }
+
+  // Pending requests for my subordinates
+  var pendingRequests = React.useMemo(function(){
+    var subIds = new Set(subordinates.map(function(s){ return String(s.id); }));
+    var out = [];
+    leaves.filter(function(l){ return l.status === "pending" && subIds.has(String(l.empId)); })
+      .forEach(function(l){ out.push({ kind: "leave", data: l }); });
+    permissions.filter(function(p){ return p.status === "pending" && subIds.has(String(p.empId)); })
+      .forEach(function(p){ out.push({ kind: "permission", data: p }); });
+    preAbsences.filter(function(pa){ return pa.status === "pending" && subIds.has(String(pa.empId)); })
+      .forEach(function(pa){ out.push({ kind: "preabs", data: pa }); });
+    return out.sort(function(a,b){ return (b.data.ts || "").localeCompare(a.data.ts || ""); });
+  }, [subordinates, leaves, permissions, preAbsences]);
+
+  // Today's summary
+  var todayStats = React.useMemo(function(){
+    var s = { present: 0, late: 0, onBreak: 0, absent: 0, onLeave: 0, left: 0 };
+    subordinates.forEach(function(emp){
+      var t = getEmpToday(emp.id);
+      s[t.status] = (s[t.status] || 0) + 1;
+    });
+    return s;
+  }, [subordinates, attendance, leaves]);
+
+  async function generateAISummary() {
+    setAiLoading(true);
+    setAiSummary("");
+    try {
+      var weekAgo = new Date(); weekAgo.setDate(weekAgo.getDate() - 7);
+      var weekKey = weekAgo.toISOString().split("T")[0];
+      var weekData = subordinates.map(function(emp){
+        var weekAtt = attendance.filter(function(a){
+          var dt = a.date || (a.ts && a.ts.split("T")[0]) || "";
+          return a.empId === emp.id && dt >= weekKey;
+        });
+        var byDate = {};
+        weekAtt.forEach(function(a){
+          var dt = a.date || (a.ts && a.ts.split("T")[0]);
+          if (!byDate[dt]) byDate[dt] = {};
+          if (a.type === "checkin") byDate[dt].checkin = a.ts;
+        });
+        var workDays = 0, lateDays = 0;
+        Object.keys(byDate).forEach(function(dt){
+          if (byDate[dt].checkin) {
+            workDays++;
+            var cin = new Date(byDate[dt].checkin);
+            if (cin.getHours() >= 9 || (cin.getHours() === 8 && cin.getMinutes() > 45)) lateDays++;
+          }
+        });
+        return { name: emp.name, workDays: workDays, lateDays: lateDays };
+      });
+      var prompt = "أنت مستشار موارد بشرية. قدم ملخصاً موجزاً (4-6 أسطر) باللغة العربية لأداء فريق العمل خلال الأسبوع الماضي. ركّز على النقاط الإيجابية والأنماط المقلقة والتوصيات العملية. البيانات:\n\n" + JSON.stringify(weekData, null, 2);
+      var r = await fetch("/api/ai", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ task: "team_summary", prompt: prompt }),
+      }).catch(function(){ return null; });
+      if (r && r.ok) {
+        var d = await r.json();
+        setAiSummary(d.text || d.response || d.content || "لم يتم توليد ملخص");
+      } else {
+        // Fallback: generate local summary
+        var total = weekData.reduce(function(acc, e){ acc.work += e.workDays; acc.late += e.lateDays; return acc; }, { work: 0, late: 0 });
+        var punctRate = total.work > 0 ? Math.round(((total.work - total.late) / total.work) * 100) : 0;
+        var topLate = weekData.filter(function(e){ return e.lateDays >= 2; });
+        setAiSummary(
+          "📊 ملخص الأسبوع للفريق:\n" +
+          "• حجم الفريق: " + weekData.length + " موظف\n" +
+          "• إجمالي أيام الحضور: " + total.work + " يوم\n" +
+          "• نسبة الانضباط: " + punctRate + "%\n" +
+          (topLate.length > 0
+            ? "• ⚠️ يحتاج متابعة: " + topLate.map(function(e){ return e.name + " (" + e.lateDays + " تأخير)"; }).join("، ")
+            : "• ✅ الفريق ملتزم بشكل ممتاز")
+        );
+      }
+    } catch(e) { setAiSummary("تعذّر توليد الملخص: " + (e.message || "")); }
+    setAiLoading(false);
+  }
+
+  async function handleDecision(kind, item, decision, reason) {
+    try {
+      var action = kind === "leave" ? "leaves" : (kind === "permission" ? "permissions" : "pre_absence");
+      var status = decision === "approve" ? "approved" : "rejected";
+      var body = { id: item.id, status: status, decidedBy: user.id, decidedAt: new Date().toISOString() };
+      if (reason) body.rejectReason = reason;
+      await fetch("/api/data?action=" + action, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+      });
+      await loadAll();
+    } catch(e) { alert("فشل: " + (e.message || "")); }
+  }
+
+  if (loading) return <div style={{ padding: 30, textAlign: "center", color: COLORS.textMuted }}>جارِ تحميل الفريق...</div>;
+
+  return (
+    <div>
+      {/* Header */}
+      <div style={{ background: "linear-gradient(135deg, #7c3aed 0%, #5b21b6 100%)", padding: "16px 16px 20px", color: "#fff" }}>
+        <div style={{ fontSize: 22, fontWeight: 900, fontFamily: "'Cairo',sans-serif", marginBottom: 4 }}>👔 فريقي</div>
+        <div style={{ fontSize: 11, opacity: 0.9 }}>
+          {subordinates.length} موظف تحت إدارتك
+          {pendingRequests.length > 0 && " · " + pendingRequests.length + " طلب معلّق"}
+        </div>
+      </div>
+
+      {/* Tab switcher */}
+      <div style={{ display: "flex", gap: 6, padding: 12, background: COLORS.bg1 }}>
+        {[
+          { id: "today", icon: "🔴", label: "اليوم", count: subordinates.length },
+          { id: "requests", icon: "📝", label: "الطلبات", count: pendingRequests.length },
+          { id: "stats", icon: "📊", label: "إحصائيات" },
+        ].map(function(ti){
+          var active = tab === ti.id;
+          return (
+            <button key={ti.id} onClick={function(){ setTab(ti.id); }} style={{ flex: 1, padding: "10px 6px", borderRadius: 10, background: active ? "#7c3aed" : COLORS.metallic, color: active ? "#fff" : COLORS.textPrimary, border: "none", fontSize: 11, fontWeight: 800, cursor: "pointer", fontFamily: TYPOGRAPHY.fontTajawal }}>
+              {ti.icon} {ti.label}
+              {ti.count !== undefined && ti.count > 0 && (
+                <span style={{ marginRight: 4, padding: "1px 6px", borderRadius: 8, background: active ? "rgba(255,255,255,0.25)" : "#7c3aed", color: "#fff", fontSize: 9 }}>{ti.count}</span>
+              )}
+            </button>
+          );
+        })}
+      </div>
+
+      <div style={{ padding: 12 }}>
+        {/* Tab: Today */}
+        {tab === "today" && (
+          <>
+            {/* Quick stats */}
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 6, marginBottom: 14 }}>
+              {[
+                { k: "present", label: "حضور", color: "#10B981", icon: "✅" },
+                { k: "late", label: "تأخير", color: "#F59E0B", icon: "⏰" },
+                { k: "absent", label: "غياب", color: "#DC2626", icon: "❌" },
+              ].map(function(s){
+                return (
+                  <div key={s.k} style={{ padding: 10, borderRadius: 10, background: s.color + "15", border: "1px solid " + s.color + "40", textAlign: "center" }}>
+                    <div style={{ fontSize: 16 }}>{s.icon}</div>
+                    <div style={{ fontSize: 22, fontWeight: 900, color: s.color }}>{todayStats[s.k] || 0}</div>
+                    <div style={{ fontSize: 9, color: COLORS.textMuted, fontWeight: 700 }}>{s.label}</div>
+                  </div>
+                );
+              })}
+            </div>
+
+            {/* Subordinates list */}
+            <div style={{ ...TYPOGRAPHY.caption, color: COLORS.textMuted, fontWeight: 700, marginBottom: 8 }}>أعضاء الفريق</div>
+            {subordinates.length === 0 ? (
+              <Card><div style={{ padding: 20, textAlign: "center", color: COLORS.textMuted }}>لا يوجد أعضاء في الفريق</div></Card>
+            ) : (
+              subordinates.map(function(emp){
+                var status = getEmpToday(emp.id);
+                return (
+                  <div key={emp.id} style={{ padding: 12, borderRadius: 12, background: COLORS.metallic, marginBottom: 8, border: "1px solid " + COLORS.metallicBorder, display: "flex", alignItems: "center", gap: 10 }}>
+                    <div style={{ width: 36, height: 36, borderRadius: 18, background: status.color + "22", color: status.color, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 15, fontWeight: 800, flexShrink: 0 }}>
+                      {(emp.name || "؟").charAt(0)}
+                    </div>
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <div style={{ ...TYPOGRAPHY.body, fontWeight: 800, color: COLORS.textPrimary, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{emp.name || "—"}</div>
+                      <div style={{ ...TYPOGRAPHY.tiny, color: COLORS.textMuted, marginTop: 2 }}>{emp.role || emp.department || "—"}</div>
+                    </div>
+                    <div style={{ padding: "5px 10px", borderRadius: 10, background: status.color + "22", color: status.color, fontSize: 10, fontWeight: 800, whiteSpace: "nowrap" }}>
+                      {status.icon} {status.label}
+                      {status.checkin && (
+                        <div style={{ fontSize: 8, opacity: 0.85, marginTop: 2 }}>{new Date(status.checkin.ts).toLocaleTimeString("ar-SA", { hour: "2-digit", minute: "2-digit" })}</div>
+                      )}
+                    </div>
+                  </div>
+                );
+              })
+            )}
+          </>
+        )}
+
+        {/* Tab: Requests */}
+        {tab === "requests" && (
+          <>
+            {pendingRequests.length === 0 ? (
+              <Card padding={SPACING.lg}>
+                <div style={{ textAlign: "center", color: COLORS.textMuted, padding: 20 }}>
+                  <div style={{ fontSize: 36, marginBottom: 8 }}>✓</div>
+                  <div style={{ ...TYPOGRAPHY.body, fontWeight: 700 }}>لا توجد طلبات معلّقة</div>
+                </div>
+              </Card>
+            ) : (
+              pendingRequests.map(function(r, idx){
+                var d = r.data;
+                var kindMeta = {
+                  leave: { icon: "🏖️", label: "طلب إجازة", color: "#0891B2" },
+                  permission: { icon: "⏱", label: "استئذان", color: "#7C3AED" },
+                  preabs: { icon: "🏥", label: "إفادة غياب", color: "#D97706" },
+                }[r.kind];
+                var empName = (subordinates.find(function(s){ return String(s.id) === String(d.empId); }) || {}).name || d.empId;
+                var detail = "";
+                if (r.kind === "leave") detail = (d.days || 1) + " يوم · " + d.from + " → " + d.to;
+                else if (r.kind === "permission") detail = d.from_time + " → " + d.to_time;
+                else if (r.kind === "preabs") detail = "بتاريخ " + d.date;
+
+                return (
+                  <div key={r.kind + "_" + (d.id || idx)} style={{ padding: 14, borderRadius: 12, background: COLORS.metallic, marginBottom: 8, border: "1px solid " + kindMeta.color + "40" }}>
+                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 8 }}>
+                      <div style={{ flex: 1 }}>
+                        <div style={{ display: "inline-flex", alignItems: "center", gap: 5, padding: "3px 8px", borderRadius: 8, background: kindMeta.color + "22", color: kindMeta.color, fontSize: 10, fontWeight: 800, marginBottom: 6 }}>
+                          {kindMeta.icon} {kindMeta.label}
+                        </div>
+                        <div style={{ ...TYPOGRAPHY.body, fontWeight: 800, color: COLORS.textPrimary }}>{empName}</div>
+                        <div style={{ ...TYPOGRAPHY.tiny, color: COLORS.textMuted, marginTop: 2 }}>{detail}</div>
+                        {d.reason && <div style={{ ...TYPOGRAPHY.tiny, color: COLORS.textMuted, marginTop: 4, fontStyle: "italic" }}>"{d.reason}"</div>}
+                      </div>
+                    </div>
+                    <div style={{ display: "flex", gap: 6 }}>
+                      <button onClick={function(){ handleDecision(r.kind, d, "approve"); }} style={{ flex: 1, padding: "9px", borderRadius: 8, background: "#10B981", color: "#fff", border: "none", fontSize: 11, fontWeight: 800, cursor: "pointer", fontFamily: TYPOGRAPHY.fontTajawal }}>✓ موافقة</button>
+                      <button onClick={function(){
+                        var reason = window.prompt("سبب الرفض (اختياري):");
+                        if (reason !== null) handleDecision(r.kind, d, "reject", reason);
+                      }} style={{ flex: 1, padding: "9px", borderRadius: 8, background: "#DC2626", color: "#fff", border: "none", fontSize: 11, fontWeight: 800, cursor: "pointer", fontFamily: TYPOGRAPHY.fontTajawal }}>✗ رفض</button>
+                    </div>
+                  </div>
+                );
+              })
+            )}
+          </>
+        )}
+
+        {/* Tab: Stats (AI summary + weekly) */}
+        {tab === "stats" && (
+          <>
+            <Card padding={SPACING.md}>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 10 }}>
+                <div style={{ ...TYPOGRAPHY.caption, fontWeight: 800, color: COLORS.textPrimary }}>🤖 ملخص ذكي للأسبوع</div>
+                <button onClick={generateAISummary} disabled={aiLoading} style={{ padding: "5px 12px", borderRadius: 6, background: aiLoading ? COLORS.metallic : "#7c3aed", color: "#fff", border: "none", fontSize: 10, fontWeight: 800, cursor: aiLoading ? "default" : "pointer", fontFamily: TYPOGRAPHY.fontTajawal }}>
+                  {aiLoading ? "⏳ جارِ التحليل..." : "🔄 توليد"}
+                </button>
+              </div>
+              {aiSummary ? (
+                <div style={{ padding: 12, borderRadius: 10, background: "rgba(124,58,237,0.08)", border: "1px solid rgba(124,58,237,0.25)", fontSize: 12, color: COLORS.textPrimary, lineHeight: 1.9, whiteSpace: "pre-wrap" }}>{aiSummary}</div>
+              ) : (
+                <div style={{ padding: 14, textAlign: "center", color: COLORS.textMuted, fontSize: 11, fontStyle: "italic" }}>اضغط "🔄 توليد" للحصول على تحليل ذكي لأداء فريقك خلال الأسبوع الماضي</div>
+              )}
+            </Card>
+
+            {/* Weekly punctuality per employee */}
+            <div style={{ marginTop: 12 }}>
+              <div style={{ ...TYPOGRAPHY.caption, color: COLORS.textMuted, fontWeight: 700, marginBottom: 8 }}>📊 انضباط الأسبوع الماضي</div>
+              {subordinates.map(function(emp){
+                var weekAgo = new Date(); weekAgo.setDate(weekAgo.getDate() - 7);
+                var weekKey = weekAgo.toISOString().split("T")[0];
+                var weekAtt = attendance.filter(function(a){
+                  var dt = a.date || (a.ts && a.ts.split("T")[0]) || "";
+                  return a.empId === emp.id && dt >= weekKey;
+                });
+                var byDate = {};
+                weekAtt.forEach(function(a){
+                  var dt = a.date || (a.ts && a.ts.split("T")[0]);
+                  if (a.type === "checkin") byDate[dt] = a.ts;
+                });
+                var workDays = Object.keys(byDate).length;
+                var lateDays = 0;
+                Object.keys(byDate).forEach(function(dt){
+                  var cin = new Date(byDate[dt]);
+                  if (cin.getHours() >= 9 || (cin.getHours() === 8 && cin.getMinutes() > 45)) lateDays++;
+                });
+                var pct = workDays > 0 ? Math.round(((workDays - lateDays) / workDays) * 100) : 0;
+                var color = pct >= 90 ? "#10B981" : pct >= 75 ? "#F59E0B" : "#DC2626";
+                return (
+                  <div key={emp.id} style={{ padding: 10, borderRadius: 10, background: COLORS.metallic, marginBottom: 6, border: "1px solid " + COLORS.metallicBorder }}>
+                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 6 }}>
+                      <span style={{ fontSize: 12, fontWeight: 700, color: COLORS.textPrimary }}>{emp.name}</span>
+                      <span style={{ fontSize: 13, fontWeight: 900, color: color }}>{pct}%</span>
+                    </div>
+                    <div style={{ height: 5, borderRadius: 3, background: COLORS.bg1, overflow: "hidden" }}>
+                      <div style={{ height: "100%", width: pct + "%", background: color, transition: "width 0.3s" }}></div>
+                    </div>
+                    <div style={{ fontSize: 9, color: COLORS.textMuted, marginTop: 4, display: "flex", justifyContent: "space-between" }}>
+                      <span>{workDays} يوم حضور</span>
+                      {lateDays > 0 && <span style={{ color: "#F59E0B", fontWeight: 700 }}>⏰ {lateDays} تأخير</span>}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function BottomNav({ page, setPage, legalAlerts, tawasulUnread, user }) {
+  // v6.56 — Show "فريقي" tab only for managers
+  var isManagerOrAdmin = user && (user.isManager || user.isAssistant || user.isAdmin || user.isGeneralManager);
   var items = [
     { id: "home", icon: Icons.home, label: "الرئيسية" },
     { id: "tawasul", icon: Icons.message, label: "تواصل", badge: tawasulUnread || 0 },
-    { id: "benefits", icon: Icons.medal, label: "الامتيازات" },
-    { id: "report", icon: Icons.chart, label: "تقريري" },
-    { id: "profile", icon: Icons.user, label: "حسابي", badge: legalAlerts || 0 },
   ];
+  if (isManagerOrAdmin) {
+    items.push({ id: "team", icon: Icons.users || Icons.user, label: "فريقي" });
+  } else {
+    items.push({ id: "benefits", icon: Icons.medal, label: "الامتيازات" });
+  }
+  items.push({ id: "report", icon: Icons.chart, label: "تقريري" });
+  items.push({ id: "profile", icon: Icons.user, label: "حسابي", badge: legalAlerts || 0 });
   return (
     <div style={{ position: "fixed", bottom: 0, left: 0, right: 0, maxWidth: 430, margin: "0 auto", background: "rgba(" + (C === DARK ? "7,20,40" : "255,255,255") + ",.85)", backdropFilter: "blur(10px)", borderTop: "1px solid " + COLORS.metallicBorder, display: "flex", justifyContent: "space-around", padding: "10px 0 16px", zIndex: 50 }}>
       {items.map(function(n) {
@@ -9770,6 +10766,122 @@ function MyRequestsTab({ user }) {
       {showPerm && <PermissionModal user={user} branch={null} onClose={function(){ setShowPerm(false); }} onSubmit={async function(data){ try { await api("permissions", { method: "POST", body: Object.assign({ empId: user.id, date: todayStr() }, data) }); setShowPerm(false); loadAll(); } catch(e) {} }} />}
       {showPreAbs && <PreAbsenceModal allEmps={[]} user={user} onClose={function(){ setShowPreAbs(false); }} onSubmit={async function(data){ try { await api("pre_absence", { method: "POST", body: Object.assign({ empId: user.id, reportedBy: user.id }, data) }); setShowPreAbs(false); loadAll(); } catch(e) {} }} />}
     </>
+  );
+}
+
+function PoliciesTab({ user }) {
+  var [open, setOpen] = useState({}); // { sectionId: true }
+
+  function toggle(id) {
+    setOpen(function(prev){ var n = Object.assign({}, prev); n[id] = !n[id]; return n; });
+  }
+
+  var sections = [
+    {
+      id: "attendance", icon: "⏰", title: "الحضور والانصراف", color: "#0891B2",
+      content: [
+        { q: "ما هي ساعات الدوام الرسمية؟", a: "من 8:30 صباحاً إلى 5:00 مساءً (يختلف حسب نوع العقد)." },
+        { q: "متى يُعد الحضور متأخراً؟", a: "بعد 8:45 صباحاً (فترة سماح 15 دقيقة)." },
+        { q: "ما هي نافذة الاستراحة؟", a: "من 12:30 إلى 1:00 ظهراً — إلزامية التوقيت مع سماح 5 دقائق ±." },
+        { q: "ماذا لو نسيت تسجيل الانصراف؟", a: "يسجّل النظام انصرافاً تلقائياً بعد 11 ساعة من الحضور. يمكنك طلب تصحيح من الإدارة." },
+      ],
+    },
+    {
+      id: "leaves", icon: "🏖️", title: "الإجازات والاستئذان", color: "#7C3AED",
+      content: [
+        { q: "كم رصيد الإجازة السنوية؟", a: "21 يوم سنوياً وفقاً لنظام العمل السعودي." },
+        { q: "الإجازة المرضية؟", a: "30 يوم بأجر كامل، ثم 60 يوم بنصف أجر، ثم بدون أجر (بإجمالي 4 أشهر سنوياً)." },
+        { q: "كم مدة الاستئذان الأقصى؟", a: "ساعة واحدة — الأكثر من ذلك يعتبر إجازة طارئة." },
+        { q: "كيف أطلب إجازة؟", a: "من حسابي → طلباتي → 🏖️ طلب إجازة. تصلك الموافقة عبر إشعار." },
+        { q: "متى يُخصم الرصيد؟", a: "عند اعتماد المدير — ليس عند التقديم." },
+      ],
+    },
+    {
+      id: "violations", icon: "⚖️", title: "المخالفات والجزاءات", color: "#DC2626",
+      content: [
+        { q: "ما الجزاء على التأخير المتكرر؟", a: "المرة 1: إنذار · المرة 2: خصم يوم · المرة 3: خصم يومين · المرة 4+: إنهاء خدمة." },
+        { q: "ماذا يحدث بعد 3 تأخيرات؟", a: "يُصدر النظام إنذاراً كتابياً تلقائياً وفقاً للائحة." },
+        { q: "هل يمكنني التظلم؟", a: "نعم — من حسابي → القانونية → تقديم تظلم خلال 5 أيام من المخالفة." },
+        { q: "هل تُسجَّل المخالفات في الملف؟", a: "نعم، ضمن السجل الوظيفي — ويمكن طباعتها كـPDF رسمي." },
+      ],
+    },
+    {
+      id: "tawasul", icon: "📋", title: "نظام تواصل (المهام)", color: "#F59E0B",
+      content: [
+        { q: "ما هو نظام تواصل؟", a: "نظام مهام داخلي لتكليف الزملاء بأعمال محددة وتتبعها وتقييمها." },
+        { q: "كيف أنشئ مهمة جديدة؟", a: "افتح تواصل → زر ➕ جديد في الأعلى → اختر المُكلَّف والموعد النهائي والتفاصيل." },
+        { q: "كيف أقبل أو أرفض مهمة؟", a: "ستظهر في صندوق الوارد — اضغط عليها واختر قبول أو رفض مع سبب." },
+        { q: "ما معنى التصعيد (🔴/🟡)؟", a: "🔴 تصعيد أحمر: تجاوزت الموعد · 🟡 تصعيد أصفر: قاربت على الانتهاء." },
+      ],
+    },
+    {
+      id: "documents", icon: "📄", title: "الإفادات والمستندات", color: "#10B981",
+      content: [
+        { q: "كيف أحصل على إفادة تعريف بالعمل؟", a: "من طلباتي → زر 📄 اطبع إفادة تعريف — تصدر فوراً بالشعار والختم." },
+        { q: "كيف أحصل على شهادة راتب؟", a: "تصدر من إدارة الموارد البشرية — اطلبها عبر تواصل." },
+        { q: "كيف أحصل على إفادة إجازة؟", a: "بعد اعتماد إجازتك، يظهر زر 📄 طباعة إفادة إجازة في طلباتي." },
+      ],
+    },
+    {
+      id: "tech", icon: "💻", title: "الأسئلة التقنية", color: "#0EA5E9",
+      content: [
+        { q: "كيف أفعّل الإشعارات؟", a: "عند فتح تواصل، يظهر بانر 🔔 فعّل الإشعارات — اضغط عليه واسمح للموقع." },
+        { q: "نسيت كلمة المرور؟", a: "راجع المشرف في كوادر — كلمات المرور مُدارة من هناك." },
+        { q: "كيف أستخدم سطح المكتب؟", a: "افتح b.hma.engineer/#desktop على جهازك → امسح QR من جوالك للإقران." },
+        { q: "هل أحتاج إنترنت دائماً؟", a: "نعم لتسجيل الحضور ورؤية البيانات الفورية. لكن التطبيق PWA ويحفظ البيانات الأخيرة." },
+      ],
+    },
+  ];
+
+  return (
+    <div>
+      <div style={{ padding: 14, borderRadius: 12, background: "linear-gradient(135deg, " + COLORS.bg1 + ", " + COLORS.metallic + ")", border: "1px solid " + COLORS.metallicBorder, marginBottom: 12, textAlign: "center" }}>
+        <div style={{ fontSize: 24, marginBottom: 6 }}>📖</div>
+        <div style={{ ...TYPOGRAPHY.body, fontWeight: 800, color: COLORS.textPrimary, marginBottom: 4 }}>سياسات المكتب والأسئلة الشائعة</div>
+        <div style={{ ...TYPOGRAPHY.tiny, color: COLORS.textMuted, lineHeight: 1.6 }}>
+          مرجع سريع لقواعد العمل والإجراءات · وفقاً للائحة تنظيم العمل المعتمدة
+        </div>
+      </div>
+
+      {sections.map(function(s){
+        var isOpen = !!open[s.id];
+        return (
+          <div key={s.id} style={{ marginBottom: 8, borderRadius: 12, background: COLORS.metallic, border: "1px solid " + (isOpen ? s.color + "60" : COLORS.metallicBorder), overflow: "hidden" }}>
+            <button onClick={function(){ toggle(s.id); }} style={{ width: "100%", padding: "14px 16px", background: "transparent", border: "none", display: "flex", justifyContent: "space-between", alignItems: "center", cursor: "pointer", fontFamily: TYPOGRAPHY.fontTajawal }}>
+              <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                <div style={{ width: 36, height: 36, borderRadius: 10, background: s.color + "22", color: s.color, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 18 }}>{s.icon}</div>
+                <div style={{ textAlign: "right" }}>
+                  <div style={{ ...TYPOGRAPHY.body, fontWeight: 800, color: COLORS.textPrimary }}>{s.title}</div>
+                  <div style={{ ...TYPOGRAPHY.tiny, color: COLORS.textMuted, marginTop: 2 }}>{s.content.length} سؤال</div>
+                </div>
+              </div>
+              <div style={{ fontSize: 18, color: s.color, transition: "transform 0.2s", transform: isOpen ? "rotate(180deg)" : "rotate(0)" }}>⌄</div>
+            </button>
+            {isOpen && (
+              <div style={{ padding: "4px 16px 16px", borderTop: "1px solid " + COLORS.metallicBorder }}>
+                {s.content.map(function(item, i){
+                  return (
+                    <div key={i} style={{ padding: "12px 0", borderBottom: i < s.content.length - 1 ? "1px dashed " + COLORS.metallicBorder : "none" }}>
+                      <div style={{ display: "flex", alignItems: "flex-start", gap: 6, marginBottom: 4 }}>
+                        <span style={{ color: s.color, fontWeight: 900, flexShrink: 0 }}>؟</span>
+                        <span style={{ ...TYPOGRAPHY.caption, fontWeight: 800, color: COLORS.textPrimary, lineHeight: 1.7 }}>{item.q}</span>
+                      </div>
+                      <div style={{ ...TYPOGRAPHY.tiny, color: COLORS.textMuted, lineHeight: 1.8, paddingRight: 16 }}>{item.a}</div>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+        );
+      })}
+
+      {/* Legal reference */}
+      <div style={{ marginTop: 14, padding: 12, borderRadius: 10, background: "rgba(43,94,167,0.08)", border: "1px solid rgba(43,94,167,0.25)", fontSize: 10, color: COLORS.textMuted, lineHeight: 1.7, textAlign: "center" }}>
+        📜 السياسات مُستندة إلى لائحة تنظيم العمل المعتمدة رقم <strong style={{ color: COLORS.goldLight }}>978004</strong><br/>
+        وزارة الموارد البشرية والتنمية الاجتماعية — المملكة العربية السعودية
+      </div>
+    </div>
   );
 }
 
@@ -11150,6 +12262,339 @@ function FieldProjectsCard({ user, gps }) {
 }
 
 /* ═══════════ POINTS LOG (سجل النقاط) ═══════════ */
+function AchievementsCard({ user }) {
+  var [stats, setStats] = useState({});
+  var [loading, setLoading] = useState(true);
+  var [showAll, setShowAll] = useState(false);
+
+  async function loadStats() {
+    setLoading(true);
+    try {
+      var [att, tl] = await Promise.all([
+        fetch("/api/data?action=attendance").then(function(r){ return r.json(); }).catch(function(){ return []; }),
+        fetch("/api/data?action=tawasul-list").then(function(r){ return r.json(); }).catch(function(){ return null; }),
+      ]);
+      var myAtt = (att || []).filter(function(a){ return a.empId === user.id; });
+
+      // Group by date
+      var byDate = {};
+      myAtt.forEach(function(a){
+        var dt = a.date || (a.ts && a.ts.split("T")[0]);
+        if (!dt) return;
+        if (!byDate[dt]) byDate[dt] = {};
+        byDate[dt][a.type] = a.ts;
+      });
+
+      var dates = Object.keys(byDate).filter(function(dt){ return byDate[dt].checkin; }).sort();
+      var totalDays = dates.length;
+      var earlyCheckins = 0;
+      var lateCheckins = 0;
+      dates.forEach(function(dt){
+        var cin = new Date(byDate[dt].checkin);
+        if (cin.getHours() < 8 || (cin.getHours() === 8 && cin.getMinutes() === 0)) earlyCheckins++;
+        if (cin.getHours() >= 9 || (cin.getHours() === 8 && cin.getMinutes() > 45)) lateCheckins++;
+      });
+
+      // Max streak
+      var maxStreak = 0, curStreak = 0, prevDate = null;
+      dates.forEach(function(dt){
+        if (prevDate) {
+          var diff = (new Date(dt) - new Date(prevDate)) / (86400000);
+          if (diff <= 3) curStreak++;
+          else curStreak = 1;
+        } else curStreak = 1;
+        if (curStreak > maxStreak) maxStreak = curStreak;
+        prevDate = dt;
+      });
+
+      // Zero-late in last month
+      var monthAgo = new Date(); monthAgo.setDate(monthAgo.getDate() - 30);
+      var monthLates = dates.filter(function(dt){
+        if (new Date(dt) < monthAgo) return false;
+        var cin = new Date(byDate[dt].checkin);
+        return cin.getHours() >= 9 || (cin.getHours() === 8 && cin.getMinutes() > 45);
+      });
+      var monthWorkDays = dates.filter(function(dt){ return new Date(dt) >= monthAgo; }).length;
+
+      // Tasks
+      var myTasks = tl && tl.requests ? tl.requests.filter(function(r){ return r.requesterId === user.id; }) : [];
+      var myCompleted = tl && tl.requests ? tl.requests.filter(function(r){
+        return (r.assignees || []).some(function(a){ return String(a.id) === String(user.id); }) && (r.status === "accepted" || r.status === "done");
+      }) : [];
+
+      setStats({
+        totalDays: totalDays,
+        maxStreak: maxStreak,
+        earlyCheckins: earlyCheckins,
+        zeroLateMonth: monthWorkDays >= 15 && monthLates.length === 0,
+        profileComplete: !!(user.name && user.email && user.phone),
+        hasFace: !!user.hasFace,
+        pushEnabled: typeof Notification !== "undefined" && Notification.permission === "granted",
+        tasksCreated: myTasks.length,
+        tasksCompleted: myCompleted.length,
+        approvalsGiven: 0,
+      });
+    } catch(e) {}
+    setLoading(false);
+  }
+
+  useEffect(function(){ loadStats(); }, [user.id]);
+
+  if (loading) return null;
+
+  var unlocked = getUnlockedAchievements(user, stats);
+  var unlockedCount = unlocked.filter(function(a){ return a.unlocked; }).length;
+  var earnedPoints = unlocked.filter(function(a){ return a.unlocked; }).reduce(function(sum, a){ return sum + a.points; }, 0);
+
+  var categories = {
+    attendance: { label: "الحضور", icon: "📅", color: "#10B981" },
+    punctuality: { label: "الانضباط", icon: "⏰", color: "#0891B2" },
+    engagement: { label: "التفاعل", icon: "✨", color: "#7C3AED" },
+    tawasul: { label: "تواصل", icon: "📋", color: "#F59E0B" },
+    leadership: { label: "القيادة", icon: "👔", color: "#DC2626" },
+  };
+
+  var displayList = showAll ? unlocked : unlocked.slice(0, 6);
+
+  return (
+    <Card padding={SPACING.md}>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>
+        <div>
+          <div style={{ ...TYPOGRAPHY.body, fontWeight: 800, color: COLORS.textPrimary, display: "flex", alignItems: "center", gap: 6 }}>
+            🏆 الإنجازات
+          </div>
+          <div style={{ ...TYPOGRAPHY.tiny, color: COLORS.textMuted, marginTop: 2 }}>
+            <strong style={{ color: COLORS.goldLight }}>{unlockedCount}</strong>/{ACHIEVEMENTS.length} مفتوح · <strong style={{ color: COLORS.goldLight }}>{earnedPoints}</strong> نقطة مكتسبة
+          </div>
+        </div>
+        <div style={{ width: 54, height: 54, borderRadius: 27, background: "linear-gradient(135deg, " + COLORS.goldLight + ", " + COLORS.gold + ")", display: "flex", alignItems: "center", justifyContent: "center", color: "#000", fontWeight: 900, fontSize: 16 }}>
+          {Math.round((unlockedCount / ACHIEVEMENTS.length) * 100)}%
+        </div>
+      </div>
+
+      {/* Progress bar */}
+      <div style={{ height: 6, borderRadius: 3, background: COLORS.bg1, overflow: "hidden", marginBottom: 14 }}>
+        <div style={{ height: "100%", width: ((unlockedCount / ACHIEVEMENTS.length) * 100) + "%", background: "linear-gradient(90deg, " + COLORS.goldLight + ", " + COLORS.gold + ")", transition: "width 0.5s" }}></div>
+      </div>
+
+      {/* Grid of achievements */}
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 8 }}>
+        {displayList.map(function(a){
+          var cat = categories[a.category] || categories.engagement;
+          return (
+            <div key={a.id} style={{ padding: 10, borderRadius: 10, background: a.unlocked ? cat.color + "15" : COLORS.bg1, border: "1px solid " + (a.unlocked ? cat.color + "40" : COLORS.metallicBorder), opacity: a.unlocked ? 1 : 0.4, textAlign: "center", position: "relative" }}>
+              <div style={{ fontSize: 22, marginBottom: 4, filter: a.unlocked ? "none" : "grayscale(100%)" }}>{a.icon}</div>
+              <div style={{ fontSize: 10, fontWeight: 800, color: a.unlocked ? cat.color : COLORS.textMuted, marginBottom: 2 }}>{a.name}</div>
+              <div style={{ fontSize: 8, color: COLORS.textMuted, lineHeight: 1.4 }}>{a.desc}</div>
+              <div style={{ marginTop: 6, padding: "2px 6px", borderRadius: 6, background: a.unlocked ? cat.color + "22" : COLORS.metallic, color: a.unlocked ? cat.color : COLORS.textMuted, fontSize: 9, fontWeight: 800, display: "inline-block" }}>
+                +{a.points} نقطة
+              </div>
+              {a.unlocked && <div style={{ position: "absolute", top: 4, left: 4, fontSize: 10 }}>✓</div>}
+            </div>
+          );
+        })}
+      </div>
+
+      {/* Show more / less */}
+      {ACHIEVEMENTS.length > 6 && (
+        <button onClick={function(){ setShowAll(!showAll); }} style={{ width: "100%", marginTop: 10, padding: "8px", borderRadius: 8, background: "transparent", color: COLORS.goldLight, border: "1px dashed " + COLORS.metallicBorder, fontSize: 11, fontWeight: 700, cursor: "pointer", fontFamily: TYPOGRAPHY.fontTajawal }}>
+          {showAll ? "↑ عرض أقل" : "↓ عرض كل الإنجازات (" + ACHIEVEMENTS.length + ")"}
+        </button>
+      )}
+
+      {unlockedCount < ACHIEVEMENTS.length && (
+        <div style={{ marginTop: 10, padding: 10, borderRadius: 8, background: "rgba(245,158,11,0.1)", border: "1px solid rgba(245,158,11,0.3)", fontSize: 10, color: "#D97706", fontWeight: 600, textAlign: "center" }}>
+          🎯 استمر في الانضباط لفتح المزيد من الإنجازات
+        </div>
+      )}
+    </Card>
+  );
+}
+
+/* ═══ BIOMETRIC SETTINGS — تفعيل/إدارة البصمة (v6.61) ═══ */
+function BiometricSettingsCard({ user }) {
+  var [supported, setSupported] = useState(null);
+  var [devices, setDevices] = useState([]);
+  var [loading, setLoading] = useState(true);
+  var [busy, setBusy] = useState(false);
+
+  async function loadDevices() {
+    try {
+      var r = await fetch("/api/data?action=biometric-devices&empId=" + encodeURIComponent(user.id));
+      var d = await r.json();
+      setDevices(Array.isArray(d) ? d : []);
+    } catch(e) {}
+    setLoading(false);
+  }
+
+  useEffect(function(){
+    // Check WebAuthn support
+    if (typeof window === "undefined" || !window.PublicKeyCredential) {
+      setSupported(false);
+      setLoading(false);
+      return;
+    }
+    // Check platform authenticator (Touch ID / Face ID)
+    if (window.PublicKeyCredential.isUserVerifyingPlatformAuthenticatorAvailable) {
+      window.PublicKeyCredential.isUserVerifyingPlatformAuthenticatorAvailable()
+        .then(function(avail){ setSupported(avail); })
+        .catch(function(){ setSupported(false); });
+    } else {
+      setSupported(false);
+    }
+    loadDevices();
+  }, [user.id]);
+
+  async function registerNew() {
+    if (busy) return;
+    setBusy(true);
+    try {
+      // 1. Get challenge from server
+      var cRes = await fetch("/api/data?action=biometric-register-challenge", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ empId: user.id, rpId: window.location.hostname }),
+      });
+      var cData = await cRes.json();
+      if (!cRes.ok) { alert("خطأ: " + (cData.error || "")); setBusy(false); return; }
+
+      // 2. Prompt user for biometric
+      var publicKey = {
+        challenge: base64urlToUint8Array(cData.challenge),
+        rp: { name: cData.rp.name, id: cData.rp.id },
+        user: {
+          id: base64urlToUint8Array(cData.user.id),
+          name: cData.user.name,
+          displayName: cData.user.displayName,
+        },
+        pubKeyCredParams: cData.pubKeyCredParams,
+        authenticatorSelection: cData.authenticatorSelection,
+        timeout: cData.timeout,
+        attestation: cData.attestation,
+      };
+      var credential = await navigator.credentials.create({ publicKey: publicKey });
+
+      // 3. Send to server
+      var deviceName = /iPhone/.test(navigator.userAgent) ? "iPhone"
+                     : /iPad/.test(navigator.userAgent) ? "iPad"
+                     : /Android/.test(navigator.userAgent) ? "Android"
+                     : /Macintosh/.test(navigator.userAgent) ? "Mac"
+                     : /Windows/.test(navigator.userAgent) ? "Windows"
+                     : "جهاز";
+      var vRes = await fetch("/api/data?action=biometric-register-verify", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          empId: user.id,
+          credential: {
+            id: credential.id,
+            rawId: uint8ArrayToBase64url(new Uint8Array(credential.rawId)),
+            type: credential.type,
+            response: {
+              clientDataJSON: uint8ArrayToBase64url(new Uint8Array(credential.response.clientDataJSON)),
+              attestationObject: uint8ArrayToBase64url(new Uint8Array(credential.response.attestationObject)),
+            },
+          },
+          deviceName: deviceName,
+          userAgent: navigator.userAgent.substring(0, 200),
+          platform: navigator.platform,
+        }),
+      });
+      var vData = await vRes.json();
+      if (vData.ok) {
+        // Save to localStorage for next login
+        localStorage.setItem("basma_biometric_empId", user.id);
+        localStorage.setItem("basma_biometric_empName", user.name || user.username || "");
+        alert("✅ تم تفعيل الدخول بالبصمة على هذا الجهاز!");
+        await loadDevices();
+      } else {
+        alert("خطأ: " + (vData.error || ""));
+      }
+    } catch(e) {
+      if (e.name === "NotAllowedError") alert("تم إلغاء العملية");
+      else alert("فشل التسجيل: " + (e.message || e.name || ""));
+    }
+    setBusy(false);
+  }
+
+  async function removeDevice(credentialId) {
+    if (!window.confirm("إزالة هذا الجهاز من قائمة الأجهزة المُعتمدة؟")) return;
+    try {
+      await fetch("/api/data?action=biometric-devices", {
+        method: "DELETE",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ empId: user.id, credentialId: credentialId }),
+      });
+      // If this was the current device, clear local storage
+      var currentEmpId = localStorage.getItem("basma_biometric_empId");
+      if (currentEmpId === user.id && devices.length <= 1) {
+        localStorage.removeItem("basma_biometric_empId");
+        localStorage.removeItem("basma_biometric_empName");
+      }
+      await loadDevices();
+    } catch(e) { alert("خطأ"); }
+  }
+
+  if (loading) return null;
+
+  return (
+    <Card padding={SPACING.md}>
+      <div style={{ ...TYPOGRAPHY.body, fontWeight: 800, color: COLORS.textPrimary, marginBottom: 4, display: "flex", alignItems: "center", gap: 6 }}>
+        🔐 الدخول بالبصمة
+      </div>
+      <div style={{ ...TYPOGRAPHY.tiny, color: COLORS.textMuted, marginBottom: 14, lineHeight: 1.7 }}>
+        سجّل دخولاً سريعاً باستخدام بصمة الإصبع أو Face ID بدلاً من كتابة كلمة المرور
+      </div>
+
+      {!supported && (
+        <div style={{ padding: 12, borderRadius: 10, background: "rgba(245,158,11,0.1)", border: "1px solid rgba(245,158,11,0.3)", fontSize: 11, color: "#D97706", fontWeight: 600, lineHeight: 1.7 }}>
+          ℹ️ هذا الجهاز لا يدعم الدخول بالبصمة، أو أن بصمة/Face ID غير مفعّلة في إعداداته
+        </div>
+      )}
+
+      {supported && (
+        <>
+          {/* Registered devices */}
+          {devices.length > 0 && (
+            <div style={{ marginBottom: 12 }}>
+              <div style={{ fontSize: 10, color: COLORS.textMuted, fontWeight: 700, marginBottom: 6 }}>الأجهزة المُعتمدة ({devices.length}):</div>
+              {devices.map(function(d, i){
+                return (
+                  <div key={d.credentialId} style={{ padding: 10, borderRadius: 8, background: "rgba(16,185,129,0.08)", border: "1px solid rgba(16,185,129,0.25)", marginBottom: 6, display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                    <div>
+                      <div style={{ fontSize: 12, fontWeight: 700, color: "#10B981", display: "flex", alignItems: "center", gap: 5 }}>
+                        ✅ <span>{d.deviceName || "جهاز"}</span>
+                      </div>
+                      <div style={{ fontSize: 9, color: COLORS.textMuted, marginTop: 2 }}>
+                        سُجّل: {new Date(d.registeredAt).toLocaleDateString("ar-SA")}
+                        {d.lastUsed && " · آخر استخدام: " + new Date(d.lastUsed).toLocaleDateString("ar-SA")}
+                      </div>
+                    </div>
+                    <button onClick={function(){ removeDevice(d.credentialId); }} style={{ padding: "5px 10px", borderRadius: 6, background: "transparent", color: "#DC2626", border: "1px solid rgba(220,38,38,0.4)", fontSize: 10, fontWeight: 700, cursor: "pointer", fontFamily: TYPOGRAPHY.fontTajawal }}>
+                      🗑 حذف
+                    </button>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+
+          <button onClick={registerNew} disabled={busy} style={{ width: "100%", padding: "12px 14px", borderRadius: 12, background: "linear-gradient(135deg, " + COLORS.goldLight + ", " + COLORS.gold + ")", color: "#000", border: "none", fontSize: 13, fontWeight: 800, cursor: busy ? "default" : "pointer", fontFamily: TYPOGRAPHY.fontTajawal, display: "flex", alignItems: "center", justifyContent: "center", gap: 8 }}>
+            <span style={{ fontSize: 18 }}>👤</span>
+            <span>{busy ? "جارِ التسجيل..." : devices.length > 0 ? "إضافة هذا الجهاز" : "فعّل الدخول بالبصمة"}</span>
+          </button>
+
+          {devices.length === 0 && (
+            <div style={{ marginTop: 10, padding: 10, borderRadius: 8, background: "rgba(59,130,246,0.08)", border: "1px solid rgba(59,130,246,0.25)", fontSize: 10, color: "#3B82F6", lineHeight: 1.7 }}>
+              💡 <strong>معلومة:</strong> بصمتك تُحفظ فقط في جهازك وليس على الخادم. كلمة المرور تبقى متوفرة كبديل دائم.
+            </div>
+          )}
+        </>
+      )}
+    </Card>
+  );
+}
+
 function PointsLogCard({ user, allAtt }) {
   var [expanded, setExpanded] = useState(false);
   // Calculate points breakdown

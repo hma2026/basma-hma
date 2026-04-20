@@ -1,21 +1,20 @@
-const CACHE_NAME = 'basma-hma-v627';
+const CACHE_NAME = 'basma-hma-v662';
 const STATIC_ASSETS = [
   '/',
   '/icon.svg',
   '/manifest.json',
+  '/hma-logo.png',
 ];
 
-// Install — cache static assets
 self.addEventListener('install', (event) => {
   event.waitUntil(
     caches.open(CACHE_NAME).then((cache) => {
-      return cache.addAll(STATIC_ASSETS);
+      return cache.addAll(STATIC_ASSETS).catch(() => {});
     })
   );
   self.skipWaiting();
 });
 
-// Activate — clean old caches
 self.addEventListener('activate', (event) => {
   event.waitUntil(
     caches.keys().then((keys) => {
@@ -27,23 +26,48 @@ self.addEventListener('activate', (event) => {
   self.clients.claim();
 });
 
-// Fetch — smart caching strategy
 self.addEventListener('fetch', (event) => {
   const url = new URL(event.request.url);
-  
-  // API calls — always network
+
+  // API — mutations go to network only (client queues offline)
   if (url.pathname.startsWith('/api/')) {
+    if (event.request.method !== 'GET') {
+      event.respondWith(
+        fetch(event.request).catch(() => {
+          return new Response(JSON.stringify({ error: 'offline', _offline: true }), {
+            status: 503,
+            headers: { 'Content-Type': 'application/json' }
+          });
+        })
+      );
+      return;
+    }
+    // GETs: network first, cache fallback
     event.respondWith(
-      fetch(event.request).catch(() => {
-        return new Response(JSON.stringify({ error: 'offline' }), {
-          headers: { 'Content-Type': 'application/json' }
-        });
-      })
+      fetch(event.request)
+        .then((response) => {
+          var action = url.searchParams.get('action');
+          var cacheable = ['employees', 'branches', 'tawasul-list', 'work_types', 'settings', 'banners', 'announcements', 'attendance', 'leaves', 'permissions'];
+          if (response.ok && action && cacheable.indexOf(action) >= 0) {
+            var clone = response.clone();
+            caches.open(CACHE_NAME).then((cache) => cache.put(event.request, clone));
+          }
+          return response;
+        })
+        .catch(() => {
+          return caches.match(event.request).then((cached) => {
+            if (cached) return cached;
+            return new Response(JSON.stringify({ error: 'offline', _offline: true }), {
+              status: 503,
+              headers: { 'Content-Type': 'application/json' }
+            });
+          });
+        })
     );
     return;
   }
 
-  // CDN resources (face-api.js models + Leaflet) — cache first, then network
+  // CDN — cache first
   if (url.hostname === 'cdn.jsdelivr.net' || url.hostname === 'unpkg.com') {
     event.respondWith(
       caches.match(event.request).then((cached) => {
@@ -58,19 +82,37 @@ self.addEventListener('fetch', (event) => {
     return;
   }
 
-  // Static assets — network first, cache fallback
+  // Static: network first, cache fallback, root as last resort for navigation
   event.respondWith(
     fetch(event.request)
       .then((response) => {
-        const clone = response.clone();
-        caches.open(CACHE_NAME).then((cache) => cache.put(event.request, clone));
+        if (response.ok) {
+          const clone = response.clone();
+          caches.open(CACHE_NAME).then((cache) => cache.put(event.request, clone));
+        }
         return response;
       })
-      .catch(() => caches.match(event.request))
+      .catch(() => caches.match(event.request).then((cached) => {
+        if (cached) return cached;
+        if (event.request.mode === 'navigate') {
+          return caches.match('/');
+        }
+      }))
   );
 });
 
-// ═══ Push Notifications ═══
+// Background sync — try resending queued items when back online
+self.addEventListener('sync', (event) => {
+  if (event.tag === 'basma-queue-sync') {
+    event.waitUntil(
+      self.clients.matchAll().then((clients) => {
+        clients.forEach((client) => client.postMessage({ type: 'sync-queue' }));
+      })
+    );
+  }
+});
+
+// Push notifications
 self.addEventListener('push', function(event) {
   var data = {};
   try { data = event.data ? event.data.json() : {}; } catch(e) { data = { title: 'بصمة HMA', body: event.data ? event.data.text() : 'إشعار جديد' }; }
@@ -97,7 +139,6 @@ self.addEventListener('notificationclick', function(event) {
   event.notification.close();
   var data = event.notification.data || {};
   var targetUrl = '/';
-  // Tawasul task notification — navigate to tawasul tab
   if (data.type === 'tawasul_new_task' || (data.tag && data.tag.indexOf('tawasul-') === 0)) {
     targetUrl = '/?page=tawasul' + (data.taskId ? '&task=' + data.taskId : '');
   } else if (data.fakeCall || event.action === 'answer') {

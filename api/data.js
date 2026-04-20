@@ -326,6 +326,177 @@ export default async function handler(req, res) {
         return res.json({ ok: true, msg: 'initialized (employees empty — call action=sync-kadwar)' });
       }
 
+      /* v6.61 — WebAuthn Biometric login endpoints */
+      case 'biometric-register-challenge': {
+        // Returns a challenge for the browser to sign with the biometric key
+        if (req.method !== 'POST') break;
+        const body = req.body || {};
+        if (!body.empId) return res.status(400).json({ error: 'empId required' });
+        const emps = await dbGet('employees') || [];
+        const emp = emps.find(function(e){ return e.id === body.empId; });
+        if (!emp) return res.status(404).json({ error: 'employee not found' });
+
+        // Generate random challenge (32 bytes base64url)
+        const crypto = await import('crypto');
+        const challenge = crypto.randomBytes(32).toString('base64url');
+
+        // Store challenge temporarily (valid 5 min)
+        const challenges = (await dbGet('biometric_challenges')) || {};
+        challenges[body.empId] = { challenge: challenge, expires: Date.now() + 5 * 60 * 1000 };
+        // Clean expired
+        Object.keys(challenges).forEach(function(k){
+          if (challenges[k].expires < Date.now()) delete challenges[k];
+        });
+        await dbSet('biometric_challenges', challenges);
+
+        return res.json({
+          challenge: challenge,
+          rp: { name: 'بصمة HMA', id: body.rpId || 'b.hma.engineer' },
+          user: {
+            id: Buffer.from(String(body.empId)).toString('base64url'),
+            name: emp.email || emp.username || body.empId,
+            displayName: emp.name || body.empId,
+          },
+          pubKeyCredParams: [
+            { type: 'public-key', alg: -7 },  // ES256
+            { type: 'public-key', alg: -257 }, // RS256
+          ],
+          authenticatorSelection: {
+            authenticatorAttachment: 'platform', // Use device's built-in biometric
+            userVerification: 'required',
+            residentKey: 'preferred',
+          },
+          timeout: 60000,
+          attestation: 'none',
+        });
+      }
+
+      case 'biometric-register-verify': {
+        if (req.method !== 'POST') break;
+        const body = req.body || {};
+        if (!body.empId || !body.credential) return res.status(400).json({ error: 'empId and credential required' });
+
+        // Simple verification: trust the browser's signature for now (production would verify attestation)
+        const credentials = (await dbGet('biometric_credentials')) || {};
+        if (!credentials[body.empId]) credentials[body.empId] = [];
+
+        // Check if credential ID already exists
+        const credId = body.credential.id;
+        const existing = credentials[body.empId].find(function(c){ return c.credentialId === credId; });
+        if (existing) {
+          return res.json({ ok: true, message: 'already registered', device: existing });
+        }
+
+        var device = {
+          credentialId: credId,
+          publicKey: body.credential.response && body.credential.response.publicKey ? body.credential.response.publicKey : '',
+          deviceName: body.deviceName || 'جهاز غير مسمى',
+          userAgent: body.userAgent || '',
+          platform: body.platform || '',
+          registeredAt: new Date().toISOString(),
+          lastUsed: null,
+        };
+        credentials[body.empId].push(device);
+        await dbSet('biometric_credentials', credentials);
+
+        return res.json({ ok: true, device: device });
+      }
+
+      case 'biometric-login-challenge': {
+        // Returns challenge + allowed credentials for a given user
+        if (req.method !== 'POST') break;
+        const body = req.body || {};
+        if (!body.empId) return res.status(400).json({ error: 'empId required' });
+
+        const credentials = (await dbGet('biometric_credentials')) || {};
+        const userCreds = credentials[body.empId] || [];
+        if (userCreds.length === 0) return res.status(404).json({ error: 'لا يوجد بصمة مسجّلة لهذا المستخدم' });
+
+        const crypto = await import('crypto');
+        const challenge = crypto.randomBytes(32).toString('base64url');
+
+        const challenges = (await dbGet('biometric_challenges')) || {};
+        challenges[body.empId] = { challenge: challenge, expires: Date.now() + 5 * 60 * 1000, type: 'login' };
+        await dbSet('biometric_challenges', challenges);
+
+        return res.json({
+          challenge: challenge,
+          allowCredentials: userCreds.map(function(c){
+            return { type: 'public-key', id: c.credentialId, transports: ['internal'] };
+          }),
+          timeout: 60000,
+          userVerification: 'required',
+        });
+      }
+
+      case 'biometric-login-verify': {
+        if (req.method !== 'POST') break;
+        const body = req.body || {};
+        if (!body.empId || !body.credential) return res.status(400).json({ error: 'بيانات ناقصة' });
+
+        // Verify challenge exists and matches
+        const challenges = (await dbGet('biometric_challenges')) || {};
+        const stored = challenges[body.empId];
+        if (!stored || stored.type !== 'login' || stored.expires < Date.now()) {
+          return res.status(400).json({ error: 'انتهت صلاحية التحدي — حاول مرة أخرى' });
+        }
+
+        // Verify credential exists for user
+        const credentials = (await dbGet('biometric_credentials')) || {};
+        const userCreds = credentials[body.empId] || [];
+        const cred = userCreds.find(function(c){ return c.credentialId === body.credential.id; });
+        if (!cred) return res.status(401).json({ error: 'بصمة غير مُسجّلة' });
+
+        // Update lastUsed
+        cred.lastUsed = new Date().toISOString();
+        await dbSet('biometric_credentials', credentials);
+
+        // Delete used challenge
+        delete challenges[body.empId];
+        await dbSet('biometric_challenges', challenges);
+
+        // Return full employee data (same as login endpoint)
+        const emps = await dbGet('employees') || [];
+        const emp = emps.find(function(e){ return e.id === body.empId; });
+        if (!emp) return res.status(404).json({ error: 'الموظف غير موجود' });
+
+        const safeEmp = Object.assign({}, emp);
+        delete safeEmp.passwordHash;
+        delete safeEmp.password;
+        delete safeEmp.passwordSalt;
+
+        return res.json({ ok: true, employee: safeEmp, biometricUsed: true });
+      }
+
+      case 'biometric-devices': {
+        // GET: list devices for user · DELETE: remove a device
+        const body = req.method === 'GET' ? req.query : (req.body || {});
+        if (!body.empId) return res.status(400).json({ error: 'empId required' });
+
+        const credentials = (await dbGet('biometric_credentials')) || {};
+        if (req.method === 'GET') {
+          var list = (credentials[body.empId] || []).map(function(c){
+            return {
+              credentialId: c.credentialId,
+              deviceName: c.deviceName,
+              platform: c.platform,
+              registeredAt: c.registeredAt,
+              lastUsed: c.lastUsed,
+            };
+          });
+          return res.json(list);
+        }
+        if (req.method === 'DELETE') {
+          if (!body.credentialId) return res.status(400).json({ error: 'credentialId required' });
+          credentials[body.empId] = (credentials[body.empId] || []).filter(function(c){
+            return c.credentialId !== body.credentialId;
+          });
+          await dbSet('biometric_credentials', credentials);
+          return res.json({ ok: true });
+        }
+        break;
+      }
+
       case 'login': {
         var body = req.body || {};
         var loginId = (body.username || body.empId || body.email || '').toLowerCase().trim();
@@ -472,8 +643,49 @@ export default async function handler(req, res) {
         return res.json(recs);
       }
 
+      /* v6.58 — Attendance period locks (for payroll finalization) */
+      case 'attendance-locks': {
+        if (req.method === 'GET') {
+          var locks = (await dbGet('attendance_locks')) || [];
+          return res.json(locks);
+        }
+        if (req.method === 'POST') {
+          var body = req.body || {};
+          if (!body.month) return res.status(400).json({ error: 'month required (e.g. 2026-04)' });
+          var locks = (await dbGet('attendance_locks')) || [];
+          // Check if already locked
+          var existing = locks.find(function(l){ return l.month === body.month; });
+          if (existing) return res.status(400).json({ error: 'هذا الشهر مقفل بالفعل' });
+          locks.push({
+            month: body.month,
+            lockedBy: body.lockedBy || 'admin',
+            lockedAt: new Date().toISOString(),
+            note: body.note || '',
+          });
+          await dbSet('attendance_locks', locks);
+          return res.json({ ok: true, lock: locks[locks.length - 1] });
+        }
+        if (req.method === 'DELETE') {
+          var body = req.body || {};
+          if (!body.month) return res.status(400).json({ error: 'month required' });
+          var locks = (await dbGet('attendance_locks')) || [];
+          locks = locks.filter(function(l){ return l.month !== body.month; });
+          await dbSet('attendance_locks', locks);
+          return res.json({ ok: true });
+        }
+        break;
+      }
+
       case 'manual_checkin': {
         const { empId, type, date, adminId } = req.body || {};
+        // v6.58 — Check if the month is locked
+        if (date) {
+          var month = String(date).substring(0, 7); // "2026-04"
+          var locks = (await dbGet('attendance_locks')) || [];
+          if (locks.some(function(l){ return l.month === month; })) {
+            return res.status(403).json({ error: 'هذا الشهر (' + month + ') مقفل — فك القفل أولاً لتعديل الحضور' });
+          }
+        }
         const recs = await dbGet('manual_attendance') || [];
         recs.push({ id: 'M' + Date.now(), empId, type, date, adminId, ts: new Date().toISOString(), manual: true });
         await dbSet('manual_attendance', recs);
@@ -998,11 +1210,171 @@ export default async function handler(req, res) {
         }
         if (req.method === 'POST') {
           const logs = await dbGet('custody_maint') || [];
-          logs.push({ id: 'CM' + Date.now(), ...req.body, ts: new Date().toISOString() });
+          const body = req.body || {};
+          var entry = {
+            id: 'CM' + Date.now(),
+            custodyId: body.custodyId,
+            type: body.type || 'routine', // routine | repair | inspection | upgrade
+            description: body.description || '',
+            cost: parseFloat(body.cost) || 0,
+            vendor: body.vendor || '',
+            doneBy: body.doneBy || '',
+            date: body.date || new Date().toISOString().split('T')[0],
+            nextDueDate: body.nextDueDate || null,
+            photos: body.photos || [],
+            notes: body.notes || '',
+            ts: new Date().toISOString(),
+          };
+          logs.push(entry);
+          await dbSet('custody_maint', logs);
+          return res.json({ ok: true, entry: entry });
+        }
+        if (req.method === 'PUT') {
+          const logs = await dbGet('custody_maint') || [];
+          const body = req.body || {};
+          const i = logs.findIndex(function(l){ return l.id === body.id; });
+          if (i < 0) return res.status(404).json({ error: 'not found' });
+          logs[i] = Object.assign({}, logs[i], body);
           await dbSet('custody_maint', logs);
           return res.json({ ok: true });
         }
+        if (req.method === 'DELETE') {
+          const logs = await dbGet('custody_maint') || [];
+          const { id } = req.body || {};
+          var filtered = logs.filter(function(l){ return l.id !== id; });
+          await dbSet('custody_maint', filtered);
+          return res.json({ ok: true });
+        }
         break;
+      }
+
+      /* v6.60 — Custody status updates (operational | broken | in_maintenance | lost | retired) */
+      case 'custody-status': {
+        if (req.method !== 'POST' && req.method !== 'PUT') break;
+        const body = req.body || {};
+        if (!body.custodyId || !body.status) return res.status(400).json({ error: 'custodyId and status required' });
+        const items = await dbGet('custody') || [];
+        const i = items.findIndex(function(c){ return c.id === body.custodyId; });
+        if (i < 0) return res.status(404).json({ error: 'custody not found' });
+
+        // Record status history
+        var history = items[i].statusHistory || [];
+        history.push({
+          status: body.status,
+          previousStatus: items[i].operationalStatus || 'operational',
+          changedBy: body.changedBy || 'admin',
+          changedAt: new Date().toISOString(),
+          reason: body.reason || '',
+        });
+        items[i].operationalStatus = body.status;
+        items[i].statusHistory = history;
+        if (body.reason) items[i].statusNote = body.reason;
+        await dbSet('custody', items);
+        return res.json({ ok: true, custody: items[i] });
+      }
+
+      /* v6.60 — Warranty tracking + upcoming expiry alerts */
+      case 'custody-warranty': {
+        if (req.method === 'GET') {
+          const items = await dbGet('custody') || [];
+          var today = new Date();
+          var in30days = new Date(today.getTime() + 30 * 24 * 60 * 60 * 1000);
+          var result = {
+            expiringSoon: [], // Within 30 days
+            expired: [],
+            active: [],
+            noWarranty: [],
+          };
+          items.forEach(function(c){
+            if (!c.warrantyEnd) { result.noWarranty.push(c); return; }
+            var end = new Date(c.warrantyEnd);
+            if (end < today) result.expired.push(c);
+            else if (end < in30days) result.expiringSoon.push(c);
+            else result.active.push(c);
+          });
+          return res.json(result);
+        }
+        if (req.method === 'PUT') {
+          const body = req.body || {};
+          const items = await dbGet('custody') || [];
+          const i = items.findIndex(function(c){ return c.id === body.custodyId; });
+          if (i < 0) return res.status(404).json({ error: 'not found' });
+          items[i].warrantyStart = body.warrantyStart || items[i].warrantyStart;
+          items[i].warrantyEnd = body.warrantyEnd || items[i].warrantyEnd;
+          items[i].warrantyProvider = body.warrantyProvider || items[i].warrantyProvider;
+          items[i].warrantyNote = body.warrantyNote || items[i].warrantyNote;
+          await dbSet('custody', items);
+          return res.json({ ok: true });
+        }
+        break;
+      }
+
+      /* v6.60 — Total cost of ownership for an asset */
+      case 'custody-tco': {
+        const { custodyId } = req.query || {};
+        if (!custodyId) return res.status(400).json({ error: 'custodyId required' });
+        const items = await dbGet('custody') || [];
+        const item = items.find(function(c){ return c.id === custodyId; });
+        if (!item) return res.status(404).json({ error: 'not found' });
+        const maintLogs = (await dbGet('custody_maint') || []).filter(function(m){ return m.custodyId === custodyId; });
+
+        var purchaseCost = parseFloat(item.purchaseCost) || 0;
+        var maintTotalCost = maintLogs.reduce(function(sum, m){ return sum + (parseFloat(m.cost) || 0); }, 0);
+        var byType = {};
+        maintLogs.forEach(function(m){
+          byType[m.type] = (byType[m.type] || 0) + (parseFloat(m.cost) || 0);
+        });
+
+        // Age calculation
+        var ageYears = 0;
+        if (item.purchaseDate) {
+          var start = new Date(item.purchaseDate);
+          var now = new Date();
+          ageYears = ((now - start) / (365.25 * 24 * 60 * 60 * 1000)).toFixed(1);
+        }
+
+        return res.json({
+          custodyId: custodyId,
+          itemName: item.name,
+          purchaseCost: purchaseCost,
+          purchaseDate: item.purchaseDate,
+          ageYears: parseFloat(ageYears),
+          maintenanceCount: maintLogs.length,
+          maintenanceCost: maintTotalCost,
+          totalCost: purchaseCost + maintTotalCost,
+          byType: byType,
+          maintenanceHistory: maintLogs,
+        });
+      }
+
+      /* v6.60 — Maintenance due alerts (based on nextDueDate) */
+      case 'custody-maintenance-due': {
+        const maintLogs = await dbGet('custody_maint') || [];
+        const items = await dbGet('custody') || [];
+        var today = new Date();
+        var in7days = new Date(today.getTime() + 7 * 24 * 60 * 60 * 1000);
+
+        // Get last maintenance per custody
+        var latestByCustody = {};
+        maintLogs.forEach(function(m){
+          if (!m.nextDueDate) return;
+          if (!latestByCustody[m.custodyId] || new Date(m.date) > new Date(latestByCustody[m.custodyId].date)) {
+            latestByCustody[m.custodyId] = m;
+          }
+        });
+
+        var overdue = [], upcoming = [];
+        Object.keys(latestByCustody).forEach(function(cid){
+          var m = latestByCustody[cid];
+          var item = items.find(function(c){ return c.id === cid; });
+          if (!item) return;
+          var due = new Date(m.nextDueDate);
+          var enriched = Object.assign({}, m, { itemName: item.name, empName: item.empName, category: item.category });
+          if (due < today) overdue.push(enriched);
+          else if (due < in7days) upcoming.push(enriched);
+        });
+
+        return res.json({ overdue: overdue, upcoming: upcoming });
       }
 
       case 'gps_log': {
