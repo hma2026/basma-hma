@@ -11,7 +11,7 @@ import { exportEmploymentLetter, exportLeaveLetter } from "./formalPdfs";
 
 /* ═══════════ APP CONFIG (إعدادات التطبيق) ═══════════ */
 const APP_CONFIG = {
-  VER: "6.87",
+  VER: "6.88",
   NAME: "بصمة HMA",
   FULL_NAME: "نظام الحضور والانصراف الذكي",
   COMPANY: "هاني محمد عسيري للاستشارات الهندسية",
@@ -2923,6 +2923,12 @@ function ProfilePage({ user, branch, workType, onLogout, onTicket, myTickets, da
     { id: "docs", emoji: "📎", label: "العهد والمرفقات" },
     { id: "legal", emoji: "⚖️", label: "القانونية" },
   ];
+  // v6.88 — tab التقييمات للمدراء فقط
+  if (user.isManager || user.isAssistant) {
+    tabs.push({ id: "evaluations", emoji: "⭐", label: "تقييماتي للموظفين" });
+  }
+  // My evaluations tab (for everyone — to see their approved quarterly/annual)
+  tabs.push({ id: "my_evals", emoji: "📊", label: "تقييماتي" });
 
   return (
     <div style={{ flex: 1, paddingBottom: 80, background: "linear-gradient(180deg, "+COLORS.bg1+" 0%, "+COLORS.bg2+" 50%, "+COLORS.bg3+" 100%)", minHeight: "100vh" }}>
@@ -3084,6 +3090,16 @@ function ProfilePage({ user, branch, workType, onLogout, onTicket, myTickets, da
             <PointsLogCard user={user} allAtt={[]} />
             <AchievementsCard user={user} />
           </>
+        )}
+
+        {/* v6.88 — Manager evaluations tab */}
+        {tab === "evaluations" && (user.isManager || user.isAssistant) && (
+          <ManagerEvaluationsTab user={user} />
+        )}
+
+        {/* v6.88 — My evaluations (for everyone) */}
+        {tab === "my_evals" && (
+          <MyEvaluationsTab user={user} />
         )}
 
         {/* Manager panel button — hidden in desktop session (v6.47) */}
@@ -14494,6 +14510,660 @@ function MyDependentsView({ user, dependents, onSave }) {
       })}
       {editing && <button onClick={function(){ setList(function(prev){ return [...prev, { name: "", relationship: "", dob: "", hasInsurance: false }]; }); }} style={{ padding: 12, background: COLORS.bgSecondary, color: COLORS.primary, border: "2px dashed " + COLORS.primary + "50", borderRadius: 14, fontSize: 12, fontWeight: 700, cursor: "pointer", fontFamily: TYPOGRAPHY.fontTajawal }}>+ إضافة مرافق</button>}
     </div>}
+  </div>;
+}
+
+
+
+
+/* ═══════════════════════════════════════════════════════════════════
+ * v6.88 — ManagerEvaluationsTab — شاشة تقييمات المدير للموظفين
+ * ═══════════════════════════════════════════════════════════════════ */
+function ManagerEvaluationsTab({ user }) {
+  var [loading, setLoading] = useState(true);
+  var [tasks, setTasks] = useState([]);
+  var [selected, setSelected] = useState(null);  // evaluation being edited
+  var [filter, setFilter] = useState("active");  // active | done
+
+  async function loadTasks() {
+    setLoading(true);
+    try {
+      var r = await fetch("/api/data?action=evaluation-my-tasks&managerId=" + encodeURIComponent(user.id));
+      var d = await r.json();
+      if (d.ok) setTasks(d.tasks || []);
+    } catch(e) {}
+    setLoading(false);
+  }
+
+  async function loadDone() {
+    setLoading(true);
+    try {
+      var r = await fetch("/api/data?action=evaluations&evaluatorId=" + encodeURIComponent(user.id));
+      var d = await r.json();
+      if (d.ok) {
+        var done = (d.evaluations || []).filter(function(e){ return ['submitted','approved','final','cancelled'].indexOf(e.status) >= 0; });
+        setTasks(done);
+      }
+    } catch(e) {}
+    setLoading(false);
+  }
+
+  useEffect(function(){
+    if (filter === "active") loadTasks();
+    else loadDone();
+  }, [filter, user && user.id]);
+
+  if (selected) {
+    return <EvaluationForm
+      evaluation={selected}
+      user={user}
+      onClose={function(){ setSelected(null); loadTasks(); }}
+    />;
+  }
+
+  var typeLabels = {
+    daily: "يومي", weekly: "أسبوعي", monthly: "شهري",
+    quarterly: "ربع سنوي", annual: "سنوي"
+  };
+  var statusLabels = {
+    scheduled: { label: "مجدول", color: "#3B82F6", bg: "rgba(59,130,246,0.1)" },
+    in_progress: { label: "قيد التنفيذ", color: "#D97706", bg: "rgba(217,119,6,0.1)" },
+    pending_m2: { label: "بانتظار م2", color: "#8B5CF6", bg: "rgba(139,92,246,0.1)" },
+    submitted: { label: "مُرسَل — بانتظار HR", color: "#06B6D4", bg: "rgba(6,182,212,0.1)" },
+    approved: { label: "معتمد", color: "#16A34A", bg: "rgba(34,197,94,0.1)" },
+    final: { label: "نهائي", color: "#16A34A", bg: "rgba(34,197,94,0.1)" },
+    cancelled: { label: "ملغي", color: "#DC2626", bg: "rgba(239,68,68,0.1)" },
+  };
+
+  return <div>
+    <div style={{ ...TYPOGRAPHY.h2, color: COLORS.textPrimary, marginBottom: SPACING.md, fontFamily: TYPOGRAPHY.fontCairo }}>
+      ⭐ تقييمات موظفيّ
+    </div>
+
+    {/* Filter tabs */}
+    <div style={{ display: "flex", gap: 6, marginBottom: SPACING.md, background: COLORS.bgSecondary, padding: 4, borderRadius: 14 }}>
+      <button onClick={function(){setFilter("active");}} style={{
+        flex: 1, padding: 10, borderRadius: 10, border: "none", cursor: "pointer",
+        background: filter === "active" ? COLORS.card : "transparent",
+        color: filter === "active" ? COLORS.primary : COLORS.textMuted,
+        fontSize: 12, fontWeight: 700, fontFamily: TYPOGRAPHY.fontTajawal,
+        boxShadow: filter === "active" ? "0 1px 3px rgba(0,0,0,0.08)" : "none"
+      }}>⏳ مطلوبة مني</button>
+      <button onClick={function(){setFilter("done");}} style={{
+        flex: 1, padding: 10, borderRadius: 10, border: "none", cursor: "pointer",
+        background: filter === "done" ? COLORS.card : "transparent",
+        color: filter === "done" ? COLORS.primary : COLORS.textMuted,
+        fontSize: 12, fontWeight: 700, fontFamily: TYPOGRAPHY.fontTajawal,
+        boxShadow: filter === "done" ? "0 1px 3px rgba(0,0,0,0.08)" : "none"
+      }}>✓ مكتملة</button>
+    </div>
+
+    {loading ? <div style={{ padding: 40, textAlign: "center", color: COLORS.textMuted, fontSize: 13 }}>
+      جارٍ التحميل...
+    </div> : tasks.length === 0 ? <Card>
+      <div style={{ padding: 30, textAlign: "center" }}>
+        <div style={{ fontSize: 48, marginBottom: 10, opacity: 0.5 }}>✨</div>
+        <div style={{ fontSize: 14, fontWeight: 700, color: COLORS.textPrimary, marginBottom: 6 }}>
+          {filter === "active" ? "لا توجد تقييمات مطلوبة منك حالياً" : "لا توجد تقييمات مكتملة بعد"}
+        </div>
+        <div style={{ fontSize: 11, color: COLORS.textMuted }}>
+          {filter === "active" ? "ستظهر هنا تلقائياً عند جدولتها من HR" : "التقييمات التي تُكمِلها ستظهر هنا"}
+        </div>
+      </div>
+    </Card> : <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+      {tasks.map(function(t){
+        var st = statusLabels[t.status] || { label: t.status, color: COLORS.textMuted, bg: COLORS.bgSecondary };
+        var isUrgent = t.status === 'scheduled' || t.status === 'in_progress';
+        var criteriaCount = (t.criteriaSnapshot || []).length;
+        var filledCount = Object.keys(t.scores || {}).length;
+
+        return <div key={t.id} onClick={function(){ if (filter === "active") setSelected(t); }} style={{
+          background: COLORS.card, borderRadius: 18, padding: SPACING.md,
+          border: isUrgent ? "2px solid " + COLORS.primary + "40" : "1px solid " + COLORS.cardBorder,
+          cursor: filter === "active" ? "pointer" : "default",
+          display: "flex", flexDirection: "column", gap: 10
+        }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+            <div style={{
+              width: 44, height: 44, borderRadius: 14,
+              background: COLORS.primary + "15",
+              display: "flex", alignItems: "center", justifyContent: "center",
+              fontSize: 20
+            }}>⭐</div>
+            <div style={{ flex: 1 }}>
+              <div style={{ fontSize: 14, fontWeight: 800, color: COLORS.textPrimary }}>{t.empName}</div>
+              <div style={{ fontSize: 11, color: COLORS.textMuted, marginTop: 2 }}>{t.jobTitle || "—"}</div>
+            </div>
+            <div style={{
+              padding: "4px 10px", borderRadius: 10, background: st.bg, color: st.color,
+              fontSize: 10, fontWeight: 800
+            }}>{st.label}</div>
+          </div>
+
+          <div style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 11, color: COLORS.textSecondary }}>
+            <div style={{ padding: "3px 10px", background: COLORS.bgSecondary, borderRadius: 8, fontWeight: 700 }}>
+              📅 {typeLabels[t.type] || t.type}
+            </div>
+            {t.periodStart && <div style={{ color: COLORS.textMuted, fontSize: 10 }}>
+              {t.periodStart}{t.periodEnd ? " → " + t.periodEnd : ""}
+            </div>}
+          </div>
+
+          {criteriaCount > 0 && <div>
+            <div style={{ display: "flex", justifyContent: "space-between", fontSize: 10, color: COLORS.textMuted, marginBottom: 4 }}>
+              <span>التقدم: {filledCount} / {criteriaCount} معيار</span>
+              <span style={{ fontWeight: 700, color: filledCount === criteriaCount ? "#16A34A" : COLORS.primary }}>
+                {Math.round((filledCount / criteriaCount) * 100)}%
+              </span>
+            </div>
+            <div style={{ height: 6, background: COLORS.bgSecondary, borderRadius: 3, overflow: "hidden" }}>
+              <div style={{
+                height: "100%", width: (filledCount / criteriaCount * 100) + "%",
+                background: filledCount === criteriaCount ? "#16A34A" : COLORS.primary,
+                transition: "width 0.3s"
+              }}></div>
+            </div>
+          </div>}
+
+          {criteriaCount === 0 && <div style={{ padding: 8, background: "rgba(217,119,6,0.1)", borderRadius: 8, fontSize: 10, color: "#D97706", fontWeight: 700, textAlign: "center" }}>
+            ⚠️ لا توجد معايير محددة في كوادر لهذا المسمى
+          </div>}
+
+          {t.totalScore != null && <div style={{ padding: 10, background: COLORS.bgSecondary, borderRadius: 10, textAlign: "center" }}>
+            <div style={{ fontSize: 10, color: COLORS.textMuted, marginBottom: 2 }}>الدرجة النهائية</div>
+            <div style={{ fontSize: 22, fontWeight: 800, color: t.totalScore >= 80 ? "#16A34A" : t.totalScore >= 60 ? "#D97706" : "#DC2626" }}>
+              {t.totalScore}%
+            </div>
+          </div>}
+
+          {filter === "active" && <button style={{
+            padding: "10px", background: COLORS.primary, color: "#fff", border: "none",
+            borderRadius: 12, fontSize: 12, fontWeight: 700, cursor: "pointer",
+            fontFamily: TYPOGRAPHY.fontTajawal
+          }}>
+            {t.status === 'scheduled' ? "▶️ ابدأ التقييم" : "✏️ استكمال التقييم"}
+          </button>}
+        </div>;
+      })}
+    </div>}
+  </div>;
+}
+
+/* ═══════════════════════════════════════════════════════════════════
+ * EvaluationForm — شاشة تقييم موظف (sliders للمعايير)
+ * ═══════════════════════════════════════════════════════════════════ */
+function EvaluationForm({ evaluation, user, onClose }) {
+  // تحديد ما إذا كان المدير في الموقع 1 أو 2
+  var slot = String(user.id) === String(evaluation.evaluatorId) ? 1 : 2;
+  var isSecondEvaluator = slot === 2;
+
+  var [scores, setScores] = useState(isSecondEvaluator ? (evaluation.scores2 || {}) : (evaluation.scores || {}));
+  var [comments, setComments] = useState(isSecondEvaluator ? (evaluation.comments2 || "") : (evaluation.comments || ""));
+  var [saving, setSaving] = useState(false);
+  var [msg, setMsg] = useState(null);
+
+  var criteria = evaluation.criteriaSnapshot || [];
+  var filledCount = criteria.filter(function(c){ return scores[c.id] != null; }).length;
+  var canSubmit = filledCount === criteria.length && criteria.length > 0;
+
+  var typeLabels = {
+    daily: "يومي", weekly: "أسبوعي", monthly: "شهري",
+    quarterly: "ربع سنوي", annual: "سنوي"
+  };
+
+  async function doSave(action) {
+    setSaving(true);
+    try {
+      var r = await fetch("/api/data?action=evaluation-submit", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          evalId: evaluation.id,
+          evaluatorId: user.id,
+          evaluatorSlot: slot,
+          scores, comments,
+          action
+        })
+      });
+      var d = await r.json();
+      if (d.ok) {
+        if (action === "save_draft") {
+          setMsg({ type: "success", text: "✓ تم الحفظ كمسودة" });
+          setTimeout(function(){ setMsg(null); }, 2500);
+        } else {
+          // submit
+          setMsg({ type: "success", text: "✓ تم إرسال التقييم بنجاح" });
+          setTimeout(function(){ onClose(); }, 1200);
+        }
+      } else {
+        setMsg({ type: "error", text: d.error || "فشلت العملية" });
+      }
+    } catch(e) {
+      setMsg({ type: "error", text: "فشل: " + e.message });
+    }
+    setSaving(false);
+  }
+
+  // Preview weighted score
+  var previewScore = null;
+  if (criteria.length > 0 && filledCount > 0) {
+    var totalW = criteria.reduce(function(s,c){return s + (Number(c.weight) || 0);}, 0) || 100;
+    var w = 0;
+    criteria.forEach(function(c){
+      var sc = Number(scores[c.id]) || 0;
+      w += sc * ((Number(c.weight) || 0) / totalW);
+    });
+    previewScore = Math.round(w * 10 * 100) / 100;
+  }
+
+  var isSecret = ['daily','weekly','monthly'].indexOf(evaluation.type) >= 0;
+
+  return <div style={{ paddingBottom: 80 }}>
+    {/* Header */}
+    <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: SPACING.md }}>
+      <button onClick={onClose} style={{
+        width: 36, height: 36, borderRadius: 12, border: "none",
+        background: COLORS.bgSecondary, color: COLORS.textPrimary, cursor: "pointer",
+        fontSize: 18, fontFamily: TYPOGRAPHY.fontTajawal
+      }}>×</button>
+      <div style={{ flex: 1 }}>
+        <div style={{ ...TYPOGRAPHY.h3, color: COLORS.textPrimary, fontFamily: TYPOGRAPHY.fontCairo }}>
+          تقييم {typeLabels[evaluation.type] || evaluation.type}
+        </div>
+        <div style={{ fontSize: 12, color: COLORS.textMuted, marginTop: 2 }}>
+          {evaluation.empName} · {evaluation.jobTitle || "—"}
+        </div>
+      </div>
+    </div>
+
+    {/* Privacy notice */}
+    <div style={{
+      padding: 12, marginBottom: SPACING.md,
+      background: isSecret ? "rgba(239,68,68,0.08)" : "rgba(59,130,246,0.08)",
+      borderRadius: 12,
+      border: "1px solid " + (isSecret ? "rgba(239,68,68,0.2)" : "rgba(59,130,246,0.2)"),
+      fontSize: 11, fontWeight: 600,
+      color: isSecret ? "#DC2626" : COLORS.primary
+    }}>
+      {isSecret
+        ? "🔒 تقييم سرّي — لن يراه الموظف أبداً. يُستخدم داخلياً فقط."
+        : "👁️ تقييم علني — يُعرض للموظف بعد اعتماد HR."}
+    </div>
+
+    {isSecondEvaluator && <div style={{
+      padding: 10, marginBottom: SPACING.md,
+      background: "rgba(139,92,246,0.1)", borderRadius: 10,
+      fontSize: 11, color: "#8B5CF6", fontWeight: 700, textAlign: "center"
+    }}>
+      🧭 أنت المدير الثاني — تقييمك يشكّل 60% من الدرجة النهائية
+    </div>}
+
+    {/* Criteria sliders */}
+    {criteria.length === 0 ? <Card>
+      <div style={{ padding: 20, textAlign: "center" }}>
+        <div style={{ fontSize: 36, marginBottom: 8 }}>⚠️</div>
+        <div style={{ fontSize: 13, fontWeight: 700, color: "#D97706", marginBottom: 6 }}>
+          لا توجد معايير تقييم محددة في كوادر لهذا المسمى
+        </div>
+        <div style={{ fontSize: 11, color: COLORS.textMuted, lineHeight: 1.6 }}>
+          لتقييم هذا الموظف، يجب أولاً إدخال معايير المسمى الوظيفي "{evaluation.jobTitle}" في كوادر.
+        </div>
+      </div>
+    </Card> : <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+      {criteria.map(function(c, i){
+        var currentScore = scores[c.id];
+        var hasScore = currentScore != null;
+        var scoreColor = !hasScore ? COLORS.textMuted :
+                         currentScore >= 8 ? "#16A34A" :
+                         currentScore >= 6 ? "#F59E0B" : "#DC2626";
+
+        return <div key={c.id || i} style={{
+          background: COLORS.card, borderRadius: 16, padding: SPACING.md,
+          border: "1px solid " + (hasScore ? scoreColor + "40" : COLORS.cardBorder)
+        }}>
+          <div style={{ display: "flex", alignItems: "flex-start", gap: 10, marginBottom: 12 }}>
+            <div style={{
+              width: 28, height: 28, borderRadius: 14,
+              background: COLORS.primary + "15", color: COLORS.primary,
+              display: "flex", alignItems: "center", justifyContent: "center",
+              fontSize: 11, fontWeight: 800, flexShrink: 0
+            }}>{i + 1}</div>
+            <div style={{ flex: 1 }}>
+              <div style={{ fontSize: 13, fontWeight: 700, color: COLORS.textPrimary, marginBottom: 2 }}>
+                {c.label || c.name || c.id}
+              </div>
+              {c.description && <div style={{ fontSize: 10, color: COLORS.textMuted, lineHeight: 1.5 }}>
+                {c.description}
+              </div>}
+            </div>
+            {c.weight != null && <div style={{
+              padding: "3px 10px", background: COLORS.primary + "15",
+              color: COLORS.primary, borderRadius: 10,
+              fontSize: 11, fontWeight: 800, flexShrink: 0
+            }}>{c.weight}%</div>}
+          </div>
+
+          {/* Slider */}
+          <div style={{ padding: "0 4px" }}>
+            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 8 }}>
+              <div style={{ fontSize: 10, color: COLORS.textMuted, fontWeight: 700 }}>ضعيف</div>
+              <div style={{
+                fontSize: 28, fontWeight: 800, color: scoreColor,
+                minWidth: 50, textAlign: "center"
+              }}>{hasScore ? currentScore : "—"}</div>
+              <div style={{ fontSize: 10, color: COLORS.textMuted, fontWeight: 700 }}>ممتاز</div>
+            </div>
+            <input
+              type="range"
+              min="1" max="10" step="1"
+              value={hasScore ? currentScore : 5}
+              onChange={function(e){
+                var newScores = { ...scores };
+                newScores[c.id] = Number(e.target.value);
+                setScores(newScores);
+              }}
+              style={{
+                width: "100%", height: 8, borderRadius: 4,
+                WebkitAppearance: "none", appearance: "none",
+                background: "linear-gradient(to right, #DC2626 0%, #F59E0B 50%, #16A34A 100%)",
+                outline: "none", cursor: "pointer"
+              }}
+            />
+            {/* Score buttons 1-10 */}
+            <div style={{ display: "flex", gap: 3, marginTop: 8, justifyContent: "space-between" }}>
+              {[1,2,3,4,5,6,7,8,9,10].map(function(n){
+                var isActive = currentScore === n;
+                var btnColor = n <= 3 ? "#DC2626" : n <= 6 ? "#F59E0B" : "#16A34A";
+                return <button key={n} onClick={function(){
+                  var ns = { ...scores };
+                  ns[c.id] = n;
+                  setScores(ns);
+                }} style={{
+                  flex: 1, padding: "6px 0", border: "none",
+                  borderRadius: 6, cursor: "pointer",
+                  background: isActive ? btnColor : COLORS.bgSecondary,
+                  color: isActive ? "#fff" : COLORS.textMuted,
+                  fontSize: 11, fontWeight: 800,
+                  fontFamily: TYPOGRAPHY.fontTajawal
+                }}>{n}</button>;
+              })}
+            </div>
+          </div>
+        </div>;
+      })}
+    </div>}
+
+    {/* Comments */}
+    {criteria.length > 0 && <Card>
+      <div style={{ fontSize: 12, fontWeight: 700, color: COLORS.textPrimary, marginBottom: 8 }}>
+        💬 ملاحظات إضافية (اختياري)
+      </div>
+      <textarea
+        value={comments}
+        onChange={function(e){ setComments(e.target.value); }}
+        placeholder="أي ملاحظات أو توصيات حول أداء الموظف..."
+        rows={4}
+        style={{
+          width: "100%", padding: 12, borderRadius: 12,
+          border: "1px solid " + COLORS.cardBorder,
+          background: COLORS.bgSecondary,
+          fontSize: 12, fontFamily: TYPOGRAPHY.fontTajawal,
+          resize: "vertical", boxSizing: "border-box"
+        }}
+      />
+    </Card>}
+
+    {/* Preview score */}
+    {previewScore != null && criteria.length > 0 && <Card>
+      <div style={{ textAlign: "center" }}>
+        <div style={{ fontSize: 11, color: COLORS.textMuted, marginBottom: 4 }}>
+          الدرجة المحسوبة (معاينة)
+        </div>
+        <div style={{
+          fontSize: 36, fontWeight: 800,
+          color: previewScore >= 80 ? "#16A34A" : previewScore >= 60 ? "#F59E0B" : "#DC2626"
+        }}>{previewScore}%</div>
+        <div style={{ fontSize: 10, color: COLORS.textMuted, marginTop: 4 }}>
+          {filledCount} / {criteria.length} معيار
+        </div>
+      </div>
+    </Card>}
+
+    {/* Message */}
+    {msg && <div style={{
+      padding: 12, borderRadius: 12,
+      background: msg.type === "error" ? "rgba(239,68,68,0.1)" : "rgba(34,197,94,0.1)",
+      color: msg.type === "error" ? "#DC2626" : "#16A34A",
+      fontSize: 12, fontWeight: 700, textAlign: "center",
+      marginBottom: SPACING.md
+    }}>{msg.text}</div>}
+
+    {/* Action buttons */}
+    {criteria.length > 0 && <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+      <button
+        onClick={function(){ doSave("save_draft"); }}
+        disabled={saving}
+        style={{
+          padding: 14, background: COLORS.bgSecondary, color: COLORS.textPrimary,
+          border: "1px solid " + COLORS.cardBorder, borderRadius: 14,
+          fontSize: 13, fontWeight: 700, cursor: saving ? "wait" : "pointer",
+          fontFamily: TYPOGRAPHY.fontTajawal
+        }}
+      >💾 حفظ كمسودة</button>
+
+      <button
+        onClick={function(){ doSave(slot === 1 ? "submit_m1" : "submit_m2"); }}
+        disabled={saving || !canSubmit}
+        style={{
+          padding: 14,
+          background: canSubmit ? COLORS.primary : COLORS.bgSecondary,
+          color: canSubmit ? "#fff" : COLORS.textMuted,
+          border: "none", borderRadius: 14,
+          fontSize: 13, fontWeight: 800,
+          cursor: (saving || !canSubmit) ? "not-allowed" : "pointer",
+          fontFamily: TYPOGRAPHY.fontTajawal,
+          opacity: (saving || !canSubmit) ? 0.6 : 1
+        }}
+      >
+        {saving ? "جارٍ الإرسال..." :
+          !canSubmit ? "⚠ أكمل كل المعايير أولاً (" + filledCount + "/" + criteria.length + ")" :
+          "📤 إرسال نهائي"}
+      </button>
+
+      {!isSecret && <div style={{ fontSize: 10, color: COLORS.textMuted, textAlign: "center", padding: "8px 12px", lineHeight: 1.5 }}>
+        ℹ️ بعد الإرسال، سيُراجع HR التقييم قبل اعتماده ويصبح مرئياً للموظف
+      </div>}
+    </div>}
+  </div>;
+}
+
+/* ═══════════════════════════════════════════════════════════════════
+ * MyEvaluationsTab — تقييماتي (للموظف)
+ * ═══════════════════════════════════════════════════════════════════ */
+function MyEvaluationsTab({ user }) {
+  var [loading, setLoading] = useState(true);
+  var [evals, setEvals] = useState([]);
+  var [selected, setSelected] = useState(null);
+
+  async function load() {
+    setLoading(true);
+    try {
+      var r = await fetch("/api/data?action=evaluation-for-employee&empId=" + encodeURIComponent(user.id));
+      var d = await r.json();
+      if (d.ok) setEvals(d.evaluations || []);
+    } catch(e) {}
+    setLoading(false);
+  }
+
+  useEffect(function(){ load(); }, [user && user.id]);
+
+  var typeLabels = {
+    quarterly: "ربع سنوي", annual: "سنوي"
+  };
+
+  if (loading) {
+    return <div style={{ padding: 40, textAlign: "center", color: COLORS.textMuted, fontSize: 13 }}>
+      جارٍ التحميل...
+    </div>;
+  }
+
+  if (selected) {
+    return <MyEvaluationDetail evaluation={selected} user={user} onClose={function(){setSelected(null);}} />;
+  }
+
+  return <div>
+    <div style={{ ...TYPOGRAPHY.h2, color: COLORS.textPrimary, marginBottom: SPACING.md, fontFamily: TYPOGRAPHY.fontCairo }}>
+      📊 تقييماتي
+    </div>
+
+    <div style={{ padding: 12, background: "rgba(59,130,246,0.08)", borderRadius: 12, marginBottom: SPACING.md, fontSize: 11, color: COLORS.primary, fontWeight: 600, textAlign: "center" }}>
+      ℹ️ تظهر هنا التقييمات الفصلية والسنوية المعتمدة فقط
+    </div>
+
+    {evals.length === 0 ? <Card>
+      <div style={{ padding: 30, textAlign: "center" }}>
+        <div style={{ fontSize: 48, marginBottom: 10, opacity: 0.4 }}>📊</div>
+        <div style={{ fontSize: 14, fontWeight: 700, color: COLORS.textPrimary, marginBottom: 6 }}>
+          لا توجد تقييمات معتمدة بعد
+        </div>
+        <div style={{ fontSize: 11, color: COLORS.textMuted }}>
+          ستظهر تقييماتك الفصلية والسنوية هنا عند اعتمادها من HR
+        </div>
+      </div>
+    </Card> : <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+      {evals.map(function(e){
+        var scoreColor = e.finalScore >= 80 ? "#16A34A" : e.finalScore >= 60 ? "#F59E0B" : "#DC2626";
+        var scoreBg = e.finalScore >= 80 ? "rgba(34,197,94,0.1)" : e.finalScore >= 60 ? "rgba(245,158,11,0.1)" : "rgba(239,68,68,0.1)";
+
+        return <div key={e.id} onClick={function(){setSelected(e);}} style={{
+          background: COLORS.card, borderRadius: 18, padding: SPACING.md,
+          border: "1px solid " + COLORS.cardBorder, cursor: "pointer",
+          display: "flex", alignItems: "center", gap: 14
+        }}>
+          <div style={{
+            width: 64, height: 64, borderRadius: 16,
+            background: scoreBg,
+            display: "flex", alignItems: "center", justifyContent: "center",
+            flexDirection: "column"
+          }}>
+            <div style={{ fontSize: 20, fontWeight: 800, color: scoreColor }}>{e.finalScore}%</div>
+          </div>
+          <div style={{ flex: 1 }}>
+            <div style={{ fontSize: 14, fontWeight: 700, color: COLORS.textPrimary }}>
+              تقييم {typeLabels[e.type] || e.type}
+            </div>
+            <div style={{ fontSize: 11, color: COLORS.textMuted, marginTop: 4 }}>
+              📅 {e.periodStart}{e.periodEnd ? " → " + e.periodEnd : ""}
+            </div>
+            <div style={{ fontSize: 10, color: COLORS.textMuted, marginTop: 2 }}>
+              اعتُمد في {e.approvedAt ? new Date(e.approvedAt).toLocaleDateString("ar-SA") : "—"}
+            </div>
+          </div>
+          <div style={{ fontSize: 20, color: COLORS.textMuted }}>‹</div>
+        </div>;
+      })}
+    </div>}
+  </div>;
+}
+
+/* ════ MyEvaluationDetail — تفاصيل تقييم للموظف ════ */
+function MyEvaluationDetail({ evaluation, user, onClose }) {
+  var typeLabels = { quarterly: "ربع سنوي", annual: "سنوي" };
+  var scoreColor = evaluation.finalScore >= 80 ? "#16A34A" : evaluation.finalScore >= 60 ? "#F59E0B" : "#DC2626";
+  var criteria = evaluation.criteriaSnapshot || [];
+
+  return <div style={{ paddingBottom: 40 }}>
+    <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: SPACING.md }}>
+      <button onClick={onClose} style={{
+        width: 36, height: 36, borderRadius: 12, border: "none",
+        background: COLORS.bgSecondary, color: COLORS.textPrimary, cursor: "pointer",
+        fontSize: 18, fontFamily: TYPOGRAPHY.fontTajawal
+      }}>×</button>
+      <div style={{ ...TYPOGRAPHY.h3, color: COLORS.textPrimary, fontFamily: TYPOGRAPHY.fontCairo }}>
+        تقييم {typeLabels[evaluation.type] || evaluation.type}
+      </div>
+    </div>
+
+    {/* Score card */}
+    <Card>
+      <div style={{ textAlign: "center", padding: 12 }}>
+        <div style={{ fontSize: 11, color: COLORS.textMuted, marginBottom: 8 }}>الدرجة النهائية</div>
+        <div style={{ fontSize: 48, fontWeight: 800, color: scoreColor }}>{evaluation.finalScore}%</div>
+        <div style={{ fontSize: 12, color: COLORS.textSecondary, marginTop: 8 }}>
+          {evaluation.finalScore >= 90 ? "ممتاز 🌟" :
+           evaluation.finalScore >= 80 ? "جيد جداً ✨" :
+           evaluation.finalScore >= 70 ? "جيد ✓" :
+           evaluation.finalScore >= 60 ? "مقبول" : "يحتاج تحسين"}
+        </div>
+      </div>
+    </Card>
+
+    {/* Period */}
+    <Card>
+      <div style={{ fontSize: 12, fontWeight: 700, color: COLORS.textPrimary, marginBottom: 8 }}>📅 الفترة</div>
+      <div style={{ fontSize: 12, color: COLORS.textSecondary }}>
+        {evaluation.periodStart} → {evaluation.periodEnd || "—"}
+      </div>
+      <div style={{ fontSize: 10, color: COLORS.textMuted, marginTop: 6 }}>
+        اعتُمد: {evaluation.approvedAt ? new Date(evaluation.approvedAt).toLocaleDateString("ar-SA") : "—"}
+      </div>
+    </Card>
+
+    {/* Criteria breakdown */}
+    {criteria.length > 0 && <Card>
+      <div style={{ fontSize: 12, fontWeight: 700, color: COLORS.textPrimary, marginBottom: 10 }}>🎯 تفاصيل المعايير</div>
+      <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+        {criteria.map(function(c, i){
+          var s1 = (evaluation.scores || {})[c.id];
+          var s2 = (evaluation.scores2 || {})[c.id];
+          var avgScore = evaluation.evaluator2Id && s2 != null ? ((Number(s1) || 0) * 0.4 + (Number(s2) || 0) * 0.6) : s1;
+          var pct = avgScore ? Math.round(avgScore * 10) : null;
+          var color = pct == null ? COLORS.textMuted :
+                      pct >= 80 ? "#16A34A" : pct >= 60 ? "#F59E0B" : "#DC2626";
+
+          return <div key={c.id || i} style={{ padding: 10, background: COLORS.bgSecondary, borderRadius: 12 }}>
+            <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 6 }}>
+              <div style={{ flex: 1, fontSize: 12, fontWeight: 700, color: COLORS.textPrimary }}>
+                {c.label || c.id}
+              </div>
+              {c.weight != null && <div style={{ padding: "2px 8px", background: "#fff", borderRadius: 8, fontSize: 10, fontWeight: 800, color: COLORS.primary }}>
+                {c.weight}%
+              </div>}
+            </div>
+            <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+              <div style={{ flex: 1, height: 8, background: "#fff", borderRadius: 4, overflow: "hidden" }}>
+                <div style={{ height: "100%", width: (pct || 0) + "%", background: color, transition: "width 0.3s" }}></div>
+              </div>
+              <div style={{ fontSize: 13, fontWeight: 800, color: color, minWidth: 40, textAlign: "left" }}>
+                {pct != null ? pct + "%" : "—"}
+              </div>
+            </div>
+          </div>;
+        })}
+      </div>
+    </Card>}
+
+    {/* Comments */}
+    {evaluation.comments && <Card>
+      <div style={{ fontSize: 12, fontWeight: 700, color: COLORS.textPrimary, marginBottom: 8 }}>💬 ملاحظات المدير</div>
+      <div style={{ fontSize: 12, color: COLORS.textSecondary, whiteSpace: "pre-wrap", lineHeight: 1.7, padding: 10, background: COLORS.bgSecondary, borderRadius: 10 }}>
+        {evaluation.comments}
+      </div>
+    </Card>}
+
+    {evaluation.comments2 && <Card>
+      <div style={{ fontSize: 12, fontWeight: 700, color: COLORS.textPrimary, marginBottom: 8 }}>💬 ملاحظات المدير الثاني</div>
+      <div style={{ fontSize: 12, color: COLORS.textSecondary, whiteSpace: "pre-wrap", lineHeight: 1.7, padding: 10, background: COLORS.bgSecondary, borderRadius: 10 }}>
+        {evaluation.comments2}
+      </div>
+    </Card>}
+
+    {evaluation.approvalNote && <Card>
+      <div style={{ fontSize: 12, fontWeight: 700, color: COLORS.textPrimary, marginBottom: 8 }}>📌 ملاحظة الاعتماد من HR</div>
+      <div style={{ fontSize: 12, color: COLORS.textSecondary, whiteSpace: "pre-wrap", lineHeight: 1.7, padding: 10, background: COLORS.bgSecondary, borderRadius: 10 }}>
+        {evaluation.approvalNote}
+      </div>
+    </Card>}
   </div>;
 }
 

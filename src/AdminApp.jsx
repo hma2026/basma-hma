@@ -4,7 +4,7 @@ import { generateAttendanceReport, generateEmployeeReport, generateMonthlySummar
 import { exportFormalWarning, exportInvestigationRecord, exportAffidavit, exportEmploymentLetter, exportSalaryLetter, exportLeaveLetter } from "./formalPdfs";
 
 const APP = "بصمة HMA";
-const VER = "6.87";
+const VER = "6.88";
 const CO = "هاني محمد عسيري للإستشارات الهندسية";
 const B = { blue: "#2B5EA7", yellow: "#FDD800", red: "#E2192C", black: "#1A1A1A", blueDk: "#1E4478", blueLt: "#EDF3FB", gold: "#D4A017" };
 
@@ -527,6 +527,7 @@ export default function AdminApp() {
         { id: "surveys", icon: "📊", label: "الاستطلاعات" },
         { id: "backup", icon: "🛡", label: "النسخ الاحتياطي" },
         { id: "hr_tickets", icon: "📨", label: "رسائل الموظفين" },
+        { id: "evaluations_hr", icon: "⭐", label: "التقييمات" },
         { id: "admin_requests", icon: "📝", label: "الطلبات" },
         { id: "complaints", icon: "📣", label: "الشكاوى", badge: badgeCounts.complaints },
         { id: "investigations", icon: "🔍", label: "التحقيقات", badge: badgeCounts.investigations },
@@ -1563,6 +1564,7 @@ export default function AdminApp() {
       {tab === "backup" && <BackupPanel t={t} B={B} />}
       {tab === "hr_tickets" && <HRTicketsPanel t={t} B={B} emps={safeEmps} />}
       {tab === "kadwar_sync" && <KadwarSyncPanel t={t} B={B} emps={safeEmps} />}
+      {tab === "evaluations_hr" && <EvaluationsHRPanel t={t} B={B} emps={safeEmps} />}
       {tab === "benefits" && <BenefitsPanel t={t} B={B} />}
       {tab === "announcements" && <AnnouncementsPanel t={t} B={B} emps={safeEmps} branches={branches} />}
       {tab === "banners" && <BannersPanel t={t} B={B} />}
@@ -11140,6 +11142,380 @@ function DependentsEditor({ empId, dependents, onSave, t, B }) {
         </div>;
       })}
     </div>}
+  </div>;
+}
+
+
+/* ═══════════════════════════════════════════════════════════════════
+ * v6.88 — EvaluationsHRPanel — لوحة HR لإدارة التقييمات
+ * ═══════════════════════════════════════════════════════════════════ */
+function EvaluationsHRPanel({ t, B, emps }) {
+  var [loading, setLoading] = useState(true);
+  var [evals, setEvals] = useState([]);
+  var [stats, setStats] = useState(null);
+  var [view, setView] = useState("pending_approval"); // pending_approval | all | schedule
+  var [msg, setMsg] = useState(null);
+  var [selectedEval, setSelectedEval] = useState(null);
+
+  // Schedule batch state
+  var [batchType, setBatchType] = useState("monthly");
+  var [batchStart, setBatchStart] = useState("");
+  var [batchEnd, setBatchEnd] = useState("");
+  var [selectedEmps, setSelectedEmps] = useState([]);
+  var [scheduling, setScheduling] = useState(false);
+
+  async function loadAll() {
+    setLoading(true);
+    try {
+      var [r1, r2] = await Promise.all([
+        fetch("/api/data?action=evaluations").then(function(r){return r.json();}),
+        fetch("/api/data?action=evaluation-stats").then(function(r){return r.json();}),
+      ]);
+      if (r1.ok) setEvals(r1.evaluations || []);
+      if (r2.ok) setStats(r2);
+    } catch(e) {
+      setMsg({ type: "error", text: "فشل التحميل: " + e.message });
+    }
+    setLoading(false);
+  }
+
+  useEffect(function(){ loadAll(); }, []);
+
+  async function approveEval(evalId, decision, note) {
+    try {
+      var r = await fetch("/api/data?action=evaluation-approve", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ evalId: evalId, approvedBy: "hr", decision: decision, note: note || "" })
+      });
+      var d = await r.json();
+      if (d.ok) {
+        setMsg({ type: "success", text: decision === "approve" ? "✓ تم اعتماد التقييم" : "✓ تم الإرجاع للمدير للمراجعة" });
+        await loadAll();
+        if (decision === "approve") {
+          // Auto-send to kadwar
+          try {
+            await fetch("/api/data?action=evaluation-send-kadwar", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ evalId: evalId })
+            });
+          } catch(e) {}
+        }
+      } else {
+        setMsg({ type: "error", text: d.error || "فشل الاعتماد" });
+      }
+    } catch(e) {
+      setMsg({ type: "error", text: "فشل: " + e.message });
+    }
+  }
+
+  async function scheduleBatch() {
+    if (!batchStart || !batchEnd) { setMsg({ type: "error", text: "حدد الفترة أولاً" }); return; }
+    if (selectedEmps.length === 0) { setMsg({ type: "error", text: "اختر موظفاً واحداً على الأقل" }); return; }
+    setScheduling(true);
+    try {
+      var r = await fetch("/api/data?action=evaluation-schedule-batch", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          type: batchType,
+          periodStart: batchStart,
+          periodEnd: batchEnd,
+          empIds: selectedEmps,
+          createdBy: "hr"
+        })
+      });
+      var d = await r.json();
+      if (d.ok) {
+        setMsg({ type: "success", text: "✓ تم جدولة " + d.created + " تقييم (تم تخطي " + d.skipped + ")" });
+        setSelectedEmps([]);
+        await loadAll();
+        setView("all");
+      } else {
+        setMsg({ type: "error", text: d.error || "فشل" });
+      }
+    } catch(e) { setMsg({ type: "error", text: "فشل: " + e.message }); }
+    setScheduling(false);
+  }
+
+  function toggleEmp(id) {
+    setSelectedEmps(function(prev){
+      return prev.indexOf(id) >= 0 ? prev.filter(function(x){return x !== id;}) : [...prev, id];
+    });
+  }
+
+  function selectAllEmps() {
+    setSelectedEmps((emps || []).filter(function(e){ return !e.isAdmin && e.status !== "inactive"; }).map(function(e){ return e.id; }));
+  }
+
+  if (loading) return <div style={{ padding: 40, textAlign: "center", color: t.txM }}>جارٍ التحميل...</div>;
+
+  var pendingApproval = evals.filter(function(e){ return e.status === "submitted" && (e.type === "quarterly" || e.type === "annual"); });
+  var typeLabels = { daily: "يومي", weekly: "أسبوعي", monthly: "شهري", quarterly: "فصلي", annual: "سنوي" };
+  var statusLabels = {
+    scheduled: "مجدول", in_progress: "قيد التنفيذ", pending_m2: "بانتظار المدير الثاني",
+    submitted: "بانتظار اعتماد HR", approved: "معتمد", final: "نهائي", cancelled: "ملغي"
+  };
+  var statusColors = {
+    scheduled: "#94A3B8", in_progress: "#3B82F6", pending_m2: "#8B5CF6",
+    submitted: "#F59E0B", approved: "#16A34A", final: "#16A34A", cancelled: "#DC2626"
+  };
+
+  return <div style={{ padding: 20, maxWidth: 1400, margin: "0 auto" }}>
+    {/* Header */}
+    <div style={{ display: "flex", alignItems: "center", gap: 14, marginBottom: 20 }}>
+      <div style={{ fontSize: 32 }}>⭐</div>
+      <div style={{ flex: 1 }}>
+        <div style={{ fontSize: 20, fontWeight: 800, color: t.tx }}>إدارة التقييمات</div>
+        <div style={{ fontSize: 11, color: t.txM, marginTop: 2 }}>
+          {stats ? stats.total + " تقييم · " + (stats.pendingApproval || 0) + " بانتظار الاعتماد" : ""}
+        </div>
+      </div>
+      <button onClick={loadAll} style={{ padding: "8px 14px", borderRadius: 8, background: t.bg, border: "1px solid " + t.sep, fontSize: 12, fontWeight: 700, color: t.tx, cursor: "pointer", fontFamily: "inherit" }}>🔄 تحديث</button>
+    </div>
+
+    {/* Message */}
+    {msg && <div style={{
+      padding: "10px 14px", borderRadius: 8, marginBottom: 14, fontSize: 12, fontWeight: 700,
+      background: msg.type === "error" ? "rgba(239,68,68,0.1)" : "rgba(34,197,94,0.1)",
+      color: msg.type === "error" ? "#DC2626" : "#16A34A",
+      border: "1px solid " + (msg.type === "error" ? "rgba(239,68,68,0.3)" : "rgba(34,197,94,0.3)"),
+      display: "flex", justifyContent: "space-between", alignItems: "center"
+    }}>
+      <span>{msg.text}</span>
+      <button onClick={function(){setMsg(null);}} style={{ background: "none", border: "none", fontSize: 16, color: "inherit", cursor: "pointer" }}>✕</button>
+    </div>}
+
+    {/* Stats cards */}
+    {stats && <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 12, marginBottom: 20 }}>
+      <div style={{ padding: 14, background: t.card, borderRadius: 12, border: "1px solid " + t.sep }}>
+        <div style={{ fontSize: 11, color: t.txM, fontWeight: 700, marginBottom: 4 }}>📊 إجمالي التقييمات</div>
+        <div style={{ fontSize: 22, fontWeight: 800, color: B.blue }}>{stats.total || 0}</div>
+      </div>
+      <div style={{ padding: 14, background: t.card, borderRadius: 12, border: "1px solid " + t.sep }}>
+        <div style={{ fontSize: 11, color: t.txM, fontWeight: 700, marginBottom: 4 }}>⏳ بانتظار اعتمادك</div>
+        <div style={{ fontSize: 22, fontWeight: 800, color: "#F59E0B" }}>{stats.pendingApproval || 0}</div>
+      </div>
+      <div style={{ padding: 14, background: t.card, borderRadius: 12, border: "1px solid " + t.sep }}>
+        <div style={{ fontSize: 11, color: t.txM, fontWeight: 700, marginBottom: 4 }}>✓ معتمد</div>
+        <div style={{ fontSize: 22, fontWeight: 800, color: "#16A34A" }}>{(stats.byStatus && (stats.byStatus.approved || 0) + (stats.byStatus.final || 0)) || 0}</div>
+      </div>
+      <div style={{ padding: 14, background: t.card, borderRadius: 12, border: "1px solid " + t.sep }}>
+        <div style={{ fontSize: 11, color: t.txM, fontWeight: 700, marginBottom: 4 }}>📈 متوسط الدرجات</div>
+        <div style={{ fontSize: 22, fontWeight: 800, color: t.tx }}>{stats.averageScore != null ? stats.averageScore.toFixed(1) : "—"}</div>
+      </div>
+    </div>}
+
+    {/* Tabs */}
+    <div style={{ display: "flex", gap: 4, marginBottom: 18, borderBottom: "2px solid " + t.sep }}>
+      {[
+        { id: "pending_approval", icon: "⏳", label: "بانتظار الاعتماد", badge: pendingApproval.length || null },
+        { id: "all", icon: "📋", label: "كل التقييمات", badge: evals.length },
+        { id: "schedule", icon: "🚀", label: "جدولة دفعة" },
+      ].map(function(v){
+        var active = view === v.id;
+        return <button key={v.id} onClick={function(){setView(v.id);}} style={{
+          padding: "10px 16px", background: active ? B.blue : "transparent", color: active ? "#fff" : t.tx,
+          border: "none", borderRadius: "8px 8px 0 0", fontSize: 12, fontWeight: 700, cursor: "pointer",
+          fontFamily: "inherit", display: "flex", alignItems: "center", gap: 6, position: "relative", bottom: -2,
+        }}>
+          <span>{v.icon}</span>
+          <span>{v.label}</span>
+          {v.badge != null && <span style={{ background: active ? "rgba(255,255,255,0.25)" : B.blue + "25", color: active ? "#fff" : B.blue, padding: "1px 7px", borderRadius: 10, fontSize: 10, fontWeight: 800 }}>{v.badge}</span>}
+        </button>;
+      })}
+    </div>
+
+    {/* PENDING APPROVAL */}
+    {view === "pending_approval" && <div>
+      {pendingApproval.length === 0 ? <div style={{ padding: 40, textAlign: "center", color: t.txM, background: t.card, borderRadius: 12 }}>
+        <div style={{ fontSize: 32, marginBottom: 10 }}>✨</div>
+        <div style={{ fontSize: 14, fontWeight: 700, color: t.tx }}>لا توجد تقييمات بانتظار اعتمادك</div>
+      </div> : <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+        {pendingApproval.map(function(e){
+          return <div key={e.id} style={{ background: t.card, borderRadius: 14, padding: 16, border: "1px solid " + t.sep, borderRight: "4px solid #F59E0B" }}>
+            <div style={{ display: "flex", alignItems: "center", gap: 14, marginBottom: 10 }}>
+              <div style={{ fontSize: 28 }}>{e.type === "annual" ? "🏆" : "📊"}</div>
+              <div style={{ flex: 1 }}>
+                <div style={{ fontSize: 14, fontWeight: 800, color: t.tx }}>{e.empName}</div>
+                <div style={{ fontSize: 11, color: t.txM, marginTop: 2 }}>
+                  {e.jobTitle || "—"} · {typeLabels[e.type]} · {e.periodStart} → {e.periodEnd}
+                </div>
+              </div>
+              <div style={{ textAlign: "center" }}>
+                <div style={{ fontSize: 22, fontWeight: 800, color: B.blue }}>{e.weightedScore != null ? e.weightedScore.toFixed(1) : "—"}</div>
+                <div style={{ fontSize: 9, color: t.txM }}>/ 100</div>
+              </div>
+            </div>
+            <div style={{ display: "flex", gap: 8, marginTop: 10 }}>
+              <button onClick={function(){setSelectedEval(e);}} style={{ padding: "8px 14px", background: t.bg, color: t.tx, border: "1px solid " + t.sep, borderRadius: 8, fontSize: 11, fontWeight: 700, cursor: "pointer", fontFamily: "inherit" }}>👁 مراجعة</button>
+              <button onClick={function(){ var note = prompt("ملاحظة رفض (اختياري):"); if (note !== null) approveEval(e.id, "reject", note); }} style={{ padding: "8px 14px", background: "rgba(239,68,68,0.1)", color: "#DC2626", border: "1px solid rgba(239,68,68,0.3)", borderRadius: 8, fontSize: 11, fontWeight: 700, cursor: "pointer", fontFamily: "inherit" }}>✕ رفض وإرجاع</button>
+              <button onClick={function(){ approveEval(e.id, "approve"); }} style={{ padding: "8px 14px", background: "#16A34A", color: "#fff", border: "none", borderRadius: 8, fontSize: 11, fontWeight: 700, cursor: "pointer", fontFamily: "inherit", marginRight: "auto" }}>✓ اعتماد ونشر للموظف</button>
+            </div>
+          </div>;
+        })}
+      </div>}
+    </div>}
+
+    {/* ALL EVALS */}
+    {view === "all" && <div>
+      {evals.length === 0 ? <div style={{ padding: 40, textAlign: "center", color: t.txM, background: t.card, borderRadius: 12 }}>
+        لا توجد تقييمات بعد. ابدأ بـ "جدولة دفعة".
+      </div> : <div style={{ background: t.card, borderRadius: 12, border: "1px solid " + t.sep, overflow: "hidden" }}>
+        <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 11 }}>
+          <thead>
+            <tr style={{ background: t.bg, borderBottom: "1px solid " + t.sep }}>
+              <th style={{ padding: "10px 12px", textAlign: "right", fontWeight: 800, color: t.txM }}>الموظف</th>
+              <th style={{ padding: "10px 12px", textAlign: "right", fontWeight: 800, color: t.txM }}>النوع</th>
+              <th style={{ padding: "10px 12px", textAlign: "right", fontWeight: 800, color: t.txM }}>الفترة</th>
+              <th style={{ padding: "10px 12px", textAlign: "right", fontWeight: 800, color: t.txM }}>الحالة</th>
+              <th style={{ padding: "10px 12px", textAlign: "center", fontWeight: 800, color: t.txM }}>النتيجة</th>
+              <th style={{ padding: "10px 12px", textAlign: "center", fontWeight: 800, color: t.txM }}>تفاصيل</th>
+            </tr>
+          </thead>
+          <tbody>
+            {evals.slice(0, 100).map(function(e, i){
+              return <tr key={e.id} style={{ borderBottom: i < evals.length - 1 ? "1px solid " + t.sep : "none" }}>
+                <td style={{ padding: "10px 12px", fontWeight: 700, color: t.tx }}>{e.empName}</td>
+                <td style={{ padding: "10px 12px", color: t.tx2 }}>{typeLabels[e.type] || e.type}</td>
+                <td style={{ padding: "10px 12px", color: t.tx2, fontSize: 10 }}>{e.periodStart || "—"} → {e.periodEnd || "—"}</td>
+                <td style={{ padding: "10px 12px" }}>
+                  <span style={{ padding: "2px 8px", borderRadius: 10, fontSize: 10, fontWeight: 800, background: (statusColors[e.status] || "#94A3B8") + "20", color: statusColors[e.status] || "#94A3B8" }}>{statusLabels[e.status] || e.status}</span>
+                </td>
+                <td style={{ padding: "10px 12px", textAlign: "center", fontWeight: 800, color: t.tx }}>{e.finalScore != null ? e.finalScore.toFixed(1) : (e.weightedScore != null ? e.weightedScore.toFixed(1) + " *" : "—")}</td>
+                <td style={{ padding: "10px 12px", textAlign: "center" }}>
+                  <button onClick={function(){setSelectedEval(e);}} style={{ padding: "4px 10px", background: t.bg, border: "1px solid " + t.sep, borderRadius: 6, fontSize: 10, fontWeight: 700, cursor: "pointer", fontFamily: "inherit" }}>👁</button>
+                </td>
+              </tr>;
+            })}
+          </tbody>
+        </table>
+        {evals.length > 100 && <div style={{ padding: 12, textAlign: "center", fontSize: 10, color: t.txM }}>
+          يُعرض أول 100 من أصل {evals.length}
+        </div>}
+      </div>}
+    </div>}
+
+    {/* SCHEDULE BATCH */}
+    {view === "schedule" && <div>
+      <div style={{ padding: 18, background: t.card, borderRadius: 14, border: "1px solid " + t.sep, marginBottom: 14 }}>
+        <div style={{ fontSize: 14, fontWeight: 800, color: t.tx, marginBottom: 4 }}>🚀 جدولة دفعة تقييمات</div>
+        <div style={{ fontSize: 11, color: t.txM, lineHeight: 1.6, marginBottom: 14 }}>
+          أنشئ تقييمات لمجموعة من الموظفين دفعة واحدة. سيتم تحديد المدير المباشر تلقائياً من الهيكل التنظيمي.
+        </div>
+
+        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 10, marginBottom: 14 }}>
+          <div>
+            <label style={{ display: "block", fontSize: 10, fontWeight: 700, color: t.txM, marginBottom: 5 }}>نوع التقييم</label>
+            <select value={batchType} onChange={function(e){setBatchType(e.target.value);}} style={{ width: "100%", padding: "9px 10px", borderRadius: 8, border: "1px solid " + t.sep, background: "#fff", fontFamily: "inherit", fontSize: 12 }}>
+              <option value="daily">يومي (سرّي)</option>
+              <option value="weekly">أسبوعي (سرّي)</option>
+              <option value="monthly">شهري (سرّي)</option>
+              <option value="quarterly">فصلي (يُعرض للموظف بعد الاعتماد)</option>
+              <option value="annual">سنوي (يُعرض للموظف بعد الاعتماد)</option>
+            </select>
+          </div>
+          <div>
+            <label style={{ display: "block", fontSize: 10, fontWeight: 700, color: t.txM, marginBottom: 5 }}>من تاريخ</label>
+            <input type="date" value={batchStart} onChange={function(e){setBatchStart(e.target.value);}} style={{ width: "100%", padding: "9px 10px", borderRadius: 8, border: "1px solid " + t.sep, background: "#fff", fontFamily: "inherit", fontSize: 12 }} />
+          </div>
+          <div>
+            <label style={{ display: "block", fontSize: 10, fontWeight: 700, color: t.txM, marginBottom: 5 }}>إلى تاريخ</label>
+            <input type="date" value={batchEnd} onChange={function(e){setBatchEnd(e.target.value);}} style={{ width: "100%", padding: "9px 10px", borderRadius: 8, border: "1px solid " + t.sep, background: "#fff", fontFamily: "inherit", fontSize: 12 }} />
+          </div>
+        </div>
+
+        <div style={{ marginBottom: 14 }}>
+          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 8 }}>
+            <label style={{ fontSize: 11, fontWeight: 700, color: t.tx }}>اختر الموظفين ({selectedEmps.length} مختار)</label>
+            <div style={{ display: "flex", gap: 6 }}>
+              <button onClick={selectAllEmps} style={{ padding: "4px 10px", background: B.blue + "15", color: B.blue, border: "none", borderRadius: 6, fontSize: 10, fontWeight: 700, cursor: "pointer", fontFamily: "inherit" }}>✓ اختر الكل</button>
+              <button onClick={function(){setSelectedEmps([]);}} style={{ padding: "4px 10px", background: t.bg, color: t.tx, border: "1px solid " + t.sep, borderRadius: 6, fontSize: 10, fontWeight: 700, cursor: "pointer", fontFamily: "inherit" }}>✕ إلغاء الكل</button>
+            </div>
+          </div>
+          <div style={{ maxHeight: 300, overflowY: "auto", border: "1px solid " + t.sep, borderRadius: 8, padding: 4 }}>
+            {(emps || []).map(function(e){
+              var checked = selectedEmps.indexOf(e.id) >= 0;
+              return <label key={e.id} style={{ display: "flex", alignItems: "center", gap: 8, padding: "6px 10px", background: checked ? B.blue + "10" : "transparent", borderRadius: 6, cursor: "pointer", fontSize: 11, color: t.tx, marginBottom: 2 }}>
+                <input type="checkbox" checked={checked} onChange={function(){toggleEmp(e.id);}} />
+                <span style={{ fontWeight: 700 }}>{e.name}</span>
+                <span style={{ color: t.txM, fontSize: 10 }}>· {e.role || "—"}</span>
+              </label>;
+            })}
+          </div>
+        </div>
+
+        <button onClick={scheduleBatch} disabled={scheduling || selectedEmps.length === 0 || !batchStart || !batchEnd} style={{
+          padding: "10px 18px", background: B.blue, color: "#fff", border: "none",
+          borderRadius: 8, fontSize: 12, fontWeight: 800,
+          cursor: scheduling ? "wait" : "pointer",
+          opacity: (selectedEmps.length === 0 || !batchStart || !batchEnd) ? 0.5 : 1,
+          fontFamily: "inherit"
+        }}>{scheduling ? "جارٍ الجدولة..." : "🚀 جدولة " + selectedEmps.length + " تقييم"}</button>
+      </div>
+    </div>}
+
+    {/* Eval details modal */}
+    {selectedEval && <EvaluationDetailsModal ev={selectedEval} onClose={function(){setSelectedEval(null); loadAll();}} onApprove={approveEval} t={t} B={B} />}
+  </div>;
+}
+
+function EvaluationDetailsModal({ ev, onClose, onApprove, t, B }) {
+  var snapshot = ev.criteriaSnapshot || [];
+  var typeLabels = { daily: "يومي", weekly: "أسبوعي", monthly: "شهري", quarterly: "فصلي", annual: "سنوي" };
+
+  return <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.5)", zIndex: 9999, display: "flex", alignItems: "center", justifyContent: "center", padding: 20 }} onClick={function(e){if(e.target === e.currentTarget)onClose();}}>
+    <div style={{ background: t.card, borderRadius: 14, maxWidth: 700, width: "100%", maxHeight: "90vh", overflowY: "auto" }}>
+      <div style={{ padding: 18, borderBottom: "1px solid " + t.sep, display: "flex", alignItems: "center", gap: 10 }}>
+        <div style={{ fontSize: 24 }}>{ev.type === "annual" ? "🏆" : "📊"}</div>
+        <div style={{ flex: 1 }}>
+          <div style={{ fontSize: 15, fontWeight: 800, color: t.tx }}>تقييم {typeLabels[ev.type]} — {ev.empName}</div>
+          <div style={{ fontSize: 11, color: t.txM, marginTop: 2 }}>{ev.jobTitle || "—"} · {ev.periodStart} → {ev.periodEnd}</div>
+        </div>
+        <button onClick={onClose} style={{ background: "none", border: "none", fontSize: 20, cursor: "pointer", color: t.tx }}>✕</button>
+      </div>
+
+      <div style={{ padding: 18 }}>
+        {ev.finalScore != null || ev.weightedScore != null ? <div style={{ padding: 16, background: "linear-gradient(135deg, " + B.blue + "15, " + B.blue + "05)", borderRadius: 12, textAlign: "center", marginBottom: 16, border: "1px solid " + B.blue + "30" }}>
+          <div style={{ fontSize: 11, color: t.txM, fontWeight: 700, marginBottom: 4 }}>النتيجة الموزونة</div>
+          <div style={{ fontSize: 32, fontWeight: 800, color: B.blue }}>{(ev.finalScore || ev.weightedScore).toFixed(1)}<span style={{ fontSize: 16, opacity: 0.7 }}>/100</span></div>
+        </div> : null}
+
+        {snapshot.length > 0 && <div style={{ marginBottom: 16 }}>
+          <div style={{ fontSize: 13, fontWeight: 800, color: t.tx, marginBottom: 10 }}>تفاصيل التقييم</div>
+          {snapshot.map(function(c){
+            var s1 = (ev.scores && ev.scores[c.id]) || 0;
+            var s2 = (ev.scores2 && ev.scores2[c.id]);
+            return <div key={c.id} style={{ padding: 10, background: t.bg, borderRadius: 8, marginBottom: 6, border: "1px solid " + t.sep }}>
+              <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 4 }}>
+                <div style={{ fontSize: 12, fontWeight: 700, color: t.tx }}>{c.label || c.id}</div>
+                <div style={{ fontSize: 10, color: t.txM }}>وزن: {c.weight || "—"}%</div>
+              </div>
+              <div style={{ display: "flex", gap: 10, fontSize: 11 }}>
+                <div style={{ color: t.tx2 }}>م1: <strong style={{ color: B.blue }}>{s1}/10</strong></div>
+                {s2 != null && <div style={{ color: t.tx2 }}>م2: <strong style={{ color: "#8B5CF6" }}>{s2}/10</strong></div>}
+              </div>
+            </div>;
+          })}
+        </div>}
+
+        {ev.comments && <div style={{ padding: 12, background: t.bg, borderRadius: 8, marginBottom: 10 }}>
+          <div style={{ fontSize: 11, fontWeight: 800, color: t.tx, marginBottom: 5 }}>💬 ملاحظات المدير الأول</div>
+          <div style={{ fontSize: 11, color: t.tx2, whiteSpace: "pre-wrap" }}>{ev.comments}</div>
+        </div>}
+
+        {ev.comments2 && <div style={{ padding: 12, background: t.bg, borderRadius: 8, marginBottom: 10 }}>
+          <div style={{ fontSize: 11, fontWeight: 800, color: t.tx, marginBottom: 5 }}>💬 ملاحظات المدير الثاني</div>
+          <div style={{ fontSize: 11, color: t.tx2, whiteSpace: "pre-wrap" }}>{ev.comments2}</div>
+        </div>}
+
+        {ev.status === "submitted" && (ev.type === "quarterly" || ev.type === "annual") && <div style={{ marginTop: 16, display: "flex", gap: 8 }}>
+          <button onClick={function(){ var note = prompt("سبب الرفض (اختياري):"); if (note !== null) onApprove(ev.id, "reject", note); }} style={{ padding: "10px 16px", background: "rgba(239,68,68,0.1)", color: "#DC2626", border: "1px solid rgba(239,68,68,0.3)", borderRadius: 8, fontSize: 12, fontWeight: 700, cursor: "pointer", fontFamily: "inherit" }}>✕ رفض وإرجاع للمدير</button>
+          <button onClick={function(){ onApprove(ev.id, "approve"); onClose(); }} style={{ padding: "10px 16px", background: "#16A34A", color: "#fff", border: "none", borderRadius: 8, fontSize: 12, fontWeight: 800, cursor: "pointer", fontFamily: "inherit", marginRight: "auto" }}>✓ اعتماد ونشر للموظف</button>
+        </div>}
+      </div>
+    </div>
   </div>;
 }
 
