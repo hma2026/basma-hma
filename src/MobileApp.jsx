@@ -11,7 +11,7 @@ import { exportEmploymentLetter, exportLeaveLetter } from "./formalPdfs";
 
 /* ═══════════ APP CONFIG (إعدادات التطبيق) ═══════════ */
 const APP_CONFIG = {
-  VER: "6.79",
+  VER: "6.81",
   NAME: "بصمة HMA",
   FULL_NAME: "نظام الحضور والانصراف الذكي",
   COMPANY: "هاني محمد عسيري للاستشارات الهندسية",
@@ -599,7 +599,16 @@ function MobileAppInner() {
       setTimeout(function(){ localStorage.setItem("basma_profile_tab", "legal"); window.dispatchEvent(new CustomEvent("basma:profile-tab-changed")); }, 50);
     }
     window.addEventListener("basma:goto-legal", handleGotoLegal);
-    return function() { window.removeEventListener("basma:goto-legal", handleGotoLegal); };
+    // v6.81 — HR banner → open profile → info tab (where tickets card is)
+    function handleGotoProfile() {
+      setPage("profile");
+      setTimeout(function(){ localStorage.setItem("basma_profile_tab", "info"); window.dispatchEvent(new CustomEvent("basma:profile-tab-changed")); }, 50);
+    }
+    window.addEventListener("basma_goto_profile", handleGotoProfile);
+    return function() {
+      window.removeEventListener("basma:goto-legal", handleGotoLegal);
+      window.removeEventListener("basma_goto_profile", handleGotoProfile);
+    };
   }, []);
   const [branch, setBranch] = useState(null);
   // v6.33 — workType config for current employee (from admin work_types + overrides)
@@ -655,6 +664,7 @@ function MobileAppInner() {
   const [faceVerifyModal, setFaceVerifyModal] = useState(null); // { type, label, source }
   const [initDone, setInitDone] = useState(false);
   const [tawasulUnread, setTawasulUnread] = useState(0);
+  const [hrUnread, setHrUnread] = useState(0);
   const [fieldProjects, setFieldProjects] = useState([]);
   const tawasulPollRef = useRef({ interval: null, lastUnread: 0, requested: false });
 
@@ -1215,6 +1225,18 @@ function MobileAppInner() {
       }, 2000);
       // Start polling for tawasul notifications every 30 seconds (any page)
       startTawasulPolling(emp);
+      // v6.81 — Poll HR messages summary every 60s
+      (async function pollHR(){
+        async function check(){
+          try {
+            var r = await fetch("/api/data?action=hr-tickets-summary&empId=" + encodeURIComponent(emp.id));
+            var d = await r.json();
+            setHrUnread((d.unreadCount || 0) + (d.pendingReplies || 0));
+          } catch(e) {}
+        }
+        check();
+        setInterval(check, 60000);
+      })();
     } catch { /**/ }
   }
 
@@ -1449,7 +1471,7 @@ function MobileAppInner() {
         {page === "profile" && <ProfilePage user={user} branch={branch} workType={workType} onLogout={logout} onTicket={() => setTicketModal(true)} myTickets={myTickets} darkMode={darkMode} toggleDark={toggleDark} kadwarNotifs={kadwarNotifs} />}
       </div>
 
-      {!isDesktopSession && <BottomNav page={page} setPage={setPage} legalAlerts={legalAlerts} tawasulUnread={tawasulUnread} user={user} />}
+      {!isDesktopSession && <BottomNav page={page} setPage={setPage} legalAlerts={legalAlerts} tawasulUnread={tawasulUnread} hrUnread={hrUnread} user={user} />}
 
       {/* Notification Bell — floating */}
       {user && unreadCount > 0 && !showNotifs && (
@@ -1476,7 +1498,7 @@ function MobileAppInner() {
       {faceModal && <FaceModal empId={user.id} onVerified={(photo) => doCheckin(faceModal.type, photo)} onSkip={() => doCheckin(faceModal.type)} onCancel={() => setFaceModal(null)} />}
       {challengeOpen && <ChallengeModal user={user} onClose={() => setChallengeOpen(false)} onPoints={(pts) => { const u = { ...user, points: (user.points||0)+pts }; setUser(u); localStorage.setItem("basma_user", JSON.stringify(u)); showToast("🎉 +" + pts + " نقطة!"); }} />}
       {leaveModal && <LeaveModal user={user} onClose={() => setLeaveModal(false)} onSubmit={async (data) => { try { var r = await apiWithQueue("leaves", { method: "POST", body: { empId: user.id, ...data } }); setLeaveModal(false); showToast(r._queued ? "💾 طلب الإجازة محفوظ محلياً — سيُرسل عند عودة الاتصال" : "تم إرسال طلب الإجازة ✓"); } catch { showToast("خطأ في الإرسال", "error"); } }} />}
-      {ticketModal && <TicketModal user={user} onClose={() => setTicketModal(false)} onSubmit={async (data) => { try { var r = await apiWithQueue("tickets", { method: "POST", body: { empId: user.id, empName: user.name, ...data } }); setTicketModal(false); showToast(r._queued ? "💾 التذكرة محفوظة محلياً" : "تم إرسال التذكرة ✓"); } catch { showToast("خطأ في الإرسال", "error"); } }} />}
+      {ticketModal && <TicketModal user={user} onClose={() => setTicketModal(false)} onSubmit={async (data) => { try { var r = await apiWithQueue("tickets", { method: "POST", body: { action: "create", empId: user.id, empName: user.name, initiatedBy: "employee", createdBy: user.name || user.id, createdByRole: "employee", subject: data.subject, message: data.message, priority: data.priority, category: "استفسار", requiresReply: false } }); setTicketModal(false); showToast(r._queued ? "💾 التذكرة محفوظة محلياً" : "تم إرسال التذكرة ✓"); } catch { showToast("خطأ في الإرسال", "error"); } }} />}
       {daySummary && <DaySummaryModal todayAtt={todayAtt} branch={branch} user={user} onClose={() => setDaySummary(false)} />}
       {preAbsModal && <PreAbsenceModal allEmps={allEmps} user={user} onClose={function(){ setPreAbsModal(false); }} onSubmit={async function(data) { try { var r = await apiWithQueue("pre_absence", { method: "POST", body: { ...data, reportedBy: user.id } }); setPreAbsModal(false); showToast(r._queued ? "💾 إفادة الغياب محفوظة محلياً" : "✅ تم تسجيل الإفادة المسبقة"); } catch(e) { showToast("خطأ في الإرسال", "error"); } }} />}
       {manualAttModal && <ManualAttModal allEmps={allEmps} user={user} onClose={function(){ setManualAttModal(false); }} onSubmit={async function(data) { try { await api("manual_checkin", { method: "POST", body: { ...data, adminId: user.id } }); setManualAttModal(false); showToast("✅ تم التحضير اليدوي"); loadData(user); } catch(e) { showToast("خطأ", "error"); } }} />}
@@ -1793,6 +1815,94 @@ function LoginScreen({ onLogin, onBiometric, loading }) {
 
 /* ═══════════ HOME ═══════════ */
 /* ═══ SURVEY BANNER — بانر استطلاع نشط في الرئيسية (v6.67) ═══ */
+/* ═══ HR Messages Banner — تنبيه رسائل HR الجديدة في الرئيسية (v6.81) ═══ */
+function HRMessagesBanner({ user, onOpenProfile }) {
+  var [summary, setSummary] = useState({ unreadCount: 0, pendingReplies: 0, totalOpen: 0 });
+  var [dismissed, setDismissed] = useState(function(){
+    try { return sessionStorage.getItem("basma_hr_banner_dismissed") === "1"; } catch(e) { return false; }
+  });
+
+  async function load() {
+    try {
+      var r = await fetch("/api/data?action=hr-tickets-summary&empId=" + encodeURIComponent(user.id));
+      var d = await r.json();
+      setSummary({
+        unreadCount: d.unreadCount || 0,
+        pendingReplies: d.pendingReplies || 0,
+        totalOpen: d.totalOpen || 0,
+      });
+    } catch(e) {}
+  }
+
+  useEffect(function(){
+    if (!user || !user.id) return;
+    load();
+    var iv = setInterval(load, 60000); // refresh every 60s
+    return function(){ clearInterval(iv); };
+  }, [user && user.id]);
+
+  if (dismissed) return null;
+  if (summary.unreadCount === 0 && summary.pendingReplies === 0) return null;
+
+  var isUrgent = summary.pendingReplies > 0;
+  var bgFrom = isUrgent ? "#DC2626" : "#7C3AED";
+  var bgTo = isUrgent ? "#991B1B" : "#6D28D9";
+  var icon = isUrgent ? "⚠️" : "📨";
+  var title = isUrgent
+    ? "لديك " + summary.pendingReplies + " رسالة من HR تتطلب رداً"
+    : "لديك " + summary.unreadCount + " رسالة جديدة من HR";
+
+  return (
+    <div
+      onClick={function(){ onOpenProfile && onOpenProfile(); }}
+      style={{
+        margin: "10px 14px 0",
+        padding: "12px 14px",
+        borderRadius: 14,
+        background: "linear-gradient(135deg, " + bgFrom + ", " + bgTo + ")",
+        color: "#fff",
+        display: "flex",
+        alignItems: "center",
+        gap: 12,
+        cursor: "pointer",
+        boxShadow: "0 6px 20px " + bgFrom + "44",
+        position: "relative",
+        animation: isUrgent ? "basmaPulse 1.8s ease-in-out infinite" : "none",
+      }}
+    >
+      <div style={{ fontSize: 22, flexShrink: 0 }}>{icon}</div>
+      <div style={{ flex: 1, minWidth: 0 }}>
+        <div style={{ fontSize: 13, fontWeight: 800, marginBottom: 2, lineHeight: 1.4 }}>{title}</div>
+        <div style={{ fontSize: 10, opacity: 0.9 }}>اضغط لفتحها في صفحة حسابي → بياناتي</div>
+      </div>
+      <button
+        onClick={function(e){
+          e.stopPropagation();
+          setDismissed(true);
+          try { sessionStorage.setItem("basma_hr_banner_dismissed", "1"); } catch(err) {}
+        }}
+        aria-label="إخفاء"
+        style={{
+          background: "rgba(255,255,255,0.15)",
+          border: "none",
+          color: "#fff",
+          width: 26,
+          height: 26,
+          borderRadius: 13,
+          fontSize: 14,
+          cursor: "pointer",
+          flexShrink: 0,
+          padding: 0,
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "center",
+          WebkitTapHighlightColor: "transparent",
+        }}
+      >×</button>
+    </div>
+  );
+}
+
 function SurveyBanner({ user }) {
   var [surveys, setSurveys] = useState([]);
   var [votedMap, setVotedMap] = useState({});
@@ -2273,7 +2383,7 @@ function HomePage({ user, branch, workType, now, todayAtt, allAtt, gps, gpsDist,
             </div>
           );
         })}
-        <InvestigationBanner user={user} /><MembershipFreezeNotice user={user} /><BranchHolidayBanner branch={branch} /><OccasionBanner user={user} /><SurveyBanner user={user} />
+        <InvestigationBanner user={user} /><MembershipFreezeNotice user={user} /><BranchHolidayBanner branch={branch} /><OccasionBanner user={user} /><SurveyBanner user={user} /><HRMessagesBanner user={user} onOpenProfile={function(){ if (typeof window !== "undefined" && window.dispatchEvent) { window.dispatchEvent(new CustomEvent("basma_goto_profile")); } }} />
         <HomeBanner banners={banners} user={user} onShowAnnouncements={onShowAnnouncements} announcements={announcements} />
       </div>
 
@@ -2688,6 +2798,91 @@ function ReportPage({ user, allAtt, todayAtt, branch, isOffDay, myLeaves, allEmp
 }
 
 /* ═══════════ PROFILE ═══════════ */
+/* ═══ MANAGERS CARD — عرض المدير الأول والثاني للموظف (v6.80) ═══ */
+function ManagersCard({ user }) {
+  var [data, setData] = useState(null);
+  var [loading, setLoading] = useState(true);
+
+  useEffect(function() {
+    if (!user || !user.id) { setLoading(false); return; }
+    fetch("/api/data?action=org_hierarchy")
+      .then(function(r){ return r.json(); })
+      .then(function(d) {
+        if (d && d.ok) {
+          var emps = d.employees || [];
+          var hierarchy = d.hierarchy || {};
+          var myRec = hierarchy[String(user.id)];
+          if (!myRec) { setData({ manager1: null, manager2: null, empty: true }); return; }
+
+          var rec = (typeof myRec === "string") ? { manager1: myRec, manager2: null } : myRec;
+
+          var m1 = rec.manager1 ? emps.find(function(e){ return String(e.id || e.username) === String(rec.manager1); }) : null;
+          var m2 = rec.manager2 ? emps.find(function(e){ return String(e.id || e.username) === String(rec.manager2); }) : null;
+
+          setData({
+            manager1: m1 ? { id: m1.id, name: m1.name, role: m1.role, department: m1.department } : null,
+            manager2: m2 ? { id: m2.id, name: m2.name, role: m2.role, department: m2.department } : null,
+            editedInBasma: !!rec.editedInBasma,
+            empty: !m1 && !m2,
+          });
+        }
+        setLoading(false);
+      })
+      .catch(function(){ setLoading(false); });
+  }, [user && user.id]);
+
+  if (loading || !data) return null;
+
+  if (data.empty) {
+    return (
+      <Card>
+        <div style={{ ...TYPOGRAPHY.h3, color: COLORS.textPrimary, marginBottom: SPACING.sm, display: "flex", alignItems: "center", gap: 6 }}>
+          <span>👥</span> المرجعيات الإدارية
+        </div>
+        <div style={{ padding: 12, borderRadius: 10, background: "rgba(245,158,11,0.10)", border: "1px solid rgba(245,158,11,0.25)", fontSize: 11, color: COLORS.textMuted, lineHeight: 1.8 }}>
+          ⚠️ لم يتم تحديد مدرائك بعد. يرجى التواصل مع الموارد البشرية لإكمال بياناتك.
+        </div>
+      </Card>
+    );
+  }
+
+  function MgrRow({ icon, label, color, mgr }) {
+    return (
+      <div style={{ padding: SPACING.sm + "px 0", borderBottom: "1px solid " + COLORS.cardBorder }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 4 }}>
+          <span style={{ fontSize: 14 }}>{icon}</span>
+          <span style={{ ...TYPOGRAPHY.tiny, fontWeight: 800, color: color }}>{label}</span>
+        </div>
+        {mgr ? (
+          <div style={{ paddingRight: 22 }}>
+            <div style={{ ...TYPOGRAPHY.body, fontWeight: 700, color: COLORS.textPrimary }}>{mgr.name}</div>
+            {(mgr.role || mgr.department) && (
+              <div style={{ ...TYPOGRAPHY.tiny, color: COLORS.textMuted, marginTop: 2 }}>
+                {mgr.role || ""}{mgr.role && mgr.department ? " · " : ""}{mgr.department || ""}
+              </div>
+            )}
+          </div>
+        ) : (
+          <div style={{ paddingRight: 22, ...TYPOGRAPHY.caption, color: COLORS.textMuted, fontStyle: "italic" }}>لا يوجد</div>
+        )}
+      </div>
+    );
+  }
+
+  return (
+    <Card>
+      <div style={{ ...TYPOGRAPHY.h3, color: COLORS.textPrimary, marginBottom: SPACING.sm, display: "flex", alignItems: "center", justifyContent: "space-between", gap: 6 }}>
+        <span style={{ display: "flex", alignItems: "center", gap: 6 }}><span>👥</span> المرجعيات الإدارية</span>
+        {data.editedInBasma && <span style={{ fontSize: 8, padding: "2px 6px", borderRadius: 4, background: "rgba(217,119,6,0.18)", color: "#D97706", fontWeight: 800 }}>✏️ معدّل في بصمة</span>}
+      </div>
+      <MgrRow icon="👔" label="المدير الأول (الإداري)" color="#0F766E" mgr={data.manager1} />
+      <div style={{ marginTop: SPACING.xs }}>
+        <MgrRow icon="🔧" label="المدير الثاني (الفني)" color="#3B82F6" mgr={data.manager2} />
+      </div>
+    </Card>
+  );
+}
+
 function ProfilePage({ user, branch, workType, onLogout, onTicket, myTickets, darkMode, toggleDark, kadwarNotifs }) {
   var [tab, setTab] = useState(function(){ return localStorage.getItem("basma_profile_tab") || "info"; });
   var [kadwarFlip, setKadwarFlip] = useState(false);
@@ -2779,6 +2974,9 @@ function ProfilePage({ user, branch, workType, onLogout, onTicket, myTickets, da
               })}
             </Card>
 
+            {/* v6.80 — Direct Managers card (Manager 1 + Manager 2) */}
+            <ManagersCard user={user} />
+
             {user.sceNumber && (
               <Card>
                 <div style={{ ...TYPOGRAPHY.h3, color: COLORS.textPrimary, marginBottom: SPACING.md }}>الهيئة السعودية للمهندسين</div>
@@ -2793,24 +2991,8 @@ function ProfilePage({ user, branch, workType, onLogout, onTicket, myTickets, da
               </Card>
             )}
 
-            {myTickets && myTickets.length > 0 && (
-              <Card>
-                <div style={{ ...TYPOGRAPHY.h3, color: COLORS.textPrimary, marginBottom: SPACING.md }}>تذاكري</div>
-                {myTickets.slice(0, 5).map(function(t, i) {
-                  var statusMap = { pending: { label: "قيد المراجعة", color: COLORS.textMuted }, open: { label: "مفتوحة", color: COLORS.goldLight }, resolved: { label: "تم الحل", color: COLORS.goldLight }, closed: { label: "مغلقة", color: COLORS.textMuted } };
-                  var st = statusMap[t.status] || statusMap.pending;
-                  return (
-                    <div key={t.id || i} style={{ display: "flex", alignItems: "center", gap: SPACING.sm, padding: SPACING.sm + "px 0", borderBottom: i < Math.min(myTickets.length, 5) - 1 ? "1px solid " + COLORS.cardBorder : "none" }}>
-                      <div style={{ flex: 1 }}>
-                        <div style={{ ...TYPOGRAPHY.bodySm, fontWeight: 700, color: COLORS.textPrimary }}>{t.subject}</div>
-                        <div style={{ ...TYPOGRAPHY.caption, color: COLORS.textMuted }}>{t.ts ? t.ts.split("T")[0] : ""}</div>
-                      </div>
-                      <span style={{ ...TYPOGRAPHY.caption, fontWeight: 700, color: st.color, padding: "3px 8px", borderRadius: RADIUS.sm, background: st.color + "20" }}>{st.label}</span>
-                    </div>
-                  );
-                })}
-              </Card>
-            )}
+            {/* v6.81 — Tickets card with chat thread support */}
+            <TicketsCard user={user} myTickets={myTickets} />
 
             {/* v6.69 — الإعدادات المدمجة */}
             <div className="basma-flip-container">
@@ -3462,23 +3644,69 @@ function TawasulCreateModal({ user, allEmps, categories, projects, onClose, onSa
   }
 
   // Group employees per spec 6.3 (excluding self + respecting permissions)
+  // v6.80 — Load org hierarchy (both manager1 and manager2) from API
+  var [orgHierarchy, setOrgHierarchy] = useState(null);
+  useEffect(function() {
+    fetch("/api/data?action=org_hierarchy")
+      .then(function(r){ return r.json(); })
+      .then(function(d){
+        if (d && d.ok) setOrgHierarchy(d.hierarchy || {});
+        else setOrgHierarchy({});
+      })
+      .catch(function(){ setOrgHierarchy({}); });
+  }, []);
+
+  function getMgrs(empId) {
+    if (!orgHierarchy) return { manager1: null, manager2: null };
+    var rec = orgHierarchy[String(empId)];
+    if (!rec) return { manager1: null, manager2: null };
+    if (typeof rec === "string") return { manager1: rec, manager2: null };
+    return { manager1: rec.manager1 || null, manager2: rec.manager2 || null };
+  }
+
   var empGroups = (function(){
     var myEmp = (allEmps || []).find(function(e){ return isSelf(e); }) || {};
-    var managers = [];
-    var peers = [];
-    var subordinates = [];
-    var others = [];
+    var myId = String(myEmp.id || myEmp.username || "");
+    var myMgrs = getMgrs(myId);
+
+    var managers = [];      // مدرائي (الإداري + الفني)
+    var peers = [];         // زملاء نفس الفرع/القسم
+    var subordinates = [];  // مرؤوسي (سواء أنا مديرهم الإداري أو الفني)
+    var others = [];        // باقي الموظفين
+
+    var hasAnyMgrData = !!(myMgrs.manager1 || myMgrs.manager2);
+
     (allEmps || []).forEach(function(e){
-      if (isSelf(e)) return; // ← skip self reliably
-      if (!canSendTo(e)) return; // ← skip those who don't allow me to send
-      var isManager = e.id === myEmp.managerId || e.role === "admin" || e.role === "hr_manager" || e.isAdmin;
-      var isSubordinate = (myEmp.id && (e.managerId === myEmp.id || e.supervisorId === myEmp.id));
-      var isPeer = myEmp.department && e.department === myEmp.department;
-      if (isManager) managers.push(e);
-      else if (isSubordinate) subordinates.push(e);
+      if (isSelf(e)) return;
+      if (!canSendTo(e)) return;
+      var eid = String(e.id || e.username);
+
+      // Is this person my manager (1 or 2)?
+      var isMyMgr1 = myMgrs.manager1 && String(myMgrs.manager1) === eid;
+      var isMyMgr2 = myMgrs.manager2 && String(myMgrs.manager2) === eid;
+
+      // Am I this person's manager (1 or 2)?
+      var theirMgrs = getMgrs(eid);
+      var iAmTheirMgr = (theirMgrs.manager1 && String(theirMgrs.manager1) === myId)
+                       || (theirMgrs.manager2 && String(theirMgrs.manager2) === myId);
+
+      // Same branch+department?
+      var isPeer = myEmp.department && e.department === myEmp.department && myEmp.branch === e.branch;
+
+      // Treat admins/general managers as managers too
+      var isSystemMgr = e.role === "admin" || e.role === "hr_manager" || e.isAdmin || e.isGeneralManager;
+
+      if (isMyMgr1 || isMyMgr2 || isSystemMgr) managers.push(e);
+      else if (iAmTheirMgr) subordinates.push(e);
       else if (isPeer) peers.push(e);
       else others.push(e);
     });
+
+    // Fallback: if user has NO manager data AND no recipients found in priority groups, show "others" with everyone
+    if (!hasAnyMgrData && managers.length === 0 && subordinates.length === 0 && peers.length === 0) {
+      // Already in `others` from the loop — that's fine
+    }
+
     return { managers: managers, peers: peers, subordinates: subordinates, others: others };
   })();
 
@@ -3567,6 +3795,15 @@ function TawasulCreateModal({ user, allEmps, categories, projects, onClose, onSa
     setSaving(true); setErr("");
     try {
       var now = new Date().toISOString();
+      // v6.80 — For each assignee, determine the relationship from the recipient's perspective:
+      // is the sender (me) their manager1, manager2, or peer/other?
+      var assigneesWithRel = (form.assignees || []).map(function(a){
+        var theirMgrs = getMgrs(String(a.id));
+        var senderRole = "other";
+        if (theirMgrs.manager1 && String(theirMgrs.manager1) === String(myId)) senderRole = "manager1";
+        else if (theirMgrs.manager2 && String(theirMgrs.manager2) === String(myId)) senderRole = "manager2";
+        return Object.assign({}, a, { senderRole: senderRole });
+      });
       var newReq = Object.assign({}, form, {
         id: form.id || ("twsl_" + Date.now()),
         status: status,
@@ -3574,6 +3811,7 @@ function TawasulCreateModal({ user, allEmps, categories, projects, onClose, onSa
         updatedAt: now,
         requesterId: myId,
         requesterName: form.requesterName,
+        assignees: assigneesWithRel,
       });
       // append log entry
       var logEntry = { text: isEdit ? "✎ تعديل المهمة" : "📨 إنشاء المهمة", by: form.requesterName || user.username, at: now };
@@ -3600,10 +3838,23 @@ function TawasulCreateModal({ user, allEmps, categories, projects, onClose, onSa
     var eid = emp.id || emp.username;
     var selected = (form.assignees || []).some(function(a){ return String(a.id) === String(eid); });
     var initial = ((emp.name || emp.username || "?").trim().charAt(0)) || "?";
+
+    // v6.80 — Determine if this person is my manager1 (إداري) or manager2 (فني)
+    var myEmp = (allEmps || []).find(function(e){ return isSelf(e); }) || {};
+    var myMgrs = getMgrs(String(myEmp.id || myEmp.username || ""));
+    var isMyMgr1 = myMgrs.manager1 && String(myMgrs.manager1) === String(eid);
+    var isMyMgr2 = myMgrs.manager2 && String(myMgrs.manager2) === String(eid);
+
     return (
-      <div key={eid} onClick={function(){ toggleAssignee(emp); }} style={{ minWidth: 78, padding: 8, borderRadius: 12, background: selected ? "rgba(34,197,94,0.15)" : C.card, border: "2px solid " + (selected ? "#22c55e" : C.cardBorder), cursor: "pointer", textAlign: "center", flexShrink: 0, position: "relative" }}>
+      <div key={eid} onClick={function(){ toggleAssignee(emp); }} style={{ minWidth: 84, padding: 8, borderRadius: 12, background: selected ? "rgba(34,197,94,0.15)" : C.card, border: "2px solid " + (selected ? "#22c55e" : C.cardBorder), cursor: "pointer", textAlign: "center", flexShrink: 0, position: "relative" }}>
         <div style={{ width: 44, height: 44, borderRadius: 22, background: selected ? "#22c55e" : C.bg, color: selected ? "#fff" : C.text, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 16, fontWeight: 800, margin: "0 auto 6px" }}>{initial}</div>
         <div style={{ fontSize: 9, fontWeight: 700, color: C.text, lineHeight: 1.3, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{emp.name || emp.username}</div>
+        {isMyMgr1 && (
+          <div style={{ marginTop: 3, padding: "1px 5px", borderRadius: 4, background: "rgba(15,118,110,0.18)", color: "#0F766E", fontSize: 8, fontWeight: 800 }}>👔 الإداري</div>
+        )}
+        {isMyMgr2 && (
+          <div style={{ marginTop: 3, padding: "1px 5px", borderRadius: 4, background: "rgba(59,130,246,0.18)", color: "#3B82F6", fontSize: 8, fontWeight: 800 }}>🔧 الفني</div>
+        )}
         {selected && <div style={{ position: "absolute", top: 4, right: 4, width: 18, height: 18, borderRadius: 9, background: "#22c55e", color: "#fff", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 10, fontWeight: 900 }}>✓</div>}
       </div>
     );
@@ -3774,6 +4025,19 @@ function TawasulCreateModal({ user, allEmps, categories, projects, onClose, onSa
             <div>
               <div style={{ fontSize: 14, fontWeight: 700, color: C.sub, marginBottom: 12 }}>اختر المستلمين ({(form.assignees||[]).length} مُحدد)</div>
               {err && <div style={{ fontSize: 11, color: "#ef4444", marginBottom: 10, padding: 8, background: "rgba(239,68,68,0.1)", borderRadius: 8 }}>⚠️ {err}</div>}
+
+              {/* v6.80 — Warning if user's hierarchy data is missing */}
+              {orgHierarchy !== null && (function(){
+                var myEmp = (allEmps || []).find(function(e){ return isSelf(e); }) || {};
+                var myMgrs = getMgrs(String(myEmp.id || myEmp.username || ""));
+                if (myMgrs.manager1 || myMgrs.manager2) return null;
+                return (
+                  <div style={{ marginBottom: 12, padding: "10px 12px", borderRadius: 10, background: "rgba(245,158,11,0.10)", border: "1px solid rgba(245,158,11,0.30)", fontSize: 10, color: "#D97706", lineHeight: 1.7 }}>
+                    ⚠️ لم يحدّد مدراؤك بعد في النظام — يتم عرض كل الموظفين. اطلب من الموارد البشرية إكمال بياناتك للحصول على قائمة مرتّبة.
+                  </div>
+                );
+              })()}
+
               {empGroups.managers.length > 0 && (
                 <div style={{ marginBottom: 12 }}>
                   <div style={{ fontSize: 11, fontWeight: 800, color: C.sub, marginBottom: 6 }}>👔 المدراء والمشرفون</div>
@@ -6491,6 +6755,20 @@ function TawasulPage({ user, allEmps }) {
                 <div style={{ fontSize: 10, color: C.sub }}>{tawasulTimeAgo(r.updatedAt || r.createdAt)}</div>
               </div>
               {(r.category || r.projectName) && <div style={{ fontSize: 10, color: C.sub, marginBottom: 4, fontWeight: 600 }}>{r.category && <span>🏷 {r.category}</span>}{r.category && r.projectName && <span style={{ margin: "0 5px" }}>•</span>}{r.projectName && <span>🏗️ {r.projectName}</span>}</div>}
+
+              {/* v6.80 — Show "مستلمة من المدير الإداري/الفني" badge to recipient */}
+              {(function(){
+                var myAssigneeRow = (r.assignees || []).find(function(a){ return String(a.id) === String(myId); });
+                if (!myAssigneeRow || !myAssigneeRow.senderRole || myAssigneeRow.senderRole === "other") return null;
+                var label = myAssigneeRow.senderRole === "manager1" ? "📥 مهمة من مديرك الإداري" : "📥 مهمة من مديرك الفني";
+                var color = myAssigneeRow.senderRole === "manager1" ? "#0F766E" : "#3B82F6";
+                return (
+                  <div style={{ display: "inline-flex", alignItems: "center", gap: 4, padding: "3px 9px", borderRadius: 8, background: color + "18", color: color, fontSize: 10, fontWeight: 800, marginBottom: 6 }}>
+                    {label}
+                  </div>
+                );
+              })()}
+
               <div style={{ fontSize: 14, fontWeight: 800, color: C.text, marginBottom: 6, lineHeight: 1.4 }}>{r.title || "(بدون عنوان)"}</div>
               {r.description && <div style={{ fontSize: 11, color: C.sub, marginBottom: 8, lineHeight: 1.5, overflow: "hidden", display: "-webkit-box", WebkitLineClamp: 2, WebkitBoxOrient: "vertical" }}>{r.description}</div>}
 
@@ -8544,10 +8822,27 @@ function TawasulDetailModal({ request, user, allEmps, onClose, nameOf, onUpdated
             </div>
           )}
 
+          {/* v6.80 — sender role banner for recipient */}
+          {(function(){
+            var myRow = (r.assignees || []).find(function(a){ return String(a.id) === String(myId); });
+            if (!myRow || !myRow.senderRole || myRow.senderRole === "other") return null;
+            var label = myRow.senderRole === "manager1" ? "📥 هذه المهمة مُسنَدة إليك من مديرك الإداري" : "📥 هذه المهمة مُسنَدة إليك من مديرك الفني";
+            var color = myRow.senderRole === "manager1" ? "#0F766E" : "#3B82F6";
+            return (
+              <div style={{ padding: "10px 14px", borderRadius: 10, background: color + "15", border: "1px solid " + color + "40", color: color, fontSize: 12, fontWeight: 800, marginBottom: 12, textAlign: "center" }}>
+                {label}
+              </div>
+            );
+          })()}
+
           {/* Meta */}
           <div style={{ background: C.card, borderRadius: 12, padding: 14, border: "1px solid " + C.cardBorder, marginBottom: 12 }}>
             {[
-              { label: "من", value: requesterName, icon: "👤" },
+              { label: "من", value: requesterName + (function(){
+                var myRow = (r.assignees || []).find(function(a){ return String(a.id) === String(myId); });
+                if (!myRow || !myRow.senderRole || myRow.senderRole === "other") return "";
+                return myRow.senderRole === "manager1" ? " (مديري الإداري)" : " (مديري الفني)";
+              })(), icon: "👤" },
               { label: "إلى", value: (r.assignees || []).map(function(a){ return a.name || nameOf(a.id); }).join("، ") || "—", icon: "📬" },
               r.assignMode ? { label: "نمط التكليف", value: r.assignMode === "coordinator" ? "مسؤول ينسّق" : "كل طرف مستقل", icon: "🎯" } : null,
               { label: "تاريخ الإنشاء", value: r.createdAt ? new Date(r.createdAt).toLocaleString("ar-SA") : "—", icon: "📅" },
@@ -9773,6 +10068,194 @@ function LeaveModal({ user, onClose, onSubmit }) {
   );
 }
 
+/* ═══ TICKETS CARD — عرض تذاكري مع Chat Thread (v6.81) ═══ */
+function TicketsCard({ user, myTickets }) {
+  var [selected, setSelected] = useState(null);
+  var [replyText, setReplyText] = useState("");
+  var [sending, setSending] = useState(false);
+  var [tickets, setTickets] = useState(myTickets || []);
+
+  useEffect(function(){ setTickets(myTickets || []); }, [myTickets]);
+
+  async function reload() {
+    try {
+      var r = await fetch("/api/data?action=tickets&empId=" + encodeURIComponent(user.id));
+      var d = await r.json();
+      setTickets(Array.isArray(d) ? d : []);
+    } catch(e) {}
+  }
+
+  async function openTicket(tk) {
+    setSelected(tk);
+    setReplyText("");
+    // Mark as read
+    try {
+      await fetch("/api/data?action=tickets", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "mark-read", ticketId: tk.id, byRole: "employee" }),
+      });
+    } catch(e) {}
+  }
+
+  async function sendReply() {
+    if (!replyText.trim() || !selected) return;
+    setSending(true);
+    try {
+      var r = await fetch("/api/data?action=tickets", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          action: "reply",
+          ticketId: selected.id,
+          by: user.name || user.id,
+          byRole: "employee",
+          text: replyText,
+        }),
+      });
+      var d = await r.json();
+      if (d.ok && d.ticket) {
+        setSelected(d.ticket);
+        setReplyText("");
+        await reload();
+      }
+    } catch(e) { alert("فشل الإرسال"); }
+    setSending(false);
+  }
+
+  function statusLabel(s) {
+    var map = {
+      open: { label: "مفتوحة", color: "#3B82F6" },
+      replied: { label: "ردّ", color: "#10B981" },
+      resolved: { label: "محلولة", color: "#64748B" },
+      closed: { label: "مغلقة", color: "#9CA3AF" },
+    };
+    return map[s] || map.open;
+  }
+
+  function unreadFor(tk) {
+    var lastMsg = (tk.messages || [])[((tk.messages || []).length - 1)];
+    if (!lastMsg) return false;
+    if (lastMsg.byRole !== "hr" && lastMsg.byRole !== "admin") return false;
+    if (!tk.lastReadByEmp) return true;
+    return new Date(tk.lastReadByEmp) < new Date(lastMsg.ts);
+  }
+
+  if (!tickets || tickets.length === 0) return null;
+
+  // Sort: unread first, then by updated
+  var sorted = tickets.slice().sort(function(a,b){
+    var aU = unreadFor(a) ? 0 : 1;
+    var bU = unreadFor(b) ? 0 : 1;
+    if (aU !== bU) return aU - bU;
+    return new Date(b.updatedAt || b.ts) - new Date(a.updatedAt || a.ts);
+  });
+
+  return (
+    <>
+      <Card>
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: SPACING.sm }}>
+          <div style={{ ...TYPOGRAPHY.h3, color: COLORS.textPrimary }}>📨 رسائلي مع الموارد البشرية</div>
+          <span style={{ fontSize: 10, color: COLORS.textMuted, fontWeight: 600 }}>{tickets.length} رسالة</span>
+        </div>
+        {sorted.slice(0, 6).map(function(tk, i){
+          var st = statusLabel(tk.status);
+          var isUnread = unreadFor(tk);
+          var lastMsg = (tk.messages || [])[((tk.messages || []).length - 1)];
+          var isFromHR = tk.initiatedBy === "hr";
+          return (
+            <div key={tk.id} onClick={function(){ openTicket(tk); }} style={{ display: "flex", alignItems: "center", gap: SPACING.sm, padding: SPACING.sm + "px 2px", borderBottom: i < Math.min(sorted.length, 6) - 1 ? "1px solid " + COLORS.cardBorder : "none", cursor: "pointer", position: "relative" }}>
+              {isUnread && <div style={{ width: 8, height: 8, borderRadius: 4, background: "#10B981", flexShrink: 0, boxShadow: "0 0 0 3px rgba(16,185,129,0.2)" }} />}
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <div style={{ ...TYPOGRAPHY.bodySm, fontWeight: 800, color: COLORS.textPrimary, marginBottom: 3, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                  {isFromHR && <span style={{ color: "#7C3AED", fontSize: 9, fontWeight: 800, marginLeft: 4 }}>🏢</span>}
+                  {tk.subject || "(بدون عنوان)"}
+                </div>
+                {lastMsg && (
+                  <div style={{ ...TYPOGRAPHY.tiny, color: COLORS.textMuted, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                    {lastMsg.byRole === "employee" ? "أنت:" : "HR:"} {lastMsg.text ? lastMsg.text.substring(0, 50) : ""}
+                  </div>
+                )}
+              </div>
+              <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", gap: 2 }}>
+                <span style={{ ...TYPOGRAPHY.tiny, fontWeight: 700, color: st.color, padding: "2px 6px", borderRadius: 4, background: st.color + "20" }}>{st.label}</span>
+                {tk.requiresReply && (tk.status === "open" || tk.status === "replied") && lastMsg && (lastMsg.byRole === "hr" || lastMsg.byRole === "admin") && (
+                  <span style={{ fontSize: 8, color: "#DC2626", fontWeight: 800 }}>⚠ ردّ</span>
+                )}
+              </div>
+            </div>
+          );
+        })}
+        {tickets.length > 6 && (
+          <div style={{ textAlign: "center", marginTop: 8, fontSize: 10, color: COLORS.textMuted }}>+ {tickets.length - 6} رسالة أخرى</div>
+        )}
+      </Card>
+
+      {selected && (
+        <TicketThreadModal ticket={selected} user={user} onClose={function(){ setSelected(null); reload(); }} onReply={sendReply} replyText={replyText} setReplyText={setReplyText} sending={sending} />
+      )}
+    </>
+  );
+}
+
+function TicketThreadModal({ ticket, user, onClose, onReply, replyText, setReplyText, sending }) {
+  var isClosed = ticket.status === "resolved" || ticket.status === "closed";
+  var empObj = user;
+
+  return (
+    <div onClick={onClose} style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.75)", zIndex: 9000, display: "flex", alignItems: "flex-end", justifyContent: "center", padding: 0 }}>
+      <div onClick={function(e){ e.stopPropagation(); }} style={{ background: "linear-gradient(180deg, " + COLORS.bg1 + ", " + COLORS.bg2 + ")", borderRadius: "18px 18px 0 0", maxWidth: 430, width: "100%", maxHeight: "92vh", overflowY: "auto", border: "1px solid " + COLORS.metallicBorder, display: "flex", flexDirection: "column" }}>
+        {/* Header */}
+        <div style={{ padding: "14px 16px", borderBottom: "1px solid " + COLORS.metallicBorder, position: "sticky", top: 0, background: COLORS.bg1, zIndex: 5 }}>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 10, marginBottom: 6 }}>
+            <div style={{ flex: 1, minWidth: 0 }}>
+              <div style={{ fontSize: 15, fontWeight: 800, color: COLORS.textPrimary, marginBottom: 4, fontFamily: TYPOGRAPHY.fontCairo }}>
+                {ticket.initiatedBy === "hr" && <span style={{ color: "#7C3AED", fontSize: 11, marginLeft: 4 }}>🏢</span>}
+                {ticket.subject || "(بدون عنوان)"}
+              </div>
+              {ticket.category && <span style={{ fontSize: 9, padding: "2px 7px", borderRadius: 4, background: "rgba(43,94,167,0.15)", color: "#3B82F6", fontWeight: 700 }}>{ticket.category}</span>}
+              {ticket.priority && ticket.priority !== "normal" && <span style={{ fontSize: 9, padding: "2px 7px", borderRadius: 4, marginRight: 4, background: ticket.priority === "urgent" ? "rgba(220,38,38,0.18)" : "rgba(245,158,11,0.18)", color: ticket.priority === "urgent" ? "#DC2626" : "#F59E0B", fontWeight: 700 }}>{ticket.priority === "urgent" ? "🔴 عاجلة" : "🟠 عالية"}</span>}
+              {ticket.requiresReply && !isClosed && <span style={{ fontSize: 9, padding: "2px 7px", borderRadius: 4, marginRight: 4, background: "rgba(220,38,38,0.18)", color: "#DC2626", fontWeight: 700 }}>⚠ ردّ مطلوب</span>}
+            </div>
+            <button onClick={onClose} style={{ background: "rgba(255,255,255,0.08)", border: "none", width: 30, height: 30, borderRadius: 15, fontSize: 16, color: COLORS.textPrimary, cursor: "pointer" }}>×</button>
+          </div>
+        </div>
+
+        {/* Messages */}
+        <div style={{ flex: 1, overflowY: "auto", padding: 16, minHeight: 200 }}>
+          {(ticket.messages || []).map(function(msg, i){
+            var isMe = msg.byRole === "employee";
+            return (
+              <div key={msg.id || i} style={{ display: "flex", justifyContent: isMe ? "flex-end" : "flex-start", marginBottom: 10 }}>
+                <div style={{ maxWidth: "80%", padding: 10, borderRadius: 12, background: isMe ? "rgba(201,168,76,0.15)" : "rgba(43,94,167,0.15)", border: "1px solid " + (isMe ? "rgba(201,168,76,0.3)" : "rgba(43,94,167,0.3)") }}>
+                  <div style={{ fontSize: 9, color: isMe ? COLORS.goldLight : "#60A5FA", fontWeight: 800, marginBottom: 4 }}>
+                    {isMe ? "👤 أنت" : "🏢 الموارد البشرية"} · {new Date(msg.ts).toLocaleString("ar-SA", { dateStyle: "short", timeStyle: "short" })}
+                  </div>
+                  <div style={{ fontSize: 12, color: COLORS.textPrimary, lineHeight: 1.7, whiteSpace: "pre-wrap", fontFamily: TYPOGRAPHY.fontTajawal }}>{msg.text}</div>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+
+        {/* Reply */}
+        {!isClosed ? (
+          <div style={{ padding: 12, borderTop: "1px solid " + COLORS.metallicBorder, background: COLORS.bg1 }}>
+            <textarea value={replyText} onChange={function(e){ setReplyText(e.target.value); }} placeholder="اكتب ردك..." style={{ width: "100%", padding: 10, borderRadius: 10, border: "1px solid " + COLORS.metallicBorder, background: COLORS.metallic, color: COLORS.textPrimary, fontSize: 12, outline: "none", boxSizing: "border-box", fontFamily: TYPOGRAPHY.fontTajawal, minHeight: 60, resize: "vertical" }} />
+            <button onClick={onReply} disabled={sending || !replyText.trim()} style={{ width: "100%", marginTop: 8, padding: 11, borderRadius: 10, background: sending || !replyText.trim() ? COLORS.metallic : "linear-gradient(135deg, " + COLORS.goldLight + ", " + COLORS.gold + ")", color: sending || !replyText.trim() ? COLORS.textMuted : "#000", border: "none", fontSize: 13, fontWeight: 800, cursor: sending || !replyText.trim() ? "default" : "pointer", fontFamily: TYPOGRAPHY.fontTajawal }}>
+              {sending ? "جارِ الإرسال..." : "📤 إرسال الرد"}
+            </button>
+          </div>
+        ) : (
+          <div style={{ padding: 14, textAlign: "center", background: "rgba(100,116,139,0.08)", borderTop: "1px solid " + COLORS.metallicBorder, fontSize: 11, color: COLORS.textMuted }}>
+            التذكرة {ticket.status === "resolved" ? "محلولة" : "مغلقة"} — لا يمكن الرد
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
 function TicketModal({ user, onClose, onSubmit }) {
   var [subject, setSubject] = useState("");
   var [message, setMessage] = useState("");
@@ -10717,7 +11200,7 @@ function MyTeamPage({ user, allEmps }) {
   );
 }
 
-function BottomNav({ page, setPage, legalAlerts, tawasulUnread, user }) {
+function BottomNav({ page, setPage, legalAlerts, tawasulUnread, hrUnread, user }) {
   // v6.56 — Show "فريقي" tab only for managers (alongside امتيازات)
   var isManagerOrAdmin = user && (user.isManager || user.isAssistant || user.isAdmin || user.isGeneralManager);
   var items = [
@@ -10729,7 +11212,7 @@ function BottomNav({ page, setPage, legalAlerts, tawasulUnread, user }) {
   }
   items.push({ id: "benefits", icon: Icons.medal, label: "الامتيازات" });
   items.push({ id: "report", icon: Icons.chart, label: "تقريري" });
-  items.push({ id: "profile", icon: Icons.user, label: "حسابي", badge: legalAlerts || 0 });
+  items.push({ id: "profile", icon: Icons.user, label: "حسابي", badge: (legalAlerts || 0) + (hrUnread || 0) });
   return (
     <div style={{ position: "fixed", bottom: 0, left: 0, right: 0, maxWidth: 430, margin: "0 auto", background: "rgba(" + (C === DARK ? "7,20,40" : "255,255,255") + ",.85)", backdropFilter: "blur(10px)", borderTop: "1px solid " + COLORS.metallicBorder, display: "flex", justifyContent: "space-around", padding: "10px 0 16px", zIndex: 50 }}>
       {items.map(function(n) {

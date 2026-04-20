@@ -4,7 +4,7 @@ import { generateAttendanceReport, generateEmployeeReport, generateMonthlySummar
 import { exportFormalWarning, exportInvestigationRecord, exportAffidavit, exportEmploymentLetter, exportSalaryLetter, exportLeaveLetter } from "./formalPdfs";
 
 const APP = "بصمة HMA";
-const VER = "6.79";
+const VER = "6.81";
 const CO = "هاني محمد عسيري للإستشارات الهندسية";
 const B = { blue: "#2B5EA7", yellow: "#FDD800", red: "#E2192C", black: "#1A1A1A", blueDk: "#1E4478", blueLt: "#EDF3FB", gold: "#D4A017" };
 
@@ -526,6 +526,7 @@ export default function AdminApp() {
         { id: "system_settings", icon: "⚙️", label: "إعدادات النظام" },
         { id: "surveys", icon: "📊", label: "الاستطلاعات" },
         { id: "backup", icon: "🛡", label: "النسخ الاحتياطي" },
+        { id: "hr_tickets", icon: "📨", label: "رسائل الموظفين" },
         { id: "admin_requests", icon: "📝", label: "الطلبات" },
         { id: "complaints", icon: "📣", label: "الشكاوى", badge: badgeCounts.complaints },
         { id: "investigations", icon: "🔍", label: "التحقيقات", badge: badgeCounts.investigations },
@@ -1478,6 +1479,7 @@ export default function AdminApp() {
       {tab === "system_settings" && <SystemSettingsPanel t={t} B={B} />}
       {tab === "surveys" && <SurveysPanel t={t} B={B} emps={safeEmps} />}
       {tab === "backup" && <BackupPanel t={t} B={B} />}
+      {tab === "hr_tickets" && <HRTicketsPanel t={t} B={B} emps={safeEmps} />}
       {tab === "benefits" && <BenefitsPanel t={t} B={B} />}
       {tab === "announcements" && <AnnouncementsPanel t={t} B={B} emps={safeEmps} branches={branches} />}
       {tab === "banners" && <BannersPanel t={t} B={B} />}
@@ -2934,6 +2936,487 @@ function BackupPanel({ t, B }) {
               </button>
             </div>
           </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+/* ═══════════════════════════════════════════════════════════════
+   HR TICKETS PANEL — رسائل الموارد البشرية للموظفين v6.81
+   ═══════════════════════════════════════════════════════════════ */
+function HRTicketsPanel({ t, B, emps }) {
+  var [tickets, setTickets] = useState([]);
+  var [templates, setTemplates] = useState([]);
+  var [loading, setLoading] = useState(true);
+  var [view, setView] = useState("list"); // list | create | detail
+  var [selected, setSelected] = useState(null);
+  var [filter, setFilter] = useState("all"); // all | open | replied | resolved | closed
+  var [search, setSearch] = useState("");
+  var adminEmail = localStorage.getItem("basma_admin_email") || "admin";
+
+  async function loadAll() {
+    setLoading(true);
+    try {
+      var [tRes, tplRes] = await Promise.all([
+        fetch("/api/data?action=tickets").then(function(r){ return r.json(); }),
+        fetch("/api/data?action=hr-ticket-templates").then(function(r){ return r.json(); }),
+      ]);
+      setTickets(Array.isArray(tRes) ? tRes : []);
+      setTemplates((tplRes && tplRes.templates) || []);
+    } catch(e) {}
+    setLoading(false);
+  }
+
+  useEffect(function(){ loadAll(); }, []);
+
+  function empName(empId) {
+    var e = emps.find(function(x){ return String(x.id) === String(empId); });
+    return e ? e.name : empId;
+  }
+
+  function fmtDate(iso) {
+    if (!iso) return "—";
+    var d = new Date(iso);
+    var now = new Date();
+    var diffMs = now - d;
+    var mins = Math.floor(diffMs / 60000);
+    if (mins < 1) return "الآن";
+    if (mins < 60) return "منذ " + mins + " د";
+    var hrs = Math.floor(mins / 60);
+    if (hrs < 24) return "منذ " + hrs + " س";
+    var days = Math.floor(hrs / 24);
+    if (days < 7) return "منذ " + days + " يوم";
+    return d.toLocaleDateString("ar-SA");
+  }
+
+  function statusInfo(s) {
+    var map = {
+      open: { label: "مفتوحة", color: "#3B82F6", icon: "🟦" },
+      replied: { label: "ردّ الموظف", color: "#10B981", icon: "🟩" },
+      resolved: { label: "محلولة", color: "#64748B", icon: "✅" },
+      closed: { label: "مغلقة", color: "#9CA3AF", icon: "⛔" },
+    };
+    return map[s] || map.open;
+  }
+
+  var filtered = tickets.filter(function(tk){
+    if (filter !== "all" && tk.status !== filter) return false;
+    if (search.trim()) {
+      var q = search.trim().toLowerCase();
+      var haystack = ((tk.subject||"") + " " + (tk.empName||empName(tk.empId)) + " " + (tk.category||"")).toLowerCase();
+      if (haystack.indexOf(q) < 0) return false;
+    }
+    return true;
+  }).sort(function(a,b){ return new Date(b.updatedAt || b.ts) - new Date(a.updatedAt || a.ts); });
+
+  // Stats
+  var stats = {
+    open: tickets.filter(function(t){ return t.status === "open"; }).length,
+    replied: tickets.filter(function(t){ return t.status === "replied"; }).length,
+    fromHR: tickets.filter(function(t){ return t.initiatedBy === "hr"; }).length,
+    fromEmp: tickets.filter(function(t){ return t.initiatedBy === "employee"; }).length,
+  };
+
+  if (loading) return <div style={{ padding: 40, textAlign: "center", color: t.txM }}>جارِ التحميل...</div>;
+
+  // ═══ DETAIL VIEW ═══
+  if (view === "detail" && selected) {
+    return <HRTicketDetail ticket={selected} t={t} B={B} emps={emps} adminEmail={adminEmail} onBack={function(){ setView("list"); setSelected(null); loadAll(); }} onUpdate={loadAll} />;
+  }
+
+  // ═══ CREATE VIEW ═══
+  if (view === "create") {
+    return <HRTicketCreate t={t} B={B} emps={emps} templates={templates} adminEmail={adminEmail} onBack={function(){ setView("list"); }} onSaved={function(){ setView("list"); loadAll(); }} />;
+  }
+
+  // ═══ LIST VIEW ═══
+  return (
+    <div style={{ maxWidth: 1000 }}>
+      <div style={{ background: "linear-gradient(135deg, " + B.blue + " 0%, " + B.blueDk + " 100%)", borderRadius: 16, padding: "20px 22px", marginBottom: 16, color: "#fff", display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 10 }}>
+        <div>
+          <div style={{ fontSize: 20, fontWeight: 800, marginBottom: 4 }}>📨 رسائل الموارد البشرية</div>
+          <div style={{ fontSize: 11, opacity: 0.9 }}>تواصل ثنائي الاتجاه — HR يبدأ، الموظف يرد، والعكس</div>
+        </div>
+        <button onClick={function(){ setView("create"); }} style={{ padding: "10px 18px", borderRadius: 10, background: B.gold, color: "#000", border: "none", fontSize: 12, fontWeight: 800, cursor: "pointer", fontFamily: "inherit" }}>+ رسالة جديدة</button>
+      </div>
+
+      {/* Stats */}
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 10, marginBottom: 14 }}>
+        {[
+          { label: "مفتوحة", value: stats.open, color: "#3B82F6" },
+          { label: "ردّ الموظفون", value: stats.replied, color: "#10B981" },
+          { label: "بدأتها HR", value: stats.fromHR, color: "#7C3AED" },
+          { label: "بدأها الموظفون", value: stats.fromEmp, color: "#F59E0B" },
+        ].map(function(s, i){
+          return (
+            <div key={i} style={{ padding: 12, borderRadius: 10, background: t.card, border: "1px solid " + t.sep, textAlign: "center" }}>
+              <div style={{ fontSize: 20, fontWeight: 900, color: s.color, marginBottom: 3 }}>{s.value}</div>
+              <div style={{ fontSize: 10, color: t.txM, fontWeight: 700 }}>{s.label}</div>
+            </div>
+          );
+        })}
+      </div>
+
+      {/* Filters */}
+      <div style={{ display: "flex", gap: 8, marginBottom: 14, flexWrap: "wrap", alignItems: "center" }}>
+        <input value={search} onChange={function(e){ setSearch(e.target.value); }} placeholder="🔍 ابحث..." style={{ flex: 1, minWidth: 150, padding: "9px 12px", borderRadius: 8, border: "1px solid " + t.sep, background: t.inp, color: t.tx, fontSize: 12, outline: "none", fontFamily: "inherit" }} />
+        {["all","open","replied","resolved"].map(function(f){
+          var labels = { all: "الكل", open: "مفتوحة", replied: "ردّ الموظف", resolved: "محلولة" };
+          var active = filter === f;
+          return (
+            <button key={f} onClick={function(){ setFilter(f); }} style={{ padding: "8px 14px", borderRadius: 8, background: active ? B.blue : t.card, color: active ? "#fff" : t.tx, border: "1px solid " + (active ? B.blue : t.sep), fontSize: 11, fontWeight: 700, cursor: "pointer", fontFamily: "inherit" }}>{labels[f]}</button>
+          );
+        })}
+      </div>
+
+      {/* List */}
+      {filtered.length === 0 ? (
+        <div style={{ padding: 40, textAlign: "center", color: t.txM, fontSize: 13, background: t.card, borderRadius: 14, border: "1px dashed " + t.sep }}>
+          <div style={{ fontSize: 40, marginBottom: 12 }}>📨</div>
+          <div style={{ fontWeight: 700, marginBottom: 6 }}>لا توجد رسائل</div>
+          <div style={{ fontSize: 11 }}>اضغط "+ رسالة جديدة" لبدء محادثة مع موظف</div>
+        </div>
+      ) : (
+        <div style={{ display: "grid", gap: 8 }}>
+          {filtered.map(function(tk){
+            var st = statusInfo(tk.status);
+            var lastMsg = (tk.messages || [])[((tk.messages || []).length - 1)];
+            var isUnreadByHr = lastMsg && (lastMsg.byRole === "employee") && (!tk.lastReadByHr || new Date(tk.lastReadByHr) < new Date(lastMsg.ts));
+            var prio = tk.priority === "urgent" ? "🔴" : tk.priority === "high" ? "🟠" : "";
+
+            return (
+              <div key={tk.id} onClick={function(){ setSelected(tk); setView("detail"); }} style={{ padding: 14, borderRadius: 12, background: t.card, border: "1px solid " + (isUnreadByHr ? "#10B981" : t.sep), borderRight: "3px solid " + st.color, cursor: "pointer", position: "relative" }}>
+                {isUnreadByHr && <span style={{ position: "absolute", top: 10, left: 10, width: 10, height: 10, borderRadius: 5, background: "#10B981", boxShadow: "0 0 0 3px rgba(16,185,129,0.2)" }} />}
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 10, marginBottom: 6, flexWrap: "wrap" }}>
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div style={{ fontSize: 13, fontWeight: 800, color: t.tx, marginBottom: 4, display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap" }}>
+                      {prio && <span>{prio}</span>}
+                      <span>{tk.subject || "(بدون عنوان)"}</span>
+                      {tk.initiatedBy === "hr" && <span style={{ padding: "1px 6px", fontSize: 8, borderRadius: 4, background: "rgba(124,58,237,0.18)", color: "#7C3AED", fontWeight: 800 }}>📨 من HR</span>}
+                      {tk.initiatedBy === "employee" && <span style={{ padding: "1px 6px", fontSize: 8, borderRadius: 4, background: "rgba(245,158,11,0.18)", color: "#F59E0B", fontWeight: 800 }}>📩 من الموظف</span>}
+                      {tk.requiresReply && tk.status !== "resolved" && tk.status !== "closed" && <span style={{ padding: "1px 6px", fontSize: 8, borderRadius: 4, background: "rgba(220,38,38,0.18)", color: "#DC2626", fontWeight: 800 }}>⚠ ردّ مطلوب</span>}
+                    </div>
+                    <div style={{ fontSize: 10, color: t.txM, marginBottom: 4 }}>
+                      <span style={{ fontWeight: 700 }}>👤 {tk.empName || empName(tk.empId)}</span>
+                      {tk.category && <span> · {tk.category}</span>}
+                    </div>
+                    {lastMsg && (
+                      <div style={{ fontSize: 10, color: t.txM, fontStyle: "italic", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                        {lastMsg.byRole === "employee" ? "👤" : "🏢"} {lastMsg.text ? (lastMsg.text.substring(0, 80) + (lastMsg.text.length > 80 ? "..." : "")) : ""}
+                      </div>
+                    )}
+                  </div>
+                  <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", gap: 4 }}>
+                    <span style={{ padding: "2px 8px", borderRadius: 6, background: st.color + "22", color: st.color, fontSize: 9, fontWeight: 800 }}>{st.label}</span>
+                    <span style={{ fontSize: 9, color: t.txM }}>{fmtDate(tk.updatedAt || tk.ts)}</span>
+                    <span style={{ fontSize: 9, color: t.txM }}>💬 {(tk.messages || []).length}</span>
+                  </div>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
+}
+
+/* ─── HR Ticket Create ─── */
+function HRTicketCreate({ t, B, emps, templates, adminEmail, onBack, onSaved }) {
+  var [selectedEmpIds, setSelectedEmpIds] = useState([]);
+  var [searchEmp, setSearchEmp] = useState("");
+  var [useTemplate, setUseTemplate] = useState(null);
+  var [subject, setSubject] = useState("");
+  var [message, setMessage] = useState("");
+  var [category, setCategory] = useState("استفسار");
+  var [priority, setPriority] = useState("normal");
+  var [requiresReply, setRequiresReply] = useState(true);
+  var [replyDeadline, setReplyDeadline] = useState("");
+  var [saving, setSaving] = useState(false);
+
+  function applyTemplate(tpl) {
+    setUseTemplate(tpl.id);
+    setSubject(tpl.subject);
+    setMessage(tpl.message);
+    setCategory(tpl.category);
+    setPriority(tpl.priority);
+    setRequiresReply(tpl.requiresReply);
+  }
+
+  function toggleEmp(id) {
+    setSelectedEmpIds(function(arr){
+      if (arr.indexOf(id) >= 0) return arr.filter(function(x){ return x !== id; });
+      return arr.concat([id]);
+    });
+  }
+
+  var filteredEmps = emps.filter(function(e){
+    if (!searchEmp.trim()) return true;
+    var q = searchEmp.trim().toLowerCase();
+    return ((e.name||"") + " " + (e.department||"") + " " + (e.role||"")).toLowerCase().indexOf(q) >= 0;
+  });
+
+  async function send() {
+    if (selectedEmpIds.length === 0) { alert("اختر موظف واحد على الأقل"); return; }
+    if (!subject.trim()) { alert("أدخل عنوان الرسالة"); return; }
+    if (!message.trim()) { alert("أدخل نص الرسالة"); return; }
+
+    setSaving(true);
+    try {
+      var sent = 0;
+      for (var i = 0; i < selectedEmpIds.length; i++) {
+        var empId = selectedEmpIds[i];
+        var emp = emps.find(function(e){ return String(e.id) === String(empId); });
+        await fetch("/api/data?action=tickets", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            action: "create",
+            empId: empId,
+            empName: emp ? emp.name : empId,
+            initiatedBy: "hr",
+            createdBy: adminEmail,
+            createdByRole: "hr",
+            subject: subject,
+            category: category,
+            template: useTemplate,
+            priority: priority,
+            requiresReply: requiresReply,
+            replyDeadline: replyDeadline || null,
+            message: message,
+          }),
+        });
+        sent++;
+      }
+      alert("✅ تم إرسال " + sent + " رسالة");
+      onSaved();
+    } catch(e) {
+      alert("فشل: " + e.message);
+    }
+    setSaving(false);
+  }
+
+  var inputStyle = { width: "100%", padding: "10px 12px", borderRadius: 8, border: "1px solid " + t.sep, background: t.inp, color: t.tx, fontSize: 12, outline: "none", boxSizing: "border-box", fontFamily: "inherit" };
+
+  return (
+    <div style={{ maxWidth: 800 }}>
+      <div style={{ background: "linear-gradient(135deg, " + B.blue + " 0%, " + B.blueDk + " 100%)", borderRadius: 16, padding: "18px 22px", marginBottom: 14, color: "#fff", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+        <div>
+          <div style={{ fontSize: 18, fontWeight: 800 }}>+ رسالة جديدة من HR</div>
+          <div style={{ fontSize: 11, opacity: 0.9, marginTop: 3 }}>للموظف أو مجموعة موظفين</div>
+        </div>
+        <button onClick={onBack} style={{ padding: "8px 14px", borderRadius: 8, background: "rgba(255,255,255,0.15)", color: "#fff", border: "1px solid rgba(255,255,255,0.3)", fontSize: 11, fontWeight: 800, cursor: "pointer", fontFamily: "inherit" }}>← رجوع</button>
+      </div>
+
+      {/* Templates */}
+      <div style={{ padding: 14, background: t.card, borderRadius: 12, border: "1px solid " + t.sep, marginBottom: 12 }}>
+        <div style={{ fontSize: 12, fontWeight: 800, color: t.tx, marginBottom: 10 }}>📝 قوالب جاهزة (اختياري)</div>
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))", gap: 6 }}>
+          {templates.map(function(tpl){
+            var active = useTemplate === tpl.id;
+            return (
+              <button key={tpl.id} onClick={function(){ applyTemplate(tpl); }} style={{ padding: 10, borderRadius: 8, background: active ? B.blue : t.inp, color: active ? "#fff" : t.tx, border: "1px solid " + (active ? B.blue : t.sep), fontSize: 11, fontWeight: 700, cursor: "pointer", fontFamily: "inherit", textAlign: "right", display: "flex", alignItems: "flex-start", gap: 6 }}>
+                <span style={{ fontSize: 14, flexShrink: 0 }}>{tpl.icon}</span>
+                <span style={{ flex: 1, lineHeight: 1.4 }}>{tpl.subject}</span>
+              </button>
+            );
+          })}
+        </div>
+        {useTemplate && (
+          <button onClick={function(){ setUseTemplate(null); setSubject(""); setMessage(""); }} style={{ marginTop: 8, padding: "6px 12px", borderRadius: 6, background: "transparent", color: "#DC2626", border: "1px solid rgba(220,38,38,0.3)", fontSize: 10, fontWeight: 700, cursor: "pointer", fontFamily: "inherit" }}>✕ إلغاء القالب (ابدأ من فارغ)</button>
+        )}
+      </div>
+
+      {/* Employee selection */}
+      <div style={{ padding: 14, background: t.card, borderRadius: 12, border: "1px solid " + t.sep, marginBottom: 12 }}>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 10, flexWrap: "wrap", gap: 8 }}>
+          <div style={{ fontSize: 12, fontWeight: 800, color: t.tx }}>👥 المستلمون ({selectedEmpIds.length} مُحدد)</div>
+          <div style={{ display: "flex", gap: 6 }}>
+            <button onClick={function(){ setSelectedEmpIds(filteredEmps.map(function(e){ return e.id; })); }} style={{ padding: "5px 10px", borderRadius: 6, background: "transparent", color: B.blue, border: "1px solid " + B.blue + "40", fontSize: 10, fontWeight: 700, cursor: "pointer", fontFamily: "inherit" }}>اختيار الكل</button>
+            <button onClick={function(){ setSelectedEmpIds([]); }} style={{ padding: "5px 10px", borderRadius: 6, background: "transparent", color: t.txM, border: "1px solid " + t.sep, fontSize: 10, fontWeight: 700, cursor: "pointer", fontFamily: "inherit" }}>مسح</button>
+          </div>
+        </div>
+        <input value={searchEmp} onChange={function(e){ setSearchEmp(e.target.value); }} placeholder="🔍 ابحث..." style={inputStyle} />
+        <div style={{ maxHeight: 200, overflowY: "auto", marginTop: 8, padding: 4, borderRadius: 6, background: t.bg }}>
+          {filteredEmps.map(function(e){
+            var selected = selectedEmpIds.indexOf(e.id) >= 0;
+            return (
+              <div key={e.id} onClick={function(){ toggleEmp(e.id); }} style={{ padding: "8px 10px", borderRadius: 6, cursor: "pointer", background: selected ? "rgba(43,94,167,0.15)" : "transparent", marginBottom: 2, display: "flex", alignItems: "center", gap: 8, fontSize: 11 }}>
+                <span style={{ width: 16, height: 16, borderRadius: 4, border: "1.5px solid " + (selected ? B.blue : t.sep), background: selected ? B.blue : "transparent", color: "#fff", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 10, fontWeight: 900, flexShrink: 0 }}>{selected ? "✓" : ""}</span>
+                <span style={{ flex: 1, color: t.tx, fontWeight: 700 }}>{e.name}</span>
+                {e.role && <span style={{ color: t.txM, fontSize: 10 }}>{e.role}</span>}
+              </div>
+            );
+          })}
+        </div>
+      </div>
+
+      {/* Subject + Category + Priority */}
+      <div style={{ padding: 14, background: t.card, borderRadius: 12, border: "1px solid " + t.sep, marginBottom: 12 }}>
+        <div style={{ marginBottom: 10 }}>
+          <div style={{ fontSize: 11, color: t.txM, fontWeight: 700, marginBottom: 4 }}>العنوان *</div>
+          <input value={subject} onChange={function(e){ setSubject(e.target.value); }} placeholder="عنوان الرسالة" style={inputStyle} />
+        </div>
+        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10, marginBottom: 10 }}>
+          <div>
+            <div style={{ fontSize: 11, color: t.txM, fontWeight: 700, marginBottom: 4 }}>التصنيف</div>
+            <select value={category} onChange={function(e){ setCategory(e.target.value); }} style={inputStyle}>
+              {["استفسار","طلب وثيقة","تحديث بيانات","تذكير","تنبيه","شكر","استلام","عام"].map(function(c){
+                return <option key={c} value={c}>{c}</option>;
+              })}
+            </select>
+          </div>
+          <div>
+            <div style={{ fontSize: 11, color: t.txM, fontWeight: 700, marginBottom: 4 }}>الأولوية</div>
+            <select value={priority} onChange={function(e){ setPriority(e.target.value); }} style={inputStyle}>
+              <option value="low">منخفضة</option>
+              <option value="normal">عادية</option>
+              <option value="high">🟠 عالية</option>
+              <option value="urgent">🔴 عاجلة</option>
+            </select>
+          </div>
+        </div>
+        <div style={{ marginBottom: 10 }}>
+          <div style={{ fontSize: 11, color: t.txM, fontWeight: 700, marginBottom: 4 }}>نص الرسالة *</div>
+          <textarea value={message} onChange={function(e){ setMessage(e.target.value); }} placeholder="اكتب رسالتك..." style={Object.assign({}, inputStyle, { minHeight: 110, resize: "vertical", lineHeight: 1.7 })} />
+        </div>
+        <div style={{ display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap" }}>
+          <label style={{ display: "flex", alignItems: "center", gap: 6, padding: "8px 12px", borderRadius: 8, background: t.inp, border: "1px solid " + t.sep, fontSize: 11, color: t.tx, cursor: "pointer" }}>
+            <input type="checkbox" checked={requiresReply} onChange={function(e){ setRequiresReply(e.target.checked); }} />
+            <span><strong>⚠ يتطلب رداً</strong></span>
+          </label>
+          {requiresReply && (
+            <>
+              <span style={{ fontSize: 11, color: t.txM }}>تاريخ الرد (اختياري):</span>
+              <input type="date" value={replyDeadline} onChange={function(e){ setReplyDeadline(e.target.value); }} style={Object.assign({}, inputStyle, { width: "auto" })} />
+            </>
+          )}
+        </div>
+      </div>
+
+      <div style={{ display: "flex", gap: 10 }}>
+        <button onClick={onBack} disabled={saving} style={{ flex: 1, padding: 12, borderRadius: 10, background: t.bg, color: t.tx, border: "1px solid " + t.sep, fontSize: 12, fontWeight: 700, cursor: "pointer", fontFamily: "inherit" }}>إلغاء</button>
+        <button onClick={send} disabled={saving} style={{ flex: 2, padding: 12, borderRadius: 10, background: saving ? t.bg : B.blue, color: "#fff", border: "none", fontSize: 13, fontWeight: 800, cursor: saving ? "default" : "pointer", fontFamily: "inherit" }}>
+          {saving ? "جارِ الإرسال..." : "📤 إرسال" + (selectedEmpIds.length > 1 ? " (" + selectedEmpIds.length + " موظف)" : "")}
+        </button>
+      </div>
+    </div>
+  );
+}
+
+/* ─── HR Ticket Detail (Chat Thread) ─── */
+function HRTicketDetail({ ticket, t, B, emps, adminEmail, onBack, onUpdate }) {
+  var [tk, setTk] = useState(ticket);
+  var [replyText, setReplyText] = useState("");
+  var [sending, setSending] = useState(false);
+
+  useEffect(function() {
+    // Mark as read by HR
+    fetch("/api/data?action=tickets", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ action: "mark-read", ticketId: tk.id, byRole: "hr" }),
+    }).catch(function(){});
+  }, []);
+
+  async function sendReply() {
+    if (!replyText.trim()) return;
+    setSending(true);
+    try {
+      var r = await fetch("/api/data?action=tickets", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          action: "reply",
+          ticketId: tk.id,
+          by: adminEmail,
+          byRole: "hr",
+          text: replyText,
+        }),
+      });
+      var d = await r.json();
+      if (d.ok && d.ticket) setTk(d.ticket);
+      setReplyText("");
+      onUpdate && onUpdate();
+    } catch(e) { alert("فشل الإرسال"); }
+    setSending(false);
+  }
+
+  async function updateStatus(newStatus) {
+    if (!window.confirm("تغيير الحالة إلى " + (newStatus === "resolved" ? "محلولة" : "مغلقة") + "؟")) return;
+    setSending(true);
+    try {
+      var r = await fetch("/api/data?action=tickets", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "update-status", ticketId: tk.id, status: newStatus }),
+      });
+      var d = await r.json();
+      if (d.ok && d.ticket) setTk(d.ticket);
+      onUpdate && onUpdate();
+    } catch(e) {}
+    setSending(false);
+  }
+
+  var empObj = emps.find(function(e){ return String(e.id) === String(tk.empId); });
+  var empDisplay = empObj ? empObj.name + " · " + (empObj.role || "") : (tk.empName || tk.empId);
+  var isClosed = tk.status === "resolved" || tk.status === "closed";
+
+  return (
+    <div style={{ maxWidth: 800 }}>
+      <div style={{ background: "linear-gradient(135deg, " + B.blue + " 0%, " + B.blueDk + " 100%)", borderRadius: 14, padding: "16px 18px", marginBottom: 12, color: "#fff" }}>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 10, marginBottom: 8 }}>
+          <div style={{ flex: 1, minWidth: 0 }}>
+            <div style={{ fontSize: 16, fontWeight: 800, marginBottom: 4 }}>{tk.subject || "(بدون عنوان)"}</div>
+            <div style={{ fontSize: 11, opacity: 0.9 }}>👤 {empDisplay}</div>
+          </div>
+          <button onClick={onBack} style={{ padding: "6px 12px", borderRadius: 8, background: "rgba(255,255,255,0.15)", color: "#fff", border: "1px solid rgba(255,255,255,0.3)", fontSize: 11, fontWeight: 800, cursor: "pointer", fontFamily: "inherit" }}>← رجوع</button>
+        </div>
+        <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+          {tk.category && <span style={{ padding: "2px 8px", fontSize: 9, borderRadius: 6, background: "rgba(255,255,255,0.2)" }}>{tk.category}</span>}
+          {tk.priority && tk.priority !== "normal" && <span style={{ padding: "2px 8px", fontSize: 9, borderRadius: 6, background: tk.priority === "urgent" ? "rgba(220,38,38,0.4)" : "rgba(245,158,11,0.4)" }}>{tk.priority === "urgent" ? "🔴 عاجلة" : "🟠 عالية"}</span>}
+          {tk.requiresReply && !isClosed && <span style={{ padding: "2px 8px", fontSize: 9, borderRadius: 6, background: "rgba(220,38,38,0.4)" }}>⚠ يتطلب رداً</span>}
+          {tk.status === "open" && <span style={{ padding: "2px 8px", fontSize: 9, borderRadius: 6, background: "rgba(59,130,246,0.4)" }}>🟦 مفتوحة</span>}
+          {tk.status === "replied" && <span style={{ padding: "2px 8px", fontSize: 9, borderRadius: 6, background: "rgba(16,185,129,0.4)" }}>🟩 ردّ الموظف</span>}
+          {tk.status === "resolved" && <span style={{ padding: "2px 8px", fontSize: 9, borderRadius: 6, background: "rgba(100,116,139,0.4)" }}>✅ محلولة</span>}
+          {tk.status === "closed" && <span style={{ padding: "2px 8px", fontSize: 9, borderRadius: 6, background: "rgba(156,163,175,0.4)" }}>⛔ مغلقة</span>}
+        </div>
+      </div>
+
+      {/* Messages thread */}
+      <div style={{ padding: 14, background: t.card, borderRadius: 12, border: "1px solid " + t.sep, marginBottom: 12, maxHeight: 500, overflowY: "auto" }}>
+        {(tk.messages || []).map(function(msg, i){
+          var isHr = msg.byRole === "hr" || msg.byRole === "admin";
+          return (
+            <div key={msg.id || i} style={{ display: "flex", justifyContent: isHr ? "flex-end" : "flex-start", marginBottom: 10 }}>
+              <div style={{ maxWidth: "80%", padding: 10, borderRadius: 10, background: isHr ? "rgba(43,94,167,0.12)" : t.bg, border: "1px solid " + (isHr ? B.blue + "40" : t.sep) }}>
+                <div style={{ fontSize: 9, color: isHr ? B.blue : "#F59E0B", fontWeight: 800, marginBottom: 4 }}>
+                  {isHr ? "🏢 " + (msg.by || "HR") : "👤 " + (empObj ? empObj.name : tk.empName)} · {new Date(msg.ts).toLocaleString("ar-SA", { dateStyle: "short", timeStyle: "short" })}
+                </div>
+                <div style={{ fontSize: 12, color: t.tx, lineHeight: 1.7, whiteSpace: "pre-wrap" }}>{msg.text}</div>
+              </div>
+            </div>
+          );
+        })}
+      </div>
+
+      {/* Reply input */}
+      {!isClosed && (
+        <div style={{ padding: 14, background: t.card, borderRadius: 12, border: "1px solid " + t.sep, marginBottom: 12 }}>
+          <div style={{ fontSize: 11, fontWeight: 800, color: t.tx, marginBottom: 8 }}>✍️ ردّك:</div>
+          <textarea value={replyText} onChange={function(e){ setReplyText(e.target.value); }} placeholder="اكتب ردك..." style={{ width: "100%", padding: "10px 12px", borderRadius: 8, border: "1px solid " + t.sep, background: t.inp, color: t.tx, fontSize: 12, outline: "none", boxSizing: "border-box", fontFamily: "inherit", minHeight: 80, resize: "vertical", lineHeight: 1.7 }} />
+          <div style={{ display: "flex", gap: 8, marginTop: 10, flexWrap: "wrap" }}>
+            <button onClick={sendReply} disabled={sending || !replyText.trim()} style={{ flex: 1, minWidth: 120, padding: 10, borderRadius: 8, background: sending || !replyText.trim() ? t.bg : B.blue, color: "#fff", border: "none", fontSize: 12, fontWeight: 800, cursor: sending || !replyText.trim() ? "default" : "pointer", fontFamily: "inherit" }}>{sending ? "..." : "📤 إرسال الرد"}</button>
+            <button onClick={function(){ updateStatus("resolved"); }} disabled={sending} style={{ padding: "10px 14px", borderRadius: 8, background: "#10B981", color: "#fff", border: "none", fontSize: 11, fontWeight: 800, cursor: "pointer", fontFamily: "inherit" }}>✅ حلّها</button>
+            <button onClick={function(){ updateStatus("closed"); }} disabled={sending} style={{ padding: "10px 14px", borderRadius: 8, background: "transparent", color: t.txM, border: "1px solid " + t.sep, fontSize: 11, fontWeight: 800, cursor: "pointer", fontFamily: "inherit" }}>⛔ إغلاق</button>
+          </div>
+        </div>
+      )}
+
+      {isClosed && (
+        <div style={{ padding: 12, background: "rgba(100,116,139,0.08)", borderRadius: 10, border: "1px dashed " + t.sep, textAlign: "center", fontSize: 11, color: t.txM }}>
+          التذكرة {tk.status === "resolved" ? "محلولة" : "مغلقة"} — لا يمكن إضافة ردود جديدة
         </div>
       )}
     </div>
@@ -6848,14 +7331,13 @@ function AnnouncementForm({ t, B, emps, branches, initial, onSave, onCancel }) {
   );
 }
 
-/* ═══ STORAGE PANEL — مراقبة وإدارة التخزين ═══ */
-/* ═══ ORG HIERARCHY PANEL — الهيكل التنظيمي (مَن يدير مَن) ═══ */
+/* ═══ ORG HIERARCHY PANEL — الهيكل التنظيمي v2 (مدير أول + مدير ثاني) v6.80 ═══ */
 function OrgHierarchyPanel({ t, B }) {
   var [employees, setEmployees] = useState([]);
   var [hierarchy, setHierarchy] = useState({});
   var [loading, setLoading] = useState(true);
   var [saving, setSaving] = useState(false);
-  var [pending, setPending] = useState({}); // { empId: managerId } — unsaved changes
+  var [pending, setPending] = useState({}); // { empId: { manager1, manager2 } }
   var [search, setSearch] = useState("");
   var [err, setErr] = useState(null);
 
@@ -6875,16 +7357,22 @@ function OrgHierarchyPanel({ t, B }) {
 
   useEffect(function(){ load(); }, []);
 
-  function getCurrentManager(empId) {
+  function getCurrentRecord(empId) {
     var key = String(empId);
-    if (pending.hasOwnProperty(key)) return pending[key];
-    return hierarchy[key] || "";
+    if (pending[key]) return pending[key];
+    var h = hierarchy[key];
+    if (!h) return { manager1: "", manager2: "" };
+    if (typeof h === "string") return { manager1: h, manager2: "" };
+    return { manager1: h.manager1 || "", manager2: h.manager2 || "" };
   }
 
-  function setManagerFor(empId, managerId) {
+  function setManagerFor(empId, which, mgrId) {
     setPending(function(p){
       var n = Object.assign({}, p);
-      n[String(empId)] = managerId || null;
+      var key = String(empId);
+      var existing = n[key] || getCurrentRecord(empId);
+      n[key] = Object.assign({}, existing);
+      n[key][which] = mgrId || "";
       return n;
     });
   }
@@ -6893,10 +7381,17 @@ function OrgHierarchyPanel({ t, B }) {
     if (Object.keys(pending).length === 0) { alert("لا تغييرات للحفظ"); return; }
     setSaving(true);
     try {
+      var assignments = {};
+      Object.keys(pending).forEach(function(eid){
+        assignments[eid] = {
+          manager1: pending[eid].manager1 || null,
+          manager2: pending[eid].manager2 || null,
+        };
+      });
       var r = await fetch("/api/data?action=org_hierarchy", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ assignments: pending }),
+        body: JSON.stringify({ assignments: assignments, editedBy: "admin" }),
       });
       var d = await r.json();
       if (!r.ok || !d.ok) {
@@ -6922,28 +7417,22 @@ function OrgHierarchyPanel({ t, B }) {
     return ((e.name||"") + " " + (e.username||"") + " " + (e.department||"")).toLowerCase().indexOf(q) >= 0;
   });
 
-  // Build a set of potential managers (any employee that someone reports to, OR isManager/isAdmin)
-  var potentialManagers = employees.filter(function(e){
-    if (e.isAdmin || e.isManager) return true;
-    // also include anyone who is a manager via hierarchy
-    var eid = String(e.id || e.username);
-    return Object.values(hierarchy).indexOf(eid) >= 0 || Object.values(pending).indexOf(eid) >= 0;
-  });
+  // All employees can be managers
+  var allManagers = employees;
 
-  // Detect cycles (simple check)
-  function getCycle(startEmpId) {
-    var seen = new Set();
-    var cur = String(startEmpId);
-    while (cur) {
-      if (seen.has(cur)) return true;
-      seen.add(cur);
-      var next = pending[cur] !== undefined ? pending[cur] : hierarchy[cur];
-      if (!next) break;
-      cur = String(next);
-    }
-    return false;
-  }
-
+  // Stats
+  var withMgr1 = employees.filter(function(e){
+    var rec = getCurrentRecord(String(e.id || e.username));
+    return rec.manager1;
+  }).length;
+  var withMgr2 = employees.filter(function(e){
+    var rec = getCurrentRecord(String(e.id || e.username));
+    return rec.manager2;
+  }).length;
+  var editedInBasma = employees.filter(function(e){
+    var h = hierarchy[String(e.id || e.username)];
+    return h && typeof h === "object" && h.editedInBasma;
+  }).length;
   var pendingCount = Object.keys(pending).length;
 
   if (loading) return <div style={{ padding: 40, textAlign: "center", color: t.tx2 }}>جارِ تحميل الموظفين...</div>;
@@ -6953,9 +7442,15 @@ function OrgHierarchyPanel({ t, B }) {
       {/* Info banner */}
       <div style={{ background: "rgba(10,132,255,0.06)", border: "1px solid rgba(10,132,255,0.2)", borderRadius: 12, padding: 14, marginBottom: 14, lineHeight: 1.7 }}>
         <div style={{ fontSize: 14, fontWeight: 800, color: B.blue, marginBottom: 6 }}>🏢 الهيكل التنظيمي</div>
-        <div style={{ fontSize: 11, color: t.tx }}>
-          حدّد المدير المباشر لكل موظف. كل مدير يرى مهام موظفيه المباشرين في "وارد/مُرسَل/مُنجَز إدارتي".<br/>
-          المدير الأعلى (مدير المدير) يرى كل شيء أسفل منه بالتدرّج.
+        <div style={{ fontSize: 11, color: t.tx, marginBottom: 8 }}>
+          لكل موظف <strong>مديران</strong> (مثل كوادر):
+        </div>
+        <div style={{ display: "flex", gap: 12, flexWrap: "wrap", fontSize: 11, color: t.tx }}>
+          <div>👔 <strong style={{ color: "#0F766E" }}>المدير الأول (الإداري):</strong> يوافق على الإجازات، يُقيّم أداءً عاماً، الإشراف الإداري</div>
+          <div>🔧 <strong style={{ color: B.blue }}>المدير الثاني (الفني):</strong> يُسند مهام فنية، يُقيّم الجودة، يستلم تقاريرك التقنية</div>
+        </div>
+        <div style={{ marginTop: 8, padding: "6px 10px", background: "rgba(245,158,11,0.10)", borderRadius: 6, fontSize: 10, color: "#D97706" }}>
+          ⚠️ التعديل من بصمة يُسجَّل بعلامة "✏️ معدّل في بصمة" — والمصدر الأساسي يبقى كوادر.
         </div>
       </div>
 
@@ -6978,9 +7473,9 @@ function OrgHierarchyPanel({ t, B }) {
       {/* Stats */}
       <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(140px, 1fr))", gap: 8, marginBottom: 14 }}>
         <StatMini label="إجمالي الموظفين" value={employees.length} color={B.blue} t={t} />
-        <StatMini label="لديهم مدير مباشر" value={employees.filter(function(e){ return hierarchy[String(e.id||e.username)]; }).length} color="#10b981" t={t} />
-        <StatMini label="بدون مدير محدد" value={employees.filter(function(e){ return !hierarchy[String(e.id||e.username)] && !e.isAdmin; }).length} color="#f59e0b" t={t} />
-        <StatMini label="مدراء في الهرم" value={potentialManagers.length} color="#7c3aed" t={t} />
+        <StatMini label="لديهم مدير أول" value={withMgr1} color="#0F766E" t={t} />
+        <StatMini label="لديهم مدير ثاني" value={withMgr2} color={B.blue} t={t} />
+        <StatMini label="✏️ معدّل في بصمة" value={editedInBasma} color="#D97706" t={t} />
       </div>
 
       {/* Employees list */}
@@ -6989,63 +7484,78 @@ function OrgHierarchyPanel({ t, B }) {
           <div style={{ padding: 30, textAlign: "center", color: t.tx2, fontSize: 12 }}>لا نتائج</div>
         ) : filtered.map(function(emp, idx){
           var eid = String(emp.id || emp.username || "");
-          var curMgr = getCurrentManager(eid);
+          var rec = getCurrentRecord(eid);
           var hasChange = pending.hasOwnProperty(eid);
-          var isCycle = curMgr && getCycle(eid);
-          var mgrEmp = employees.find(function(e){ return String(e.id||e.username) === String(curMgr); });
+          var wasEditedInBasma = emp.editedInBasma;
 
           return (
-            <div key={eid} style={{ padding: 12, borderBottom: idx < filtered.length - 1 ? "1px solid " + t.sep : "none", display: "flex", alignItems: "center", gap: 12, background: hasChange ? "rgba(245,158,11,0.06)" : "transparent" }}>
-              <div style={{ width: 36, height: 36, borderRadius: "50%", background: emp.isAdmin ? B.red+"22" : emp.isManager ? B.blue+"22" : t.bg, color: emp.isAdmin ? B.red : emp.isManager ? B.blue : t.tx, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 14, fontWeight: 800, flexShrink: 0 }}>
-                {(emp.name||emp.username||"?").charAt(0)}
-              </div>
-              <div style={{ flex: 1, minWidth: 0 }}>
-                <div style={{ fontSize: 13, fontWeight: 700, color: t.tx, display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap" }}>
-                  <span>{emp.name || emp.username}</span>
-                  {emp.isAdmin && <span style={{ padding: "1px 8px", fontSize: 9, fontWeight: 800, background: B.red+"20", color: B.red, borderRadius: 4 }}>مدير عام</span>}
-                  {emp.isManager && !emp.isAdmin && <span style={{ padding: "1px 8px", fontSize: 9, fontWeight: 800, background: B.blue+"20", color: B.blue, borderRadius: 4 }}>مدير</span>}
-                  {hasChange && <span style={{ padding: "1px 8px", fontSize: 9, fontWeight: 800, background: "rgba(245,158,11,0.2)", color: "#f59e0b", borderRadius: 4 }}>معدّل</span>}
-                  {isCycle && <span style={{ padding: "1px 8px", fontSize: 9, fontWeight: 800, background: "rgba(239,68,68,0.2)", color: "#ef4444", borderRadius: 4 }}>⚠️ حلقة</span>}
+            <div key={eid} style={{ padding: 12, borderBottom: idx < filtered.length - 1 ? "1px solid " + t.sep : "none", background: hasChange ? "rgba(245,158,11,0.06)" : "transparent" }}>
+              {/* Top row — emp info + badges */}
+              <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 10 }}>
+                <div style={{ width: 36, height: 36, borderRadius: "50%", background: emp.isAdmin ? B.red+"22" : emp.isManager ? B.blue+"22" : t.bg, color: emp.isAdmin ? B.red : emp.isManager ? B.blue : t.tx, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 14, fontWeight: 800, flexShrink: 0 }}>
+                  {(emp.name||emp.username||"?").charAt(0)}
                 </div>
-                <div style={{ fontSize: 10, color: t.tx2, marginTop: 2 }}>
-                  {emp.department || "—"} · {emp.role || "—"}
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div style={{ fontSize: 13, fontWeight: 700, color: t.tx, display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap" }}>
+                    <span>{emp.name || emp.username}</span>
+                    {emp.isAdmin && <span style={{ padding: "1px 8px", fontSize: 9, fontWeight: 800, background: B.red+"20", color: B.red, borderRadius: 4 }}>مدير عام</span>}
+                    {emp.isManager && !emp.isAdmin && <span style={{ padding: "1px 8px", fontSize: 9, fontWeight: 800, background: B.blue+"20", color: B.blue, borderRadius: 4 }}>مدير</span>}
+                    {wasEditedInBasma && (
+                      <span title={"✏️ آخر تعديل: " + (emp.editedBy || 'admin') + " · " + (emp.editedAt ? new Date(emp.editedAt).toLocaleDateString('ar-SA') : '')} style={{ padding: "1px 8px", fontSize: 9, fontWeight: 800, background: "rgba(217,119,6,0.18)", color: "#D97706", borderRadius: 4, cursor: "help" }}>
+                        ✏️ معدّل في بصمة
+                      </span>
+                    )}
+                    {hasChange && <span style={{ padding: "1px 8px", fontSize: 9, fontWeight: 800, background: "rgba(245,158,11,0.2)", color: "#f59e0b", borderRadius: 4 }}>غير محفوظ</span>}
+                  </div>
+                  <div style={{ fontSize: 10, color: t.tx2, marginTop: 2 }}>
+                    {emp.department || "—"} · {emp.role || "—"}{emp.branch ? " · " + emp.branch : ""}
+                  </div>
                 </div>
               </div>
-              <div style={{ display: "flex", flexDirection: "column", gap: 3, minWidth: 220 }}>
-                <div style={{ fontSize: 9, color: t.txM, fontWeight: 700 }}>المدير المباشر:</div>
-                <select
-                  value={curMgr || ""}
-                  onChange={function(e){ setManagerFor(eid, e.target.value); }}
-                  disabled={emp.isAdmin}
-                  style={{ padding: "7px 10px", borderRadius: 8, border: "1px solid " + (hasChange ? "#f59e0b" : t.sep), background: t.inp, color: t.tx, fontSize: 11, fontFamily: "inherit", outline: "none", cursor: emp.isAdmin ? "not-allowed" : "pointer" }}
-                >
-                  <option value="">— لا يوجد (أعلى الهرم) —</option>
-                  {employees.filter(function(m){
-                    var mid = String(m.id||m.username);
-                    return mid !== eid; // can't be own manager
-                  }).map(function(m){
-                    var mid = String(m.id||m.username);
-                    return <option key={mid} value={mid}>{m.name || m.username}{m.department ? " ("+m.department+")" : ""}</option>;
-                  })}
-                </select>
+
+              {/* Two managers */}
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
+                <div>
+                  <div style={{ fontSize: 9, color: "#0F766E", fontWeight: 800, marginBottom: 3 }}>👔 المدير الأول (الإداري)</div>
+                  <select
+                    value={rec.manager1 || ""}
+                    onChange={function(e){ setManagerFor(eid, "manager1", e.target.value); }}
+                    disabled={emp.isAdmin}
+                    style={{ width: "100%", padding: "7px 10px", borderRadius: 8, border: "1px solid " + (hasChange && pending[eid] && pending[eid].manager1 !== undefined ? "#0F766E" : t.sep), background: t.inp, color: t.tx, fontSize: 11, fontFamily: "inherit", outline: "none", cursor: emp.isAdmin ? "not-allowed" : "pointer" }}
+                  >
+                    <option value="">— لا يوجد —</option>
+                    {allManagers.filter(function(m){ return String(m.id || m.username) !== eid; }).map(function(m){
+                      var mid = String(m.id || m.username);
+                      return <option key={mid} value={mid}>{m.name || m.username}{m.department ? " ("+m.department+")" : ""}</option>;
+                    })}
+                  </select>
+                </div>
+                <div>
+                  <div style={{ fontSize: 9, color: B.blue, fontWeight: 800, marginBottom: 3 }}>🔧 المدير الثاني (الفني)</div>
+                  <select
+                    value={rec.manager2 || ""}
+                    onChange={function(e){ setManagerFor(eid, "manager2", e.target.value); }}
+                    disabled={emp.isAdmin}
+                    style={{ width: "100%", padding: "7px 10px", borderRadius: 8, border: "1px solid " + (hasChange && pending[eid] && pending[eid].manager2 !== undefined ? B.blue : t.sep), background: t.inp, color: t.tx, fontSize: 11, fontFamily: "inherit", outline: "none", cursor: emp.isAdmin ? "not-allowed" : "pointer" }}
+                  >
+                    <option value="">— لا يوجد —</option>
+                    {allManagers.filter(function(m){
+                      var mid = String(m.id || m.username);
+                      return mid !== eid && mid !== String(rec.manager1); // can't be same as manager1
+                    }).map(function(m){
+                      var mid = String(m.id || m.username);
+                      return <option key={mid} value={mid}>{m.name || m.username}{m.department ? " ("+m.department+")" : ""}</option>;
+                    })}
+                  </select>
+                </div>
               </div>
             </div>
           );
         })}
       </div>
-
-      {/* Help */}
-      <div style={{ marginTop: 14, padding: 12, background: t.card, borderRadius: 10, border: "1px solid " + t.sep, fontSize: 11, color: t.tx2, lineHeight: 1.7 }}>
-        💡 <b>نصائح:</b><br/>
-        • المدير العام (admin) لا يحتاج مديراً — هو أعلى الهرم.<br/>
-        • إذا لم تحدد مديراً للموظف، مهامه لا تظهر لأحد في "وارد إدارتي".<br/>
-        • تجنّب الحلقات (فلان يدير فلان الذي يدير فلان الأول) — النظام يحذّرك.<br/>
-        • اضغط "💾 حفظ" بعد الانتهاء من كل التغييرات.
-      </div>
     </div>
   );
 }
-
 function StatMini({ label, value, color, t }) {
   return (
     <div style={{ background: t.card, borderRadius: 10, padding: 12, border: "1px solid " + t.sep, textAlign: "center" }}>

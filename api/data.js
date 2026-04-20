@@ -1774,9 +1774,221 @@ export default async function handler(req, res) {
       }
 
       case 'tickets': {
-        if (req.method === 'GET') return res.json(await dbGet('tickets') || []);
-        if (req.method === 'POST') { const ts = await dbGet('tickets') || []; ts.push({ id: 'T' + Date.now(), status: 'open', ...req.body, ts: new Date().toISOString() }); await dbSet('tickets', ts); return res.json({ ok: true }); }
+        if (req.method === 'GET') {
+          var all = (await dbGet('tickets')) || [];
+          // Normalize legacy tickets (add missing fields)
+          all = all.map(function(t){
+            if (!t.messages) t.messages = [];
+            if (!t.initiatedBy) t.initiatedBy = t.empId ? 'employee' : 'hr';
+            return t;
+          });
+          // Filter by empId if provided (for mobile app — show only mine)
+          if (req.query.empId) {
+            all = all.filter(function(t){ return String(t.empId) === String(req.query.empId); });
+          }
+          return res.json(all);
+        }
+        if (req.method === 'POST') {
+          var body = req.body || {};
+          var ts = (await dbGet('tickets')) || [];
+          var now = new Date().toISOString();
+          // ── v6.81 — Create new ticket (from HR or employee) ──
+          if (body.action === 'create' || !body.action) {
+            var newTicket = {
+              id: 'T' + Date.now(),
+              empId: body.empId,            // recipient (employee)
+              empName: body.empName || '',
+              initiatedBy: body.initiatedBy || 'employee', // 'employee' | 'hr'
+              createdBy: body.createdBy || '',              // name of creator
+              createdByRole: body.createdByRole || '',
+              subject: body.subject || '',
+              category: body.category || 'general',         // استفسار / طلب وثيقة / تذكير / تنبيه / شكر / عام
+              template: body.template || null,              // if created from a template
+              priority: body.priority || 'normal',          // low | normal | high | urgent
+              requiresReply: !!body.requiresReply,
+              replyDeadline: body.replyDeadline || null,
+              status: 'open',                               // open | replied | resolved | closed
+              lastReadByEmp: body.initiatedBy === 'employee' ? now : null,
+              lastReadByHr: body.initiatedBy === 'hr' ? now : null,
+              messages: [{
+                id: 'M' + Date.now(),
+                ts: now,
+                by: body.createdBy || (body.initiatedBy === 'hr' ? 'hr' : body.empName || 'موظف'),
+                byRole: body.createdByRole || (body.initiatedBy === 'hr' ? 'hr' : 'employee'),
+                text: body.message || body.subject || '',
+                attachments: body.attachments || [],
+              }],
+              ts: now,
+              updatedAt: now,
+            };
+            ts.push(newTicket);
+            await dbSet('tickets', ts);
+            return res.json({ ok: true, ticket: newTicket });
+          }
+          // ── v6.81 — Add message to existing ticket ──
+          if (body.action === 'reply') {
+            var idx = ts.findIndex(function(t){ return t.id === body.ticketId; });
+            if (idx < 0) return res.status(404).json({ error: 'التذكرة غير موجودة' });
+            if (!ts[idx].messages) ts[idx].messages = [];
+            ts[idx].messages.push({
+              id: 'M' + Date.now(),
+              ts: now,
+              by: body.by || '',
+              byRole: body.byRole || 'employee',
+              text: body.text || '',
+              attachments: body.attachments || [],
+            });
+            ts[idx].updatedAt = now;
+            // Auto-transition status
+            if (body.byRole === 'employee') {
+              ts[idx].status = 'replied';
+              ts[idx].lastReadByEmp = now;
+            } else if (body.byRole === 'hr' || body.byRole === 'admin') {
+              if (ts[idx].status === 'replied' || ts[idx].status === 'open') ts[idx].status = 'open';
+              ts[idx].lastReadByHr = now;
+            }
+            await dbSet('tickets', ts);
+            return res.json({ ok: true, ticket: ts[idx] });
+          }
+          // ── v6.81 — Update status (resolve / close) ──
+          if (body.action === 'update-status') {
+            var idx2 = ts.findIndex(function(t){ return t.id === body.ticketId; });
+            if (idx2 < 0) return res.status(404).json({ error: 'التذكرة غير موجودة' });
+            ts[idx2].status = body.status || 'resolved';
+            ts[idx2].updatedAt = now;
+            await dbSet('tickets', ts);
+            return res.json({ ok: true, ticket: ts[idx2] });
+          }
+          // ── v6.81 — Mark as read ──
+          if (body.action === 'mark-read') {
+            var idx3 = ts.findIndex(function(t){ return t.id === body.ticketId; });
+            if (idx3 < 0) return res.status(404).json({ error: 'التذكرة غير موجودة' });
+            if (body.byRole === 'employee') ts[idx3].lastReadByEmp = now;
+            else if (body.byRole === 'hr' || body.byRole === 'admin') ts[idx3].lastReadByHr = now;
+            await dbSet('tickets', ts);
+            return res.json({ ok: true });
+          }
+          // ── Legacy fallback (simple create) ──
+          ts.push({ id: 'T' + Date.now(), status: 'open', messages: [], initiatedBy: 'employee', ...body, ts: now });
+          await dbSet('tickets', ts);
+          return res.json({ ok: true });
+        }
+        if (req.method === 'DELETE') {
+          var id = req.query.id;
+          if (!id) return res.status(400).json({ error: 'id required' });
+          var all = (await dbGet('tickets')) || [];
+          await dbSet('tickets', all.filter(function(t){ return t.id !== id; }));
+          return res.json({ ok: true });
+        }
         break;
+      }
+
+      /* v6.81 — HR ticket templates (قوالب جاهزة) */
+      case 'hr-ticket-templates': {
+        // Default templates — يمكن للإدارة الإضافة عبر system_settings لاحقاً
+        var DEFAULT_TEMPLATES = [
+          {
+            id: 'tpl_iqama',
+            icon: '📄',
+            category: 'طلب وثيقة',
+            subject: 'تحديث صورة الإقامة',
+            message: 'نرجو منك رفع صورة واضحة من الإقامة السارية خلال 3 أيام عمل. إذا كانت منتهية أو قريبة من الانتهاء، يرجى إبلاغنا فوراً.',
+            requiresReply: true,
+            priority: 'high',
+          },
+          {
+            id: 'tpl_iban',
+            icon: '🏦',
+            category: 'تحديث بيانات',
+            subject: 'تحديث رقم الآيبان البنكي',
+            message: 'نرجو تزويدنا برقم الآيبان البنكي المحدّث مع صورة من هوية الحساب من التطبيق البنكي.',
+            requiresReply: true,
+            priority: 'normal',
+          },
+          {
+            id: 'tpl_sce',
+            icon: '🏛',
+            category: 'تذكير',
+            subject: 'تجديد عضوية الهيئة السعودية للمهندسين',
+            message: 'عضويتك في الهيئة السعودية للمهندسين قاربت على الانتهاء. يرجى تجديدها قبل التاريخ المحدد لتجنب توقف العمل.',
+            requiresReply: true,
+            priority: 'high',
+          },
+          {
+            id: 'tpl_contract',
+            icon: '📝',
+            category: 'طلب وثيقة',
+            subject: 'توقيع العقد الجديد',
+            message: 'نرجو الحضور إلى الموارد البشرية لتوقيع العقد الجديد، أو إبلاغنا بالوقت المناسب لزيارتك.',
+            requiresReply: true,
+            priority: 'high',
+          },
+          {
+            id: 'tpl_insurance',
+            icon: '🏥',
+            category: 'استلام',
+            subject: 'استلام بطاقة التأمين الصحي',
+            message: 'تم إصدار بطاقة التأمين الصحي الخاصة بك (ولعائلتك). يرجى استلامها من مكتب الموارد البشرية.',
+            requiresReply: false,
+            priority: 'normal',
+          },
+          {
+            id: 'tpl_personal',
+            icon: '👤',
+            category: 'تحديث بيانات',
+            subject: 'تحديث البيانات الشخصية',
+            message: 'نرجو منك مراجعة بياناتك الشخصية في ملفك والتأكد من تحديث: رقم الجوال، العنوان، جهة الطوارئ. إذا وجدت أي نقص يرجى تزويدنا بالتصحيح.',
+            requiresReply: true,
+            priority: 'normal',
+          },
+          {
+            id: 'tpl_thanks',
+            icon: '🌟',
+            category: 'شكر',
+            subject: 'شكر وتقدير',
+            message: 'نشكرك على جهودك المتميزة في العمل خلال الفترة الماضية. استمر في التفوّق — تقديرنا الدائم لك.',
+            requiresReply: false,
+            priority: 'low',
+          },
+        ];
+        return res.json({ templates: DEFAULT_TEMPLATES });
+      }
+
+      /* v6.81 — HR ticket summary (counts unread per employee) */
+      case 'hr-tickets-summary': {
+        var empId = req.query.empId;
+        var all = (await dbGet('tickets')) || [];
+        if (empId) {
+          // Mobile app — count unread HR messages for this employee
+          var mine = all.filter(function(t){ return String(t.empId) === String(empId); });
+          var unreadCount = 0;
+          var pendingReplies = 0;
+          mine.forEach(function(t){
+            if (t.status === 'closed' || t.status === 'resolved') return;
+            var lastMsg = (t.messages || [])[((t.messages || []).length - 1)];
+            if (!lastMsg) return;
+            // Unread if last message is from HR and empl hasn't read since
+            if (lastMsg.byRole === 'hr' || lastMsg.byRole === 'admin') {
+              if (!t.lastReadByEmp || new Date(t.lastReadByEmp) < new Date(lastMsg.ts)) {
+                unreadCount++;
+              }
+              if (t.requiresReply && lastMsg.byRole !== 'employee') pendingReplies++;
+            }
+          });
+          return res.json({ unreadCount: unreadCount, pendingReplies: pendingReplies, totalOpen: mine.filter(function(t){ return t.status === 'open' || t.status === 'replied'; }).length });
+        }
+        // Admin view — per-employee summary
+        var emps = (await dbGet('employees')) || [];
+        var byEmp = {};
+        emps.forEach(function(e){ byEmp[String(e.id)] = { empId: e.id, empName: e.name, open: 0, replied: 0, total: 0 }; });
+        all.forEach(function(t){
+          var key = String(t.empId);
+          if (!byEmp[key]) byEmp[key] = { empId: t.empId, empName: t.empName || 'موظف', open: 0, replied: 0, total: 0 };
+          byEmp[key].total++;
+          if (t.status === 'open') byEmp[key].open++;
+          else if (t.status === 'replied') byEmp[key].replied++;
+        });
+        return res.json({ byEmployee: Object.values(byEmp) });
       }
 
       case 'events': {
@@ -4926,55 +5138,200 @@ export default async function handler(req, res) {
          Stored in Redis key 'org_hierarchy' as { <empId>: <managerId> } */
       case 'org_hierarchy': {
         try {
+          /* v6.80 — Hierarchy v2: 
+             - manager1 (المدير الإداري المباشر) — كان "manager"
+             - manager2 (المدير الفني / الجودة)
+             - editedInBasma flag إذا تم التعديل في بصمة دون كوادر
+             - hierarchy structure: { empId: { manager1, manager2, editedInBasma, editedAt, editedBy } }
+             - يدعم الصيغة القديمة (string فقط = manager1) للتوافقية
+          */
           if (req.method === 'POST') {
             var body = req.body || {};
+            var editor = body.editedBy || 'admin';
+
             if (body.assignments) {
-              // Batch update
+              // Batch update — assignments: { empId: { manager1, manager2, source } } OR legacy: { empId: managerId }
               var h = (await dbGet('org_hierarchy')) || {};
+              var updated = 0;
               Object.keys(body.assignments).forEach(function(empId){
-                var mgrId = body.assignments[empId];
-                if (mgrId === null || mgrId === '' || mgrId === undefined) {
-                  delete h[empId];
-                } else {
-                  h[empId] = String(mgrId);
+                var val = body.assignments[empId];
+                // Normalize legacy (string) to new structure
+                if (typeof val === 'string' || val === null || val === undefined) {
+                  if (!val) {
+                    delete h[empId];
+                  } else {
+                    var prev = (typeof h[empId] === 'object') ? h[empId] : { manager1: h[empId] };
+                    h[empId] = {
+                      manager1: String(val),
+                      manager2: prev.manager2 || null,
+                      editedInBasma: true,
+                      editedAt: new Date().toISOString(),
+                      editedBy: editor,
+                    };
+                  }
+                } else if (typeof val === 'object') {
+                  var existing = (typeof h[empId] === 'object') ? h[empId] : (h[empId] ? { manager1: h[empId] } : {});
+                  var newRecord = {
+                    manager1: val.manager1 !== undefined ? (val.manager1 || null) : (existing.manager1 || null),
+                    manager2: val.manager2 !== undefined ? (val.manager2 || null) : (existing.manager2 || null),
+                    editedInBasma: val.editedInBasma !== undefined ? !!val.editedInBasma : true,
+                    editedAt: new Date().toISOString(),
+                    editedBy: editor,
+                  };
+                  // If both empty → remove
+                  if (!newRecord.manager1 && !newRecord.manager2) {
+                    delete h[empId];
+                  } else {
+                    h[empId] = newRecord;
+                  }
                 }
+                updated++;
               });
               await dbSet('org_hierarchy', h);
-              return res.json({ ok: true, hierarchy: h, updated: Object.keys(body.assignments).length });
+              return res.json({ ok: true, hierarchy: h, updated: updated });
             }
-            // Single assignment
+
+            // Single assignment (legacy + new)
             if (body.empId) {
               var h2 = (await dbGet('org_hierarchy')) || {};
-              if (body.managerId === null || body.managerId === '' || body.managerId === undefined) {
+              var existing2 = (typeof h2[body.empId] === 'object') ? h2[body.empId] : (h2[body.empId] ? { manager1: h2[body.empId] } : {});
+              var rec = {
+                manager1: body.manager1 !== undefined ? (body.manager1 || null) : (body.managerId !== undefined ? (body.managerId || null) : (existing2.manager1 || null)),
+                manager2: body.manager2 !== undefined ? (body.manager2 || null) : (existing2.manager2 || null),
+                editedInBasma: true,
+                editedAt: new Date().toISOString(),
+                editedBy: editor,
+              };
+              if (!rec.manager1 && !rec.manager2) {
                 delete h2[body.empId];
               } else {
-                h2[body.empId] = String(body.managerId);
+                h2[body.empId] = rec;
               }
               await dbSet('org_hierarchy', h2);
               return res.json({ ok: true, hierarchy: h2 });
             }
             return res.status(400).json({ error: 'assignments or empId required' });
           }
-          // GET: return full hierarchy + list of employees with enriched managerId
+
+          // GET: return enriched
           var hh = (await dbGet('org_hierarchy')) || {};
           var emps = (await dbGet('employees')) || [];
+
+          // Helper to normalize record
+          function normalize(rec) {
+            if (!rec) return { manager1: null, manager2: null, editedInBasma: false };
+            if (typeof rec === 'string') return { manager1: rec, manager2: null, editedInBasma: false };
+            return {
+              manager1: rec.manager1 || null,
+              manager2: rec.manager2 || null,
+              editedInBasma: !!rec.editedInBasma,
+              editedAt: rec.editedAt || null,
+              editedBy: rec.editedBy || null,
+            };
+          }
+
           var enriched = emps.map(function(e){
             var eid = String(e.id || e.username || '');
+            var rec = normalize(hh[eid]);
             return {
               id: e.id,
               username: e.username,
               name: e.name,
               department: e.department,
               role: e.role,
+              branch: e.branch,
               isAdmin: !!e.isAdmin,
               isManager: !!e.isManager,
-              managerId: hh[eid] || null,
+              manager1: rec.manager1,
+              manager2: rec.manager2,
+              managerId: rec.manager1, // backward compatibility
+              editedInBasma: rec.editedInBasma,
+              editedAt: rec.editedAt,
+              editedBy: rec.editedBy,
             };
           });
-          return res.json({ ok: true, hierarchy: hh, employees: enriched });
+
+          // Normalized hierarchy (always return as objects)
+          var normalizedHierarchy = {};
+          Object.keys(hh).forEach(function(k){ normalizedHierarchy[k] = normalize(hh[k]); });
+
+          return res.json({ ok: true, hierarchy: normalizedHierarchy, employees: enriched });
         } catch(e) {
           return res.status(500).json({ error: 'org_hierarchy: ' + (e.message || 'unknown') });
         }
+      }
+
+      /* v6.80 — Tawasul recipients: smart list of who I can send tasks to */
+      case 'tawasul-recipients': {
+        if (req.method !== 'GET') break;
+        var myId = String(req.query.empId || '');
+        if (!myId) return res.status(400).json({ error: 'empId required' });
+
+        var emps = (await dbGet('employees')) || [];
+        var hierarchy = (await dbGet('org_hierarchy')) || {};
+
+        function norm(rec) {
+          if (!rec) return { manager1: null, manager2: null };
+          if (typeof rec === 'string') return { manager1: rec, manager2: null };
+          return { manager1: rec.manager1 || null, manager2: rec.manager2 || null };
+        }
+
+        var me = emps.find(function(e){ return String(e.id || e.username) === myId; });
+        if (!me) return res.json({ recipients: [], reason: 'unknown' });
+
+        var myRec = norm(hierarchy[myId]);
+        var recipients = [];
+        var seen = new Set();
+
+        function add(emp, relationship) {
+          var eid = String(emp.id || emp.username);
+          if (eid === myId || seen.has(eid)) return;
+          seen.add(eid);
+          recipients.push({
+            id: emp.id,
+            name: emp.name || emp.username,
+            role: emp.role || '',
+            department: emp.department || '',
+            branch: emp.branch || '',
+            relationship: relationship,
+          });
+        }
+
+        // 1) My manager1 (الإداري)
+        if (myRec.manager1) {
+          var m1 = emps.find(function(e){ return String(e.id || e.username) === String(myRec.manager1); });
+          if (m1) add(m1, 'manager1');
+        }
+        // 2) My manager2 (الفني)
+        if (myRec.manager2) {
+          var m2 = emps.find(function(e){ return String(e.id || e.username) === String(myRec.manager2); });
+          if (m2) add(m2, 'manager2');
+        }
+        // 3) My subordinates (people I'm a manager1 OR manager2 for)
+        emps.forEach(function(e){
+          var eid = String(e.id || e.username);
+          var r = norm(hierarchy[eid]);
+          if (String(r.manager1) === myId) add(e, 'subordinate1');
+          else if (String(r.manager2) === myId) add(e, 'subordinate2');
+        });
+        // 4) Colleagues in same branch+department
+        if (me.branch || me.department) {
+          emps.forEach(function(e){
+            if (e.branch === me.branch && e.department === me.department) add(e, 'colleague');
+          });
+        }
+        // 5) Fallback: if recipients empty AND data is incomplete → return all employees
+        var dataIncomplete = !myRec.manager1 && !myRec.manager2;
+        if (recipients.length === 0 || dataIncomplete) {
+          emps.forEach(function(e){ add(e, 'all'); });
+        }
+
+        return res.json({
+          recipients: recipients,
+          dataIncomplete: dataIncomplete,
+          myManager1: myRec.manager1 || null,
+          myManager2: myRec.manager2 || null,
+        });
       }
 
       case 'seed_questions': {
