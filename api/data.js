@@ -1801,6 +1801,56 @@ export default async function handler(req, res) {
       }
 
       /* v6.67 — Internal Surveys (استطلاعات الرأي) */
+      /* v6.77 — Export all data for backup (all KV keys) */
+      case 'export-all-keys': {
+        if (req.method !== 'GET') break;
+        // قائمة كل الـ keys المعروفة في النظام
+        const ALL_KEYS = [
+          'employees', 'attendance', 'leaves', 'permissions', 'pre_absence',
+          'tickets', 'complaints', 'investigations', 'violations', 'appeals',
+          'tasks', 'messages', 'tawasul_threads',
+          'branches', 'holidays', 'geofence', 'work_types',
+          'surveys', 'survey_votes',
+          'assets', 'custody_maintenance',
+          'dependents', 'attachments', 'cv_files',
+          'announcements', 'banners', 'events', 'questions',
+          'reports', 'tracking_settings', 'system_settings',
+          'attendance_locks', 'face_data', 'biometric_credentials',
+          'redemptions', 'benefits', 'achievements_log',
+          'org_hierarchy', 'leave_balances', 'kadwar_settings',
+          'desktop_pairings', 'push_subscriptions',
+          'letters_log', 'termination_records', 'laiha',
+          'admin_requests', 'employee_record_log',
+        ];
+
+        const result = {};
+        const errors = [];
+        let totalKeys = 0;
+        let totalSize = 0;
+
+        for (const key of ALL_KEYS) {
+          try {
+            const value = await dbGet(key);
+            if (value !== null && value !== undefined) {
+              result[key] = value;
+              totalKeys++;
+              totalSize += JSON.stringify(value).length;
+            }
+          } catch (e) {
+            errors.push({ key, error: e.message });
+          }
+        }
+
+        return res.json({
+          success: true,
+          data: result,
+          totalKeys,
+          totalSize,
+          exportedAt: new Date().toISOString(),
+          errors,
+        });
+      }
+
       case 'surveys': {
         if (req.method === 'GET') {
           let list = (await dbGet('surveys')) || [];

@@ -11,7 +11,7 @@ import { exportEmploymentLetter, exportLeaveLetter } from "./formalPdfs";
 
 /* ═══════════ APP CONFIG (إعدادات التطبيق) ═══════════ */
 const APP_CONFIG = {
-  VER: "6.76",
+  VER: "6.79",
   NAME: "بصمة HMA",
   FULL_NAME: "نظام الحضور والانصراف الذكي",
   COMPANY: "هاني محمد عسيري للاستشارات الهندسية",
@@ -2145,21 +2145,51 @@ function HomePage({ user, branch, workType, now, todayAtt, allAtt, gps, gpsDist,
   }
 
   // Challenge state — only shows if admin has added questions to the bank
-  var [challengeQ] = useState(function() { return pickChallenge(); });
-  var [challengeAnswer, setChallengeAnswer] = useState(null); // null = not answered, true = correct, false = wrong
+  // v6.78 — Persist challenge across re-renders/navigation; only hide when user manually closes or answers
+  var [challengeQ] = useState(function() {
+    // Try to restore today's challenge from localStorage so it doesn't change between re-renders
+    try {
+      var saved = localStorage.getItem("basma_challenge_q_" + todayStr());
+      if (saved) {
+        var parsed = JSON.parse(saved);
+        if (parsed && parsed.q && Array.isArray(parsed.opts)) return parsed;
+      }
+    } catch(e) {}
+    var fresh = pickChallenge();
+    if (fresh) {
+      try { localStorage.setItem("basma_challenge_q_" + todayStr(), JSON.stringify(fresh)); } catch(e) {}
+    }
+    return fresh;
+  });
+  var [challengeAnswer, setChallengeAnswer] = useState(function() {
+    // Restore answer state from localStorage
+    var saved = localStorage.getItem("basma_challenge_ans_" + todayStr());
+    if (saved === "true") return true;
+    if (saved === "false") return false;
+    return null;
+  });
+  var [challengeDismissed, setChallengeDismissed] = useState(function() {
+    return localStorage.getItem("basma_challenge_dismissed_" + todayStr()) === "1";
+  });
   var challengeDoneToday = localStorage.getItem("basma_challenge_" + todayStr()) === "1";
-  // Show challenge only if: user hasn't checked in, not answered today, AND a valid question was loaded
   var hasCheckedIn = (todayAtt || []).some(function(r){ return r.type === "checkin"; });
-  var showChallenge = !!challengeQ && !hasCheckedIn && !challengeDoneToday && challengeAnswer === null;
+  // v6.78 — Only hide challenge when: no question, already checked in, already done, already answered, or user dismissed it
+  var showChallenge = !!challengeQ && !hasCheckedIn && !challengeDoneToday && challengeAnswer === null && !challengeDismissed;
 
   function answerChallenge(idx) {
     if (challengeAnswer !== null) return;
     var correct = idx === challengeQ.correct;
     setChallengeAnswer(correct);
     localStorage.setItem("basma_challenge_" + todayStr(), "1");
+    localStorage.setItem("basma_challenge_ans_" + todayStr(), correct ? "true" : "false");
     if (correct) {
       onChallenge(POINTS.challenge_correct);
     }
+  }
+
+  function dismissChallenge() {
+    setChallengeDismissed(true);
+    localStorage.setItem("basma_challenge_dismissed_" + todayStr(), "1");
   }
 
   const SIZE = 280, STROKE = 10, R = (SIZE - STROKE) / 2, CIRC = 2 * Math.PI * R;
@@ -2249,22 +2279,13 @@ function HomePage({ user, branch, workType, now, todayAtt, allAtt, gps, gpsDist,
 
       {/* Clock centered */}
       <div style={{ flex: 1, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", padding: "0 8px", overflow: "visible" }}>
-        {showChallenge ? (
-          <div style={{ textAlign: "center", marginBottom: 12 }}>
-            <div style={{ fontSize: 10, fontWeight: 700, color: "rgba(255,255,255,.5)", marginBottom: 6 }}>{"⚡ " + challengeQ.type}</div>
-            <div style={{ fontSize: 16, fontWeight: 800, color: "#fff", lineHeight: 1.6, marginBottom: 12 }}>{challengeQ.q}</div>
-            <div style={{ display: "flex", flexDirection: "column", gap: 6, maxWidth: 280, margin: "0 auto" }}>
-              {challengeQ.opts.map(function(opt, idx) { return <button key={idx} onClick={function(){ answerChallenge(idx); }} style={{ padding: "10px 16px", borderRadius: 12, background: "rgba(255,255,255,.12)", border: "1px solid rgba(255,255,255,.2)", fontSize: 13, fontWeight: 700, color: "#fff", cursor: "pointer", textAlign: "center" }}>{opt}</button>; })}
-            </div>
-          </div>
-        ) : challengeAnswer !== null && !hasCheckedIn ? (
-          <div style={{ textAlign: "center" }}>
+        {challengeAnswer !== null && !hasCheckedIn && (
+          <div style={{ textAlign: "center", marginBottom: 16 }}>
             <div style={{ fontSize: 42 }}>{challengeAnswer ? "🎉" : "😅"}</div>
             <div style={{ fontSize: 14, fontWeight: 800, color: "#fff", marginTop: 6 }}>{challengeAnswer ? MASCOT.correct : MASCOT.wrong}</div>
             {challengeAnswer && <div style={{ fontSize: 12, color: C.gold, marginTop: 4 }}>{"+" + POINTS.challenge_correct + " نقطة"}</div>}
           </div>
-        ) : (
-          <>
+        )}
           <div style={{ width: "100%", maxWidth: SIZE, aspectRatio: "1 / 1", position: "relative", padding: "10px" }}>
             <svg viewBox={"0 0 " + SIZE + " " + SIZE} width="100%" height="100%" style={{ display: "block", overflow: "visible" }}>
               <defs>
@@ -2343,8 +2364,6 @@ function HomePage({ user, branch, workType, now, todayAtt, allAtt, gps, gpsDist,
           <div style={{ textAlign: "center", marginTop: SPACING.md }}>
             <div style={{ fontSize: 20, fontWeight: 800, color: COLORS.goldDark, fontFamily: TYPOGRAPHY.fontSerif, letterSpacing: 3, marginTop: 4, textShadow: darkMode ? "0 0 10px rgba(201,168,76,.3)" : "none" }}>{time}<span style={{ fontSize: 12, opacity: .4 }}>:{sec}</span> <span style={{ fontSize: 11, opacity: .4 }}>{ampm}</span></div>
           </div>
-          </>
-        )}
 
         {/* Challenge text below clock */}
         {!hasCheckedIn && !showChallenge && challengeAnswer === null && challengeDoneToday && <div style={{ marginTop: SPACING.sm, ...TYPOGRAPHY.caption, color: COLORS.textSecondary }}>{"✓ أجبت على تحدي اليوم"}</div>}
@@ -2385,6 +2404,42 @@ function HomePage({ user, branch, workType, now, todayAtt, allAtt, gps, gpsDist,
           <Button variant="secondary" size="md" icon={<Icons.hand size={20} />} onClick={onPermission}>إذن</Button>
         </div>
       </div>
+
+      {/* v6.79 — Morning Challenge as a sticky modal overlay (fixes iOS auto-dismiss bug). */}
+      {/* Same logic, same scoring, same picking — only the presentation moved to a stable overlay. */}
+      {showChallenge && (
+        <div style={{ position: "fixed", inset: 0, background: "rgba(8,12,20,0.78)", backdropFilter: "blur(6px)", WebkitBackdropFilter: "blur(6px)", zIndex: 9500, display: "flex", alignItems: "center", justifyContent: "center", padding: 18 }}>
+          <div style={{ background: "linear-gradient(180deg, #1a1d2e 0%, #0f1220 100%)", borderRadius: 20, maxWidth: 380, width: "100%", padding: "24px 22px 22px", border: "1px solid rgba(124,58,237,0.45)", boxShadow: "0 18px 50px rgba(0,0,0,0.6), 0 0 0 1px rgba(124,58,237,0.15) inset", position: "relative" }}>
+            {/* Close (only the user can dismiss) */}
+            <button onClick={dismissChallenge} title="إغلاق" aria-label="إغلاق" style={{ position: "absolute", top: 10, left: 10, width: 32, height: 32, borderRadius: 16, background: "rgba(255,255,255,0.10)", border: "1px solid rgba(255,255,255,0.18)", color: "#fff", fontSize: 16, fontWeight: 800, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", lineHeight: 1, padding: 0, WebkitTapHighlightColor: "transparent" }}>×</button>
+
+            {/* Header */}
+            <div style={{ textAlign: "center", marginBottom: 14 }}>
+              <div style={{ fontSize: 28, marginBottom: 4 }}>⚡</div>
+              <div style={{ fontSize: 11, fontWeight: 800, color: "#c4b5fd", letterSpacing: 0.5 }}>تحدي الصباح · {challengeQ.type}</div>
+            </div>
+
+            {/* Question */}
+            <div style={{ fontSize: 16, fontWeight: 800, color: "#fff", lineHeight: 1.7, marginBottom: 16, textAlign: "center", padding: "0 4px" }}>{challengeQ.q}</div>
+
+            {/* Options */}
+            <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+              {challengeQ.opts.map(function(opt, idx) {
+                return (
+                  <button key={idx} onClick={function(){ answerChallenge(idx); }} style={{ padding: "13px 16px", borderRadius: 12, background: "rgba(255,255,255,0.08)", border: "1px solid rgba(255,255,255,0.18)", fontSize: 14, fontWeight: 700, color: "#fff", cursor: "pointer", textAlign: "center", fontFamily: TYPOGRAPHY.fontTajawal, WebkitTapHighlightColor: "transparent" }}>
+                    {opt}
+                  </button>
+                );
+              })}
+            </div>
+
+            {/* Footer hint */}
+            <div style={{ marginTop: 14, fontSize: 9, color: "rgba(255,255,255,0.45)", textAlign: "center", lineHeight: 1.6 }}>
+              +{POINTS.challenge_correct} نقطة عند الإجابة الصحيحة · يبقى السؤال حتى تجيب أو تغلق
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

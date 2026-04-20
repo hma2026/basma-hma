@@ -4,7 +4,7 @@ import { generateAttendanceReport, generateEmployeeReport, generateMonthlySummar
 import { exportFormalWarning, exportInvestigationRecord, exportAffidavit, exportEmploymentLetter, exportSalaryLetter, exportLeaveLetter } from "./formalPdfs";
 
 const APP = "بصمة HMA";
-const VER = "6.76";
+const VER = "6.79";
 const CO = "هاني محمد عسيري للإستشارات الهندسية";
 const B = { blue: "#2B5EA7", yellow: "#FDD800", red: "#E2192C", black: "#1A1A1A", blueDk: "#1E4478", blueLt: "#EDF3FB", gold: "#D4A017" };
 
@@ -525,6 +525,7 @@ export default function AdminApp() {
         { id: "att_insights", icon: "📈", label: "ذكاء الحضور" },
         { id: "system_settings", icon: "⚙️", label: "إعدادات النظام" },
         { id: "surveys", icon: "📊", label: "الاستطلاعات" },
+        { id: "backup", icon: "🛡", label: "النسخ الاحتياطي" },
         { id: "admin_requests", icon: "📝", label: "الطلبات" },
         { id: "complaints", icon: "📣", label: "الشكاوى", badge: badgeCounts.complaints },
         { id: "investigations", icon: "🔍", label: "التحقيقات", badge: badgeCounts.investigations },
@@ -1476,6 +1477,7 @@ export default function AdminApp() {
       {tab === "att_insights" && <AttendanceInsightsPanel t={t} B={B} emps={safeEmps} />}
       {tab === "system_settings" && <SystemSettingsPanel t={t} B={B} />}
       {tab === "surveys" && <SurveysPanel t={t} B={B} emps={safeEmps} />}
+      {tab === "backup" && <BackupPanel t={t} B={B} />}
       {tab === "benefits" && <BenefitsPanel t={t} B={B} />}
       {tab === "announcements" && <AnnouncementsPanel t={t} B={B} emps={safeEmps} branches={branches} />}
       {tab === "banners" && <BannersPanel t={t} B={B} />}
@@ -2546,6 +2548,394 @@ function SurveyCreateForm({ t, B, onBack, onSaved }) {
           </button>
         </div>
       </div>
+    </div>
+  );
+}
+
+/* ═══════════════════════════════════════════════════════════════
+   BACKUP PANEL — النسخ الاحتياطي (v6.77)
+   يستخدم Vercel Blob client-side upload لتجاوز حد 4.5MB
+   ═══════════════════════════════════════════════════════════════ */
+function BackupPanel({ t, B }) {
+  var [info, setInfo] = useState(null);
+  var [list, setList] = useState([]);
+  var [loading, setLoading] = useState(true);
+  var [busy, setBusy] = useState(false);
+  var [progress, setProgress] = useState("");
+  var [msg, setMsg] = useState(null); // {type, text}
+  var [confirmRestore, setConfirmRestore] = useState(null);
+
+  async function loadInfo() {
+    setLoading(true);
+    try {
+      var [iRes, lRes] = await Promise.all([
+        fetch("/api/backup?action=info").then(r => r.json()),
+        fetch("/api/backup?action=list").then(r => r.json()),
+      ]);
+      setInfo(iRes && iRes.exists ? iRes : null);
+      setList((lRes && lRes.backups) || []);
+    } catch(e) {
+      setMsg({ type: "error", text: "فشل تحميل المعلومات: " + e.message });
+    }
+    setLoading(false);
+  }
+
+  useEffect(function(){ loadInfo(); }, []);
+
+  function fmtSize(bytes) {
+    if (!bytes) return "0 KB";
+    if (bytes < 1024) return bytes + " B";
+    if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(1) + " KB";
+    return (bytes / 1024 / 1024).toFixed(2) + " MB";
+  }
+
+  function fmtDate(iso) {
+    if (!iso) return "—";
+    var d = new Date(iso);
+    return d.toLocaleString("ar-SA", { dateStyle: "medium", timeStyle: "short" });
+  }
+
+  async function doBackup() {
+    if (busy) return;
+    setBusy(true);
+    setMsg(null);
+    setProgress("⏳ جلب البيانات من قاعدة البيانات...");
+
+    try {
+      // 1. جلب كل البيانات من API
+      var dataRes = await fetch("/api/data?action=export-all-keys");
+      var dataResult = await dataRes.json();
+      if (!dataResult.success) throw new Error("فشل جلب البيانات");
+
+      var allData = dataResult.data;
+      var totalSize = dataResult.totalSize || 0;
+      var totalKeys = dataResult.totalKeys || 0;
+
+      setProgress("📦 تحضير " + fmtSize(totalSize) + " (" + totalKeys + " عنصر)...");
+
+      // 2. رفع مباشر إلى Vercel Blob
+      var { upload } = await import("@vercel/blob/client");
+      var json = JSON.stringify(allData);
+      var backupId = "basma-" + new Date().toISOString().slice(0, 19).replace(/[:T]/g, "-");
+
+      setProgress("📤 رفع " + fmtSize(json.length) + "...");
+
+      var blob = await upload(
+        "basma-backup/" + backupId + ".json",
+        new Blob([json], { type: "application/json" }),
+        {
+          access: "public",
+          handleUploadUrl: "/api/backup-upload",
+          onUploadProgress: function(p) {
+            var pct = p.percentage || Math.round((p.loaded / p.total) * 100);
+            setProgress("📤 " + (p.loaded / 1024 / 1024).toFixed(1) + " / " + (p.total / 1024 / 1024).toFixed(1) + " MB (" + pct + "%)");
+          },
+        }
+      );
+
+      setProgress("⏳ تسجيل النسخة...");
+
+      // 3. تسجيل النسخة
+      var regRes = await fetch("/api/backup?action=register", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          backupId: backupId,
+          url: blob.url,
+          size: json.length,
+          pathname: blob.pathname,
+          scope: "all",
+          keys: Object.keys(allData),
+        }),
+      });
+
+      if (!regRes.ok) throw new Error("فشل التسجيل");
+
+      setMsg({ type: "success", text: "✅ تم الحفظ بنجاح — " + fmtSize(json.length) + " (" + totalKeys + " عنصر)" });
+      setProgress("");
+      await loadInfo();
+    } catch(e) {
+      setMsg({ type: "error", text: "❌ فشل الحفظ: " + (e.message || "خطأ غير معروف") });
+      setProgress("");
+    }
+
+    setBusy(false);
+  }
+
+  async function downloadBackup(backupId) {
+    if (busy) return;
+    setBusy(true);
+    setMsg(null);
+    setProgress("⏳ تحميل النسخة...");
+
+    try {
+      var r = await fetch("/api/backup?action=load" + (backupId ? "&id=" + encodeURIComponent(backupId) : ""));
+      var d = await r.json();
+      if (!d.success) throw new Error(d.error || "فشل التحميل");
+
+      var json = JSON.stringify(d.data, null, 2);
+      var blob = new Blob([json], { type: "application/json" });
+      var url = URL.createObjectURL(blob);
+      var a = document.createElement("a");
+      a.href = url;
+      a.download = "basma-backup-" + (d.backupId || "latest") + ".json";
+      a.click();
+      URL.revokeObjectURL(url);
+
+      setMsg({ type: "success", text: "✅ تم تحميل ملف النسخة الاحتياطية على جهازك" });
+      setProgress("");
+    } catch(e) {
+      setMsg({ type: "error", text: "❌ " + e.message });
+      setProgress("");
+    }
+
+    setBusy(false);
+  }
+
+  async function doRestore(backupId) {
+    if (busy) return;
+    setBusy(true);
+    setMsg(null);
+    setProgress("♻️ استعادة البيانات (لا تغلق الصفحة)...");
+
+    try {
+      var r = await fetch("/api/backup?action=restore", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ backupId: backupId, mode: "replace" }),
+      });
+      var d = await r.json();
+      if (!d.success) throw new Error(d.error || "فشل الاستعادة");
+
+      setMsg({ type: "success", text: "✅ تم استعادة " + d.restoredCount + " من " + d.totalKeys + " عنصر. أعد تحميل الصفحة لرؤية التغييرات." });
+      setProgress("");
+      setConfirmRestore(null);
+    } catch(e) {
+      setMsg({ type: "error", text: "❌ فشل الاستعادة: " + e.message });
+      setProgress("");
+    }
+
+    setBusy(false);
+  }
+
+  async function deleteBackup(backupId) {
+    if (!window.confirm("حذف هذه النسخة نهائياً؟")) return;
+    setBusy(true);
+    try {
+      await fetch("/api/backup?action=delete", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ backupId: backupId }),
+      });
+      setMsg({ type: "success", text: "✅ تم الحذف" });
+      await loadInfo();
+    } catch(e) {
+      setMsg({ type: "error", text: "❌ " + e.message });
+    }
+    setBusy(false);
+  }
+
+  async function uploadFile(e) {
+    var file = e.target.files && e.target.files[0];
+    if (!file) return;
+    if (busy) return;
+
+    setBusy(true);
+    setMsg(null);
+    setProgress("📂 قراءة الملف...");
+
+    try {
+      var text = await file.text();
+      var data;
+      try { data = JSON.parse(text); }
+      catch(err) { throw new Error("الملف ليس JSON صالح"); }
+
+      if (!data || typeof data !== "object") throw new Error("بيانات غير صحيحة");
+
+      // رفع للسحابة كنسخة جديدة
+      var { upload } = await import("@vercel/blob/client");
+      var json = JSON.stringify(data);
+      var backupId = "uploaded-" + new Date().toISOString().slice(0, 19).replace(/[:T]/g, "-");
+
+      setProgress("📤 رفع الملف للسحابة...");
+
+      var blob = await upload(
+        "basma-backup/" + backupId + ".json",
+        new Blob([json], { type: "application/json" }),
+        {
+          access: "public",
+          handleUploadUrl: "/api/backup-upload",
+          onUploadProgress: function(p) {
+            var pct = p.percentage || Math.round((p.loaded / p.total) * 100);
+            setProgress("📤 " + pct + "%");
+          },
+        }
+      );
+
+      var regRes = await fetch("/api/backup?action=register", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          backupId: backupId,
+          url: blob.url,
+          size: json.length,
+          pathname: blob.pathname,
+          scope: "uploaded",
+          keys: Object.keys(data),
+        }),
+      });
+
+      if (!regRes.ok) throw new Error("فشل تسجيل الملف");
+
+      setMsg({ type: "success", text: "✅ تم رفع " + Object.keys(data).length + " عنصر. يمكنك الآن استعادتها من القائمة." });
+      setProgress("");
+      e.target.value = "";
+      await loadInfo();
+    } catch(err) {
+      setMsg({ type: "error", text: "❌ " + err.message });
+      setProgress("");
+      e.target.value = "";
+    }
+
+    setBusy(false);
+  }
+
+  if (loading) {
+    return <div style={{ padding: 40, textAlign: "center", color: t.txM }}>جارِ التحميل...</div>;
+  }
+
+  return (
+    <div style={{ maxWidth: 900 }}>
+      {/* Header */}
+      <div style={{ background: "linear-gradient(135deg, #0F766E 0%, #115E59 100%)", borderRadius: 16, padding: "20px 22px", marginBottom: 16, color: "#fff" }}>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 10 }}>
+          <div>
+            <div style={{ fontSize: 20, fontWeight: 800, marginBottom: 4 }}>🛡 النسخ الاحتياطي</div>
+            <div style={{ fontSize: 11, opacity: 0.9 }}>حفظ واستعادة كل بيانات بصمة بأمان — يدعم حتى 1 GB</div>
+          </div>
+        </div>
+      </div>
+
+      {/* Status */}
+      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 10, marginBottom: 16 }}>
+        <div style={{ padding: 14, borderRadius: 12, background: t.card, border: "1px solid " + t.sep, textAlign: "center" }}>
+          <div style={{ fontSize: 9, color: t.txM, marginBottom: 4 }}>آخر نسخة</div>
+          <div style={{ fontSize: 11, fontWeight: 800, color: info ? "#10B981" : t.txM }}>
+            {info ? fmtDate(info.date) : "لا توجد"}
+          </div>
+        </div>
+        <div style={{ padding: 14, borderRadius: 12, background: t.card, border: "1px solid " + t.sep, textAlign: "center" }}>
+          <div style={{ fontSize: 9, color: t.txM, marginBottom: 4 }}>الحجم</div>
+          <div style={{ fontSize: 14, fontWeight: 800, color: B.blue }}>
+            {info ? fmtSize(info.size) : "—"}
+          </div>
+        </div>
+        <div style={{ padding: 14, borderRadius: 12, background: t.card, border: "1px solid " + t.sep, textAlign: "center" }}>
+          <div style={{ fontSize: 9, color: t.txM, marginBottom: 4 }}>عدد العناصر</div>
+          <div style={{ fontSize: 14, fontWeight: 800, color: "#7C3AED" }}>
+            {info && info.keys ? info.keys.length : "—"}
+          </div>
+        </div>
+      </div>
+
+      {/* Action Buttons */}
+      <div style={{ padding: 16, background: t.card, borderRadius: 14, border: "1px solid " + t.sep, marginBottom: 14 }}>
+        <div style={{ fontSize: 13, fontWeight: 800, color: t.tx, marginBottom: 10 }}>💾 إنشاء نسخة احتياطية جديدة</div>
+        <div style={{ fontSize: 10, color: t.txM, lineHeight: 1.7, marginBottom: 12 }}>
+          سيتم حفظ كل بيانات النظام في السحابة (Vercel Blob). الرفع يتم مباشرة من المتصفح بدون حد على الحجم.
+        </div>
+        <button onClick={doBackup} disabled={busy} style={{ width: "100%", padding: "13px 18px", borderRadius: 10, background: busy ? t.bg : "linear-gradient(135deg, #10B981, #059669)", color: busy ? t.txM : "#fff", border: "none", fontSize: 13, fontWeight: 800, cursor: busy ? "default" : "pointer", fontFamily: "inherit" }}>
+          {busy ? (progress || "جارِ العمل...") : "💾 إنشاء نسخة احتياطية الآن"}
+        </button>
+      </div>
+
+      {/* Upload from device */}
+      <div style={{ padding: 16, background: t.card, borderRadius: 14, border: "1px solid " + t.sep, marginBottom: 14 }}>
+        <div style={{ fontSize: 13, fontWeight: 800, color: t.tx, marginBottom: 10 }}>📂 رفع نسخة من ملف على جهازك</div>
+        <div style={{ fontSize: 10, color: t.txM, lineHeight: 1.7, marginBottom: 12 }}>
+          إذا كان لديك ملف نسخة احتياطية محفوظ مسبقاً (.json)، يمكنك رفعه هنا للحفظ في السحابة ثم استعادته.
+        </div>
+        <label style={{ display: "block", padding: "13px 18px", borderRadius: 10, background: "rgba(43,94,167,0.12)", border: "1px dashed " + B.blue, color: B.blue, fontSize: 12, fontWeight: 800, textAlign: "center", cursor: busy ? "default" : "pointer", opacity: busy ? 0.5 : 1 }}>
+          📂 اختر ملف .json من جهازك
+          <input type="file" accept="application/json,.json" onChange={uploadFile} disabled={busy} style={{ display: "none" }} />
+        </label>
+      </div>
+
+      {/* Progress / Message */}
+      {progress && (
+        <div style={{ padding: 12, borderRadius: 10, background: "rgba(245,158,11,0.12)", border: "1px solid rgba(245,158,11,0.3)", color: "#F59E0B", fontSize: 12, fontWeight: 700, marginBottom: 14, textAlign: "center" }}>
+          {progress}
+        </div>
+      )}
+      {msg && (
+        <div style={{ padding: 12, borderRadius: 10, background: msg.type === "success" ? "rgba(16,185,129,0.12)" : "rgba(220,38,38,0.12)", border: "1px solid " + (msg.type === "success" ? "rgba(16,185,129,0.3)" : "rgba(220,38,38,0.3)"), color: msg.type === "success" ? "#10B981" : "#DC2626", fontSize: 12, fontWeight: 700, marginBottom: 14, lineHeight: 1.7 }}>
+          {msg.text}
+        </div>
+      )}
+
+      {/* Backups List */}
+      <div style={{ padding: 16, background: t.card, borderRadius: 14, border: "1px solid " + t.sep }}>
+        <div style={{ fontSize: 13, fontWeight: 800, color: t.tx, marginBottom: 12 }}>📋 النسخ المحفوظة ({list.length})</div>
+        {list.length === 0 ? (
+          <div style={{ padding: 30, textAlign: "center", color: t.txM, fontSize: 12 }}>
+            لا توجد نسخ احتياطية. اضغط "إنشاء نسخة احتياطية الآن" للبدء.
+          </div>
+        ) : (
+          <div style={{ display: "grid", gap: 10 }}>
+            {list.map(function(b, i){
+              return (
+                <div key={b.backupId} style={{ padding: 12, borderRadius: 10, background: t.bg, border: "1px solid " + t.sep, display: "flex", flexDirection: "column", gap: 8 }}>
+                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", flexWrap: "wrap", gap: 6 }}>
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <div style={{ fontSize: 12, fontWeight: 800, color: t.tx, marginBottom: 4 }}>
+                        {i === 0 && <span style={{ padding: "2px 6px", borderRadius: 5, background: "#10B98122", color: "#10B981", fontSize: 9, marginLeft: 6 }}>الأحدث</span>}
+                        {fmtDate(b.date)}
+                      </div>
+                      <div style={{ fontSize: 9, color: t.txM, fontFamily: "monospace" }}>{b.backupId}</div>
+                    </div>
+                    <div style={{ display: "flex", gap: 8, fontSize: 9, color: t.txM, flexWrap: "wrap" }}>
+                      <span>📦 {fmtSize(b.size)}</span>
+                      <span>🗂 {b.keys ? b.keys.length : 0} عنصر</span>
+                      {b.scope === "uploaded" && <span style={{ color: B.blue, fontWeight: 700 }}>📂 مرفوعة</span>}
+                    </div>
+                  </div>
+                  <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+                    <button onClick={function(){ downloadBackup(b.backupId); }} disabled={busy} style={{ flex: 1, minWidth: 80, padding: "7px 10px", borderRadius: 7, background: B.blue, color: "#fff", border: "none", fontSize: 10, fontWeight: 800, cursor: busy ? "default" : "pointer", fontFamily: "inherit" }}>⬇ تحميل</button>
+                    <button onClick={function(){ setConfirmRestore(b); }} disabled={busy} style={{ flex: 1, minWidth: 80, padding: "7px 10px", borderRadius: 7, background: "#F59E0B", color: "#fff", border: "none", fontSize: 10, fontWeight: 800, cursor: busy ? "default" : "pointer", fontFamily: "inherit" }}>♻️ استعادة</button>
+                    <button onClick={function(){ deleteBackup(b.backupId); }} disabled={busy} style={{ padding: "7px 12px", borderRadius: 7, background: "transparent", color: "#DC2626", border: "1px solid rgba(220,38,38,0.3)", fontSize: 10, fontWeight: 800, cursor: busy ? "default" : "pointer", fontFamily: "inherit" }}>🗑</button>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        )}
+      </div>
+
+      {/* Restore Confirmation Modal */}
+      {confirmRestore && (
+        <div onClick={function(){ if (!busy) setConfirmRestore(null); }} style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.7)", zIndex: 9000, display: "flex", alignItems: "center", justifyContent: "center", padding: 16 }}>
+          <div onClick={function(e){ e.stopPropagation(); }} style={{ background: t.card, borderRadius: 16, maxWidth: 450, width: "100%", padding: 24, border: "1px solid " + t.sep }}>
+            <div style={{ fontSize: 18, fontWeight: 900, color: "#DC2626", marginBottom: 12, textAlign: "center" }}>⚠️ تأكيد الاستعادة</div>
+            <div style={{ fontSize: 12, color: t.tx, lineHeight: 1.9, marginBottom: 16, textAlign: "center" }}>
+              سيتم <strong style={{ color: "#DC2626" }}>استبدال</strong> كل البيانات الحالية بـ:
+            </div>
+            <div style={{ padding: 12, background: t.bg, borderRadius: 10, marginBottom: 16, fontSize: 11, color: t.txM, lineHeight: 1.8 }}>
+              📅 {fmtDate(confirmRestore.date)}<br/>
+              📦 {fmtSize(confirmRestore.size)}<br/>
+              🗂 {confirmRestore.keys ? confirmRestore.keys.length : 0} عنصر
+            </div>
+            <div style={{ padding: 10, background: "rgba(245,158,11,0.12)", borderRadius: 8, fontSize: 10, color: "#F59E0B", fontWeight: 700, lineHeight: 1.7, marginBottom: 16 }}>
+              ⚠️ هذا الإجراء <strong>لا يمكن التراجع عنه</strong>. تأكد قبل المتابعة.
+            </div>
+            <div style={{ display: "flex", gap: 10 }}>
+              <button onClick={function(){ if (!busy) setConfirmRestore(null); }} disabled={busy} style={{ flex: 1, padding: 12, borderRadius: 10, background: t.bg, color: t.tx, border: "1px solid " + t.sep, fontSize: 12, fontWeight: 700, cursor: busy ? "default" : "pointer", fontFamily: "inherit" }}>إلغاء</button>
+              <button onClick={function(){ doRestore(confirmRestore.backupId); }} disabled={busy} style={{ flex: 2, padding: 12, borderRadius: 10, background: "#DC2626", color: "#fff", border: "none", fontSize: 13, fontWeight: 800, cursor: busy ? "default" : "pointer", fontFamily: "inherit" }}>
+                {busy ? (progress || "جارِ الاستعادة...") : "✓ نعم، استعد"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
