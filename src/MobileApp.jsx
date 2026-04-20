@@ -8791,6 +8791,18 @@ function TawasulDetailModal({ request, user, allEmps, onClose, nameOf, onUpdated
     window.addEventListener("basma:open-assignee-eval", openAssigneeEval);
     return function(){ window.removeEventListener("basma:open-assignee-eval", openAssigneeEval); };
   }, [request && request.id]);
+  // v7.08 — accordions (individual collapsibles)
+  var [openSections, setOpenSections] = useState({}); // { parties: true, time: false, ... }
+  function toggleSection(id) {
+    setOpenSections(function(p){ var n = Object.assign({}, p); n[id] = !n[id]; return n; });
+  }
+  function expandAllSections() {
+    setOpenSections({ parties: true, pipeline: true, time: true, attachments: true, chatLog: true, extra: true });
+  }
+  function collapseAllSections() {
+    setOpenSections({});
+  }
+  var anySectionOpen = Object.values(openSections).some(function(v){ return !!v; });
   var [showHR, setShowHR] = useState(false);
   // v7.03 — collapsible details
   var [showDetails, setShowDetails] = useState(false);
@@ -8805,41 +8817,64 @@ function TawasulDetailModal({ request, user, allEmps, onClose, nameOf, onUpdated
       <div onClick={function(e){ e.stopPropagation(); }} style={{ background: C.bg, borderRadius: "20px 20px 0 0", maxWidth: 430, width: "100%", maxHeight: "94vh", overflowY: "auto", direction: "rtl", color: C.text, paddingBottom: 20 }}>
         <div style={{ display: "flex", justifyContent: "center", padding: "10px 0 4px", position: "sticky", top: 0, background: C.bg, zIndex: 2 }}><div style={{ width: 40, height: 4, borderRadius: 2, background: C.cardBorder }} /></div>
 
-        <div style={{ padding: "12px 18px 18px", borderBottom: "1px solid " + C.cardBorder }}>
+        {/* v7.08 — GRADIENT HEADER (Basma theme colors) */}
+        <div style={{
+          background: "linear-gradient(135deg, " + C.hdr1 + " 0%, " + C.hdr2 + " 60%, " + C.hdr3 + " 100%)",
+          padding: "14px 18px 18px",
+          color: "#fff",
+          position: "sticky",
+          top: 0,
+          zIndex: 2,
+        }}>
           {readOnly && (
-            <div style={{ marginBottom: 10, padding: "8px 12px", background: "linear-gradient(135deg, rgba(124,58,237,0.18), rgba(124,58,237,0.08))", border: "1.5px solid rgba(124,58,237,0.4)", borderRadius: 10, display: "flex", alignItems: "center", gap: 8, fontSize: 11, color: "#7c3aed", fontWeight: 800 }}>
-              <span style={{ fontSize: 16 }}>👁</span>
+            <div style={{ marginBottom: 10, padding: "6px 10px", background: "rgba(124,58,237,0.25)", border: "1px solid rgba(255,255,255,0.3)", borderRadius: 999, display: "inline-flex", alignItems: "center", gap: 6, fontSize: 10, color: "#fff", fontWeight: 800 }}>
+              <span style={{ fontSize: 13 }}>👁</span>
               <span>مهمة أحد موظفيك — وضع عرض فقط</span>
             </div>
           )}
+
+          {/* Top row: serial + status + urgency + close */}
           <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 10, flexWrap: "wrap" }}>
             {r.serial && <div style={{ fontSize: 13, fontWeight: 900, color: C.gold, fontFamily: "monospace" }}>#{r.serial}</div>}
-            <div style={{ display: "inline-flex", alignItems: "center", gap: 5, padding: "4px 10px", borderRadius: 10, background: m.color + "22", color: m.color, fontSize: 11, fontWeight: 800 }}><span>{m.icon}</span><span>{m.label}</span></div>
-            {isUrgent && <div style={{ padding: "4px 10px", borderRadius: 10, background: "rgba(239,68,68,0.15)", color: "#ef4444", fontSize: 11, fontWeight: 800 }}>🔴 عاجل</div>}
-            {escColor && <div style={{ padding: "4px 10px", borderRadius: 10, background: escColor + "22", color: escColor, fontSize: 11, fontWeight: 800 }}>{r.escalation === "red" ? "🔴 أحمر" : "🟡 أصفر"}</div>}
+            <div style={{ display: "inline-flex", alignItems: "center", gap: 5, padding: "4px 12px", borderRadius: 999, background: C.gold, color: "#1e2f3a", fontSize: 11, fontWeight: 900 }}><span>{m.icon}</span><span>{m.label}</span></div>
+            {isUrgent && <div style={{ padding: "4px 10px", borderRadius: 999, background: "#ef4444", color: "#fff", fontSize: 10, fontWeight: 800 }}>🔴 عاجل</div>}
+            {escColor && <div style={{ padding: "4px 10px", borderRadius: 999, background: escColor, color: "#fff", fontSize: 10, fontWeight: 800 }}>{r.escalation === "red" ? "🔴 أحمر" : "🟡 أصفر"}</div>}
             <div style={{ flex: 1 }} />
-            <button onClick={onClose} style={{ background: "none", border: "none", fontSize: 22, color: C.sub, cursor: "pointer", padding: 0, lineHeight: 1 }}>×</button>
+            <button onClick={onClose} style={{ background: "rgba(255,255,255,0.15)", border: "1px solid rgba(255,255,255,0.25)", fontSize: 18, color: "#fff", cursor: "pointer", padding: "0 10px", lineHeight: "26px", borderRadius: 8 }}>×</button>
           </div>
-          <div style={{ fontSize: 11, color: C.sub, marginBottom: 4, fontWeight: 600 }}>{r.category && <span>🏷 {r.category}</span>}{r.department && <span>{r.category ? " • " : ""}🏢 {r.department}</span>}{r.projectName && <span>{(r.category || r.department) ? " • " : ""}🏗️ {r.projectName}</span>}</div>
-          <div style={{ fontSize: 17, fontWeight: 900, color: C.text, lineHeight: 1.4, fontFamily: "'Cairo',sans-serif", marginBottom: deadlineText ? 6 : 0 }}>{r.title || "(بدون عنوان)"}</div>
-          {deadlineText && <div style={{ fontSize: 11, fontWeight: 700, color: (r.deadline && new Date(r.deadline) < new Date()) ? "#ef4444" : C.gold }}>{deadlineText}</div>}
-        </div>
 
-        <div style={{ padding: 16 }}>
-          {/* v7.03 — DESCRIPTION first (الأهم) — v7.04: truncation + show more */}
+          {/* Category/Dept/Project line */}
+          {(r.category || r.department || r.projectName) && (
+            <div style={{ fontSize: 10, color: "rgba(255,255,255,0.7)", marginBottom: 6, fontWeight: 600 }}>
+              {r.category && <span>🏷 {r.category}</span>}{r.department && <span>{r.category ? " • " : ""}🏢 {r.department}</span>}{r.projectName && <span>{(r.category || r.department) ? " • " : ""}🏗️ {r.projectName}</span>}
+            </div>
+          )}
+
+          {/* Title */}
+          <div style={{ fontSize: 18, fontWeight: 900, color: "#fff", lineHeight: 1.35, fontFamily: "'Cairo',sans-serif", marginBottom: deadlineText ? 4 : 0 }}>{r.title || "(بدون عنوان)"}</div>
+
+          {deadlineText && <div style={{ fontSize: 11, fontWeight: 700, color: (r.deadline && new Date(r.deadline) < new Date()) ? "#fecaca" : C.gold, marginBottom: 8 }}>{deadlineText}</div>}
+
+          {/* v7.08 — DESCRIPTION INSIDE header (translucent box) */}
           {r.description && (
-            <div style={{ position: "relative", background: C.card, borderRadius: 12, padding: "16px 16px 16px 20px", border: "1px solid " + C.cardBorder, marginBottom: 14, overflow: "hidden" }}>
-              <div style={{ position: "absolute", top: 0, bottom: 0, right: 0, width: 5, background: "linear-gradient(180deg, " + C.gold + ", " + C.gold + "aa)" }} />
-              <div style={{ fontSize: 13, fontWeight: 900, color: C.gold, marginBottom: 10, display: "flex", alignItems: "center", gap: 8, fontFamily: "'Cairo',sans-serif" }}>
-                <span style={{ fontSize: 16 }}>📝</span>
+            <div style={{
+              marginTop: 12,
+              background: "rgba(255,255,255,0.12)",
+              border: "1px solid rgba(255,255,255,0.18)",
+              borderRadius: 14,
+              padding: "12px 14px",
+              color: "#fff",
+            }}>
+              <div style={{ fontSize: 11, fontWeight: 900, color: C.gold, marginBottom: 6, display: "flex", alignItems: "center", gap: 6 }}>
+                <span style={{ fontSize: 14 }}>📝</span>
                 <span>وصف المهمة</span>
               </div>
-              <div style={{ fontSize: 14, color: C.text, lineHeight: 1.85, whiteSpace: "pre-wrap", fontWeight: 500 }}>{descToShow}</div>
+              <div style={{ fontSize: 13, color: "rgba(255,255,255,0.95)", lineHeight: 1.7, whiteSpace: "pre-wrap", fontWeight: 500 }}>{descToShow}</div>
               {descTooLong && (
                 <button onClick={function(){ setShowFullDesc(function(s){ return !s; }); }} style={{
-                  marginTop: 8, padding: "4px 12px", background: "transparent",
-                  border: "1px solid " + C.cardBorder, borderRadius: 8,
-                  color: C.gold, fontSize: 11, fontWeight: 800, cursor: "pointer",
+                  marginTop: 8, padding: "4px 12px", background: "rgba(255,255,255,0.18)",
+                  border: "1px solid rgba(255,255,255,0.3)", borderRadius: 999,
+                  color: "#fff", fontSize: 10, fontWeight: 800, cursor: "pointer",
                   fontFamily: "inherit",
                 }}>
                   {showFullDesc ? "◀ عرض أقل" : "عرض المزيد ▶"}
@@ -8847,6 +8882,38 @@ function TawasulDetailModal({ request, user, allEmps, onClose, nameOf, onUpdated
               )}
             </div>
           )}
+
+          {/* v7.08 — Toolbar (Basma theme pills) */}
+          <div style={{ display: "flex", gap: 8, marginTop: 12, flexWrap: "wrap" }}>
+            {canEvaluate && (
+              <button onClick={function(){ setShowEval(true); }} style={{
+                padding: "8px 16px", borderRadius: 999,
+                background: C.gold, color: "#1e2f3a", border: "none",
+                fontSize: 12, fontWeight: 800, cursor: "pointer",
+                fontFamily: "inherit", boxShadow: "0 2px 6px rgba(0,0,0,0.15)",
+              }}>⭐ تقييم</button>
+            )}
+            {canDelete && (
+              <button onClick={doDelete} disabled={busy} style={{
+                padding: "8px 14px", borderRadius: 999,
+                background: "transparent", color: "#fecaca", border: "1px solid rgba(254,202,202,0.5)",
+                fontSize: 12, fontWeight: 700, cursor: busy ? "wait" : "pointer", fontFamily: "inherit",
+              }}>🗑 حذف</button>
+            )}
+            <button onClick={function(){ exportTawasulPDF(r, nameOf); }} style={{
+              padding: "8px 14px", borderRadius: 999,
+              background: "transparent", color: "#fff", border: "1px solid rgba(255,255,255,0.4)",
+              fontSize: 12, fontWeight: 700, cursor: "pointer", fontFamily: "inherit",
+            }}>🖨 PDF</button>
+            <button onClick={function(){ anySectionOpen ? collapseAllSections() : expandAllSections(); }} style={{
+              padding: "8px 14px", borderRadius: 999,
+              background: "transparent", color: "#fff", border: "1px solid rgba(255,255,255,0.4)",
+              fontSize: 12, fontWeight: 700, cursor: "pointer", fontFamily: "inherit",
+            }}>{anySectionOpen ? "🔼 طي الكل" : "🔍 توسيع الكل"}</button>
+          </div>
+        </div>
+
+        <div style={{ padding: 16 }}>
 
           {/* BIG BUTTON — full width when actionable (action needed) */}
           {bigBtn && canPressBig && (
@@ -8876,44 +8943,34 @@ function TawasulDetailModal({ request, user, allEmps, onClose, nameOf, onUpdated
             </button>
           )}
 
-          {/* v7.03 — Status placeholder + MultiAssigneesProgress في صف واحد نصف الحجم (عند الانتظار) */}
-          {/* v7.07 — يظهر أيضاً عند partial_delivered (أحد الأطراف سلّم وأنا صاحب المهمة) */}
+          {/* v7.08 — Simple partial-delivered alert (multi progress moved to accordion) */}
           {(function(){
             var iAmRequester = String(r.requesterId) === String(myId);
             var hasAnyDelivered = (r.assignees || []).some(function(a){ return !!a.deliveredAt && !a.closedAt; });
-            var showWaitingBox = (bigBtn && !canPressBig && bigBtn.who === "requester") ||
-                                 (iAmRequester && hasAnyDelivered && r.status !== "delivered" && r.status !== "evaluated");
-            r._showedWaitingBox = showWaitingBox; // flag for downstream render
-            if (!showWaitingBox) return null;
-            var deliveredCountLocal = (r.assignees || []).filter(function(a){ return !!a.deliveredAt && !a.closedAt; }).length;
-            var totalLocal = (r.assignees || []).length;
-            var boxLabel = bigBtn ? bigBtn.label : "⏳ بانتظار التقييم";
-            var boxColor = bigBtn ? bigBtn.color : "#94a3b8";
-            var boxSub = (totalLocal >= 2 && deliveredCountLocal < totalLocal)
-              ? deliveredCountLocal + " من " + totalLocal + " سلّم — يمكن تقييمه"
-              : (bigBtn ? bigBtn.sub : "قيّم المهمة المُسلّمة");
+            var total = (r.assignees || []).length;
+            var delivered = (r.assignees || []).filter(function(a){ return !!a.deliveredAt && !a.closedAt; }).length;
+            if (!iAmRequester || !hasAnyDelivered || r.status === "evaluated") return null;
+            if (total < 2) return null; // single assignee uses normal flow
             return (
-              <div style={{ display: "grid", gridTemplateColumns: totalLocal >= 2 ? "1fr 1fr" : "1fr", gap: 10, marginBottom: 14 }}>
-                <div style={{ padding: 12, borderRadius: 12, background: C.card, border: "2px dashed " + C.cardBorder, textAlign: "center" }}>
-                  <div style={{ fontSize: 13, fontWeight: 800, color: boxColor, marginBottom: 2 }}>{boxLabel}</div>
-                  <div style={{ fontSize: 10, color: C.sub }}>{boxSub}</div>
+              <div onClick={function(){ setOpenSections(function(p){ var n = Object.assign({}, p); n.parties = true; return n; }); }} style={{
+                background: "linear-gradient(135deg, rgba(245,158,11,0.12), rgba(245,158,11,0.04))",
+                border: "1px solid rgba(245,158,11,0.35)",
+                borderRadius: 14,
+                padding: "10px 14px",
+                marginBottom: 12,
+                cursor: "pointer",
+                display: "flex",
+                alignItems: "center",
+                gap: 10,
+              }}>
+                <span style={{ fontSize: 18 }}>⏳</span>
+                <div style={{ flex: 1 }}>
+                  <div style={{ fontSize: 12, fontWeight: 900, color: "#92400e" }}>بانتظار التقييم</div>
+                  <div style={{ fontSize: 10, color: "#78350f", fontWeight: 600 }}>{delivered} من {total} سلّم — اضغط لعرض تقدم الأطراف ↓</div>
                 </div>
-                {totalLocal >= 2 && (
-                  <MultiAssigneesProgress request={r} myId={myId} onUpdated={onUpdated} />
-                )}
               </div>
             );
           })()}
-
-          {/* Multi-progress when action IS pressable (full width below big button) */}
-          {!r._showedWaitingBox && bigBtn && canPressBig && (r.assignees || []).length >= 2 && (
-            <MultiAssigneesProgress request={r} myId={myId} onUpdated={onUpdated} />
-          )}
-
-          {/* No bigBtn but multi-assignees still visible */}
-          {!r._showedWaitingBox && !bigBtn && (r.assignees || []).length >= 2 && (
-            <MultiAssigneesProgress request={r} myId={myId} onUpdated={onUpdated} />
-          )}
 
           {/* Action buttons — uniform grid (all same size) */}
           <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(80px, 1fr))", gap: 6, marginBottom: 14 }}>
@@ -8942,10 +8999,7 @@ function TawasulDetailModal({ request, user, allEmps, onClose, nameOf, onUpdated
               </button>
             )}
             {canEvaluate && (
-              <button onClick={function(){ setShowEval(true); }} title="تقييم" style={{ padding: "10px 6px", borderRadius: 10, background: "rgba(201,168,76,0.2)", color: C.gold, border: "1.5px solid " + C.gold, fontSize: 11, fontWeight: 700, cursor: "pointer", fontFamily: "inherit", display: "flex", flexDirection: "column", alignItems: "center", gap: 2 }}>
-                <span style={{ fontSize: 15 }}>⭐</span>
-                <span>تقييم</span>
-              </button>
+              <button onClick={function(){ setShowEval(true); }} title="تقييم" style={{ display: "none" }}>⭐</button>
             )}
             {canHR && (
               <button onClick={function(){ setShowHR(true); }} title="إجراء HR" style={{ padding: "10px 6px", borderRadius: 10, background: "rgba(124,58,237,0.15)", color: "#7c3aed", border: "1.5px solid rgba(124,58,237,0.4)", fontSize: 11, fontWeight: 700, cursor: "pointer", fontFamily: "inherit", display: "flex", flexDirection: "column", alignItems: "center", gap: 2 }}>
@@ -8965,16 +9019,7 @@ function TawasulDetailModal({ request, user, allEmps, onClose, nameOf, onUpdated
                 <span>تعديل</span>
               </button>
             )}
-            {canDelete && (
-              <button onClick={doDelete} disabled={busy} title="حذف نهائي" style={{ padding: "10px 6px", borderRadius: 10, background: "rgba(239,68,68,0.2)", color: "#ef4444", border: "1.5px solid #ef4444", fontSize: 11, fontWeight: 700, cursor: "pointer", fontFamily: "inherit", display: "flex", flexDirection: "column", alignItems: "center", gap: 2 }}>
-                <span style={{ fontSize: 15 }}>🗑</span>
-                <span>حذف</span>
-              </button>
-            )}
-            <button onClick={function(){ exportTawasulPDF(r, nameOf); }} title="PDF" style={{ padding: "10px 6px", borderRadius: 10, background: C.card, color: C.text, border: "1.5px solid " + C.cardBorder, fontSize: 11, fontWeight: 700, cursor: "pointer", fontFamily: "inherit", display: "flex", flexDirection: "column", alignItems: "center", gap: 2 }}>
-              <span style={{ fontSize: 15 }}>🖨️</span>
-              <span>PDF</span>
-            </button>
+            {/* v7.08 — حذف و PDF انتقلوا للـ toolbar في الـ header */}
           </div>
 
           {/* Hint when escalation is gated */}
@@ -9020,27 +9065,6 @@ function TawasulDetailModal({ request, user, allEmps, onClose, nameOf, onUpdated
             </div>
           )}
 
-          {/* Pipeline */}
-          {!["cancelled","rejected"].includes(r.status) && (
-            <div style={{ background: C.card, borderRadius: 12, padding: 14, border: "1px solid " + C.cardBorder, marginBottom: 12 }}>
-              <div style={{ fontSize: 11, fontWeight: 800, color: C.sub, marginBottom: 10 }}>📈 مراحل المهمة</div>
-              <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
-                {TAWASUL_STAGES.map(function(st, idx){
-                  var active = idx <= curStage;
-                  return (
-                    <React.Fragment key={st.key}>
-                      <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 4, flex: "0 0 auto" }}>
-                        <div style={{ width: 32, height: 32, borderRadius: 16, background: active ? C.gold : C.bg, border: "2px solid " + (active ? C.gold : C.cardBorder), display: "flex", alignItems: "center", justifyContent: "center", fontSize: 14, color: active ? "#fff" : C.sub }}>{st.icon}</div>
-                        <div style={{ fontSize: 9, fontWeight: 700, color: active ? C.text : C.sub, textAlign: "center", maxWidth: 60 }}>{st.label}</div>
-                      </div>
-                      {idx < TAWASUL_STAGES.length - 1 && <div style={{ flex: 1, height: 2, background: idx < curStage ? C.gold : C.cardBorder, margin: "0 4px", marginBottom: 18 }} />}
-                    </React.Fragment>
-                  );
-                })}
-              </div>
-            </div>
-          )}
-
           {/* v6.80 — sender role banner for recipient */}
           {(function(){
             var myRow = (r.assignees || []).find(function(a){ return String(a.id) === String(myId); });
@@ -9054,68 +9078,128 @@ function TawasulDetailModal({ request, user, allEmps, onClose, nameOf, onUpdated
             );
           })()}
 
-          {/* v7.03 — TOGGLE زر عرض التفاصيل */}
-          <button onClick={function(){ setShowDetails(function(s){ return !s; }); }} style={{
-            width: "100%",
-            padding: "12px 16px",
-            borderRadius: 12,
-            background: showDetails ? C.bg : "linear-gradient(135deg, " + C.card + ", " + C.bg + ")",
-            color: C.text,
-            border: "1px solid " + C.cardBorder,
-            fontSize: 13,
-            fontWeight: 800,
-            cursor: "pointer",
-            fontFamily: "inherit",
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "center",
-            gap: 8,
-            marginBottom: 14,
-          }}>
-            <span>{showDetails ? "▲" : "▼"}</span>
-            <span>{showDetails ? "إخفاء التفاصيل الإضافية" : "عرض التفاصيل الإضافية"}</span>
-          </button>
+          {/* v7.08 — ACCORDIONS (individual collapsible sections) */}
+          {(function(){
+            // Accordion helper component style
+            function Accordion(props) {
+              var isOpen = !!openSections[props.id];
+              return (
+                <div style={{ background: C.card, borderRadius: 12, border: "1px solid " + C.cardBorder, marginBottom: 10, overflow: "hidden" }}>
+                  <div onClick={function(){ toggleSection(props.id); }} style={{
+                    padding: "12px 14px", cursor: "pointer",
+                    display: "flex", justifyContent: "space-between", alignItems: "center",
+                    userSelect: "none", background: isOpen ? C.bg : "transparent",
+                    transition: "background 0.15s",
+                  }}>
+                    <div style={{ fontSize: 12, fontWeight: 800, color: C.text, display: "flex", alignItems: "center", gap: 8 }}>
+                      <span style={{ fontSize: 15 }}>{props.icon}</span>
+                      <span>{props.title}</span>
+                      {props.badge && <span style={{ padding: "2px 8px", borderRadius: 999, background: C.gold + "22", color: C.gold, fontSize: 10, fontWeight: 800 }}>{props.badge}</span>}
+                    </div>
+                    <span style={{ fontSize: 14, color: C.sub, transition: "transform 0.2s", transform: isOpen ? "rotate(180deg)" : "none" }}>▼</span>
+                  </div>
+                  {isOpen && (
+                    <div style={{ padding: "12px 14px", borderTop: "1px solid " + C.cardBorder }}>
+                      {props.children}
+                    </div>
+                  )}
+                </div>
+              );
+            }
 
-          {/* v7.03 — التفاصيل الموسّعة (مخفية افتراضياً) */}
-          {showDetails && <>
-            {/* Meta */}
-            <div style={{ background: C.card, borderRadius: 12, padding: 14, border: "1px solid " + C.cardBorder, marginBottom: 12 }}>
-              {[
-                { label: "من", value: requesterName + (function(){
-                  var myRow = (r.assignees || []).find(function(a){ return String(a.id) === String(myId); });
-                  if (!myRow || !myRow.senderRole || myRow.senderRole === "other") return "";
-                  return myRow.senderRole === "manager1" ? " (مديري الإداري)" : " (مديري الفني)";
-                })(), icon: "👤" },
-                { label: "إلى", value: (r.assignees || []).map(function(a){ return a.name || nameOf(a.id); }).join("، ") || "—", icon: "📬" },
-                r.assignMode ? { label: "نمط التكليف", value: r.assignMode === "coordinator" ? "مسؤول ينسّق" : "كل طرف مستقل", icon: "🎯" } : null,
-                { label: "تاريخ الإنشاء", value: r.createdAt ? new Date(r.createdAt).toLocaleString("ar-SA") : "—", icon: "📅" },
-                r.deadline ? { label: "الموعد النهائي", value: new Date(r.deadline).toLocaleString("ar-SA"), icon: "⏰" } : null,
-                r.deliveredAt ? { label: "تاريخ التسليم", value: new Date(r.deliveredAt).toLocaleString("ar-SA"), icon: "📦" } : null,
-                r.linkedFromSerial ? { label: "محوّلة من", value: "#" + r.linkedFromSerial, icon: "↪️" } : null,
-                rejectedCount > 0 ? { label: "عدد الرفضات", value: String(rejectedCount), icon: "❌" } : null,
-                returnCount > 0 ? { label: "عدد الإرجاعات", value: String(returnCount), icon: "📋" } : null,
-                { label: "آخر تحديث", value: tawasulTimeAgo(r.updatedAt || r.createdAt), icon: "🔄" },
-              ].filter(Boolean).map(function(row, idx, arr){
-                return <div key={idx} style={{ display: "flex", justifyContent: "space-between", padding: "8px 0", borderBottom: idx < arr.length - 1 ? "1px solid " + C.cardBorder : "none", fontSize: 12, gap: 8 }}><div style={{ color: C.sub, fontWeight: 600, flexShrink: 0 }}><span style={{ marginLeft: 5 }}>{row.icon}</span>{row.label}</div><div style={{ color: C.text, fontWeight: 700, textAlign: "left", flex: 1, minWidth: 0, wordBreak: "break-word" }}>{row.value}</div></div>;
-              })}
-            </div>
+            return (
+              <>
+                {/* v7.08 — Parties accordion (MultiAssigneesProgress) — only if 2+ assignees */}
+                {(r.assignees || []).length >= 2 && (
+                  <Accordion id="parties" icon="👥" title="تقدم الأطراف (كل طرف مستقل)" badge={String((r.assignees || []).length)}>
+                    <MultiAssigneesProgress request={r} myId={myId} onUpdated={onUpdated} />
+                  </Accordion>
+                )}
 
-            {r.deliveryMethods && r.deliveryMethods.length > 0 && (
-              <div style={{ background: C.card, borderRadius: 12, padding: 14, border: "1px solid " + C.cardBorder, marginBottom: 12 }}>
-                <div style={{ fontSize: 11, fontWeight: 800, color: C.sub, marginBottom: 8 }}>📦 طرق التسليم</div>
-                {r.deliveryMethods.map(function(dm, idx){ return <div key={idx} style={{ padding: "8px 10px", borderRadius: 8, background: C.bg, marginBottom: 6, fontSize: 12 }}><div style={{ fontWeight: 700, color: C.text, marginBottom: 2 }}>{dm.label || dm.type}</div>{dm.value && <div style={{ fontSize: 11, color: C.sub, wordBreak: "break-all" }}>{dm.value}</div>}</div>; })}
-              </div>
-            )}
+                {/* v7.08 — Pipeline accordion (مراحل المهمة) */}
+                {!["cancelled","rejected"].includes(r.status) && (
+                  <Accordion id="pipeline" icon="📈" title="مراحل المهمة">
+                    <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+                      {TAWASUL_STAGES.map(function(st, idx){
+                        var active = idx <= curStage;
+                        return (
+                          <React.Fragment key={st.key}>
+                            <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 4, flex: "0 0 auto" }}>
+                              <div style={{ width: 32, height: 32, borderRadius: 16, background: active ? C.gold : C.bg, border: "2px solid " + (active ? C.gold : C.cardBorder), display: "flex", alignItems: "center", justifyContent: "center", fontSize: 14, color: active ? "#fff" : C.sub }}>{st.icon}</div>
+                              <div style={{ fontSize: 9, fontWeight: 700, color: active ? C.text : C.sub, textAlign: "center", maxWidth: 60 }}>{st.label}</div>
+                            </div>
+                            {idx < TAWASUL_STAGES.length - 1 && <div style={{ flex: 1, height: 2, background: idx < curStage ? C.gold : C.cardBorder, margin: "0 4px", marginBottom: 18, minWidth: 8 }} />}
+                          </React.Fragment>
+                        );
+                      })}
+                    </div>
+                  </Accordion>
+                )}
 
-            {/* Time tracking panel */}
-            <TimeTrackingPanel request={r} user={user} readOnly={readOnly} canEdit={canActAsAssignee || canActAsRequester || isAdmin} onUpdated={onUpdated} />
+                {/* Meta accordion */}
+                <Accordion id="meta" icon="📌" title="تفاصيل إضافية (من/إلى/تاريخ)">
+                  {[
+                    { label: "من", value: requesterName + (function(){
+                      var myRow = (r.assignees || []).find(function(a){ return String(a.id) === String(myId); });
+                      if (!myRow || !myRow.senderRole || myRow.senderRole === "other") return "";
+                      return myRow.senderRole === "manager1" ? " (مديري الإداري)" : " (مديري الفني)";
+                    })(), icon: "👤" },
+                    { label: "إلى", value: (r.assignees || []).map(function(a){ return a.name || nameOf(a.id); }).join("، ") || "—", icon: "📬" },
+                    r.assignMode ? { label: "نمط التكليف", value: r.assignMode === "coordinator" ? "مسؤول ينسّق" : "كل طرف مستقل", icon: "🎯" } : null,
+                    { label: "تاريخ الإنشاء", value: r.createdAt ? new Date(r.createdAt).toLocaleString("ar-SA") : "—", icon: "📅" },
+                    r.deadline ? { label: "الموعد النهائي", value: new Date(r.deadline).toLocaleString("ar-SA"), icon: "⏰" } : null,
+                    r.deliveredAt ? { label: "تاريخ التسليم", value: new Date(r.deliveredAt).toLocaleString("ar-SA"), icon: "📦" } : null,
+                    r.linkedFromSerial ? { label: "محوّلة من", value: "#" + r.linkedFromSerial, icon: "↪️" } : null,
+                    rejectedCount > 0 ? { label: "عدد الرفضات", value: String(rejectedCount), icon: "❌" } : null,
+                    returnCount > 0 ? { label: "عدد الإرجاعات", value: String(returnCount), icon: "📋" } : null,
+                    { label: "آخر تحديث", value: tawasulTimeAgo(r.updatedAt || r.createdAt), icon: "🔄" },
+                  ].filter(Boolean).map(function(row, idx, arr){
+                    return <div key={idx} style={{ display: "flex", justifyContent: "space-between", padding: "8px 0", borderBottom: idx < arr.length - 1 ? "1px solid " + C.cardBorder : "none", fontSize: 12, gap: 8 }}><div style={{ color: C.sub, fontWeight: 600, flexShrink: 0 }}><span style={{ marginLeft: 5 }}>{row.icon}</span>{row.label}</div><div style={{ color: C.text, fontWeight: 700, textAlign: "left", flex: 1, minWidth: 0, wordBreak: "break-word" }}>{row.value}</div></div>;
+                  })}
+                </Accordion>
 
-            {/* Attachments panel */}
-            <AttachmentsPanel request={r} user={user} readOnly={readOnly} canEdit={canActAsAssignee || canActAsRequester || isAdmin} onUpdated={onUpdated} />
+                {/* Delivery methods accordion */}
+                {r.deliveryMethods && r.deliveryMethods.length > 0 && (
+                  <Accordion id="delivery" icon="📦" title="طرق التسليم" badge={String(r.deliveryMethods.length)}>
+                    {r.deliveryMethods.map(function(dm, idx){
+                      return <div key={idx} style={{ padding: "8px 10px", borderRadius: 8, background: C.bg, marginBottom: 6, fontSize: 12 }}><div style={{ fontWeight: 700, color: C.text, marginBottom: 2 }}>{dm.label || dm.type}</div>{dm.value && <div style={{ fontSize: 11, color: C.sub, wordBreak: "break-all" }}>{dm.value}</div>}</div>;
+                    })}
+                  </Accordion>
+                )}
 
-            {/* v7.04 — Chat panel moved INSIDE details */}
-            <ChatPanel request={r} user={user} allEmps={allEmps} readOnly={readOnly} onUpdated={onUpdated} nameOf={nameOf} />
-          </>}
+                {/* Time tracking accordion */}
+                <Accordion id="time" icon="⏱️" title="تتبع الوقت">
+                  <TimeTrackingPanel request={r} user={user} readOnly={readOnly} canEdit={canActAsAssignee || canActAsRequester || isAdmin} onUpdated={onUpdated} />
+                </Accordion>
+
+                {/* Attachments accordion */}
+                <Accordion id="attachments" icon="📎" title="المرفقات" badge={((r.attachments || []).length) ? String((r.attachments || []).length) : null}>
+                  <AttachmentsPanel request={r} user={user} readOnly={readOnly} canEdit={canActAsAssignee || canActAsRequester || isAdmin} onUpdated={onUpdated} />
+                </Accordion>
+
+                {/* Chat + Log + Comments accordion (merged as in mockup) */}
+                <Accordion id="chatLog" icon="💬" title="الدردشة والسجل والتعليقات" badge={log.length ? String(log.length) : null}>
+                  <ChatPanel request={r} user={user} allEmps={allEmps} readOnly={readOnly} onUpdated={onUpdated} nameOf={nameOf} />
+
+                  {/* Activity log */}
+                  <div style={{ marginTop: 12, paddingTop: 12, borderTop: "1px solid " + C.cardBorder }}>
+                    <div style={{ fontSize: 11, fontWeight: 800, color: C.sub, marginBottom: 12 }}>📜 سجل النشاط ({log.length})</div>
+                    {log.length === 0 ? <div style={{ fontSize: 11, color: C.sub, textAlign: "center", padding: 10 }}>لا يوجد سجل بعد</div> : log.map(function(entry, idx){
+                      return <div key={idx} style={{ display: "flex", gap: 8, padding: "8px 0", fontSize: 11, alignItems: "flex-start", borderBottom: idx < log.length - 1 ? "1px solid " + C.cardBorder : "none" }}><div style={{ width: 6, height: 6, borderRadius: 3, background: C.gold, marginTop: 7, flexShrink: 0 }} /><div style={{ flex: 1, minWidth: 0 }}><div style={{ color: C.text, fontWeight: 600, lineHeight: 1.5, wordBreak: "break-word" }}>{entry.text || entry.action || "تحديث"}</div><div style={{ fontSize: 10, color: C.sub, marginTop: 2 }}>{entry.by || nameOf(entry.userId)} • {tawasulTimeAgo(entry.at)}</div></div></div>;
+                    })}
+
+                    {/* Comment input */}
+                    {!readOnly && !["closed","cancelled"].includes(r.status) && (isRequester || isAssignee || isAdmin) && (
+                      <div style={{ marginTop: 10, display: "flex", gap: 6 }}>
+                        <input type="text" value={commentText} onChange={function(e){ setCommentText(e.target.value); }} placeholder="أضف تعليقاً..." onKeyDown={function(e){ if(e.key === "Enter") sendComment(); }} style={{ flex: 1, padding: "10px 12px", borderRadius: 10, border: "1px solid " + C.cardBorder, background: C.bg, color: C.text, fontSize: 12, fontFamily: "inherit", outline: "none" }} />
+                        <button onClick={sendComment} disabled={busy || !commentText.trim()} style={{ padding: "10px 14px", borderRadius: 10, background: commentText.trim() ? C.hdr2 : C.cardBorder, color: "#fff", border: "none", fontSize: 12, fontWeight: 700, cursor: commentText.trim() ? "pointer" : "default", fontFamily: "inherit" }}>📤</button>
+                      </div>
+                    )}
+                  </div>
+                </Accordion>
+              </>
+            );
+          })()}
 
           {evals.length > 0 && (
             <div style={{ background: C.card, borderRadius: 12, padding: 14, border: "1px solid " + C.cardBorder, marginBottom: 12 }}>
@@ -9124,28 +9208,22 @@ function TawasulDetailModal({ request, user, allEmps, onClose, nameOf, onUpdated
             </div>
           )}
 
-          {/* Log + comment input */}
-          <div style={{ background: C.card, borderRadius: 12, padding: 14, border: "1px solid " + C.cardBorder, marginBottom: 12 }}>
-            <div style={{ fontSize: 11, fontWeight: 800, color: C.sub, marginBottom: 12 }}>📜 السجل والتعليقات ({log.length})</div>
-            {log.length === 0 ? <div style={{ fontSize: 11, color: C.sub, textAlign: "center", padding: 10 }}>لا يوجد سجل بعد</div> : log.map(function(entry, idx){
-              return <div key={idx} style={{ display: "flex", gap: 8, padding: "8px 0", fontSize: 11, alignItems: "flex-start", borderBottom: idx < log.length - 1 ? "1px solid " + C.cardBorder : "none" }}><div style={{ width: 6, height: 6, borderRadius: 3, background: C.gold, marginTop: 7, flexShrink: 0 }} /><div style={{ flex: 1, minWidth: 0 }}><div style={{ color: C.text, fontWeight: 600, lineHeight: 1.5, wordBreak: "break-word" }}>{entry.text || entry.action || "تحديث"}</div><div style={{ fontSize: 10, color: C.sub, marginTop: 2 }}>{entry.by || nameOf(entry.userId)} • {tawasulTimeAgo(entry.at)}</div></div></div>;
-            })}
-
-            {/* Comment input */}
-            {!readOnly && !["closed","cancelled"].includes(r.status) && (isRequester || isAssignee || isAdmin) && (
-              <div style={{ marginTop: 10, display: "flex", gap: 6 }}>
-                <input type="text" value={commentText} onChange={function(e){ setCommentText(e.target.value); }} placeholder="أضف تعليقاً..." onKeyDown={function(e){ if(e.key === "Enter") sendComment(); }} style={{ flex: 1, padding: "10px 12px", borderRadius: 10, border: "1px solid " + C.cardBorder, background: C.bg, color: C.text, fontSize: 12, fontFamily: "inherit", outline: "none" }} />
-                <button onClick={sendComment} disabled={busy || !commentText.trim()} style={{ padding: "10px 14px", borderRadius: 10, background: commentText.trim() ? C.hdr2 : C.cardBorder, color: "#fff", border: "none", fontSize: 12, fontWeight: 700, cursor: commentText.trim() ? "pointer" : "default", fontFamily: "inherit" }}>📤</button>
-              </div>
-            )}
-          </div>
-
           {(r.rejectionReason || r.returnReason) && (
             <div style={{ background: "rgba(239,68,68,0.08)", borderRadius: 12, padding: 14, border: "1px solid rgba(239,68,68,0.3)", marginBottom: 12 }}>
               <div style={{ fontSize: 11, fontWeight: 800, color: "#ef4444", marginBottom: 6 }}>{r.rejectionReason ? "❌ سبب الرفض" : "↩️ سبب الإرجاع"}</div>
               <div style={{ fontSize: 12, color: C.text, lineHeight: 1.6 }}>{r.rejectionReason || r.returnReason}</div>
             </div>
           )}
+
+          {/* v7.08 — Bottom "expand all" pill */}
+          <button onClick={function(){ anySectionOpen ? collapseAllSections() : expandAllSections(); }} style={{
+            width: "100%", marginTop: 8, padding: "14px 16px",
+            borderRadius: 999, background: C.card, color: C.text,
+            border: "1px solid " + C.cardBorder, fontSize: 13, fontWeight: 800,
+            cursor: "pointer", fontFamily: "inherit",
+          }}>
+            {anySectionOpen ? "🔼 طي كل الأقسام" : "🔲 توسيع كل الأقسام دفعة واحدة"}
+          </button>
         </div>
 
         {showReject && <TawasulReasonModal title="❌ رفض المهمة" reasons={TAWASUL_REJECT_REASONS} requireLegal={true} confirmColor="#ef4444" confirmLabel="تأكيد الرفض" onConfirm={doReject} onClose={function(){ setShowReject(false); }} />}
