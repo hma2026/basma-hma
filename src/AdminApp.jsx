@@ -4,7 +4,7 @@ import { generateAttendanceReport, generateEmployeeReport, generateMonthlySummar
 import { exportFormalWarning, exportInvestigationRecord, exportAffidavit, exportEmploymentLetter, exportSalaryLetter, exportLeaveLetter } from "./formalPdfs";
 
 const APP = "بصمة HMA";
-const VER = "6.97";
+const VER = "6.99";
 const CO = "هاني محمد عسيري للإستشارات الهندسية";
 const B = { blue: "#2B5EA7", yellow: "#FDD800", red: "#E2192C", black: "#1A1A1A", blueDk: "#1E4478", blueLt: "#EDF3FB", gold: "#D4A017" };
 
@@ -542,11 +542,9 @@ export default function AdminApp() {
     },
     {
       id: "comm",
-      label: "التواصل والمناسبات",
+      label: "التواصل والمحتوى",
       items: [
-        { id: "content_hub", icon: "📣", label: "المحتوى (تعاميم + بنرات)" },
-        { id: "events", icon: "🎉", label: "المناسبات" },
-        { id: "questions", icon: "❓", label: "أسئلة الصباح" },
+        { id: "content_hub", icon: "📣", label: "المحتوى (تعاميم + بنرات + مناسبات + أسئلة)" },
       ],
     },
     {
@@ -976,7 +974,7 @@ export default function AdminApp() {
       {/* ═══ v6.96 — 3 admin hubs ═══ */}
       {tab === "custody_hub" && <CustodyHub t={t} B={B} emps={safeEmps} />}
       {tab === "attendance_hub" && <AttendanceHub t={t} B={B} emps={safeEmps} branches={branches} />}
-      {tab === "content_hub" && <ContentHub t={t} B={B} emps={safeEmps} branches={branches} />}
+      {tab === "content_hub" && <ContentHub t={t} B={B} emps={safeEmps} branches={branches} events={events} setEvents={setEvents} hrQuestions={hrQuestions} setHrQuestions={setHrQuestions} saveSettings={saveSettings} newQ={newQ} setNewQ={setNewQ} Fn={Fn} Toggle={Toggle} />}
 
       {/* ═══ REPORTS ═══ */}
       {tab === "reports" && <>
@@ -1110,155 +1108,10 @@ export default function AdminApp() {
       </>}
 
       {/* ═══ EVENTS (المناسبات الإدارية) ═══ */}
-      {tab === "events" && <>
-        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 14 }}><span style={{ fontSize: 14, fontWeight: 700 }}>إدارة المناسبات</span><button onClick={() => setEvents(es => [...es, { id: Date.now(), name: "مناسبة جديدة", emoji: "🎉", date: "", active: false, upgrade: false, upgradeDuration: 24, bgColor: "#1a3a6e", gifUrl: "", gifPosition: "overlay" }])} style={{ padding: "8px 16px", borderRadius: 10, background: B.blue, color: "#fff", fontSize: 12, fontWeight: 700, border: "none", cursor: "pointer" }}>+ مناسبة جديدة</button></div>
-        {events.map((ev, ei) => <div key={ev.id} style={{ background: t.card, borderRadius: 14, padding: "16px", border: "1px solid " + t.sep, marginBottom: 10 }}>
-          <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 10 }}>
-            <div style={{ width: 48, height: 48, borderRadius: 14, background: ev.bgColor || "#0B0F1A", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 24 }}>{ev.emoji}</div>
-            <div style={{ flex: 1 }}>
-              <input value={ev.name} onChange={e => setEvents(es => es.map((x,i) => i===ei ? {...x, name: e.target.value} : x))} style={{ width: "100%", padding: "6px 8px", borderRadius: 8, border: "1px solid " + t.sep, fontSize: 14, fontWeight: 700, fontFamily: Fn, background: t.inp, color: t.tx }} />
-              <div style={{ display: "flex", gap: 6, marginTop: 6 }}>
-                <input value={ev.emoji} onChange={e => setEvents(es => es.map((x,i) => i===ei ? {...x, emoji: e.target.value} : x))} placeholder="إيموجي" style={{ width: 50, padding: "4px 6px", borderRadius: 6, border: "1px solid " + t.sep, fontSize: 12, textAlign: "center", background: t.inp, color: t.tx }} />
-                <input value={ev.date} onChange={e => setEvents(es => es.map((x,i) => i===ei ? {...x, date: e.target.value} : x))} placeholder="MM-DD أو فترة" style={{ flex: 1, padding: "4px 8px", borderRadius: 6, border: "1px solid " + t.sep, fontSize: 12, background: t.inp, color: t.tx }} />
-                <input value={ev.bgColor || ""} onChange={e => setEvents(es => es.map((x,i) => i===ei ? {...x, bgColor: e.target.value} : x))} placeholder="لون الخلفية" style={{ width: 80, padding: "4px 6px", borderRadius: 6, border: "1px solid " + t.sep, fontSize: 10, background: t.inp, color: t.tx }} />
-              </div>
-            </div>
-            <div style={{ display: "flex", flexDirection: "column", gap: 4, alignItems: "center" }}>
-              <Toggle on={ev.active} onClick={() => setEvents(es => es.map((x,i) => i===ei ? {...x, active: !x.active} : x))} />
-              <span style={{ fontSize: 8, color: t.txM }}>{ev.active ? "مفعّل" : "معطّل"}</span>
-            </div>
-          </div>
-          {/* GIF + Upgrade options */}
-          <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-            <div style={{ flex: 1, minWidth: 200 }}>
-              <div style={{ fontSize: 10, fontWeight: 700, color: t.tx2, marginBottom: 4 }}>🎬 رابط GIF (اختياري)</div>
-              <input value={ev.gifUrl || ""} onChange={e => setEvents(es => es.map((x,i) => i===ei ? {...x, gifUrl: e.target.value} : x))} placeholder="https://..." style={{ width: "100%", padding: "6px 8px", borderRadius: 6, border: "1px solid " + t.sep, fontSize: 11, background: t.inp, color: t.tx }} />
-              <div style={{ display: "flex", gap: 4, marginTop: 4 }}>
-                {["خلفية كاملة", "إيموجي طافية", "فوق الشريط"].map((pos, pi) => <button key={pi} onClick={() => setEvents(es => es.map((x,i) => i===ei ? {...x, gifPosition: ["bg","float","top"][pi]} : x))} style={{ padding: "3px 8px", borderRadius: 6, fontSize: 9, fontWeight: 600, border: (ev.gifPosition || "bg") === ["bg","float","top"][pi] ? "2px solid " + B.blue : "1px solid " + t.sep, background: (ev.gifPosition || "bg") === ["bg","float","top"][pi] ? B.blueLt : t.card, color: (ev.gifPosition || "bg") === ["bg","float","top"][pi] ? B.blue : t.tx2, cursor: "pointer" }}>{pos}</button>)}
-              </div>
-            </div>
-            <div>
-              <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 4 }}>
-                <input type="checkbox" checked={ev.upgrade || false} onChange={e => setEvents(es => es.map((x,i) => i===ei ? {...x, upgrade: e.target.checked} : x))} />
-                <span style={{ fontSize: 10, fontWeight: 700, color: t.tx2 }}>💎 ترقية نخبة مؤقتة</span>
-              </div>
-              {ev.upgrade && <select value={ev.upgradeDuration || 24} onChange={e => setEvents(es => es.map((x,i) => i===ei ? {...x, upgradeDuration: +e.target.value} : x))} style={{ padding: "4px 8px", borderRadius: 6, border: "1px solid " + t.sep, fontSize: 11, background: t.inp, color: t.tx }}>
-                <option value={12}>12 ساعة</option><option value={24}>24 ساعة</option><option value={48}>48 ساعة</option><option value={72}>72 ساعة</option>
-              </select>}
-            </div>
-          </div>
-          <div style={{ display: "flex", justifyContent: "flex-end", marginTop: 8 }}>
-            <button onClick={() => setEvents(es => es.filter((x,i) => i !== ei))} style={{ padding: "4px 12px", borderRadius: 6, border: "1px solid " + t.sep, background: "transparent", color: B.red, fontSize: 10, fontWeight: 700, cursor: "pointer" }}>🗑️ حذف</button>
-          </div>
-        </div>)}
-        {/* Auto occasions */}
-        <div style={{ background: t.card, borderRadius: 14, padding: "16px", border: "1px solid " + t.sep, marginTop: 12 }}>
-          <div style={{ fontSize: 13, fontWeight: 700, marginBottom: 10 }}>🎂 المناسبات التلقائية</div>
-          {[{ l: "عيد ميلاد الموظف", v: "ترقية نخبة يومين + 🎂 + كوبون خاص", on: true }, { l: "عيد ميلاد الأبناء", v: "ترقية يوم + 🎈", on: true }, { l: "ذكرى الالتحاق", v: "ترقية يوم + 🎉 + شارة خاصة", on: true }].map((x, i) => <div key={i} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "8px 0", borderBottom: i < 2 ? "1px solid " + t.sep : "none" }}><div><div style={{ fontSize: 12, fontWeight: 600 }}>{x.l}</div><div style={{ fontSize: 10, color: t.txM }}>{x.v}</div></div><Toggle on={x.on} onClick={() => {}} /></div>)}
-        </div>
-      </>}
+      {tab === "events" && <EventsPanel events={events} setEvents={setEvents} t={t} B={B} Fn={Fn} Toggle={Toggle} />}
 
       {/* ═══ QUESTIONS (إدارة أسئلة الصباح) ═══ */}
-      {tab === "questions" && <>
-        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 14 }}><span style={{ fontSize: 14, fontWeight: 700 }}>بنك أسئلة تحدي الصباح</span><span style={{ fontSize: 11, color: t.txM }}>{"إجمالي: " + hrQuestions.length + " سؤال"}</span></div>
-
-        {/* New info banner — explains that nothing shows until admin approves */}
-        <div style={{ fontSize: 11, color: t.tx, marginBottom: 14, padding: 12, borderRadius: 10, background: "rgba(10,132,255,0.06)", border: "1px solid rgba(10,132,255,0.2)", lineHeight: 1.7 }}>
-          <div style={{ fontWeight: 800, marginBottom: 4, color: B.blue }}>ℹ️ كيف يعمل بنك الأسئلة</div>
-          التحدي الصباحي يظهر للموظفين <b>فقط</b> من الأسئلة التي تحفظها أنت هنا. لا أسئلة افتراضية — إذا البنك فارغ، لا يظهر تحدي.<br/>
-          الإجابة الأولى (الخضراء) دائماً هي الصحيحة — الخيارات تُخلط تلقائياً عند العرض للموظف.
-        </div>
-
-        {/* Import default bank — visible when bank is empty or few questions */}
-        {hrQuestions.length < 10 && (
-          <div style={{ background: "rgba(16,185,129,0.08)", borderRadius: 12, padding: 14, border: "1px solid rgba(16,185,129,0.3)", marginBottom: 14 }}>
-            <div style={{ fontSize: 13, fontWeight: 800, color: "#10b981", marginBottom: 6 }}>📦 استيراد بنك الأسئلة الافتراضي (30 سؤال)</div>
-            <div style={{ fontSize: 11, color: t.tx2, marginBottom: 10, lineHeight: 1.6 }}>
-              يمكنك استيراد مجموعة أسئلة جاهزة (ذكر / هندسي / نظام عمل / سلامة / ألغاز / عام) ثم <b>تختار منها ما يناسبك وتحذف الباقي</b>.
-              {hrQuestions.length > 0 && " الأسئلة الموجودة لديك الآن ستبقى — سيُضاف الجديد فقط."}
-            </div>
-            <div style={{ display: "flex", gap: 8 }}>
-              <button onClick={async function() {
-                if (!confirm("استيراد 30 سؤالاً افتراضياً إلى البنك؟\n\nالأسئلة الموجودة لديك " + (hrQuestions.length > 0 ? "ستبقى" : "(لا شيء حالياً)") + " — فقط يُضاف الجديد.\n\nبعد الاستيراد، يمكنك حذف ما لا يناسبك.")) return;
-                try {
-                  var r = await fetch("/api/data?action=seed_questions", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ mode: "append" }) });
-                  var d = await r.json();
-                  if (d.ok) {
-                    alert("✅ تم الاستيراد — أُضيف " + d.added + " سؤال جديد (الإجمالي: " + d.total + ")\n\nأعد تحميل الصفحة لرؤية الأسئلة.");
-                    window.location.reload();
-                  } else {
-                    alert("فشل: " + (d.error || "خطأ"));
-                  }
-                } catch(e) { alert("فشل: " + e.message); }
-              }} style={{ flex: 1, padding: "10px 14px", borderRadius: 10, background: "#10b981", color: "#fff", border: "none", fontSize: 12, fontWeight: 800, cursor: "pointer", fontFamily: "inherit" }}>📥 استيراد إلى البنك</button>
-              <button onClick={async function() {
-                if (!confirm("⚠️ استبدال كامل — سيتم حذف أي أسئلة موجودة واستبدالها بالـ 30 الافتراضية.\n\nهل أنت متأكد؟")) return;
-                try {
-                  var r = await fetch("/api/data?action=seed_questions", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ mode: "replace" }) });
-                  var d = await r.json();
-                  if (d.ok) {
-                    alert("✅ تم الاستبدال — البنك الآن يحوي " + d.total + " سؤال");
-                    window.location.reload();
-                  } else {
-                    alert("فشل: " + (d.error || "خطأ"));
-                  }
-                } catch(e) { alert("فشل: " + e.message); }
-              }} style={{ padding: "10px 14px", borderRadius: 10, background: "transparent", color: t.tx, border: "1px solid " + t.sep, fontSize: 11, fontWeight: 700, cursor: "pointer", fontFamily: "inherit" }}>استبدال كامل</button>
-            </div>
-          </div>
-        )}
-
-        {/* Add new question */}
-        <div style={{ background: t.card, borderRadius: 14, padding: "16px", border: "1px solid " + t.sep, marginBottom: 14 }}>
-          <div style={{ fontSize: 12, fontWeight: 700, marginBottom: 8 }}>➕ إضافة سؤال جديد</div>
-          <div style={{ display: "flex", gap: 6, marginBottom: 8 }}>
-            <select value={newQ.type} onChange={e => setNewQ({...newQ, type: e.target.value})} style={{ padding: "8px 10px", borderRadius: 8, border: "1px solid " + t.sep, fontSize: 12, background: t.inp, color: t.tx }}>
-              <option value="ذكر">ذكر</option><option value="هندسي">هندسي</option><option value="لغز">لغز</option><option value="سؤال">سؤال عام</option><option value="معلومة">معلومة</option>
-            </select>
-            <input value={newQ.q} onChange={e => setNewQ({...newQ, q: e.target.value})} placeholder="نص السؤال" style={{ flex: 1, padding: "8px 10px", borderRadius: 8, border: "1px solid " + t.sep, fontSize: 12, fontFamily: Fn, background: t.inp, color: t.tx }} />
-          </div>
-          <div style={{ display: "flex", gap: 6, marginBottom: 8 }}>
-            <input value={newQ.correct} onChange={e => setNewQ({...newQ, correct: e.target.value})} placeholder="✓ الإجابة الصحيحة" style={{ flex: 1, padding: "8px 10px", borderRadius: 8, border: "2px solid " + B.blue + "40", fontSize: 12, fontFamily: Fn, background: B.blueLt, color: t.tx }} />
-            <input value={newQ.wrong1} onChange={e => setNewQ({...newQ, wrong1: e.target.value})} placeholder="خيار خاطئ 1" style={{ flex: 1, padding: "8px 10px", borderRadius: 8, border: "1px solid " + t.sep, fontSize: 12, fontFamily: Fn, background: t.inp, color: t.tx }} />
-            <input value={newQ.wrong2} onChange={e => setNewQ({...newQ, wrong2: e.target.value})} placeholder="خيار خاطئ 2" style={{ flex: 1, padding: "8px 10px", borderRadius: 8, border: "1px solid " + t.sep, fontSize: 12, fontFamily: Fn, background: t.inp, color: t.tx }} />
-          </div>
-          <button onClick={() => { if (newQ.q && newQ.correct && newQ.wrong1 && newQ.wrong2) { setHrQuestions(qs => [...qs, { id: Date.now(), ...newQ }]); setNewQ({ type: "ذكر", q: "", correct: "", wrong1: "", wrong2: "" }); } }} disabled={!newQ.q || !newQ.correct} style={{ padding: "8px 20px", borderRadius: 10, background: newQ.q && newQ.correct ? B.blue : "#ddd", color: newQ.q && newQ.correct ? "#fff" : "#aaa", fontSize: 12, fontWeight: 700, border: "none", cursor: newQ.q && newQ.correct ? "pointer" : "default" }}>إضافة السؤال</button>
-        </div>
-
-        {/* Questions list by type */}
-        {["ذكر","هندسي","لغز","سؤال","معلومة"].map(type => {
-          var qs = hrQuestions.filter(q => q.type === type);
-          if (qs.length === 0) return null;
-          var typeColors = { "ذكر": "#10B981", "هندسي": B.blue, "لغز": "#F59E0B", "سؤال": "#8B5CF6", "معلومة": "#EC4899" };
-          return <div key={type} style={{ marginBottom: 12 }}>
-            <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 6 }}><div style={{ width: 8, height: 8, borderRadius: 4, background: typeColors[type] || B.blue }} /><span style={{ fontSize: 12, fontWeight: 800, color: typeColors[type] || t.tx }}>{type + " (" + qs.length + ")"}</span></div>
-            {qs.map((q, qi) => <div key={q.id} style={{ background: t.card, borderRadius: 10, padding: "10px 14px", border: "1px solid " + t.sep, marginBottom: 4, display: "flex", alignItems: "center", gap: 10 }}>
-              <div style={{ flex: 1 }}>
-                <div style={{ fontSize: 12, fontWeight: 700 }}>{q.q}</div>
-                <div style={{ fontSize: 10, color: t.txM, marginTop: 2 }}>{"✓ " + q.correct + " · ✗ " + q.wrong1 + " · ✗ " + q.wrong2}</div>
-              </div>
-              <button onClick={() => setHrQuestions(qs => qs.filter(x => x.id !== q.id))} style={{ padding: "3px 8px", borderRadius: 6, border: "1px solid " + t.sep, background: "transparent", color: B.red, fontSize: 10, cursor: "pointer" }}>🗑️</button>
-            </div>)}
-          </div>;
-        })}
-        {hrQuestions.length === 0 && <div style={{ textAlign: "center", color: t.txM, fontSize: 12, padding: 30 }}>لا توجد أسئلة مخصصة — سيستخدم النظام الأسئلة الافتراضية</div>}
-
-        {/* Save / Reset buttons */}
-        <div style={{ display: "flex", gap: 10, marginTop: 18, padding: 14, background: t.card, borderRadius: 12, border: "1px solid " + t.sep }}>
-          <button onClick={async function() {
-            try {
-              await saveSettings({ questions: hrQuestions });
-              alert("✅ تم حفظ الأسئلة (" + hrQuestions.length + " سؤال) — ستظهر للموظفين في التحدي الصباحي");
-            } catch(e) { alert("فشل الحفظ: " + (e.message || "خطأ")); }
-          }} style={{ flex: 2, padding: "12px 16px", borderRadius: 10, background: B.blue, color: "#fff", border: "none", fontSize: 13, fontWeight: 800, cursor: "pointer", fontFamily: "inherit" }}>💾 حفظ الأسئلة</button>
-          <button onClick={function() {
-            if (confirm("مسح كل الأسئلة المحفوظة؟ سيعود النظام لاستخدام الأسئلة الافتراضية المضمّنة في الكود.")) {
-              setHrQuestions([]);
-              saveSettings({ questions: [] });
-            }
-          }} style={{ flex: 1, padding: "12px 16px", borderRadius: 10, background: "transparent", color: t.tx, border: "1px solid " + t.sep, fontSize: 12, fontWeight: 700, cursor: "pointer", fontFamily: "inherit" }}>🗑 مسح الكل</button>
-        </div>
-      </>}
+      {tab === "questions" && <QuestionsPanel hrQuestions={hrQuestions} setHrQuestions={setHrQuestions} saveSettings={saveSettings} newQ={newQ} setNewQ={setNewQ} t={t} B={B} Fn={Fn} />}
 
       {/* ═══ LAIHA — إدارة لائحة العمل (المدير العام) ═══ */}
       {tab === "laiha" && <LaihaPanel t={t} B={B} />}
@@ -12610,30 +12463,54 @@ function DisciplineHub({ t, B, emps, badgeCounts }) {
 
 /* ────── SettingsHub — الإعدادات (8 تابات، منظمة في 3 مجموعات) ────── */
 function SettingsHub({ t, B, emps, onLogout, onOpenOldSettings }) {
-  var [sub, setSub] = useState("general");
+  var [sub, setSub] = useState("work");
   return <div>
     <SubTabBar t={t} B={B} active={sub} onChange={setSub}
       tabs={[
-        { id: "general",   icon: "⚙️", label: "الإعدادات العامة" },
-        { id: "work",      icon: "⏰", label: "أنواع الدوام" },
-        { id: "benefits",  icon: "🏅", label: "الامتيازات" },
-        { id: "system",    icon: "🛠️", label: "إعدادات النظام" },
-        { id: "storage",   icon: "💾", label: "التخزين والنسخ" },
-        { id: "check",     icon: "🔍", label: "فحص + اختبار" },
-        { id: "admin",     icon: "🔐", label: "حساب المدير" },
+        { id: "work",        icon: "⏰", label: "أنواع الدوام" },
+        { id: "benefits",    icon: "🏅", label: "الامتيازات" },
+        { id: "system",      icon: "🛠️", label: "إعدادات النظام" },
+        { id: "attachments", icon: "📎", label: "أنواع المرفقات" },
+        { id: "faces",       icon: "📸", label: "بصمات الوجه" },
+        { id: "cleanup",     icon: "🧹", label: "تنظيف البيانات" },
+        { id: "advanced",    icon: "📨", label: "إعدادات متقدمة" },
+        { id: "storage",     icon: "💾", label: "التخزين والنسخ" },
+        { id: "check",       icon: "🔍", label: "فحص + اختبار" },
+        { id: "admin",       icon: "🔐", label: "حساب المدير" },
       ]} />
-    {sub === "general" && <div>
-      <div style={{ padding: 16, background: t.card, borderRadius: 12, border: "1px solid " + t.sep, marginBottom: 16 }}>
-        <div style={{ fontSize: 14, fontWeight: 800, color: t.tx, marginBottom: 6 }}>⚙️ الإعدادات العامة</div>
-        <div style={{ fontSize: 11, color: t.txM, lineHeight: 1.7 }}>
-          الإعدادات الأساسية للنظام: اسم الشركة، الشعار، اللغة، المنطقة الزمنية، إعدادات الإشعارات.
-        </div>
-        <button onClick={function(){ if (onOpenOldSettings) onOpenOldSettings("settings"); }} style={{ marginTop: 10, padding: "8px 14px", background: B.blue, color: "#fff", border: "none", borderRadius: 8, fontSize: 11, fontWeight: 700, cursor: "pointer" }}>فتح الإعدادات القديمة ↗</button>
-      </div>
-    </div>}
     {sub === "work" && <WorkTypesPanel t={t} B={B} emps={emps} />}
     {sub === "benefits" && <BenefitsPanel t={t} B={B} />}
     {sub === "system" && <SystemSettingsPanel t={t} B={B} />}
+    {/* v6.98 — مكوّنات يتيمة من tab "settings" القديم تم نقلها هنا */}
+    {sub === "attachments" && <AttachmentTypesManager t={t} B={B} />}
+    {sub === "faces" && <FacesManager t={t} B={B} emps={emps} />}
+    {sub === "cleanup" && <DataCleanupManager t={t} B={B} />}
+    {sub === "advanced" && <div>
+      <div style={{ padding: 14, background: t.card, borderRadius: 12, border: "1px solid " + t.sep, marginBottom: 12 }}>
+        <div style={{ fontSize: 14, fontWeight: 800, color: t.tx, marginBottom: 8 }}>📨 إعدادات متقدمة (في صفحتها الكاملة)</div>
+        <div style={{ fontSize: 11, color: t.txM, marginBottom: 14, lineHeight: 1.7 }}>
+          هذه الإعدادات تستخدم نماذج كبيرة وتعتمد على بيانات مشتركة — تُدار في صفحتها المنفصلة.
+        </div>
+        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
+          <button onClick={function(){ if (onOpenOldSettings) onOpenOldSettings("settings"); }} style={{ padding: "12px 14px", background: B.blue + "10", border: "1px solid " + B.blue + "40", color: B.blue, borderRadius: 10, fontSize: 12, fontWeight: 800, cursor: "pointer", textAlign: "right", fontFamily: "inherit" }}>
+            🕐 أوقات الدوام لكل فرع<br/>
+            <span style={{ fontSize: 10, fontWeight: 600, opacity: 0.85 }}>تعديل ساعات العمل والاستراحة</span>
+          </button>
+          <button onClick={function(){ if (onOpenOldSettings) onOpenOldSettings("settings"); }} style={{ padding: "12px 14px", background: "rgba(124,58,237,0.1)", border: "1px solid rgba(124,58,237,0.4)", color: "#7C3AED", borderRadius: 10, fontSize: 12, fontWeight: 800, cursor: "pointer", textAlign: "right", fontFamily: "inherit" }}>
+            📬 توجيه البريد والمراسلات<br/>
+            <span style={{ fontSize: 10, fontWeight: 600, opacity: 0.85 }}>قوائم التوزيع + تخصيص لموظف</span>
+          </button>
+          <button onClick={function(){ if (onOpenOldSettings) onOpenOldSettings("settings"); }} style={{ padding: "12px 14px", background: "rgba(217,119,6,0.1)", border: "1px solid rgba(217,119,6,0.4)", color: "#D97706", borderRadius: 10, fontSize: 12, fontWeight: 800, cursor: "pointer", textAlign: "right", fontFamily: "inherit" }}>
+            👁 الموظفون تحت الملاحظة<br/>
+            <span style={{ fontSize: 10, fontWeight: 600, opacity: 0.85 }}>إعدادات المتابعة المشددة</span>
+          </button>
+          <button onClick={function(){ if (onOpenOldSettings) onOpenOldSettings("settings"); }} style={{ padding: "12px 14px", background: "rgba(34,197,94,0.1)", border: "1px solid rgba(34,197,94,0.4)", color: "#16A34A", borderRadius: 10, fontSize: 12, fontWeight: 800, cursor: "pointer", textAlign: "right", fontFamily: "inherit" }}>
+            ⏱ البريك العشوائي<br/>
+            <span style={{ fontSize: 10, fontWeight: 600, opacity: 0.85 }}>وقت بصمة العودة عشوائي</span>
+          </button>
+        </div>
+      </div>
+    </div>}
     {sub === "storage" && <div>
       <div style={{ display: "grid", gridTemplateColumns: "1fr", gap: 14 }}>
         <div style={{ padding: 14, background: t.card, borderRadius: 12, border: "1px solid " + t.sep }}>
@@ -12700,16 +12577,20 @@ function AttendanceHub({ t, B, emps, branches }) {
 }
 
 /* ContentHub — المحتوى المعروض للموظفين (2 named, events+questions remain separate) */
-function ContentHub({ t, B, emps, branches }) {
+function ContentHub({ t, B, emps, branches, events, setEvents, hrQuestions, setHrQuestions, saveSettings, newQ, setNewQ, Fn, Toggle }) {
   var [sub, setSub] = useState("announcements");
   return <div>
     <SubTabBar t={t} B={B} active={sub} onChange={setSub}
       tabs={[
         { id: "announcements", icon: "📢", label: "التعاميم" },
         { id: "banners",       icon: "🎨", label: "البنرات" },
+        { id: "events",        icon: "🎉", label: "المناسبات" },
+        { id: "questions",     icon: "❓", label: "أسئلة الصباح" },
       ]} />
     {sub === "announcements" && <AnnouncementsPanel t={t} B={B} emps={emps} branches={branches} />}
     {sub === "banners" && <BannersPanel t={t} B={B} />}
+    {sub === "events" && <EventsPanel events={events} setEvents={setEvents} t={t} B={B} Fn={Fn} Toggle={Toggle} />}
+    {sub === "questions" && <QuestionsPanel hrQuestions={hrQuestions} setHrQuestions={setHrQuestions} saveSettings={saveSettings} newQ={newQ} setNewQ={setNewQ} t={t} B={B} Fn={Fn} />}
   </div>;
 }
 
@@ -12827,4 +12708,140 @@ function KadwarFailuresView({ t, B }) {
       </div>
     </div>}
   </div>;
+}
+
+/* ═══════════════════════════════════════════════════════════════════
+ * v6.99 — EventsPanel & QuestionsPanel (wrappers)
+ * مكوّنات تعمل كأغلفة لمحتوى inline سابقاً — تأخذ state عبر props
+ * ═══════════════════════════════════════════════════════════════════ */
+
+function EventsPanel({ events, setEvents, t, B, Fn, Toggle }) {
+  return <>
+    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 14 }}>
+      <span style={{ fontSize: 14, fontWeight: 700 }}>إدارة المناسبات</span>
+      <button onClick={() => setEvents(es => [...es, { id: Date.now(), name: "مناسبة جديدة", emoji: "🎉", date: "", active: false, upgrade: false, upgradeDuration: 24, bgColor: "#1a3a6e", gifUrl: "", gifPosition: "overlay" }])} style={{ padding: "8px 16px", borderRadius: 10, background: B.blue, color: "#fff", fontSize: 12, fontWeight: 700, border: "none", cursor: "pointer" }}>+ مناسبة جديدة</button>
+    </div>
+    {events.map((ev, ei) => <div key={ev.id} style={{ background: t.card, borderRadius: 14, padding: "16px", border: "1px solid " + t.sep, marginBottom: 10 }}>
+      <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 10 }}>
+        <div style={{ width: 48, height: 48, borderRadius: 14, background: ev.bgColor || "#0B0F1A", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 24 }}>{ev.emoji}</div>
+        <div style={{ flex: 1 }}>
+          <input value={ev.name} onChange={e => setEvents(es => es.map((x,i) => i===ei ? {...x, name: e.target.value} : x))} style={{ width: "100%", padding: "6px 8px", borderRadius: 8, border: "1px solid " + t.sep, fontSize: 14, fontWeight: 700, fontFamily: Fn, background: t.inp, color: t.tx }} />
+          <div style={{ display: "flex", gap: 6, marginTop: 6 }}>
+            <input value={ev.emoji} onChange={e => setEvents(es => es.map((x,i) => i===ei ? {...x, emoji: e.target.value} : x))} placeholder="إيموجي" style={{ width: 50, padding: "4px 6px", borderRadius: 6, border: "1px solid " + t.sep, fontSize: 12, textAlign: "center", background: t.inp, color: t.tx }} />
+            <input value={ev.date} onChange={e => setEvents(es => es.map((x,i) => i===ei ? {...x, date: e.target.value} : x))} placeholder="MM-DD أو فترة" style={{ flex: 1, padding: "4px 8px", borderRadius: 6, border: "1px solid " + t.sep, fontSize: 12, background: t.inp, color: t.tx }} />
+            <input value={ev.bgColor || ""} onChange={e => setEvents(es => es.map((x,i) => i===ei ? {...x, bgColor: e.target.value} : x))} placeholder="لون الخلفية" style={{ width: 80, padding: "4px 6px", borderRadius: 6, border: "1px solid " + t.sep, fontSize: 10, background: t.inp, color: t.tx }} />
+          </div>
+        </div>
+        <div style={{ display: "flex", flexDirection: "column", gap: 4, alignItems: "center" }}>
+          <Toggle on={ev.active} onClick={() => setEvents(es => es.map((x,i) => i===ei ? {...x, active: !x.active} : x))} />
+          <span style={{ fontSize: 8, color: t.txM }}>{ev.active ? "مفعّل" : "معطّل"}</span>
+        </div>
+      </div>
+      <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+        <div style={{ flex: 1, minWidth: 200 }}>
+          <div style={{ fontSize: 10, fontWeight: 700, color: t.tx2, marginBottom: 4 }}>🎬 رابط GIF (اختياري)</div>
+          <input value={ev.gifUrl || ""} onChange={e => setEvents(es => es.map((x,i) => i===ei ? {...x, gifUrl: e.target.value} : x))} placeholder="https://..." style={{ width: "100%", padding: "6px 8px", borderRadius: 6, border: "1px solid " + t.sep, fontSize: 11, background: t.inp, color: t.tx }} />
+          <div style={{ display: "flex", gap: 4, marginTop: 4 }}>
+            {["خلفية كاملة", "إيموجي طافية", "فوق الشريط"].map((pos, pi) => <button key={pi} onClick={() => setEvents(es => es.map((x,i) => i===ei ? {...x, gifPosition: ["bg","float","top"][pi]} : x))} style={{ padding: "3px 8px", borderRadius: 6, fontSize: 9, fontWeight: 600, border: (ev.gifPosition || "bg") === ["bg","float","top"][pi] ? "2px solid " + B.blue : "1px solid " + t.sep, background: (ev.gifPosition || "bg") === ["bg","float","top"][pi] ? B.blueLt : t.card, color: (ev.gifPosition || "bg") === ["bg","float","top"][pi] ? B.blue : t.tx2, cursor: "pointer" }}>{pos}</button>)}
+          </div>
+        </div>
+        <div>
+          <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 4 }}>
+            <input type="checkbox" checked={ev.upgrade || false} onChange={e => setEvents(es => es.map((x,i) => i===ei ? {...x, upgrade: e.target.checked} : x))} />
+            <span style={{ fontSize: 10, fontWeight: 700, color: t.tx2 }}>💎 ترقية نخبة مؤقتة</span>
+          </div>
+          {ev.upgrade && <select value={ev.upgradeDuration || 24} onChange={e => setEvents(es => es.map((x,i) => i===ei ? {...x, upgradeDuration: +e.target.value} : x))} style={{ padding: "4px 8px", borderRadius: 6, border: "1px solid " + t.sep, fontSize: 11, background: t.inp, color: t.tx }}>
+            <option value={12}>12 ساعة</option><option value={24}>24 ساعة</option><option value={48}>48 ساعة</option><option value={72}>72 ساعة</option>
+          </select>}
+        </div>
+      </div>
+      <div style={{ display: "flex", justifyContent: "flex-end", marginTop: 8 }}>
+        <button onClick={() => setEvents(es => es.filter((x,i) => i !== ei))} style={{ padding: "4px 12px", borderRadius: 6, border: "1px solid " + t.sep, background: "transparent", color: B.red, fontSize: 10, fontWeight: 700, cursor: "pointer" }}>🗑️ حذف</button>
+      </div>
+    </div>)}
+    <div style={{ background: t.card, borderRadius: 14, padding: "16px", border: "1px solid " + t.sep, marginTop: 12 }}>
+      <div style={{ fontSize: 13, fontWeight: 700, marginBottom: 10 }}>🎂 المناسبات التلقائية</div>
+      {[{ l: "عيد ميلاد الموظف", v: "ترقية نخبة يومين + 🎂 + كوبون خاص", on: true }, { l: "عيد ميلاد الأبناء", v: "ترقية يوم + 🎈", on: true }, { l: "ذكرى الالتحاق", v: "ترقية يوم + 🎉 + شارة خاصة", on: true }].map((x, i) => <div key={i} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "8px 0", borderBottom: i < 2 ? "1px solid " + t.sep : "none" }}><div><div style={{ fontSize: 12, fontWeight: 600 }}>{x.l}</div><div style={{ fontSize: 10, color: t.txM }}>{x.v}</div></div><Toggle on={x.on} onClick={() => {}} /></div>)}
+    </div>
+  </>;
+}
+
+function QuestionsPanel({ hrQuestions, setHrQuestions, saveSettings, newQ, setNewQ, t, B, Fn }) {
+  return <>
+    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 14 }}><span style={{ fontSize: 14, fontWeight: 700 }}>بنك أسئلة تحدي الصباح</span><span style={{ fontSize: 11, color: t.txM }}>{"إجمالي: " + hrQuestions.length + " سؤال"}</span></div>
+    <div style={{ fontSize: 11, color: t.tx, marginBottom: 14, padding: 12, borderRadius: 10, background: "rgba(10,132,255,0.06)", border: "1px solid rgba(10,132,255,0.2)", lineHeight: 1.7 }}>
+      <div style={{ fontWeight: 800, marginBottom: 4, color: B.blue }}>ℹ️ كيف يعمل بنك الأسئلة</div>
+      التحدي الصباحي يظهر للموظفين <b>فقط</b> من الأسئلة التي تحفظها أنت هنا. لا أسئلة افتراضية — إذا البنك فارغ، لا يظهر تحدي.<br/>
+      الإجابة الأولى (الخضراء) دائماً هي الصحيحة — الخيارات تُخلط تلقائياً عند العرض للموظف.
+    </div>
+    {hrQuestions.length < 10 && (
+      <div style={{ background: "rgba(16,185,129,0.08)", borderRadius: 12, padding: 14, border: "1px solid rgba(16,185,129,0.3)", marginBottom: 14 }}>
+        <div style={{ fontSize: 13, fontWeight: 800, color: "#10b981", marginBottom: 6 }}>📦 استيراد بنك الأسئلة الافتراضي (30 سؤال)</div>
+        <div style={{ fontSize: 11, color: t.tx2, marginBottom: 10, lineHeight: 1.6 }}>
+          يمكنك استيراد مجموعة أسئلة جاهزة (ذكر / هندسي / نظام عمل / سلامة / ألغاز / عام) ثم <b>تختار منها ما يناسبك وتحذف الباقي</b>.
+          {hrQuestions.length > 0 && " الأسئلة الموجودة لديك الآن ستبقى — سيُضاف الجديد فقط."}
+        </div>
+        <div style={{ display: "flex", gap: 8 }}>
+          <button onClick={async function() {
+            if (!confirm("استيراد 30 سؤالاً افتراضياً إلى البنك؟\n\nالأسئلة الموجودة لديك " + (hrQuestions.length > 0 ? "ستبقى" : "(لا شيء حالياً)") + " — فقط يُضاف الجديد.\n\nبعد الاستيراد، يمكنك حذف ما لا يناسبك.")) return;
+            try {
+              var r = await fetch("/api/data?action=seed_questions", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ mode: "append" }) });
+              var d = await r.json();
+              if (d.ok) { alert("✅ تم الاستيراد — أُضيف " + d.added + " سؤال جديد (الإجمالي: " + d.total + ")\n\nأعد تحميل الصفحة لرؤية الأسئلة."); window.location.reload(); }
+              else alert("فشل: " + (d.error || "خطأ"));
+            } catch(e) { alert("فشل: " + e.message); }
+          }} style={{ flex: 1, padding: "10px 14px", borderRadius: 10, background: "#10b981", color: "#fff", border: "none", fontSize: 12, fontWeight: 800, cursor: "pointer", fontFamily: "inherit" }}>📥 استيراد إلى البنك</button>
+          <button onClick={async function() {
+            if (!confirm("⚠️ استبدال كامل — سيتم حذف أي أسئلة موجودة واستبدالها بالـ 30 الافتراضية.\n\nهل أنت متأكد؟")) return;
+            try {
+              var r = await fetch("/api/data?action=seed_questions", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ mode: "replace" }) });
+              var d = await r.json();
+              if (d.ok) { alert("✅ تم الاستبدال — البنك الآن يحوي " + d.total + " سؤال"); window.location.reload(); }
+              else alert("فشل: " + (d.error || "خطأ"));
+            } catch(e) { alert("فشل: " + e.message); }
+          }} style={{ padding: "10px 14px", borderRadius: 10, background: "transparent", color: t.tx, border: "1px solid " + t.sep, fontSize: 11, fontWeight: 700, cursor: "pointer", fontFamily: "inherit" }}>استبدال كامل</button>
+        </div>
+      </div>
+    )}
+    <div style={{ background: t.card, borderRadius: 14, padding: "16px", border: "1px solid " + t.sep, marginBottom: 14 }}>
+      <div style={{ fontSize: 12, fontWeight: 700, marginBottom: 8 }}>➕ إضافة سؤال جديد</div>
+      <div style={{ display: "flex", gap: 6, marginBottom: 8 }}>
+        <select value={newQ.type} onChange={e => setNewQ({...newQ, type: e.target.value})} style={{ padding: "8px 10px", borderRadius: 8, border: "1px solid " + t.sep, fontSize: 12, background: t.inp, color: t.tx }}>
+          <option value="ذكر">ذكر</option><option value="هندسي">هندسي</option><option value="لغز">لغز</option><option value="سؤال">سؤال عام</option><option value="معلومة">معلومة</option>
+        </select>
+        <input value={newQ.q} onChange={e => setNewQ({...newQ, q: e.target.value})} placeholder="نص السؤال" style={{ flex: 1, padding: "8px 10px", borderRadius: 8, border: "1px solid " + t.sep, fontSize: 12, fontFamily: Fn, background: t.inp, color: t.tx }} />
+      </div>
+      <div style={{ display: "flex", gap: 6, marginBottom: 8 }}>
+        <input value={newQ.correct} onChange={e => setNewQ({...newQ, correct: e.target.value})} placeholder="✓ الإجابة الصحيحة" style={{ flex: 1, padding: "8px 10px", borderRadius: 8, border: "2px solid " + B.blue + "40", fontSize: 12, fontFamily: Fn, background: B.blueLt, color: t.tx }} />
+        <input value={newQ.wrong1} onChange={e => setNewQ({...newQ, wrong1: e.target.value})} placeholder="خيار خاطئ 1" style={{ flex: 1, padding: "8px 10px", borderRadius: 8, border: "1px solid " + t.sep, fontSize: 12, fontFamily: Fn, background: t.inp, color: t.tx }} />
+        <input value={newQ.wrong2} onChange={e => setNewQ({...newQ, wrong2: e.target.value})} placeholder="خيار خاطئ 2" style={{ flex: 1, padding: "8px 10px", borderRadius: 8, border: "1px solid " + t.sep, fontSize: 12, fontFamily: Fn, background: t.inp, color: t.tx }} />
+      </div>
+      <button onClick={() => { if (newQ.q && newQ.correct && newQ.wrong1 && newQ.wrong2) { setHrQuestions(qs => [...qs, { id: Date.now(), ...newQ }]); setNewQ({ type: "ذكر", q: "", correct: "", wrong1: "", wrong2: "" }); } }} disabled={!newQ.q || !newQ.correct} style={{ padding: "8px 20px", borderRadius: 10, background: newQ.q && newQ.correct ? B.blue : "#ddd", color: newQ.q && newQ.correct ? "#fff" : "#aaa", fontSize: 12, fontWeight: 700, border: "none", cursor: newQ.q && newQ.correct ? "pointer" : "default" }}>إضافة السؤال</button>
+    </div>
+    {["ذكر","هندسي","لغز","سؤال","معلومة"].map(type => {
+      var qs = hrQuestions.filter(q => q.type === type);
+      if (qs.length === 0) return null;
+      var typeColors = { "ذكر": "#10B981", "هندسي": B.blue, "لغز": "#F59E0B", "سؤال": "#8B5CF6", "معلومة": "#EC4899" };
+      return <div key={type} style={{ marginBottom: 12 }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 6 }}><div style={{ width: 8, height: 8, borderRadius: 4, background: typeColors[type] || B.blue }} /><span style={{ fontSize: 12, fontWeight: 800, color: typeColors[type] || t.tx }}>{type + " (" + qs.length + ")"}</span></div>
+        {qs.map((q, qi) => <div key={q.id} style={{ background: t.card, borderRadius: 10, padding: "10px 14px", border: "1px solid " + t.sep, marginBottom: 4, display: "flex", alignItems: "center", gap: 10 }}>
+          <div style={{ flex: 1 }}>
+            <div style={{ fontSize: 12, fontWeight: 700 }}>{q.q}</div>
+            <div style={{ fontSize: 10, color: t.txM, marginTop: 2 }}>{"✓ " + q.correct + " · ✗ " + q.wrong1 + " · ✗ " + q.wrong2}</div>
+          </div>
+          <button onClick={() => setHrQuestions(qs => qs.filter(x => x.id !== q.id))} style={{ padding: "3px 8px", borderRadius: 6, border: "1px solid " + t.sep, background: "transparent", color: B.red, fontSize: 10, cursor: "pointer" }}>🗑️</button>
+        </div>)}
+      </div>;
+    })}
+    {hrQuestions.length === 0 && <div style={{ textAlign: "center", color: t.txM, fontSize: 12, padding: 30 }}>لا توجد أسئلة مخصصة — سيستخدم النظام الأسئلة الافتراضية</div>}
+    <div style={{ display: "flex", gap: 10, marginTop: 18, padding: 14, background: t.card, borderRadius: 12, border: "1px solid " + t.sep }}>
+      <button onClick={async function() {
+        try { await saveSettings({ questions: hrQuestions }); alert("✅ تم حفظ الأسئلة (" + hrQuestions.length + " سؤال) — ستظهر للموظفين في التحدي الصباحي"); }
+        catch(e) { alert("فشل الحفظ: " + (e.message || "خطأ")); }
+      }} style={{ flex: 2, padding: "12px 16px", borderRadius: 10, background: B.blue, color: "#fff", border: "none", fontSize: 13, fontWeight: 800, cursor: "pointer", fontFamily: "inherit" }}>💾 حفظ الأسئلة</button>
+      <button onClick={function() {
+        if (confirm("مسح كل الأسئلة المحفوظة؟ سيعود النظام لاستخدام الأسئلة الافتراضية المضمّنة في الكود.")) { setHrQuestions([]); saveSettings({ questions: [] }); }
+      }} style={{ flex: 1, padding: "12px 16px", borderRadius: 10, background: "transparent", color: t.tx, border: "1px solid " + t.sep, fontSize: 12, fontWeight: 700, cursor: "pointer", fontFamily: "inherit" }}>🗑 مسح الكل</button>
+    </div>
+  </>;
 }
