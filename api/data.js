@@ -693,14 +693,23 @@ export default async function handler(req, res) {
           const empId = req.query.empId;
           if (!empId) return res.status(400).json({ error: 'empId required' });
           const emps = await dbGet('employees') || [];
-          const emp = emps.find(e => e.id === empId || e.idNumber === empId);
-          if (!emp) return res.status(404).json({ error: 'employee not found' });
-          // Load extended profile (separate key to keep main employees record lean)
+          const emp = emps.find(e =>
+            String(e.id) === String(empId) ||
+            String(e.idNumber) === String(empId) ||
+            String(e.uid) === String(empId) ||
+            String(e.hrCode) === String(empId)
+          );
+          if (!emp) return res.status(404).json({ error: 'employee not found', searched: empId });
+          // Load extended profile — try multiple keys in case migration used different key
           const profiles = await dbGet('emp-profiles') || {};
-          const profile = profiles[emp.id] || {};
+          const attachments = await dbGet('emp-attachments') || {};
+          // Try: emp.id, emp.idNumber, emp.uid
+          let profile = profiles[emp.id] || profiles[emp.idNumber] || profiles[emp.uid] || {};
+          let profileKey = profiles[emp.id] ? emp.id : (profiles[emp.idNumber] ? emp.idNumber : (profiles[emp.uid] ? emp.uid : emp.id));
+          let empAttachments = attachments[emp.id] || attachments[emp.idNumber] || attachments[emp.uid] || [];
           // Compute completeness
-          const completeness = computeCompleteness(emp, profile);
-          return res.json({ ok: true, emp, profile, completeness });
+          const completeness = computeCompleteness(emp, profile, empAttachments);
+          return res.json({ ok: true, emp, profile, profileKey, completeness, attachmentsCount: empAttachments.length });
         }
         // PUT — حفظ تحديث (من HR أو من الموظف كطلب)
         if (req.method === 'PUT') {
@@ -1314,6 +1323,52 @@ export default async function handler(req, res) {
           summary.error = e.message;
           return res.status(500).json(summary);
         }
+      }
+
+      // ═══ تشخيص: عرض الـ profiles المحفوظة ═══
+      case 'debug-profiles': {
+        if (req.method !== 'GET') return res.status(405).json({ error: 'GET required' });
+        const profiles = await dbGet('emp-profiles') || {};
+        const emps = await dbGet('employees') || [];
+        const attachments = await dbGet('emp-attachments') || {};
+        const summary = {
+          totalProfiles: Object.keys(profiles).length,
+          totalEmployees: emps.length,
+          totalAttachmentKeys: Object.keys(attachments).length,
+          profileKeys: Object.keys(profiles),
+          employeeIds: emps.map(e => ({ id: e.id, idNumber: e.idNumber, name: e.name, hrCode: e.hrCode })),
+          sampleProfile: null,
+          matchAnalysis: [],
+        };
+        // Pick first profile as sample
+        const firstKey = Object.keys(profiles)[0];
+        if (firstKey) {
+          summary.sampleProfile = {
+            key: firstKey,
+            sections: Object.keys(profiles[firstKey]),
+            personal: profiles[firstKey].personal,
+            employment: profiles[firstKey].employment,
+            compensation: profiles[firstKey].compensation,
+            contract: profiles[firstKey].contract,
+          };
+        }
+        // Match analysis: for each employee, does a profile exist?
+        emps.forEach(e => {
+          const foundKey = profiles[e.id] ? e.id :
+                          (profiles[e.idNumber] ? e.idNumber :
+                          (profiles[e.hrCode] ? e.hrCode :
+                          (profiles[e.uid] ? e.uid : null)));
+          summary.matchAnalysis.push({
+            empId: e.id,
+            empName: e.name,
+            idNumber: e.idNumber,
+            hrCode: e.hrCode,
+            profileFoundAt: foundKey,
+            hasProfile: !!foundKey,
+            sections: foundKey ? Object.keys(profiles[foundKey]) : [],
+          });
+        });
+        return res.json({ ok: true, ...summary });
       }
 
       // ═══ تشخيص: ماذا يُرسله كوادر بالضبط ═══
