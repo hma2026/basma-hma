@@ -236,6 +236,52 @@ async function auditLog(userId, action, target, details) {
 }
 
 // حساب الراتب الشهري من profile + إضافات/خصومات
+/* ════════ v6.97 — Safe Kadwar Auto-Push Helper ════════
+ * Fire-and-forget: لو كوادر offline أو رفض، العملية الأصلية في بصمة لا تتأثر.
+ * يُستخدم من POST endpoints لتزامن تلقائي (مخالفات، رواتب، إنهاء خدمة).
+ * ═══════════════════════════════════════════════════════════════════════ */
+async function safeKadwarPush(action, payload) {
+  try {
+    const url = 'https://hma.engineer/api/basma-sync?action=' + action;
+    const kr = await fetch(url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    });
+    let kd = null;
+    try { kd = await kr.json(); } catch(e) { kd = { raw: 'non-json' }; }
+    const log = (await dbGet('kadwar-sync-log')) || [];
+    log.push({
+      id: 'KSL' + Date.now() + Math.random().toString(36).slice(2, 5),
+      ts: new Date().toISOString(),
+      action: 'auto-' + action,
+      ref: payload.violation_basma_id || payload.slip_basma_id || payload.termination_basma_id || payload.employee_id,
+      success: kr.ok,
+      httpStatus: kr.status,
+      response: kd,
+    });
+    if (log.length > 5000) log.splice(0, log.length - 5000);
+    await dbSet('kadwar-sync-log', log);
+    return { ok: kr.ok, response: kd };
+  } catch (e) {
+    try {
+      const log = (await dbGet('kadwar-sync-log')) || [];
+      log.push({
+        id: 'KSL' + Date.now() + Math.random().toString(36).slice(2, 5),
+        ts: new Date().toISOString(),
+        action: 'auto-' + action,
+        ref: (payload && (payload.violation_basma_id || payload.employee_id)) || null,
+        success: false,
+        httpStatus: 0,
+        error: 'network: ' + e.message,
+      });
+      if (log.length > 5000) log.splice(0, log.length - 5000);
+      await dbSet('kadwar-sync-log', log);
+    } catch(e2) { /* ignore */ }
+    return { ok: false, error: e.message };
+  }
+}
+
 function computeMonthlySalary(profile, additions, deductions, attendance) {
   profile = profile || {};
   additions = additions || {};
@@ -1276,7 +1322,157 @@ export default async function handler(req, res) {
         }
       }
 
-      // ═══ المزامنة الأولية الشاملة (one-time migration) ═══
+      /* ════════ v6.97 — Kadwar Push: Violations + Payroll + Termination ════════
+       * متطلب من جانب كوادر: يجب إضافة 3 actions إلى /api/basma-sync:
+       *   - receive-violation       (POST)
+       *   - receive-payroll-slip    (POST)
+       *   - receive-termination     (POST)
+       * إن لم تكن متوفرة، تُسجَّل المحاولة في kadwar-sync-log كفشل وتُعاد لاحقاً.
+       * ═══════════════════════════════════════════════════════════════════════════ */
+
+      case 'kadwar-push-violation': {
+        if (req.method !== 'POST') return res.status(405).json({ error: 'POST required' });
+        const v = req.body || {};
+        if (!v.empId || !v.violationId) return res.status(400).json({ error: 'empId + violationId required' });
+        try {
+          const kr = await fetch('https://hma.engineer/api/basma-sync?action=receive-violation', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              employee_id: v.empId,
+              violation_basma_id: v.id,
+              violation_code: v.violationId,
+              chapter: v.chapter,
+              description: v.description,
+              occurrence: v.occurrence,
+              penalty_code: v.penaltyCode,
+              penalty_label: v.penaltyLabel,
+              status: v.status,
+              legal_ref: v.legalRef,
+              applied_to_payroll_id: v.appliedToPayrollId || null,
+              applied_amount: v.appliedAmount || null,
+              created_at: v.createdAt || new Date().toISOString(),
+            })
+          });
+          const kd = await kr.json().catch(function(){ return { raw: 'non-json' }; });
+          const log = await dbGet('kadwar-sync-log') || [];
+          log.push({
+            id: 'KSL' + Date.now(),
+            ts: new Date().toISOString(),
+            action: 'push-violation',
+            employee_id: v.empId,
+            ref: v.id,
+            success: kr.ok,
+            httpStatus: kr.status,
+            response: kd,
+          });
+          if (log.length > 5000) log.splice(0, log.length - 5000);
+          await dbSet('kadwar-sync-log', log);
+          if (!kr.ok) return res.status(502).json({ error: 'كوادر رفض المخالفة', detail: kd, httpStatus: kr.status });
+          return res.json({ ok: true, kadwar_response: kd });
+        } catch (e) {
+          return res.status(502).json({ error: 'تعذر الاتصال بكوادر: ' + e.message });
+        }
+      }
+
+      case 'kadwar-push-payroll-slip': {
+        if (req.method !== 'POST') return res.status(405).json({ error: 'POST required' });
+        const slip = req.body || {};
+        if (!slip.empId || !slip.runId || !slip.period) return res.status(400).json({ error: 'empId + runId + period required' });
+        try {
+          const kr = await fetch('https://hma.engineer/api/basma-sync?action=receive-payroll-slip', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              employee_id: slip.empId,
+              employee_name: slip.empName,
+              slip_basma_id: slip.id,
+              run_id: slip.runId,
+              period: slip.period,                 // YYYY-MM
+              status: slip.status,
+              total_earnings: slip.totalEarnings,
+              total_deductions: slip.totalDeductions,
+              net_salary: slip.netSalary,
+              breakdown: slip.breakdown,            // كامل التفصيل (لا يحتوي IBAN)
+              fines_applied: (slip.finesInfo && slip.finesInfo.appliedAmount) || 0,
+              fines_deferred: (slip.finesInfo && slip.finesInfo.deferredAmount) || 0,
+              calculated_at: slip.calculatedAt,
+              sent_at: slip.sentAt,
+            })
+          });
+          const kd = await kr.json().catch(function(){ return { raw: 'non-json' }; });
+          const log = await dbGet('kadwar-sync-log') || [];
+          log.push({
+            id: 'KSL' + Date.now(),
+            ts: new Date().toISOString(),
+            action: 'push-payroll-slip',
+            employee_id: slip.empId,
+            ref: slip.id,
+            period: slip.period,
+            success: kr.ok,
+            httpStatus: kr.status,
+            response: kd,
+          });
+          if (log.length > 5000) log.splice(0, log.length - 5000);
+          await dbSet('kadwar-sync-log', log);
+          if (!kr.ok) return res.status(502).json({ error: 'كوادر رفض كشف الراتب', detail: kd, httpStatus: kr.status });
+          return res.json({ ok: true, kadwar_response: kd });
+        } catch (e) {
+          return res.status(502).json({ error: 'تعذر الاتصال بكوادر: ' + e.message });
+        }
+      }
+
+      case 'kadwar-push-termination': {
+        if (req.method !== 'POST') return res.status(405).json({ error: 'POST required' });
+        const tr = req.body || {};
+        if (!tr.empId) return res.status(400).json({ error: 'empId required' });
+        try {
+          const kr = await fetch('https://hma.engineer/api/basma-sync?action=receive-termination', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              employee_id: tr.empId,
+              employee_name: tr.empName,
+              termination_basma_id: tr.id,
+              reason_code: tr.reason,                 // resignation | termination | contract_end | retirement
+              reason_label: tr.reasonLabel || tr.reason,
+              effective_date: tr.effectiveDate || tr.createdAt,
+              notes: tr.notes,
+              initiated_by: tr.initiatedBy,
+              status: tr.status || 'pending',          // pending | confirmed | reverted
+              created_at: tr.createdAt || new Date().toISOString(),
+            })
+          });
+          const kd = await kr.json().catch(function(){ return { raw: 'non-json' }; });
+          const log = await dbGet('kadwar-sync-log') || [];
+          log.push({
+            id: 'KSL' + Date.now(),
+            ts: new Date().toISOString(),
+            action: 'push-termination',
+            employee_id: tr.empId,
+            ref: tr.id,
+            success: kr.ok,
+            httpStatus: kr.status,
+            response: kd,
+          });
+          if (log.length > 5000) log.splice(0, log.length - 5000);
+          await dbSet('kadwar-sync-log', log);
+          if (!kr.ok) return res.status(502).json({ error: 'كوادر رفض إنهاء الخدمة', detail: kd, httpStatus: kr.status });
+          return res.json({ ok: true, kadwar_response: kd });
+        } catch (e) {
+          return res.status(502).json({ error: 'تعذر الاتصال بكوادر: ' + e.message });
+        }
+      }
+
+      /* v6.97 — جلب سجل المزامنة الفاشلة (للوحة الإدارة) */
+      case 'kadwar-sync-failures': {
+        if (req.method !== 'GET') return res.status(405).json({ error: 'GET required' });
+        const log = await dbGet('kadwar-sync-log') || [];
+        const failed = log.filter(function(l){ return l && l.success === false; }).slice(-200).reverse();
+        return res.json({ ok: true, failed: failed, total: failed.length });
+      }
+
+
       case 'kadwar-full-migration': {
         if (req.method !== 'POST') return res.status(405).json({ error: 'POST required' });
         const { confirm, dryRun, includeAll } = req.body || {};
@@ -2969,13 +3165,36 @@ export default async function handler(req, res) {
 
         // Also update all slips
         const slips = await dbGet('payroll-slips') || [];
+        const approvedSlips = [];
         slips.forEach(s => {
-          if (s.runId === runId) s.status = 'approved';
+          if (s.runId === runId) {
+            s.status = 'approved';
+            approvedSlips.push(s);
+          }
         });
         await dbSet('payroll-slips', slips);
 
-        await auditLog(actor, 'approve_run', runId, { totalNet: run.totalNetAmount });
-        return res.json({ ok: true, run });
+        // v6.97 — Auto-push approved slips to kadwar (fire-and-forget, parallel)
+        Promise.all(approvedSlips.map(function(slip){
+          return safeKadwarPush('receive-payroll-slip', {
+            employee_id: slip.empId,
+            employee_name: slip.empName,
+            slip_basma_id: slip.id,
+            run_id: slip.runId,
+            period: slip.period,
+            status: 'approved',
+            total_earnings: slip.totalEarnings,
+            total_deductions: slip.totalDeductions,
+            net_salary: slip.netSalary,
+            breakdown: slip.breakdown,
+            fines_applied: (slip.finesInfo && slip.finesInfo.appliedAmount) || 0,
+            fines_deferred: (slip.finesInfo && slip.finesInfo.deferredAmount) || 0,
+            calculated_at: slip.calculatedAt,
+          }).catch(function(){ /* logged */ });
+        })).catch(function(){ /* ignore — all errors logged individually */ });
+
+        await auditLog(actor, 'approve_run', runId, { totalNet: run.totalNetAmount, slipsCount: approvedSlips.length });
+        return res.json({ ok: true, run, slipsPushed: approvedSlips.length });
       }
 
       case 'payroll-bank-file': {
@@ -3981,12 +4200,26 @@ export default async function handler(req, res) {
         if (req.method === 'GET') return res.json(await dbGet('terminations') || []);
         if (req.method === 'POST') {
           const ts = await dbGet('terminations') || [];
-          ts.push({ id: 'TERM' + Date.now(), status: 'pending', ...req.body, createdAt: new Date().toISOString() });
+          const newTerm = { id: 'TERM' + Date.now(), status: 'pending', ...req.body, createdAt: new Date().toISOString() };
+          ts.push(newTerm);
           await dbSet('terminations', ts);
           // Deactivate employee
           const emps = await dbGet('employees') || [];
           const ei = emps.findIndex(e => e.id === req.body.empId);
           if (ei >= 0) { emps[ei].terminated = true; emps[ei].terminatedAt = new Date().toISOString(); await dbSet('employees', emps); }
+          // v6.97 — Auto-push to kadwar (fire-and-forget)
+          safeKadwarPush('receive-termination', {
+            employee_id: newTerm.empId,
+            employee_name: newTerm.empName,
+            termination_basma_id: newTerm.id,
+            reason_code: newTerm.reason,
+            reason_label: newTerm.reasonLabel || newTerm.reason,
+            effective_date: newTerm.effectiveDate || newTerm.createdAt,
+            notes: newTerm.notes,
+            initiated_by: newTerm.initiatedBy,
+            status: newTerm.status,
+            created_at: newTerm.createdAt,
+          }).catch(function(){ /* logged */ });
           return res.json({ ok: true });
         }
         if (req.method === 'PUT') {
@@ -7392,6 +7625,22 @@ export default async function handler(req, res) {
             });
             await dbSet('notifications', notifs);
           } catch(e) { /**/ }
+          // v6.97 — Auto-push to kadwar (fire-and-forget)
+          if (newVio.status === 'ACTIVE') {
+            safeKadwarPush('receive-violation', {
+              employee_id: newVio.empId,
+              violation_basma_id: newVio.id,
+              violation_code: newVio.violationId,
+              chapter: newVio.chapter,
+              description: newVio.description,
+              occurrence: newVio.occurrence,
+              penalty_code: newVio.penaltyCode,
+              penalty_label: newVio.penaltyLabel,
+              status: newVio.status,
+              legal_ref: newVio.legalRef,
+              created_at: newVio.createdAt,
+            }).catch(function(){ /* logged in helper */ });
+          }
           return res.json({ ok: true, violation: newVio });
         }
         if (req.method === 'PUT') {

@@ -4,7 +4,7 @@ import { generateAttendanceReport, generateEmployeeReport, generateMonthlySummar
 import { exportFormalWarning, exportInvestigationRecord, exportAffidavit, exportEmploymentLetter, exportSalaryLetter, exportLeaveLetter } from "./formalPdfs";
 
 const APP = "بصمة HMA";
-const VER = "6.94";
+const VER = "6.97";
 const CO = "هاني محمد عسيري للإستشارات الهندسية";
 const B = { blue: "#2B5EA7", yellow: "#FDD800", red: "#E2192C", black: "#1A1A1A", blueDk: "#1E4478", blueLt: "#EDF3FB", gold: "#D4A017" };
 
@@ -521,8 +521,6 @@ export default function AdminApp() {
         { id: "leaves_hub", icon: "🏖️", label: "الإجازات", badge: pending },
         { id: "payroll", icon: "💰", label: "الرواتب 🔒" },
         { id: "letters", icon: "📄", label: "الإفادات" },
-        { id: "branches", icon: "🏢", label: "الفروع" },
-        { id: "att_insights", icon: "📈", label: "ذكاء الحضور" },
         { id: "surveys", icon: "📊", label: "الاستطلاعات" },
         { id: "hr_tickets", icon: "📨", label: "رسائل الموظفين" },
         { id: "evaluations_hr", icon: "⭐", label: "التقييمات" },
@@ -536,10 +534,9 @@ export default function AdminApp() {
       label: "العمليات والمتابعة",
       items: [
         { id: "tawasul", icon: "🤝", label: "نظام تواصل" },
-        { id: "custody_admin", icon: "📦", label: "العهد" },
-        { id: "asset_management", icon: "🔧", label: "إدارة الأصول" },
-        { id: "tracking", icon: "🛰️", label: "تتبّع الحركة" },
+        { id: "attendance_hub", icon: "⏰", label: "الحضور والتنظيم" },
         { id: "geofence", icon: "📍", label: "النطاق الجغرافي" },
+        { id: "custody_hub", icon: "📦", label: "العهد والأصول" },
         { id: "reports", icon: "📄", label: "التقارير" },
       ],
     },
@@ -547,8 +544,7 @@ export default function AdminApp() {
       id: "comm",
       label: "التواصل والمناسبات",
       items: [
-        { id: "announcements", icon: "📢", label: "التعاميم" },
-        { id: "banners", icon: "🎨", label: "إدارة البنر" },
+        { id: "content_hub", icon: "📣", label: "المحتوى (تعاميم + بنرات)" },
         { id: "events", icon: "🎉", label: "المناسبات" },
         { id: "questions", icon: "❓", label: "أسئلة الصباح" },
       ],
@@ -976,6 +972,11 @@ export default function AdminApp() {
       {/* ═══ CUSTODY ADMIN ═══ */}
       {tab === "custody_admin" && <CustodyPanel t={t} B={B} emps={safeEmps} />}
       {tab === "asset_management" && <AssetManagementPanel t={t} B={B} emps={safeEmps} />}
+
+      {/* ═══ v6.96 — 3 admin hubs ═══ */}
+      {tab === "custody_hub" && <CustodyHub t={t} B={B} emps={safeEmps} />}
+      {tab === "attendance_hub" && <AttendanceHub t={t} B={B} emps={safeEmps} branches={branches} />}
+      {tab === "content_hub" && <ContentHub t={t} B={B} emps={safeEmps} branches={branches} />}
 
       {/* ═══ REPORTS ═══ */}
       {tab === "reports" && <>
@@ -10178,6 +10179,7 @@ function KadwarSyncPanel({ t, B, emps }) {
         { id: "overview", icon: "📊", label: "نظرة عامة" },
         { id: "criteria", icon: "🎯", label: "معايير التقييم", badge: positionsWith.length || null },
         { id: "migration", icon: "🚀", label: "المزامنة الشاملة" },
+        { id: "failures", icon: "⚠️", label: "محاولات فاشلة" },
         { id: "log", icon: "📜", label: "سجل العمليات", badge: stats && stats.total },
       ].map(function(v){
         var active = view === v.id;
@@ -10427,6 +10429,9 @@ function KadwarSyncPanel({ t, B, emps }) {
         </div>}
       </div>}
     </div>}
+
+    {/* ═══ v6.97 — FAILURES TAB (محاولات الدفع الفاشلة لكوادر) ═══ */}
+    {view === "failures" && <KadwarFailuresView t={t} B={B} />}
 
     {/* ═══ LOG TAB ═══ */}
     {view === "log" && <div>
@@ -12654,5 +12659,172 @@ function SettingsHub({ t, B, emps, onLogout, onOpenOldSettings }) {
       </div>
     </div>}
     {sub === "admin" && <AdminProfile t={t} B={B} onLogout={onLogout} />}
+  </div>;
+}
+
+/* ═══════════════════════════════════════════════════════════════════
+ * v6.96 — 3 Admin Hubs آمنة (CustodyHub + AttendanceHub + ContentHub)
+ * كل المكوّنات الفرعية named components — بدون استخراج inline
+ * ═══════════════════════════════════════════════════════════════════ */
+
+/* CustodyHub — العهد والأصول (2 named) */
+function CustodyHub({ t, B, emps }) {
+  var [sub, setSub] = useState("custody");
+  return <div>
+    <SubTabBar t={t} B={B} active={sub} onChange={setSub}
+      tabs={[
+        { id: "custody", icon: "📦", label: "العهد" },
+        { id: "assets",  icon: "🔧", label: "إدارة الأصول" },
+      ]} />
+    {sub === "custody" && <CustodyPanel t={t} B={B} emps={emps} />}
+    {sub === "assets" && <AssetManagementPanel t={t} B={B} emps={emps} />}
+  </div>;
+}
+
+/* AttendanceHub — الحضور والتنظيم (4 named, geofence remains separate) */
+function AttendanceHub({ t, B, emps, branches }) {
+  var [sub, setSub] = useState("insights");
+  return <div>
+    <SubTabBar t={t} B={B} active={sub} onChange={setSub}
+      tabs={[
+        { id: "insights",  icon: "📈", label: "ذكاء الحضور" },
+        { id: "branches",  icon: "🏢", label: "الفروع" },
+        { id: "work",      icon: "⏰", label: "أنواع الدوام" },
+        { id: "tracking",  icon: "🛰️", label: "تتبّع الحركة" },
+      ]} />
+    {sub === "insights" && <AttendanceInsightsPanel t={t} B={B} emps={emps} />}
+    {sub === "branches" && <BranchesPanel t={t} B={B} />}
+    {sub === "work" && <WorkTypesPanel t={t} B={B} emps={emps} />}
+    {sub === "tracking" && <TrackingPanel t={t} B={B} emps={emps} branches={branches} />}
+  </div>;
+}
+
+/* ContentHub — المحتوى المعروض للموظفين (2 named, events+questions remain separate) */
+function ContentHub({ t, B, emps, branches }) {
+  var [sub, setSub] = useState("announcements");
+  return <div>
+    <SubTabBar t={t} B={B} active={sub} onChange={setSub}
+      tabs={[
+        { id: "announcements", icon: "📢", label: "التعاميم" },
+        { id: "banners",       icon: "🎨", label: "البنرات" },
+      ]} />
+    {sub === "announcements" && <AnnouncementsPanel t={t} B={B} emps={emps} branches={branches} />}
+    {sub === "banners" && <BannersPanel t={t} B={B} />}
+  </div>;
+}
+
+/* ═══════════════════════════════════════════════════════════════════
+ * v6.97 — KadwarFailuresView — عرض محاولات الدفع الفاشلة لكوادر
+ * ═══════════════════════════════════════════════════════════════════ */
+function KadwarFailuresView({ t, B }) {
+  var [loading, setLoading] = useState(true);
+  var [failed, setFailed] = useState([]);
+  var [err, setErr] = useState(null);
+  var [retrying, setRetrying] = useState({});
+
+  async function load() {
+    setLoading(true); setErr(null);
+    try {
+      var r = await fetch("/api/data?action=kadwar-sync-failures");
+      var d = await r.json();
+      if (d.ok) setFailed(d.failed || []);
+      else setErr(d.error || "فشل التحميل");
+    } catch(e) { setErr("فشل: " + e.message); }
+    setLoading(false);
+  }
+  useEffect(function(){ load(); }, []);
+
+  async function retry(item) {
+    var key = item.id;
+    setRetrying(function(p){ var n = {...p}; n[key] = true; return n; });
+    try {
+      // إعادة المحاولة حسب نوع الإجراء (يحتاج جلب البيانات الأصلية وإعادة الإرسال)
+      var actionType = (item.action || "").replace("auto-", "").replace("push-", "");
+      var endpoint = null;
+      var body = null;
+      if (actionType === "receive-violation" || actionType === "violation") {
+        var vios = await fetch("/api/data?action=violations_v2&id=" + encodeURIComponent(item.ref)).then(function(r){return r.json();});
+        var v = Array.isArray(vios) && vios[0];
+        if (!v) { alert("المخالفة غير موجودة — قد تكون حُذفت"); setRetrying(function(p){ var n = {...p}; delete n[key]; return n; }); return; }
+        endpoint = "kadwar-push-violation"; body = v;
+      } else if (actionType === "receive-payroll-slip" || actionType === "payroll-slip") {
+        alert("إعادة دفع كشف راتب: استخدم 'اعتماد الدورة' في تبويب الرواتب لإعادة الدفع التلقائي.");
+        setRetrying(function(p){ var n = {...p}; delete n[key]; return n; });
+        return;
+      } else if (actionType === "receive-termination" || actionType === "termination") {
+        var ts = await fetch("/api/data?action=termination").then(function(r){return r.json();});
+        var trm = Array.isArray(ts) && ts.find(function(x){ return x.id === item.ref; });
+        if (!trm) { alert("سجل الإنهاء غير موجود"); setRetrying(function(p){ var n = {...p}; delete n[key]; return n; }); return; }
+        endpoint = "kadwar-push-termination"; body = trm;
+      }
+      if (!endpoint) {
+        alert("نوع غير مدعوم للإعادة: " + actionType);
+        setRetrying(function(p){ var n = {...p}; delete n[key]; return n; });
+        return;
+      }
+      var r = await fetch("/api/data?action=" + endpoint, {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body)
+      });
+      var d = await r.json();
+      if (d.ok) { alert("✓ تم بنجاح"); load(); }
+      else alert("فشل: " + (d.error || "غير معروف"));
+    } catch(e) { alert("فشل: " + e.message); }
+    setRetrying(function(p){ var n = {...p}; delete n[key]; return n; });
+  }
+
+  function actionLabel(a) {
+    if (!a) return "غير محدد";
+    if (a.indexOf("violation") >= 0) return "⚖️ مخالفة";
+    if (a.indexOf("payroll") >= 0) return "💰 كشف راتب";
+    if (a.indexOf("termination") >= 0) return "🚪 إنهاء خدمة";
+    if (a.indexOf("evaluation") >= 0) return "⭐ تقييم";
+    if (a.indexOf("employee") >= 0) return "👤 موظف";
+    return a;
+  }
+
+  return <div>
+    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16 }}>
+      <div>
+        <div style={{ fontSize: 14, fontWeight: 800, color: t.tx }}>⚠️ محاولات الدفع الفاشلة لكوادر</div>
+        <div style={{ fontSize: 11, color: t.txM, marginTop: 4 }}>
+          عمليات لم تنجح في التزامن — أعد محاولتها بعد التحقق من جاهزية كوادر
+        </div>
+      </div>
+      <button onClick={load} style={{ padding: "8px 14px", borderRadius: 8, background: t.bg, border: "1px solid " + t.sep, fontSize: 11, fontWeight: 700, color: t.tx, cursor: "pointer" }}>🔄 تحديث</button>
+    </div>
+
+    {loading && <div style={{ padding: 30, textAlign: "center", color: t.txM }}>جارٍ التحميل...</div>}
+    {err && <div style={{ padding: 14, color: "#DC2626", background: "rgba(239,68,68,0.08)", borderRadius: 8 }}>❌ {err}</div>}
+
+    {!loading && !err && failed.length === 0 && <div style={{ padding: 40, textAlign: "center", color: "#16A34A", background: "rgba(34,197,94,0.05)", borderRadius: 12, border: "1px dashed rgba(34,197,94,0.3)" }}>
+      <div style={{ fontSize: 32, marginBottom: 8 }}>✓</div>
+      <div style={{ fontSize: 13, fontWeight: 700 }}>لا توجد محاولات فاشلة — كل العمليات تمت بنجاح</div>
+    </div>}
+
+    {!loading && !err && failed.length > 0 && <div>
+      <div style={{ padding: 10, background: "rgba(217,119,6,0.08)", border: "1px solid rgba(217,119,6,0.25)", borderRadius: 8, fontSize: 11, color: t.tx, marginBottom: 12, lineHeight: 1.6 }}>
+        💡 <strong>السبب الأشهر:</strong> كوادر لم يضف بعد actions الاستقبال الجديدة (<code>receive-violation</code>، <code>receive-payroll-slip</code>، <code>receive-termination</code>). أضِفها في كوادر ثم أعد المحاولة.
+      </div>
+      <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+        {failed.map(function(f){
+          return <div key={f.id} style={{ padding: 10, background: t.card, borderRadius: 10, border: "1px solid " + t.sep, display: "flex", alignItems: "center", gap: 10 }}>
+            <div style={{ flex: 1 }}>
+              <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 4 }}>
+                <span style={{ fontSize: 12, fontWeight: 800, color: t.tx }}>{actionLabel(f.action)}</span>
+                <span style={{ padding: "1px 7px", borderRadius: 6, background: "#DC262615", color: "#DC2626", fontSize: 10, fontWeight: 700 }}>HTTP {f.httpStatus || "0"}</span>
+                <span style={{ fontSize: 10, color: t.txM }}>{f.ref || "—"}</span>
+              </div>
+              <div style={{ fontSize: 10, color: t.txM }}>{new Date(f.ts).toLocaleString("ar-SA")}</div>
+              {f.error && <div style={{ fontSize: 10, color: "#DC2626", marginTop: 3 }}>{f.error}</div>}
+              {f.response && f.response.error && <div style={{ fontSize: 10, color: "#DC2626", marginTop: 3 }}>كوادر: {f.response.error}</div>}
+            </div>
+            <button onClick={function(){ retry(f); }} disabled={retrying[f.id]} style={{ padding: "6px 12px", background: B.blue, color: "#fff", border: "none", borderRadius: 6, fontSize: 11, fontWeight: 700, cursor: retrying[f.id] ? "wait" : "pointer" }}>
+              {retrying[f.id] ? "..." : "🔄 إعادة"}
+            </button>
+          </div>;
+        })}
+      </div>
+    </div>}
   </div>;
 }

@@ -11,7 +11,7 @@ import { exportEmploymentLetter, exportLeaveLetter } from "./formalPdfs";
 
 /* ═══════════ APP CONFIG (إعدادات التطبيق) ═══════════ */
 const APP_CONFIG = {
-  VER: "6.94",
+  VER: "6.97",
   NAME: "بصمة HMA",
   FULL_NAME: "نظام الحضور والانصراف الذكي",
   COMPANY: "هاني محمد عسيري للاستشارات الهندسية",
@@ -2917,21 +2917,15 @@ function ProfilePage({ user, branch, workType, onLogout, onTicket, myTickets, da
   ];
   var tabs = [
     { id: "info", emoji: "👤", label: "بياناتي" },
-    { id: "requests", emoji: "📋", label: "الطلبات والسجل الوظيفي" },
-    { id: "achievements", emoji: "🏆", label: "إنجازاتي" },
-    // v6.94 — tab "المرافقين" محذوف: المرافقين يُدارون من "بياناتي" → MyProfileCard → مرافقين
+    { id: "requests", emoji: "📋", label: "طلباتي" },
+    // v6.95 — achievements + السجل الوظيفي دُمجا داخل "بياناتي"
     { id: "docs", emoji: "📦", label: "العهد" },
     { id: "legal", emoji: "⚖️", label: "القانونية" },
   ];
-  // v6.88 — tab التقييمات للمدراء فقط
-  if (user.isManager || user.isAssistant) {
-    tabs.push({ id: "evaluations", emoji: "⭐", label: "تقييماتي للموظفين" });
-  }
-  // My evaluations tab (for everyone — to see their approved quarterly/annual)
-  tabs.push({ id: "my_evals", emoji: "📊", label: "تقييماتي" });
-  // v6.89 — Leave system tabs
+  // v6.95 — تقييماتي الموحّدة (موظف + مدير في hub واحد)
+  tabs.push({ id: "my_evals", emoji: "⭐", label: "تقييماتي" });
+  // v6.95 — إجازاتي الموحّدة (طلبات + handover في hub واحد)
   tabs.push({ id: "my_leaves", emoji: "🏖️", label: "إجازاتي" });
-  tabs.push({ id: "handover_tasks", emoji: "📥", label: "مهام استلامها" });
   // v6.91 — My salary (payslips)
   tabs.push({ id: "my_salary", emoji: "💰", label: "راتبي" });
 
@@ -3047,22 +3041,31 @@ function ProfilePage({ user, branch, workType, onLogout, onTicket, myTickets, da
 
             <HelpGuideSection />
 
+            {/* v6.95 — merged from old "achievements" tab */}
+            <div style={{ marginTop: SPACING.md, paddingTop: SPACING.md, borderTop: "1px dashed " + COLORS.metallicBorder }}>
+              <div style={{ ...TYPOGRAPHY.h3, color: COLORS.textPrimary, fontFamily: TYPOGRAPHY.fontCairo, marginBottom: SPACING.sm, textAlign: "center" }}>🏆 إنجازاتي</div>
+              <PointsLogCard user={user} allAtt={[]} />
+              <AchievementsCard user={user} />
+            </div>
+
+            {/* v6.95 — merged from old "السجل الوظيفي" (was inside الطلبات) */}
+            <div style={{ marginTop: SPACING.md, paddingTop: SPACING.md, borderTop: "1px dashed " + COLORS.metallicBorder }}>
+              <div style={{ ...TYPOGRAPHY.h3, color: COLORS.textPrimary, fontFamily: TYPOGRAPHY.fontCairo, marginBottom: SPACING.sm, textAlign: "center" }}>📚 سجلي الوظيفي</div>
+              <EmployeeRecordTab user={user} />
+            </div>
+
             <Button variant="secondary" size="md" icon={<Icons.alert size={20} />} onClick={onTicket}>
               تذكرة دعم جديدة
             </Button>
           </>
         )}
 
-        {/* v6.69 — الطلبات والسجل الوظيفي (مدموجين) */}
+        {/* v6.95 — "requests" now only shows permissions + preabs (leaves moved to إجازاتي hub) */}
         {tab === "requests" && (
-          <>
-            <MyRequestsTab user={user} />
-            <div style={{ marginTop: SPACING.lg, paddingTop: SPACING.md, borderTop: "1px dashed " + COLORS.metallicBorder }}>
-              <div style={{ ...TYPOGRAPHY.h3, color: COLORS.textPrimary, fontFamily: TYPOGRAPHY.fontCairo, marginBottom: SPACING.md, textAlign: "center" }}>📚 السجل الوظيفي</div>
-              <EmployeeRecordTab user={user} />
-            </div>
-          </>
+          <MyRequestsTab user={user} />
         )}
+
+        {/* v6.95 — "achievements" tab removed (merged into "بياناتي") — keep handler as no-op for old links */}
 
         {/* v6.94 — tab "العهد" (إزالة المرفقات — تُدار من MyProfileCard → مرفقات) */}
         {tab === "docs" && (
@@ -3095,25 +3098,19 @@ function ProfilePage({ user, branch, workType, onLogout, onTicket, myTickets, da
           </>
         )}
 
-        {/* v6.88 — Manager evaluations tab */}
-        {tab === "evaluations" && (user.isManager || user.isAssistant) && (
-          <ManagerEvaluationsTab user={user} />
-        )}
+        {/* v6.95 — Manager evaluations — merged inside my_evals hub below */}
 
-        {/* v6.88 — My evaluations (for everyone) */}
+        {/* v6.95 — Unified evaluations hub: موظف + مدير */}
         {tab === "my_evals" && (
-          <MyEvaluationsTab user={user} />
+          <MyEvalsHub user={user} />
         )}
 
-        {/* v6.89 — Leave requests */}
+        {/* v6.95 — Unified leaves hub: طلبات + handover */}
         {tab === "my_leaves" && (
-          <LeaveRequestsTab user={user} />
+          <MyLeavesHub user={user} />
         )}
 
-        {/* v6.89 — Handover tasks (received from colleagues) */}
-        {tab === "handover_tasks" && (
-          <HandoverTasksTab user={user} />
-        )}
+        {/* v6.95 — tab "handover_tasks" محذوف: دُمج داخل "إجازاتي" */}
 
         {/* v6.91 — My salary */}
         {tab === "my_salary" && (
@@ -16085,3 +16082,62 @@ function SalarySlipDetail({ slip, user, onClose }) {
   </div>;
 }
 
+
+/* ═══════════════════════════════════════════════════════════════════
+ * v6.95 — Employee Hubs (تبسيط "حسابي" من 10 → 7 تبويبات)
+ * ═══════════════════════════════════════════════════════════════════ */
+
+function EmpSubTabBar({ tabs, active, onChange }) {
+  return <div style={{ display: "flex", gap: SPACING.xs, marginBottom: SPACING.md, overflowX: "auto", padding: 4, background: COLORS.metallic, borderRadius: RADIUS.md, border: "1px solid " + COLORS.metallicBorder }}>
+    {tabs.map(function(tb){
+      var a = active === tb.id;
+      return <button key={tb.id} onClick={function(){ onChange(tb.id); }} style={{
+        padding: "8px 14px", borderRadius: RADIUS.sm,
+        background: a ? COLORS.goldGradient : "transparent",
+        color: a ? COLORS.textOnGold : COLORS.textMuted,
+        border: "none", ...TYPOGRAPHY.tiny, fontWeight: 800, cursor: "pointer",
+        whiteSpace: "nowrap", fontFamily: TYPOGRAPHY.fontTajawal,
+        display: "flex", alignItems: "center", gap: 4
+      }}>
+        <span>{tb.icon}</span>
+        <span>{tb.label}</span>
+        {tb.badge ? <span style={{ background: COLORS.textDanger, color: "#fff", fontSize: 9, fontWeight: 900, padding: "1px 6px", borderRadius: 8 }}>{tb.badge}</span> : null}
+      </button>;
+    })}
+  </div>;
+}
+
+/* MyEvalsHub — تقييماتي: موظف + (مدير إن كان) */
+function MyEvalsHub({ user }) {
+  var isManager = user && (user.isManager || user.isAssistant);
+  var [sub, setSub] = useState(isManager ? "mine" : "mine");
+  var tabs = [{ id: "mine", icon: "📊", label: "تقييماتي" }];
+  if (isManager) tabs.push({ id: "team", icon: "⭐", label: "تقييمي لفريقي" });
+  return <div>
+    {tabs.length > 1 && <EmpSubTabBar tabs={tabs} active={sub} onChange={setSub} />}
+    {sub === "mine" && <MyEvaluationsTab user={user} />}
+    {sub === "team" && isManager && <ManagerEvaluationsTab user={user} />}
+  </div>;
+}
+
+/* MyLeavesHub — إجازاتي: طلباتي + مهام تسليم استلمتها */
+function MyLeavesHub({ user }) {
+  var [sub, setSub] = useState("requests");
+  var [pendingHandovers, setPendingHandovers] = useState(0);
+  useEffect(function(){
+    // تحميل سريع لعدّ المهام المعلّقة (للـ badge)
+    api("leave-my-handover-tasks", { params: { empId: user.id, status: "pending" } })
+      .then(function(d){ setPendingHandovers(Array.isArray(d) ? d.length : 0); })
+      .catch(function(){});
+  }, [user && user.id]);
+  return <div>
+    <EmpSubTabBar
+      tabs={[
+        { id: "requests", icon: "🏖️", label: "طلبات الإجازة" },
+        { id: "handover", icon: "📥", label: "مهام لتسلُّمها", badge: pendingHandovers > 0 ? pendingHandovers : null },
+      ]}
+      active={sub} onChange={setSub} />
+    {sub === "requests" && <LeaveRequestsTab user={user} />}
+    {sub === "handover" && <HandoverTasksTab user={user} />}
+  </div>;
+}
