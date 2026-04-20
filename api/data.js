@@ -1479,6 +1479,453 @@ export default async function handler(req, res) {
         return res.json({ ok: true, ...summary });
       }
 
+      /* ═══════════════════════════════════════════════════════════════════
+       * v6.87 — BATCH 2 — نظام التقييم (EVALUATION SYSTEM)
+       * ═══════════════════════════════════════════════════════════════════
+       * الفلسفة:
+       *   - كوادر = مصدر المعايير (criteria templates)
+       *   - بصمة = تنفيذ التقييم (actual evaluations)
+       *   - Snapshot للمعايير وقت التقييم (لمنع التلاعب)
+       *
+       * أنواع التقييمات:
+       *   - daily     (سرّي — لا يراه الموظف أبداً)
+       *   - weekly    (سرّي — لا يراه الموظف أبداً)
+       *   - monthly   (سرّي — لا يراه الموظف أبداً)
+       *   - quarterly (يُعرض للموظف بعد اعتماد HR)
+       *   - annual    (يُعرض للموظف بعد اعتماد HR)
+       *
+       * الحالات (status):
+       *   - scheduled    (مجدول — لم يُبدأ بعد)
+       *   - in_progress  (قيد التقييم من المدير)
+       *   - pending_m2   (بانتظار المدير الثاني إن وُجد)
+       *   - submitted    (مُرسل — بانتظار مراجعة HR للفصلي/السنوي)
+       *   - approved     (معتمد من HR — يُعرض للموظف)
+       *   - final        (نهائي — للأنواع السرّية بعد الإرسال)
+       *   - cancelled    (أُلغي)
+       */
+      case 'evaluations': {
+        // GET — جلب التقييمات (بفلاتر)
+        if (req.method === 'GET') {
+          const evals = await dbGet('evaluations') || [];
+          const { empId, evaluatorId, type, status, periodFrom, periodTo } = req.query;
+          let filtered = evals;
+          if (empId) filtered = filtered.filter(e => String(e.empId) === String(empId));
+          if (evaluatorId) filtered = filtered.filter(e => String(e.evaluatorId) === String(evaluatorId) || String(e.evaluator2Id) === String(evaluatorId));
+          if (type) filtered = filtered.filter(e => e.type === type);
+          if (status) filtered = filtered.filter(e => e.status === status);
+          if (periodFrom) filtered = filtered.filter(e => e.periodStart >= periodFrom);
+          if (periodTo) filtered = filtered.filter(e => e.periodEnd <= periodTo);
+          // Sort by created date descending
+          filtered.sort((a, b) => String(b.createdAt || '').localeCompare(String(a.createdAt || '')));
+          return res.json({ ok: true, count: filtered.length, evaluations: filtered });
+        }
+        // POST — إنشاء تقييم جديد (من HR أو من Scheduler)
+        if (req.method === 'POST') {
+          const { empId, evaluatorId, evaluator2Id, type, periodStart, periodEnd, createdBy, jobTitle } = req.body || {};
+          if (!empId || !evaluatorId || !type) return res.status(400).json({ error: 'empId + evaluatorId + type required' });
+          if (!['daily','weekly','monthly','quarterly','annual'].includes(type)) return res.status(400).json({ error: 'invalid type' });
+
+          const evals = await dbGet('evaluations') || [];
+          const emps = await dbGet('employees') || [];
+          const emp = emps.find(e => String(e.id) === String(empId));
+          if (!emp) return res.status(404).json({ error: 'employee not found' });
+
+          // Fetch criteria snapshot from kadwar for this job title
+          const profile = (await dbGet('emp-profiles') || {})[empId] || {};
+          const empJobTitle = jobTitle || (profile.employment && profile.employment.jobTitle) || emp.role;
+
+          let criteriaSnapshot = [];
+          try {
+            const cached = await dbGet('kadwar-eval-criteria-cache');
+            if (cached && cached.criteria_by_position && cached.criteria_by_position[empJobTitle]) {
+              criteriaSnapshot = cached.criteria_by_position[empJobTitle].criteria || [];
+            }
+          } catch (e) { /* ignore — evaluate without criteria (warning) */ }
+
+          const newEval = {
+            id: 'EV' + Date.now() + Math.random().toString(36).slice(2, 6),
+            empId: String(empId),
+            empName: emp.name,
+            jobTitle: empJobTitle,
+            evaluatorId: String(evaluatorId),
+            evaluator2Id: evaluator2Id ? String(evaluator2Id) : null,
+            type,
+            periodStart: periodStart || null,
+            periodEnd: periodEnd || null,
+            status: 'scheduled',
+            // Snapshot المعايير وقت إنشاء التقييم (لمنع التلاعب)
+            criteriaSnapshot: criteriaSnapshot,
+            criteriaSnapshotAt: new Date().toISOString(),
+            scores: {},          // { criterionId: score 1-10 }
+            scores2: {},         // للـ evaluator2
+            comments: '',
+            comments2: '',
+            totalScore: null,
+            weightedScore: null,
+            finalScore: null,
+            createdBy: createdBy || 'hr',
+            createdAt: new Date().toISOString(),
+            submittedAt: null,
+            approvedAt: null,
+            approvedBy: null,
+            cancelledAt: null,
+            // للأنواع السرّية: لا يُعرض للموظف أبداً
+            // للفصلي/السنوي: يُعرض بعد الاعتماد
+            visibleToEmployee: false,
+            sentToKadwarAt: null,
+          };
+
+          evals.push(newEval);
+          await dbSet('evaluations', evals);
+          return res.json({ ok: true, evaluation: newEval });
+        }
+        break;
+      }
+
+      case 'evaluation-submit': {
+        // POST — المدير يحفظ/يُرسل التقييم
+        if (req.method !== 'POST') return res.status(405).json({ error: 'POST required' });
+        const { evalId, evaluatorId, scores, comments, action, evaluatorSlot } = req.body || {};
+        // action: 'save_draft' | 'submit_m1' | 'submit_m2'
+        // evaluatorSlot: 1 | 2 (المدير الأول أو الثاني)
+        if (!evalId || !evaluatorId) return res.status(400).json({ error: 'evalId + evaluatorId required' });
+
+        const evals = await dbGet('evaluations') || [];
+        const idx = evals.findIndex(e => e.id === evalId);
+        if (idx < 0) return res.status(404).json({ error: 'evaluation not found' });
+        const ev = evals[idx];
+
+        // Authorization — only assigned evaluator can submit
+        const slot = evaluatorSlot || (String(evaluatorId) === String(ev.evaluatorId) ? 1 : (String(evaluatorId) === String(ev.evaluator2Id) ? 2 : null));
+        if (!slot) return res.status(403).json({ error: 'ليس لديك صلاحية لتقييم هذا الموظف' });
+
+        // Update scores + comments
+        if (slot === 1) {
+          if (scores) ev.scores = { ...ev.scores, ...scores };
+          if (comments != null) ev.comments = comments;
+        } else {
+          if (scores) ev.scores2 = { ...ev.scores2, ...scores };
+          if (comments != null) ev.comments2 = comments;
+        }
+        ev.lastEditedBy = evaluatorId;
+        ev.lastEditedAt = new Date().toISOString();
+
+        if (action === 'save_draft') {
+          ev.status = ev.status === 'scheduled' ? 'in_progress' : ev.status;
+          evals[idx] = ev;
+          await dbSet('evaluations', evals);
+          return res.json({ ok: true, saved: true, evaluation: ev });
+        }
+
+        if (action === 'submit_m1') {
+          if (slot !== 1) return res.status(403).json({ error: 'فقط المدير الأول يقدر يُرسل submit_m1' });
+          // Validate: all criteria must have scores
+          const missingScores = (ev.criteriaSnapshot || []).filter(c => ev.scores[c.id] == null);
+          if (missingScores.length > 0 && ev.criteriaSnapshot && ev.criteriaSnapshot.length > 0) {
+            return res.status(400).json({ error: 'يجب تقييم كل المعايير', missing: missingScores.map(c => c.label || c.id) });
+          }
+          // If there's a second evaluator, mark pending_m2
+          if (ev.evaluator2Id) {
+            ev.status = 'pending_m2';
+          } else {
+            // No second evaluator → finalize based on type
+            ev.status = ['quarterly','annual'].includes(ev.type) ? 'submitted' : 'final';
+            ev.submittedAt = new Date().toISOString();
+          }
+        }
+        if (action === 'submit_m2') {
+          if (slot !== 2) return res.status(403).json({ error: 'فقط المدير الثاني يقدر يُرسل submit_m2' });
+          ev.status = ['quarterly','annual'].includes(ev.type) ? 'submitted' : 'final';
+          ev.submittedAt = new Date().toISOString();
+        }
+
+        // Compute weighted score
+        if (ev.status === 'submitted' || ev.status === 'final') {
+          const snapshot = ev.criteriaSnapshot || [];
+          let totalWeight = snapshot.reduce((s, c) => s + (Number(c.weight) || 0), 0) || 100;
+          let weighted = 0;
+          let m1Weighted = 0, m2Weighted = 0;
+          snapshot.forEach(c => {
+            const w = Number(c.weight) || 0;
+            const s1 = Number(ev.scores[c.id]) || 0;
+            const s2 = Number((ev.scores2 || {})[c.id]) || 0;
+            m1Weighted += s1 * (w / totalWeight);
+            m2Weighted += s2 * (w / totalWeight);
+          });
+          // If 2 evaluators: average (40% m1 + 60% m2 for direct manager weight)
+          if (ev.evaluator2Id) {
+            weighted = (m1Weighted * 0.4) + (m2Weighted * 0.6);
+          } else {
+            weighted = m1Weighted;
+          }
+          // Normalize to 0-100 (scores are 1-10)
+          ev.weightedScore = Math.round(weighted * 10 * 100) / 100;
+          ev.totalScore = Math.round(weighted * 10 * 100) / 100;
+          // For secret types (daily/weekly/monthly): finalScore = weightedScore immediately
+          if (['daily','weekly','monthly'].includes(ev.type)) {
+            ev.finalScore = ev.weightedScore;
+          }
+        }
+
+        evals[idx] = ev;
+        await dbSet('evaluations', evals);
+        return res.json({ ok: true, submitted: true, evaluation: ev });
+      }
+
+      case 'evaluation-approve': {
+        // POST — HR تعتمد تقييم فصلي/سنوي
+        if (req.method !== 'POST') return res.status(405).json({ error: 'POST required' });
+        const { evalId, approvedBy, decision, note } = req.body || {};
+        if (!evalId || !decision) return res.status(400).json({ error: 'evalId + decision required' });
+
+        const evals = await dbGet('evaluations') || [];
+        const idx = evals.findIndex(e => e.id === evalId);
+        if (idx < 0) return res.status(404).json({ error: 'evaluation not found' });
+        const ev = evals[idx];
+
+        if (ev.status !== 'submitted') return res.status(400).json({ error: 'التقييم ليس في حالة الاعتماد' });
+        if (!['quarterly','annual'].includes(ev.type)) return res.status(400).json({ error: 'فقط الفصلي والسنوي يحتاجان اعتماد' });
+
+        if (decision === 'approve') {
+          ev.status = 'approved';
+          ev.approvedAt = new Date().toISOString();
+          ev.approvedBy = approvedBy || 'hr';
+          ev.finalScore = ev.weightedScore;
+          ev.visibleToEmployee = true; // يصبح مرئياً للموظف
+          ev.approvalNote = note || '';
+        } else if (decision === 'reject') {
+          // Send back to evaluator for revision
+          ev.status = 'in_progress';
+          ev.approvalNote = note || 'تم رفض التقييم — يحتاج مراجعة';
+          ev.rejectedAt = new Date().toISOString();
+          ev.rejectedBy = approvedBy || 'hr';
+        } else {
+          return res.status(400).json({ error: 'decision must be approve or reject' });
+        }
+
+        evals[idx] = ev;
+        await dbSet('evaluations', evals);
+        return res.json({ ok: true, evaluation: ev });
+      }
+
+      case 'evaluation-send-kadwar': {
+        // POST — إرسال نتيجة التقييم لكوادر
+        if (req.method !== 'POST') return res.status(405).json({ error: 'POST required' });
+        const { evalId } = req.body || {};
+        if (!evalId) return res.status(400).json({ error: 'evalId required' });
+
+        const evals = await dbGet('evaluations') || [];
+        const idx = evals.findIndex(e => e.id === evalId);
+        if (idx < 0) return res.status(404).json({ error: 'evaluation not found' });
+        const ev = evals[idx];
+
+        // Only send if finalized/approved
+        if (!['approved','final'].includes(ev.status)) return res.status(400).json({ error: 'التقييم لم يُنهَ بعد' });
+        if (ev.sentToKadwarAt) return res.json({ ok: true, alreadySent: true, sentAt: ev.sentToKadwarAt });
+
+        try {
+          const kr = await fetch('https://hma.engineer/api/basma-sync?action=receive-evaluation', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              employee_id: ev.empId,
+              evaluation_id: ev.id,
+              evaluation_type: ev.type,
+              period_start: ev.periodStart,
+              period_end: ev.periodEnd,
+              evaluator_id: ev.evaluatorId,
+              evaluator_2_id: ev.evaluator2Id,
+              total_score: ev.finalScore || ev.weightedScore,
+              scores: ev.scores,
+              scores_2: ev.scores2,
+              comments: ev.comments,
+              comments_2: ev.comments2,
+              submitted_at: ev.submittedAt,
+              approved_at: ev.approvedAt,
+              approved_by: ev.approvedBy,
+              created_at: ev.createdAt,
+            })
+          });
+          const kd = await kr.json();
+          if (!kr.ok) return res.status(502).json({ error: 'كوادر رفض التقييم', detail: kd });
+
+          ev.sentToKadwarAt = new Date().toISOString();
+          ev.kadwarResponseId = kd.evaluation_id || kd.id || null;
+          evals[idx] = ev;
+          await dbSet('evaluations', evals);
+
+          // Log sync
+          const log = await dbGet('kadwar-sync-log') || [];
+          log.push({
+            id: 'KSL' + Date.now(),
+            ts: new Date().toISOString(),
+            action: 'push-evaluation',
+            employee_id: ev.empId,
+            evaluation_type: ev.type,
+            total_score: ev.finalScore,
+            success: true,
+            response: kd,
+          });
+          if (log.length > 500) log.splice(0, log.length - 500);
+          await dbSet('kadwar-sync-log', log);
+
+          return res.json({ ok: true, kadwar_response: kd });
+        } catch (e) {
+          return res.status(502).json({ error: 'تعذر الاتصال بكوادر: ' + e.message });
+        }
+      }
+
+      case 'evaluation-my-tasks': {
+        // GET — قائمة التقييمات المطلوبة من المدير (للمدير الحالي)
+        if (req.method !== 'GET') return res.status(405).json({ error: 'GET required' });
+        const managerId = req.query.managerId;
+        if (!managerId) return res.status(400).json({ error: 'managerId required' });
+        const evals = await dbGet('evaluations') || [];
+        const myTasks = evals.filter(e => {
+          const activeStatuses = ['scheduled', 'in_progress', 'pending_m2'];
+          if (!activeStatuses.includes(e.status)) return false;
+          // Manager 1 sees: scheduled/in_progress where they are evaluator1
+          if (String(e.evaluatorId) === String(managerId) && ['scheduled','in_progress'].includes(e.status)) return true;
+          // Manager 2 sees: pending_m2 where they are evaluator2
+          if (String(e.evaluator2Id) === String(managerId) && e.status === 'pending_m2') return true;
+          return false;
+        });
+        return res.json({ ok: true, count: myTasks.length, tasks: myTasks });
+      }
+
+      case 'evaluation-for-employee': {
+        // GET — التقييمات التي يستطيع الموظف رؤيتها
+        if (req.method !== 'GET') return res.status(405).json({ error: 'GET required' });
+        const empId = req.query.empId;
+        if (!empId) return res.status(400).json({ error: 'empId required' });
+        const evals = await dbGet('evaluations') || [];
+        // Only approved quarterly/annual
+        const visible = evals.filter(e =>
+          String(e.empId) === String(empId) &&
+          ['quarterly','annual'].includes(e.type) &&
+          e.status === 'approved' &&
+          e.visibleToEmployee === true
+        );
+        // Sort by period end descending
+        visible.sort((a, b) => String(b.periodEnd || b.approvedAt || '').localeCompare(String(a.periodEnd || a.approvedAt || '')));
+        return res.json({ ok: true, count: visible.length, evaluations: visible });
+      }
+
+      case 'evaluation-schedule-batch': {
+        // POST — جدولة دفعة تقييمات (مثلاً: تقييمات شهرية لكل الموظفين)
+        if (req.method !== 'POST') return res.status(405).json({ error: 'POST required' });
+        const { type, periodStart, periodEnd, empIds, createdBy } = req.body || {};
+        if (!type || !Array.isArray(empIds) || empIds.length === 0) return res.status(400).json({ error: 'type + empIds required' });
+
+        const emps = await dbGet('employees') || [];
+        const hierarchy = await dbGet('org_hierarchy') || {};
+        const profiles = await dbGet('emp-profiles') || {};
+        const cached = await dbGet('kadwar-eval-criteria-cache');
+        const evals = await dbGet('evaluations') || [];
+
+        const created = [];
+        const skipped = [];
+
+        for (const empId of empIds) {
+          const emp = emps.find(e => String(e.id) === String(empId));
+          if (!emp) { skipped.push({ empId, reason: 'not_found' }); continue; }
+
+          // Determine evaluators from hierarchy
+          const rec = hierarchy[String(empId)];
+          const evaluatorId = rec && rec.manager1 ? rec.manager1 : null;
+          const evaluator2Id = rec && rec.manager2 ? rec.manager2 : null;
+          if (!evaluatorId) { skipped.push({ empId, reason: 'no_manager' }); continue; }
+
+          // Check for duplicate in same period
+          const dup = evals.find(e =>
+            String(e.empId) === String(empId) &&
+            e.type === type &&
+            e.periodStart === periodStart &&
+            !['cancelled'].includes(e.status)
+          );
+          if (dup) { skipped.push({ empId, reason: 'already_scheduled', existing: dup.id }); continue; }
+
+          const empProfile = profiles[empId] || {};
+          const jobTitle = (empProfile.employment && empProfile.employment.jobTitle) || emp.role || '';
+
+          let criteriaSnapshot = [];
+          if (cached && cached.criteria_by_position && cached.criteria_by_position[jobTitle]) {
+            criteriaSnapshot = cached.criteria_by_position[jobTitle].criteria || [];
+          }
+
+          const newEval = {
+            id: 'EV' + Date.now() + Math.random().toString(36).slice(2, 6),
+            empId: String(empId),
+            empName: emp.name,
+            jobTitle,
+            evaluatorId: String(evaluatorId),
+            evaluator2Id: evaluator2Id ? String(evaluator2Id) : null,
+            type,
+            periodStart: periodStart || null,
+            periodEnd: periodEnd || null,
+            status: 'scheduled',
+            criteriaSnapshot,
+            criteriaSnapshotAt: new Date().toISOString(),
+            scores: {},
+            scores2: {},
+            comments: '',
+            comments2: '',
+            totalScore: null,
+            weightedScore: null,
+            finalScore: null,
+            createdBy: createdBy || 'hr_batch',
+            createdAt: new Date().toISOString(),
+            visibleToEmployee: false,
+          };
+          evals.push(newEval);
+          created.push(newEval.id);
+        }
+
+        await dbSet('evaluations', evals);
+        return res.json({ ok: true, created: created.length, skipped: skipped.length, createdIds: created, skippedDetails: skipped });
+      }
+
+      case 'evaluation-delete': {
+        // POST — حذف تقييم (فقط إذا في حالة scheduled)
+        if (req.method !== 'POST') return res.status(405).json({ error: 'POST required' });
+        const { evalId, deletedBy } = req.body || {};
+        if (!evalId) return res.status(400).json({ error: 'evalId required' });
+        const evals = await dbGet('evaluations') || [];
+        const idx = evals.findIndex(e => e.id === evalId);
+        if (idx < 0) return res.status(404).json({ error: 'evaluation not found' });
+        if (!['scheduled','cancelled'].includes(evals[idx].status)) {
+          return res.status(400).json({ error: 'لا يمكن حذف تقييم بدأ التنفيذ' });
+        }
+        evals.splice(idx, 1);
+        await dbSet('evaluations', evals);
+        return res.json({ ok: true });
+      }
+
+      case 'evaluation-stats': {
+        // GET — إحصائيات التقييم للوحة HR
+        if (req.method !== 'GET') return res.status(405).json({ error: 'GET required' });
+        const evals = await dbGet('evaluations') || [];
+        const byStatus = {};
+        const byType = {};
+        let pendingApproval = 0;
+        let totalScores = 0;
+        let scoreCount = 0;
+        evals.forEach(e => {
+          byStatus[e.status] = (byStatus[e.status] || 0) + 1;
+          byType[e.type] = (byType[e.type] || 0) + 1;
+          if (e.status === 'submitted' && ['quarterly','annual'].includes(e.type)) pendingApproval++;
+          if (e.finalScore != null) { totalScores += e.finalScore; scoreCount++; }
+        });
+        return res.json({
+          ok: true,
+          total: evals.length,
+          byStatus,
+          byType,
+          pendingApproval,
+          averageScore: scoreCount ? Math.round(totalScores / scoreCount * 100) / 100 : null,
+        });
+      }
+
       case 'checkin': {
         const { empId, type, lat, lng, facePhoto } = req.body || {};
         const recs = await dbGet('attendance') || [];
