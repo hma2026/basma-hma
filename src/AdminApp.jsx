@@ -4,7 +4,7 @@ import { generateAttendanceReport, generateEmployeeReport, generateMonthlySummar
 import { exportFormalWarning, exportInvestigationRecord, exportAffidavit, exportEmploymentLetter, exportSalaryLetter, exportLeaveLetter } from "./formalPdfs";
 
 const APP = "بصمة HMA";
-const VER = "6.89";
+const VER = "6.90";
 const CO = "هاني محمد عسيري للإستشارات الهندسية";
 const B = { blue: "#2B5EA7", yellow: "#FDD800", red: "#E2192C", black: "#1A1A1A", blueDk: "#1E4478", blueLt: "#EDF3FB", gold: "#D4A017" };
 
@@ -519,6 +519,7 @@ export default function AdminApp() {
         { id: "employees", icon: "👥", label: "الموظفين" },
         { id: "org_hierarchy", icon: "🏢", label: "الهيكل التنظيمي" },
         { id: "leaves", icon: "📋", label: "الإجازات", badge: pending },
+        { id: "leave_requests_v2", icon: "🏖️", label: "طلبات الإجازات + تسليم" },
         { id: "leave_balances", icon: "💰", label: "أرصدة الإجازات" },
         { id: "letters", icon: "📄", label: "الإفادات" },
         { id: "branches", icon: "🏢", label: "الفروع" },
@@ -1565,6 +1566,7 @@ export default function AdminApp() {
       {tab === "hr_tickets" && <HRTicketsPanel t={t} B={B} emps={safeEmps} />}
       {tab === "kadwar_sync" && <KadwarSyncPanel t={t} B={B} emps={safeEmps} />}
       {tab === "evaluations_hr" && <EvaluationsHRPanel t={t} B={B} emps={safeEmps} />}
+      {tab === "leave_requests_v2" && <LeaveRequestsHRPanel t={t} B={B} emps={safeEmps} />}
       {tab === "benefits" && <BenefitsPanel t={t} B={B} />}
       {tab === "announcements" && <AnnouncementsPanel t={t} B={B} emps={safeEmps} branches={branches} />}
       {tab === "banners" && <BannersPanel t={t} B={B} />}
@@ -11516,6 +11518,455 @@ function EvaluationDetailsModal({ ev, onClose, onApprove, t, B }) {
         </div>}
       </div>
     </div>
+  </div>;
+}
+
+
+/* ═══════════════════════════════════════════════════════════════════
+ * v6.90 — LeaveRequestsHRPanel — لوحة HR/المدير للإجازات + Handover
+ * ═══════════════════════════════════════════════════════════════════
+ * يعرض كل الطلبات حسب الدور (HR vs Manager) ويسمح بالقرار النهائي
+ */
+function LeaveRequestsHRPanel({ t, B, emps }) {
+  var [loading, setLoading] = useState(true);
+  var [requests, setRequests] = useState([]);
+  var [stats, setStats] = useState(null);
+  var [view, setView] = useState("pending");
+  var [selected, setSelected] = useState(null);
+  var [msg, setMsg] = useState(null);
+
+  async function loadAll() {
+    setLoading(true);
+    try {
+      var [r1, r2] = await Promise.all([
+        fetch("/api/data?action=leave-requests").then(function(r){return r.json();}),
+        fetch("/api/data?action=leave-stats").then(function(r){return r.json();}),
+      ]);
+      if (r1.ok) setRequests(r1.requests || []);
+      if (r2.ok) setStats(r2);
+    } catch(e) {
+      setMsg({ type: "error", text: "فشل التحميل: " + e.message });
+    }
+    setLoading(false);
+  }
+
+  useEffect(function(){ loadAll(); }, []);
+
+  var statusLabels = {
+    pending_m1: { label: "⏳ بانتظار المدير", color: "#D97706", bg: "rgba(217,119,6,0.1)" },
+    handover_open: { label: "📋 بانتظار تسليم المهام", color: "#8B5CF6", bg: "rgba(139,92,246,0.1)" },
+    pending_delegates: { label: "⏳ بانتظار المفوَّضين", color: "#06B6D4", bg: "rgba(6,182,212,0.1)" },
+    pending_final: { label: "🎯 مراجعة نهائية", color: "#3B82F6", bg: "rgba(59,130,246,0.1)" },
+    approved: { label: "✅ معتمد", color: "#16A34A", bg: "rgba(34,197,94,0.1)" },
+    rejected_m1: { label: "❌ مرفوض (مدير)", color: "#DC2626", bg: "rgba(239,68,68,0.1)" },
+    rejected_final: { label: "❌ مرفوض نهائي", color: "#DC2626", bg: "rgba(239,68,68,0.1)" },
+    cancelled: { label: "ملغي", color: "#6B7280", bg: "rgba(107,114,128,0.1)" },
+  };
+
+  var typeLabels = {
+    annual: "🌴 سنوية", sick: "🤒 مرضية", emergency: "🚨 طارئة", personal: "🙋 شخصية",
+    maternity: "👶 أمومة", bereavement: "🕊️ وفاة", hajj: "🕋 حج", unpaid: "💼 بدون راتب"
+  };
+
+  var filtered = requests.filter(function(r){
+    if (view === "pending") return ['pending_m1','pending_delegates','pending_final'].indexOf(r.status) >= 0;
+    if (view === "approved") return r.status === 'approved';
+    if (view === "rejected") return ['rejected_m1','rejected_final','cancelled'].indexOf(r.status) >= 0;
+    return true;
+  });
+
+  if (selected) {
+    return <LeaveRequestDetail request={selected} emps={emps} t={t} B={B}
+      onClose={function(){ setSelected(null); loadAll(); }} />;
+  }
+
+  return <div style={{ padding: 20, maxWidth: 1200, margin: "0 auto" }}>
+
+    {/* Header */}
+    <div style={{ display: "flex", alignItems: "center", gap: 14, marginBottom: 20 }}>
+      <div style={{ fontSize: 32 }}>🏖️</div>
+      <div style={{ flex: 1 }}>
+        <div style={{ fontSize: 20, fontWeight: 800, color: t.tx }}>الإجازات + التسليم</div>
+        <div style={{ fontSize: 11, color: t.txM, marginTop: 2 }}>
+          نظام متقدم مع Handover · سلسلة اعتماد 6 مراحل
+        </div>
+      </div>
+      <button onClick={loadAll} style={{ padding: "8px 14px", borderRadius: 8, background: t.bg, border: "1px solid " + t.sep, fontSize: 12, fontWeight: 700, color: t.tx, cursor: "pointer", fontFamily: "inherit" }}>🔄 تحديث</button>
+    </div>
+
+    {/* Stats */}
+    {stats && <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 12, marginBottom: 18 }}>
+      <div style={{ padding: 14, background: t.card, borderRadius: 12, border: "1px solid " + t.sep }}>
+        <div style={{ fontSize: 10, color: t.txM, fontWeight: 700, marginBottom: 4 }}>⏳ بانتظار المدير</div>
+        <div style={{ fontSize: 22, fontWeight: 800, color: "#D97706" }}>{stats.pendingM1 || 0}</div>
+      </div>
+      <div style={{ padding: 14, background: t.card, borderRadius: 12, border: "1px solid " + t.sep }}>
+        <div style={{ fontSize: 10, color: t.txM, fontWeight: 700, marginBottom: 4 }}>📋 التسليم قيد التنفيذ</div>
+        <div style={{ fontSize: 22, fontWeight: 800, color: "#8B5CF6" }}>{stats.pendingDelegates || 0}</div>
+      </div>
+      <div style={{ padding: 14, background: t.card, borderRadius: 12, border: "1px solid " + t.sep }}>
+        <div style={{ fontSize: 10, color: t.txM, fontWeight: 700, marginBottom: 4 }}>🎯 مراجعة نهائية</div>
+        <div style={{ fontSize: 22, fontWeight: 800, color: B.blue }}>{stats.pendingFinal || 0}</div>
+      </div>
+      <div style={{ padding: 14, background: t.card, borderRadius: 12, border: "1px solid " + t.sep }}>
+        <div style={{ fontSize: 10, color: t.txM, fontWeight: 700, marginBottom: 4 }}>✅ معتمدة</div>
+        <div style={{ fontSize: 22, fontWeight: 800, color: "#16A34A" }}>{stats.approved || 0}</div>
+      </div>
+    </div>}
+
+    {/* Tabs */}
+    <div style={{ display: "flex", gap: 4, marginBottom: 16, borderBottom: "2px solid " + t.sep }}>
+      {[
+        { id: "pending", label: "⏳ قيد المعالجة", count: (stats ? stats.pendingM1 + stats.pendingDelegates + stats.pendingFinal : 0) },
+        { id: "approved", label: "✅ معتمدة", count: stats && stats.approved },
+        { id: "rejected", label: "❌ مرفوضة/ملغاة" },
+        { id: "all", label: "الكل", count: stats && stats.total },
+      ].map(function(v){
+        var active = view === v.id;
+        return <button key={v.id} onClick={function(){setView(v.id);}} style={{
+          padding: "10px 16px", background: active ? B.blue : "transparent", color: active ? "#fff" : t.tx,
+          border: "none", borderRadius: "8px 8px 0 0", fontSize: 12, fontWeight: 700, cursor: "pointer",
+          fontFamily: "inherit", display: "flex", alignItems: "center", gap: 6, position: "relative", bottom: -2
+        }}>
+          <span>{v.label}</span>
+          {v.count != null && v.count > 0 && <span style={{ background: active ? "rgba(255,255,255,0.25)" : B.blue + "25", color: active ? "#fff" : B.blue, padding: "1px 7px", borderRadius: 10, fontSize: 10, fontWeight: 800 }}>{v.count}</span>}
+        </button>;
+      })}
+    </div>
+
+    {msg && <div style={{
+      padding: 10, borderRadius: 8, marginBottom: 14, fontSize: 12, fontWeight: 700,
+      background: msg.type === "error" ? "rgba(239,68,68,0.1)" : "rgba(34,197,94,0.1)",
+      color: msg.type === "error" ? "#DC2626" : "#16A34A"
+    }}>{msg.text}</div>}
+
+    {loading ? <div style={{ padding: 40, textAlign: "center", color: t.txM }}>جارٍ التحميل...</div> :
+     filtered.length === 0 ? <div style={{ padding: 40, textAlign: "center", color: t.txM, background: t.card, borderRadius: 12 }}>
+       لا توجد طلبات في هذا التبويب
+     </div> : <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+       {filtered.map(function(r){
+         var st = statusLabels[r.status] || { label: r.status, color: t.txM, bg: t.bg };
+         var handoverTotal = (r.handoverItems || []).length;
+         var handoverDone = (r.handoverItems || []).filter(function(i){return i.delegateDecision;}).length;
+         return <div key={r.id} onClick={function(){setSelected(r);}} style={{
+           background: t.card, borderRadius: 14, padding: 14,
+           border: "1px solid " + t.sep, cursor: "pointer",
+           display: "flex", flexDirection: "column", gap: 8
+         }}>
+           <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+             <div style={{
+               width: 40, height: 40, borderRadius: 10, background: B.blue + "15",
+               display: "flex", alignItems: "center", justifyContent: "center", fontSize: 18
+             }}>{(typeLabels[r.type] || '🏖️').split(' ')[0]}</div>
+             <div style={{ flex: 1 }}>
+               <div style={{ fontSize: 14, fontWeight: 800, color: t.tx }}>{r.empName}</div>
+               <div style={{ fontSize: 11, color: t.txM, marginTop: 2 }}>
+                 {(typeLabels[r.type] || r.type).split(' ')[1] || r.type} · {r.days} يوم · {r.from} → {r.to}
+               </div>
+             </div>
+             <div style={{ padding: "4px 10px", borderRadius: 10, background: st.bg, color: st.color, fontSize: 10, fontWeight: 800 }}>{st.label}</div>
+           </div>
+
+           {handoverTotal > 0 && <div>
+             <div style={{ display: "flex", justifyContent: "space-between", fontSize: 10, color: t.txM, marginBottom: 3 }}>
+               <span>التسليم: {handoverDone}/{handoverTotal}</span>
+               <span>{Math.round(handoverDone / handoverTotal * 100)}%</span>
+             </div>
+             <div style={{ display: "flex", gap: 2 }}>
+               {r.handoverItems.map(function(i, idx){
+                 var c = i.delegateDecision === 'accept' ? '#16A34A' :
+                         i.delegateDecision === 'decline' ? '#DC2626' :
+                         '#E5E7EB';
+                 return <div key={idx} style={{ flex: 1, height: 4, background: c, borderRadius: 2 }}></div>;
+               })}
+             </div>
+           </div>}
+
+           {r.reason && <div style={{ fontSize: 11, color: t.tx2, padding: "6px 10px", background: t.bg, borderRadius: 6 }}>
+             💬 {r.reason}
+           </div>}
+         </div>;
+       })}
+     </div>}
+
+  </div>;
+}
+
+/* ────── LeaveRequestDetail — تفاصيل وقرار على طلب إجازة ────── */
+function LeaveRequestDetail({ request, emps, onClose, t, B }) {
+  var [note, setNote] = useState("");
+  var [saving, setSaving] = useState(false);
+  var [msg, setMsg] = useState(null);
+  var [rejectedDelegates, setRejectedDelegates] = useState([]);
+
+  // User context from URL or localStorage
+  var currentUserId = null;
+  try {
+    var u = JSON.parse(localStorage.getItem("basma_user") || "{}");
+    currentUserId = u.id;
+  } catch(e) {}
+
+  var isManager = currentUserId && String(currentUserId) === String(request.managerId);
+  var canDecideM1 = isManager && request.status === 'pending_m1';
+  var canDecideFinalManager = isManager && request.status === 'pending_final' && !request.awaitingHR;
+  var canDecideFinalHR = request.status === 'pending_final' && request.awaitingHR;
+
+  async function decideM1(decision) {
+    if (decision === 'reject' && !note.trim()) {
+      setMsg({ type: "error", text: "سبب الرفض مطلوب" });
+      return;
+    }
+    setSaving(true);
+    try {
+      var r = await fetch("/api/data?action=leave-request-m1", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ requestId: request.id, decision, managerId: currentUserId, note })
+      });
+      var d = await r.json();
+      if (d.ok) {
+        setMsg({ type: "success", text: "✓ تم " + (decision === 'approve' ? 'الموافقة' : 'الرفض') });
+        setTimeout(onClose, 1000);
+      } else {
+        setMsg({ type: "error", text: d.error || "فشل" });
+      }
+    } catch(e) { setMsg({ type: "error", text: "فشل: " + e.message }); }
+    setSaving(false);
+  }
+
+  async function decideFinal(role, decision) {
+    setSaving(true);
+    try {
+      var r = await fetch("/api/data?action=leave-final-decision", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          requestId: request.id, decision, decidedBy: currentUserId, role, note,
+          rejectedDelegates: role === 'hr' ? rejectedDelegates : undefined
+        })
+      });
+      var d = await r.json();
+      if (d.ok) {
+        setMsg({ type: "success", text: "✓ تم" });
+        setTimeout(onClose, 1000);
+      } else {
+        setMsg({ type: "error", text: d.error || "فشل" });
+      }
+    } catch(e) { setMsg({ type: "error", text: "فشل: " + e.message }); }
+    setSaving(false);
+  }
+
+  var typeLabels = {
+    annual: "سنوية", sick: "مرضية", emergency: "طارئة", personal: "شخصية",
+    maternity: "أمومة", bereavement: "وفاة", hajj: "حج", unpaid: "بدون راتب"
+  };
+
+  return <div style={{ padding: 20, maxWidth: 900, margin: "0 auto" }}>
+
+    <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 20 }}>
+      <button onClick={onClose} style={{
+        width: 36, height: 36, borderRadius: 10, border: "1px solid " + t.sep,
+        background: t.card, color: t.tx, cursor: "pointer", fontSize: 18
+      }}>×</button>
+      <div style={{ flex: 1 }}>
+        <div style={{ fontSize: 18, fontWeight: 800, color: t.tx }}>طلب إجازة — {request.empName}</div>
+        <div style={{ fontSize: 11, color: t.txM }}>إجازة {typeLabels[request.type] || request.type} · {request.days} يوم</div>
+      </div>
+    </div>
+
+    {/* Summary card */}
+    <div style={{ background: t.card, borderRadius: 14, padding: 18, border: "1px solid " + t.sep, marginBottom: 14 }}>
+      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
+        <div>
+          <div style={{ fontSize: 10, color: t.txM, fontWeight: 700, marginBottom: 3 }}>من تاريخ</div>
+          <div style={{ fontSize: 14, fontWeight: 800, color: t.tx }}>{request.from}</div>
+        </div>
+        <div>
+          <div style={{ fontSize: 10, color: t.txM, fontWeight: 700, marginBottom: 3 }}>إلى تاريخ</div>
+          <div style={{ fontSize: 14, fontWeight: 800, color: t.tx }}>{request.to}</div>
+        </div>
+        <div>
+          <div style={{ fontSize: 10, color: t.txM, fontWeight: 700, marginBottom: 3 }}>عدد الأيام</div>
+          <div style={{ fontSize: 14, fontWeight: 800, color: B.blue }}>{request.days} يوم</div>
+        </div>
+        <div>
+          <div style={{ fontSize: 10, color: t.txM, fontWeight: 700, marginBottom: 3 }}>تاريخ الإرسال</div>
+          <div style={{ fontSize: 12, fontWeight: 700, color: t.tx }}>
+            {request.createdAt ? new Date(request.createdAt).toLocaleDateString("ar-SA") : "—"}
+          </div>
+        </div>
+      </div>
+      {request.reason && <div style={{ marginTop: 12, padding: 10, background: t.bg, borderRadius: 8, fontSize: 12, color: t.tx }}>
+        <strong>💬 السبب:</strong> {request.reason}
+      </div>}
+      {request.contactDuringLeave && <div style={{ marginTop: 8, padding: 10, background: t.bg, borderRadius: 8, fontSize: 12, color: t.tx }}>
+        <strong>📞 التواصل خلال الإجازة:</strong> {request.contactDuringLeave}
+      </div>}
+    </div>
+
+    {/* Approvals trace */}
+    <div style={{ background: t.card, borderRadius: 14, padding: 18, border: "1px solid " + t.sep, marginBottom: 14 }}>
+      <div style={{ fontSize: 13, fontWeight: 800, color: t.tx, marginBottom: 12 }}>📜 سلسلة الاعتمادات</div>
+      <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 11 }}>
+          <div style={{ width: 8, height: 8, borderRadius: 4, background: "#16A34A" }}></div>
+          <span style={{ color: t.tx, fontWeight: 700 }}>1. تم إرسال الطلب</span>
+          <span style={{ color: t.txM, marginRight: "auto" }}>
+            {request.createdAt ? new Date(request.createdAt).toLocaleString("ar-SA") : ""}
+          </span>
+        </div>
+        <div style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 11 }}>
+          <div style={{ width: 8, height: 8, borderRadius: 4, background: request.m1Decision ? (request.m1Decision === 'approve' ? "#16A34A" : "#DC2626") : "#E5E7EB" }}></div>
+          <span style={{ color: t.tx, fontWeight: 700 }}>
+            2. موافقة المدير المبدئية
+            {request.m1Decision && <span style={{ color: request.m1Decision === 'approve' ? "#16A34A" : "#DC2626", marginRight: 6 }}>
+              ({request.m1Decision === 'approve' ? '✓' : '✕'})
+            </span>}
+          </span>
+          {request.m1DecidedAt && <span style={{ color: t.txM, marginRight: "auto", fontSize: 10 }}>
+            {new Date(request.m1DecidedAt).toLocaleString("ar-SA")}
+          </span>}
+        </div>
+        <div style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 11 }}>
+          <div style={{ width: 8, height: 8, borderRadius: 4, background: request.handoverSubmittedAt ? "#16A34A" : "#E5E7EB" }}></div>
+          <span style={{ color: t.tx, fontWeight: 700 }}>3. تسليم المهام</span>
+        </div>
+        <div style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 11 }}>
+          <div style={{ width: 8, height: 8, borderRadius: 4, background: request.finalDecision === 'approve' ? "#16A34A" : request.finalDecision === 'reject' ? "#DC2626" : "#E5E7EB" }}></div>
+          <span style={{ color: t.tx, fontWeight: 700 }}>
+            4. موافقة المدير النهائية
+            {request.finalDecision && <span style={{ marginRight: 6 }}>({request.finalDecision === 'approve' ? '✓' : '✕'})</span>}
+          </span>
+        </div>
+        <div style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 11 }}>
+          <div style={{ width: 8, height: 8, borderRadius: 4, background: request.hrDecision === 'approve' ? "#16A34A" : request.hrDecision === 'reject' ? "#DC2626" : "#E5E7EB" }}></div>
+          <span style={{ color: t.tx, fontWeight: 700 }}>
+            5. اعتماد HR النهائي
+            {request.hrDecision && <span style={{ marginRight: 6 }}>({request.hrDecision === 'approve' ? '✓' : '✕'})</span>}
+          </span>
+        </div>
+      </div>
+
+      {request.m1Note && <div style={{ marginTop: 10, padding: 8, background: t.bg, borderRadius: 6, fontSize: 11, color: t.tx2 }}>
+        <strong>ملاحظة المدير المبدئية:</strong> {request.m1Note}
+      </div>}
+      {request.finalNote && <div style={{ marginTop: 8, padding: 8, background: t.bg, borderRadius: 6, fontSize: 11, color: t.tx2 }}>
+        <strong>ملاحظة المدير النهائية:</strong> {request.finalNote}
+      </div>}
+      {request.hrNote && <div style={{ marginTop: 8, padding: 8, background: t.bg, borderRadius: 6, fontSize: 11, color: t.tx2 }}>
+        <strong>ملاحظة HR:</strong> {request.hrNote}
+      </div>}
+    </div>
+
+    {/* Handover items */}
+    {request.handoverItems && request.handoverItems.length > 0 && <div style={{ background: t.card, borderRadius: 14, padding: 18, border: "1px solid " + t.sep, marginBottom: 14 }}>
+      <div style={{ fontSize: 13, fontWeight: 800, color: t.tx, marginBottom: 12 }}>📋 بنود التسليم ({request.handoverItems.length})</div>
+      <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+        {request.handoverItems.map(function(item){
+          var statusColor = item.delegateDecision === 'accept' ? '#16A34A' :
+                            item.delegateDecision === 'decline' ? '#DC2626' : '#D97706';
+          var statusText = item.delegateDecision === 'accept' ? '✓ وافق' :
+                           item.delegateDecision === 'decline' ? '✕ رفض' : '⏳ بانتظار';
+          var isRejectedByHR = rejectedDelegates.indexOf(item.id) >= 0;
+          var categoryIcons = { individual: '📄', project: '🚀', task_type: '🔁', investigation: '🔍' };
+
+          return <div key={item.id} style={{
+            padding: 12, background: t.bg, borderRadius: 10,
+            border: "1px solid " + (isRejectedByHR ? "#DC2626" : t.sep)
+          }}>
+            <div style={{ display: "flex", alignItems: "flex-start", gap: 10 }}>
+              <div style={{ fontSize: 20 }}>{categoryIcons[item.category] || '📋'}</div>
+              <div style={{ flex: 1 }}>
+                <div style={{ fontSize: 13, fontWeight: 700, color: t.tx }}>{item.title}</div>
+                {item.description && <div style={{ fontSize: 11, color: t.tx2, marginTop: 3 }}>{item.description}</div>}
+                <div style={{ fontSize: 11, color: t.txM, marginTop: 5 }}>
+                  👤 المُفوَّض: <strong>{item.delegateName}</strong>
+                </div>
+                {item.delegateNote && <div style={{ fontSize: 10, color: t.txM, marginTop: 3, fontStyle: "italic" }}>
+                  💬 {item.delegateNote}
+                </div>}
+              </div>
+              <div style={{ padding: "3px 10px", borderRadius: 10, background: statusColor + "15", color: statusColor, fontSize: 10, fontWeight: 800 }}>
+                {statusText}
+              </div>
+            </div>
+
+            {/* HR can reject a delegate as "غير كفء" */}
+            {canDecideFinalHR && item.delegateDecision === 'accept' && <div style={{ marginTop: 8, paddingTop: 8, borderTop: "1px dashed " + t.sep }}>
+              <label style={{ display: "flex", alignItems: "center", gap: 6, cursor: "pointer", fontSize: 11, color: isRejectedByHR ? "#DC2626" : t.tx2 }}>
+                <input type="checkbox" checked={isRejectedByHR} onChange={function(e){
+                  if (e.target.checked) {
+                    setRejectedDelegates(function(prev){ return [...prev, item.id]; });
+                  } else {
+                    setRejectedDelegates(function(prev){ return prev.filter(function(id){return id !== item.id;}); });
+                  }
+                }} />
+                <span>🚫 رفض هذا المُفوَّض — "غير كفء"</span>
+              </label>
+            </div>}
+
+            {item.hrDecision === 'reject' && <div style={{ marginTop: 8, padding: 6, background: "rgba(239,68,68,0.1)", borderRadius: 6, fontSize: 10, color: "#DC2626", fontWeight: 700 }}>
+              🚫 رفضه HR: غير كفء
+            </div>}
+          </div>;
+        })}
+      </div>
+    </div>}
+
+    {/* Action buttons */}
+    {(canDecideM1 || canDecideFinalManager || canDecideFinalHR) && <div style={{ background: t.card, borderRadius: 14, padding: 18, border: "2px solid " + B.blue + "30" }}>
+      <div style={{ fontSize: 13, fontWeight: 800, color: B.blue, marginBottom: 12 }}>
+        {canDecideM1 ? "🤝 قرارك المبدئي" :
+         canDecideFinalManager ? "✅ قرارك النهائي كمدير" :
+         "🎯 قرار HR النهائي"}
+      </div>
+
+      <textarea value={note} onChange={function(e){setNote(e.target.value);}} rows={3}
+        placeholder={canDecideM1 ? "ملاحظة (إلزامية في حالة الرفض)..." : "ملاحظة اختيارية..."}
+        style={{
+          width: "100%", padding: 10, borderRadius: 8,
+          border: "1px solid " + t.sep, background: t.bg,
+          fontFamily: "inherit", fontSize: 12, resize: "vertical",
+          boxSizing: "border-box", marginBottom: 12
+        }} />
+
+      {msg && <div style={{
+        padding: 8, borderRadius: 8, marginBottom: 10, fontSize: 11, fontWeight: 700, textAlign: "center",
+        background: msg.type === "error" ? "rgba(239,68,68,0.1)" : "rgba(34,197,94,0.1)",
+        color: msg.type === "error" ? "#DC2626" : "#16A34A"
+      }}>{msg.text}</div>}
+
+      <div style={{ display: "flex", gap: 8 }}>
+        <button onClick={function(){
+          if (canDecideM1) decideM1('reject');
+          else if (canDecideFinalManager) decideFinal('manager', 'reject');
+          else if (canDecideFinalHR) decideFinal('hr', 'reject');
+        }} disabled={saving} style={{
+          flex: 1, padding: 12, background: "#DC2626", color: "#fff", border: "none",
+          borderRadius: 10, fontSize: 12, fontWeight: 800, cursor: saving ? "wait" : "pointer",
+          fontFamily: "inherit"
+        }}>✕ رفض</button>
+        <button onClick={function(){
+          if (canDecideM1) decideM1('approve');
+          else if (canDecideFinalManager) decideFinal('manager', 'approve');
+          else if (canDecideFinalHR) decideFinal('hr', 'approve');
+        }} disabled={saving} style={{
+          flex: 2, padding: 12, background: "#16A34A", color: "#fff", border: "none",
+          borderRadius: 10, fontSize: 12, fontWeight: 800, cursor: saving ? "wait" : "pointer",
+          fontFamily: "inherit"
+        }}>{saving ? "جارٍ..." : "✓ موافقة"}</button>
+      </div>
+
+      {canDecideFinalHR && rejectedDelegates.length > 0 && <div style={{ marginTop: 10, padding: 10, background: "rgba(239,68,68,0.08)", borderRadius: 8, fontSize: 11, color: "#DC2626", fontWeight: 600 }}>
+        🚫 ستقوم برفض {rejectedDelegates.length} مُفوَّض — سيحتاج الموظف لاختيار بدلاء
+      </div>}
+    </div>}
+
+    {!canDecideM1 && !canDecideFinalManager && !canDecideFinalHR && <div style={{
+      padding: 14, background: t.card, borderRadius: 12, border: "1px solid " + t.sep,
+      textAlign: "center", fontSize: 12, color: t.txM
+    }}>
+      ℹ️ لا توجد إجراءات متاحة لك في هذه المرحلة
+    </div>}
+
   </div>;
 }
 
