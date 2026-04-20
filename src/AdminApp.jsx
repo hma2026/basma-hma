@@ -10744,11 +10744,14 @@ function EmployeeFullProfileCard({ emp, t, B }) {
         section="personal"
         data={profile && profile.personal}
         fields={[
-          { key: "fullNameParts", label: "الاسم الرباعي الكامل", type: "name4" },
+          { key: "fullName", label: "الاسم الكامل", type: "text" },
+          { key: "fullNameEn", label: "الاسم بالإنجليزية", type: "text" },
           { key: "idExpiry", label: "تاريخ انتهاء الهوية", type: "date" },
           { key: "dateOfBirth", label: "تاريخ الميلاد", type: "date" },
           { key: "nationality", label: "الجنسية", type: "text" },
+          { key: "gender", label: "الجنس", type: "select", options: ["ذكر","أنثى"] },
           { key: "maritalStatus", label: "الحالة الاجتماعية", type: "select", options: ["أعزب","متزوج","مطلق","أرمل"] },
+          { key: "city", label: "المدينة", type: "text" },
           { key: "address", label: "العنوان", type: "textarea" },
           { key: "emergencyContact", label: "جهة اتصال للطوارئ (الاسم + الرقم)", type: "text" },
         ]}
@@ -10967,9 +10970,13 @@ function ProfileReadField({ value, type, t }) {
   if (value == null || value === "") {
     return <div style={{ padding: "7px 10px", background: t.bg, borderRadius: 6, fontSize: 11, color: t.txM, fontStyle: "italic", border: "1px dashed " + t.sep }}>— غير مُدخل —</div>;
   }
-  if (type === "name4" && typeof value === "object") {
-    var parts = [value.first, value.second, value.third, value.fourth, value.family].filter(Boolean);
-    return <div style={{ padding: "7px 10px", background: t.bg, borderRadius: 6, fontSize: 11, fontWeight: 700, color: t.tx }}>{parts.join(" ") || "—"}</div>;
+  if (type === "name4") {
+    // Support both: object (from basma input) or string (from kadwar migration)
+    if (typeof value === "object" && value !== null) {
+      var parts = [value.first, value.second, value.third, value.fourth, value.family].filter(Boolean);
+      return <div style={{ padding: "7px 10px", background: t.bg, borderRadius: 6, fontSize: 11, fontWeight: 700, color: t.tx }}>{parts.join(" ") || "—"}</div>;
+    }
+    return <div style={{ padding: "7px 10px", background: t.bg, borderRadius: 6, fontSize: 11, fontWeight: 700, color: t.tx }}>{String(value)}</div>;
   }
   if (type === "textarea") {
     return <div style={{ padding: "8px 10px", background: t.bg, borderRadius: 6, fontSize: 11, color: t.tx, whiteSpace: "pre-wrap", minHeight: 50 }}>{value}</div>;

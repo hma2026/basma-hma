@@ -170,22 +170,23 @@ function computeCompleteness(emp, profile, attachments) {
   let total = 0;
 
   // ═══ بيانات شخصية أساسية (وزن 30%) ═══
+  // يدعم fullName (من كوادر) أو fullNameParts (مُدخل من بصمة)
   const personalFields = [
-    { key: 'fullNameParts', path: 'personal.fullNameParts', label: 'الاسم الرباعي الكامل', weight: 3 },
-    { key: 'idNumber', path: 'emp.idNumber', label: 'رقم الهوية', weight: 3 },
-    { key: 'idExpiry', path: 'personal.idExpiry', label: 'تاريخ انتهاء الهوية', weight: 2 },
-    { key: 'dateOfBirth', path: 'personal.dateOfBirth', label: 'تاريخ الميلاد', weight: 2 },
-    { key: 'nationality', path: 'personal.nationality', label: 'الجنسية', weight: 2 },
-    { key: 'maritalStatus', path: 'personal.maritalStatus', label: 'الحالة الاجتماعية', weight: 1 },
-    { key: 'phone', path: 'emp.phone', label: 'رقم الجوال', weight: 3 },
-    { key: 'email', path: 'emp.email', label: 'البريد الإلكتروني', weight: 2 },
-    { key: 'address', path: 'personal.address', label: 'العنوان', weight: 1 },
-    { key: 'emergencyContact', path: 'personal.emergencyContact', label: 'جهة اتصال الطوارئ', weight: 2 },
+    { key: 'fullName', label: 'الاسم الكامل', weight: 3, check: () => (profile.personal && (profile.personal.fullName || profile.personal.fullNameParts)) || emp.name },
+    { key: 'idNumber', label: 'رقم الهوية', weight: 3, check: () => emp.idNumber || (profile.personal && profile.personal.idNumber) },
+    { key: 'idExpiry', label: 'تاريخ انتهاء الهوية', weight: 2, check: () => profile.personal && profile.personal.idExpiry },
+    { key: 'dateOfBirth', label: 'تاريخ الميلاد', weight: 2, check: () => profile.personal && (profile.personal.dateOfBirth || profile.personal.dob) },
+    { key: 'nationality', label: 'الجنسية', weight: 2, check: () => profile.personal && profile.personal.nationality },
+    { key: 'maritalStatus', label: 'الحالة الاجتماعية', weight: 1, check: () => profile.personal && profile.personal.maritalStatus },
+    { key: 'phone', label: 'رقم الجوال', weight: 3, check: () => emp.phone || (profile.personal && profile.personal.phone) },
+    { key: 'email', label: 'البريد الإلكتروني', weight: 2, check: () => emp.email || (profile.personal && profile.personal.email) },
+    { key: 'address', label: 'العنوان', weight: 1, check: () => profile.personal && (profile.personal.address || profile.personal.city) },
+    { key: 'emergencyContact', label: 'جهة اتصال الطوارئ', weight: 2, check: () => profile.personal && profile.personal.emergencyContact },
   ];
 
   personalFields.forEach(f => {
     total += f.weight;
-    const val = f.path.startsWith('emp.') ? emp[f.path.split('.')[1]] : (profile.personal && profile.personal[f.key]);
+    const val = f.check();
     if (val && (typeof val !== 'object' || Object.keys(val).length > 0)) {
       filled += f.weight;
     } else {
@@ -1075,107 +1076,212 @@ export default async function handler(req, res) {
           // 2. Apply to basma employees + profiles
           const existingEmps = await dbGet('employees') || [];
           const profiles = await dbGet('emp-profiles') || {};
-          const existingById = Object.fromEntries(existingEmps.map(e => [e.id, e]));
+          const existingById = Object.fromEntries(existingEmps.map(e => [String(e.id), e]));
           const updatedEmps = [...existingEmps];
           const importedSamples = [];
+
           for (const ke of kd.employees) {
             try {
-              // Accept any id format from kadwar
-              const kId = ke.id || ke.idNumber || ke.id_number || ke.uid || ke.username;
-              if (!kId) {
+              // ═══ تحديد المعرّف الصحيح ═══
+              // كوادر يُرسل: id (HREMP00004) + uid (1045443494 = رقم الهوية)
+              // بصمة تستخدم uid (رقم الهوية) كـ id
+              const kUid = ke.uid || (ke.personal && ke.personal.id_number) || ke.id;
+              const kHrCode = ke.hr_code || ke.id;
+              const kId = String(kUid); // استخدم uid كـ id في بصمة
+
+              if (!kId || kId === 'undefined') {
                 summary.totals.errors++;
-                summary.steps.push({ step: 'skip-no-id', sample: ke, at: new Date().toISOString() });
+                summary.steps.push({ step: 'skip-no-id', sample_keys: Object.keys(ke), at: new Date().toISOString() });
                 continue;
               }
-              // Find or create employee in basma
-              const existing = existingById[kId];
+
+              // ═══ إيجاد الموظف الموجود في بصمة ═══
+              // جرب البحث بعدة طرق
+              let existing = existingById[kId];
+              if (!existing) {
+                // ابحث بـ idNumber
+                existing = existingEmps.find(e =>
+                  String(e.idNumber) === kId ||
+                  String(e.id) === kId ||
+                  (ke.account && ke.account.username && String(e.username || e.email) === String(ke.account.username))
+                );
+              }
+
               const baseEmp = existing || { id: kId };
 
-              // Normalize — handle both nested (personal.phone) and flat (phone) structures
-              const getPersonal = (k) => (ke.personal && ke.personal[k]) || ke[k];
-              const getEmployment = (k) => (ke.employment && ke.employment[k]) || ke[k];
-              const getComp = (k) => (ke.compensation && ke.compensation[k]) || ke[k];
-              const getContract = (k) => (ke.contract && ke.contract[k]) || ke[k];
+              // ═══ بناء سجل الموظف الأساسي ═══
+              const personal = ke.personal || {};
+              const employment = ke.employment || {};
+              const account = ke.account || {};
 
               const mergedEmp = {
                 ...baseEmp,
-                id: kId,
-                idNumber: ke.id_number || ke.idNumber || baseEmp.idNumber || kId,
-                name: ke.full_name || ke.fullName || ke.name || baseEmp.name,
-                email: getPersonal('email') || baseEmp.email,
-                phone: getPersonal('phone') || baseEmp.phone,
-                role: ke.job_title || ke.jobTitle || ke.role || (ke.employment && ke.employment.job_title) || baseEmp.role,
-                department: getEmployment('department') || baseEmp.department,
-                branch: getEmployment('branch') || baseEmp.branch,
+                id: baseEmp.id || kId,
+                idNumber: personal.id_number || kId,
+                hrCode: kHrCode,
+                name: personal.full_name || baseEmp.name || '',
+                nameEn: personal.full_name_en || baseEmp.nameEn || '',
+                email: personal.email || account.username || baseEmp.email || '',
+                phone: personal.phone || baseEmp.phone || '',
+                role: employment.job_title || baseEmp.role || '',
+                department: employment.department || baseEmp.department || '',
+                branch: employment.branch || baseEmp.branch || '',
+                username: account.username || baseEmp.username,
+                accountRole: account.role || baseEmp.accountRole,
               };
+
+              // Update or add
               if (existing) {
-                const idx = updatedEmps.findIndex(e => e.id === kId);
+                const idx = updatedEmps.findIndex(e => e.id === existing.id);
                 if (idx >= 0) updatedEmps[idx] = mergedEmp;
                 else updatedEmps.push(mergedEmp);
               } else {
                 updatedEmps.push(mergedEmp);
               }
 
-              // Build extended profile — accept both structured and flat data
-              profiles[kId] = profiles[kId] || {};
+              // ═══ بناء الـ profile الموسّع ═══
+              const profileKey = mergedEmp.id;
+              profiles[profileKey] = profiles[profileKey] || {};
               const now = new Date().toISOString();
 
-              // Personal — merge nested + flat fields
-              const personalData = {
-                ...(ke.personal || {}),
-              };
-              // Pull flat fields that belong to personal
-              ['dateOfBirth','date_of_birth','nationality','maritalStatus','marital_status','address','emergencyContact','emergency_contact','idExpiry','id_expiry','fullNameParts','full_name_parts'].forEach(k => {
-                if (ke[k] != null && personalData[k.replace(/_([a-z])/g, (m,c) => c.toUpperCase())] == null) {
-                  const normKey = k.replace(/_([a-z])/g, (m,c) => c.toUpperCase());
-                  personalData[normKey] = ke[k];
-                }
-              });
-              if (Object.keys(personalData).length > 0) {
-                profiles[kId].personal = { ...(profiles[kId].personal || {}), ...personalData, _migratedFrom: 'kadwar', _migratedAt: now };
+              // Personal — نقل كل الحقول المطابقة
+              if (personal && Object.keys(personal).length > 0) {
+                profiles[profileKey].personal = {
+                  ...(profiles[profileKey].personal || {}),
+                  // Normalize field names
+                  fullName: personal.full_name,
+                  fullNameEn: personal.full_name_en,
+                  idNumber: personal.id_number,
+                  idExpiry: personal.id_expiry,
+                  dateOfBirth: personal.dob,
+                  nationality: personal.nationality,
+                  gender: personal.gender,
+                  maritalStatus: personal.marital_status,
+                  email: personal.email,
+                  phone: personal.phone,
+                  address: personal.address,
+                  city: personal.city,
+                  dependents: personal.dependents || [],
+                  _migratedFrom: 'kadwar',
+                  _migratedAt: now,
+                };
               }
 
               // Employment
-              const employmentData = { ...(ke.employment || {}) };
-              ['hireDate','hire_date','jobGrade','job_grade','workType','work_type','supervisor','jobDescription','job_description'].forEach(k => {
-                if (ke[k] != null) {
-                  const normKey = k.replace(/_([a-z])/g, (m,c) => c.toUpperCase());
-                  if (employmentData[normKey] == null) employmentData[normKey] = ke[k];
-                }
-              });
-              if (Object.keys(employmentData).length > 0) {
-                profiles[kId].employment = { ...(profiles[kId].employment || {}), ...employmentData, _migratedFrom: 'kadwar', _migratedAt: now };
+              if (employment && Object.keys(employment).length > 0) {
+                profiles[profileKey].employment = {
+                  ...(profiles[profileKey].employment || {}),
+                  jobTitle: employment.job_title,
+                  department: employment.department,
+                  branch: employment.branch,
+                  hireDate: employment.hire_date,
+                  employeeType: employment.employee_type,
+                  status: employment.status,
+                  managerId: employment.manager_id,
+                  supervisorId: employment.supervisor_id,
+                  _migratedFrom: 'kadwar',
+                  _migratedAt: now,
+                };
               }
 
-              // Compensation
-              const compData = { ...(ke.compensation || {}) };
-              ['basicSalary','basic_salary','salary','housingAllowance','housing_allowance','transportAllowance','transport_allowance','communicationsAllowance','communications_allowance','otherAllowances','other_allowances','iban','bankName','bank_name','totalSalary','total_salary'].forEach(k => {
-                if (ke[k] != null) {
-                  const normKey = k.replace(/_([a-z])/g, (m,c) => c.toUpperCase());
-                  if (compData[normKey] == null) compData[normKey] = ke[k];
-                }
-              });
-              if (Object.keys(compData).length > 0) {
-                profiles[kId].compensation = { ...(profiles[kId].compensation || {}), ...compData, _migratedFrom: 'kadwar', _migratedAt: now };
+              // Compensation — مع flattening للبدلات
+              const comp = ke.compensation || {};
+              if (Object.keys(comp).length > 0) {
+                const allowances = comp.allowances || {};
+                profiles[profileKey].compensation = {
+                  ...(profiles[profileKey].compensation || {}),
+                  basicSalary: comp.basic_salary ? Number(comp.basic_salary) : 0,
+                  housingAllowance: Number(allowances.housing || 0),
+                  transportAllowance: Number(allowances.transport || 0),
+                  communicationsAllowance: Number(allowances.communication || 0),
+                  otherAllowances: Number(allowances.other || 0),
+                  fixedDeductions: Number(comp.deductions || 0),
+                  iban: comp.iban || '',
+                  bankName: comp.bank || '',
+                  _migratedFrom: 'kadwar',
+                  _migratedAt: now,
+                };
               }
 
               // Contract
-              const contractData = { ...(ke.contract || {}) };
-              ['startDate','start_date','contractStart','contract_start','endDate','end_date','contractEnd','contract_end','type','contractType','contract_type'].forEach(k => {
-                if (ke[k] != null) {
-                  const normKey = k.replace(/_([a-z])/g, (m,c) => c.toUpperCase());
-                  if (contractData[normKey] == null) contractData[normKey] = ke[k];
+              const contract = ke.contract || {};
+              if (Object.keys(contract).length > 0) {
+                profiles[profileKey].contract = {
+                  ...(profiles[profileKey].contract || {}),
+                  startDate: contract.start,
+                  endDate: contract.end,
+                  type: contract.type,
+                  specialTerms: contract.special_terms,
+                  _migratedFrom: 'kadwar',
+                  _migratedAt: now,
+                };
+              }
+
+              // Dependents
+              if (personal.dependents && Array.isArray(personal.dependents) && personal.dependents.length > 0) {
+                profiles[profileKey].dependents = {
+                  list: personal.dependents,
+                  _migratedFrom: 'kadwar',
+                  _migratedAt: now,
+                };
+              }
+
+              // ═══ أقسام إضافية من كوادر ═══
+              // SCE
+              if (ke.sce && (ke.sce.number || ke.sce.classification)) {
+                profiles[profileKey].sce = { ...ke.sce, _migratedFrom: 'kadwar', _migratedAt: now };
+              }
+              // Education
+              if (ke.education && ke.education.level) {
+                profiles[profileKey].education = { ...ke.education, _migratedFrom: 'kadwar', _migratedAt: now };
+              }
+              // Leave balance
+              if (ke.leave_balance != null) {
+                profiles[profileKey].leaveBalance = ke.leave_balance;
+              }
+
+              // ═══ Migrate attachments if any ═══
+              if (ke.attachments && Array.isArray(ke.attachments) && ke.attachments.length > 0) {
+                const existingAttachments = await dbGet('emp-attachments') || {};
+                if (!existingAttachments[profileKey]) existingAttachments[profileKey] = [];
+                for (const att of ke.attachments) {
+                  const attId = 'ATT_KW_' + (att.id || Date.now() + Math.random());
+                  if (!existingAttachments[profileKey].some(a => a.id === attId)) {
+                    existingAttachments[profileKey].push({
+                      id: attId,
+                      type: att.type || 'other',
+                      url: att.url || '',
+                      fileName: att.filename || att.name || 'attachment',
+                      fileSize: att.size || 0,
+                      uploadedBy: 'kadwar_migration',
+                      uploadedAt: att.uploaded_at || now,
+                      status: 'verified',
+                      verifiedBy: 'kadwar_migration',
+                      verifiedAt: now,
+                      _migratedFrom: 'kadwar',
+                    });
+                  }
                 }
-              });
-              if (Object.keys(contractData).length > 0) {
-                profiles[kId].contract = { ...(profiles[kId].contract || {}), ...contractData, _migratedFrom: 'kadwar', _migratedAt: now };
+                await dbSet('emp-attachments', existingAttachments);
               }
 
               summary.totals.imported++;
-              if (importedSamples.length < 3) importedSamples.push({ id: kId, name: mergedEmp.name, sections: Object.keys(profiles[kId]) });
+              if (importedSamples.length < 3) {
+                importedSamples.push({
+                  id: profileKey,
+                  name: mergedEmp.name,
+                  hrCode: kHrCode,
+                  sections: Object.keys(profiles[profileKey]),
+                });
+              }
             } catch (err) {
               summary.totals.errors++;
-              summary.steps.push({ step: 'error', error: err.message, at: new Date().toISOString() });
+              summary.steps.push({
+                step: 'error',
+                emp: (ke.personal && ke.personal.full_name) || ke.id || 'unknown',
+                error: err.message,
+                at: new Date().toISOString()
+              });
             }
           }
           // 3. Save

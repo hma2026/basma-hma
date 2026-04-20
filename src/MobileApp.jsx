@@ -14102,11 +14102,14 @@ function MyProfileCard({ user }) {
         title="البيانات الشخصية" section="personal"
         data={profile && profile.personal}
         fields={[
-          { key: "fullNameParts", label: "الاسم الرباعي", type: "name4" },
+          { key: "fullName", label: "الاسم الكامل", type: "text" },
+          { key: "fullNameEn", label: "الاسم بالإنجليزية", type: "text" },
           { key: "idExpiry", label: "تاريخ انتهاء الهوية", type: "date" },
           { key: "dateOfBirth", label: "تاريخ الميلاد", type: "date" },
           { key: "nationality", label: "الجنسية", type: "text" },
+          { key: "gender", label: "الجنس", type: "select", options: ["ذكر","أنثى"] },
           { key: "maritalStatus", label: "الحالة الاجتماعية", type: "select", options: ["أعزب","متزوج","مطلق","أرمل"] },
+          { key: "city", label: "المدينة", type: "text" },
           { key: "address", label: "العنوان", type: "textarea" },
           { key: "emergencyContact", label: "جهة اتصال للطوارئ", type: "text" },
         ]}
@@ -14365,9 +14368,12 @@ function EmpReadField({ value, type }) {
   if (value == null || value === "") {
     return <div style={{ padding: "9px 12px", background: COLORS.bgSecondary, borderRadius: 12, fontSize: 12, color: COLORS.textMuted, fontStyle: "italic", border: "1px dashed " + COLORS.cardBorder }}>— غير مُدخل —</div>;
   }
-  if (type === "name4" && typeof value === "object") {
-    var parts = [value.first, value.second, value.third, value.fourth, value.family].filter(Boolean);
-    return <div style={{ padding: "9px 12px", background: COLORS.bgSecondary, borderRadius: 12, fontSize: 12, fontWeight: 700, color: COLORS.textPrimary }}>{parts.join(" ") || "—"}</div>;
+  if (type === "name4") {
+    if (typeof value === "object" && value !== null) {
+      var parts = [value.first, value.second, value.third, value.fourth, value.family].filter(Boolean);
+      return <div style={{ padding: "9px 12px", background: COLORS.bgSecondary, borderRadius: 12, fontSize: 12, fontWeight: 700, color: COLORS.textPrimary }}>{parts.join(" ") || "—"}</div>;
+    }
+    return <div style={{ padding: "9px 12px", background: COLORS.bgSecondary, borderRadius: 12, fontSize: 12, fontWeight: 700, color: COLORS.textPrimary }}>{String(value)}</div>;
   }
   if ((type === "date" || type === "readonly_date") && value) {
     try {
