@@ -4,7 +4,7 @@ import { generateAttendanceReport, generateEmployeeReport, generateMonthlySummar
 import { exportFormalWarning, exportInvestigationRecord, exportAffidavit, exportEmploymentLetter, exportSalaryLetter, exportLeaveLetter } from "./formalPdfs";
 
 const APP = "بصمة HMA";
-const VER = "6.91";
+const VER = "6.92";
 const CO = "هاني محمد عسيري للإستشارات الهندسية";
 const B = { blue: "#2B5EA7", yellow: "#FDD800", red: "#E2192C", black: "#1A1A1A", blueDk: "#1E4478", blueLt: "#EDF3FB", gold: "#D4A017" };
 
@@ -9290,7 +9290,7 @@ function ViolationsV2Panel({ t, B, emps }) {
       </div>
 
       <div style={{ display: "flex", gap: 6, marginBottom: 16, flexWrap: "wrap" }}>
-        {[{ id: "ACTIVE", l: "سارية" }, { id: "APPEALED", l: "متظلم عليها" }, { id: "CANCELLED", l: "ملغاة" }, { id: "all", l: "الكل" }].map(function(f) {
+        {[{ id: "ACTIVE", l: "سارية" }, { id: "APPEALED", l: "متظلم عليها" }, { id: "REFERRED_EXTERNAL", l: "مُحالة خارجياً" }, { id: "CANCELLED", l: "ملغاة" }, { id: "all", l: "الكل" }].map(function(f) {
           var a = filter === f.id;
           return <button key={f.id} onClick={function(){ setFilter(f.id); }} style={{ padding: "8px 14px", borderRadius: 10, border: a ? "none" : "1px solid " + t.sep, background: a ? B.blue : t.card, color: a ? "#fff" : t.tx2, fontSize: 11, fontWeight: 700, cursor: "pointer" }}>{f.l}</button>;
         })}
@@ -9327,13 +9327,39 @@ function ViolationsV2Panel({ t, B, emps }) {
                 <span>{new Date(v.createdAt).toLocaleString("ar-SA")}</span>
               </div>
               {/* v6.51 — Formal warning PDF */}
-              <div style={{ marginTop: 10, paddingTop: 10, borderTop: "1px dashed " + t.sep, display: "flex", gap: 6, justifyContent: "flex-end" }}>
+              <div style={{ marginTop: 10, paddingTop: 10, borderTop: "1px dashed " + t.sep, display: "flex", gap: 6, justifyContent: "flex-end", flexWrap: "wrap", alignItems: "center" }}>
+                {/* v6.92 — مؤشر التطبيق/الإحالة */}
+                {v.appliedToPayrollId && <div style={{ padding: "4px 10px", borderRadius: 6, background: "rgba(220,38,38,0.12)", color: "#DC2626", fontSize: 10, fontWeight: 700 }}>
+                  💰 مُطبَّقة على راتب · {Number(v.appliedAmount || 0).toLocaleString("en-US")} ريال
+                </div>}
+                {v.status === "REFERRED_EXTERNAL" && <div style={{ padding: "4px 10px", borderRadius: 6, background: "rgba(124,58,237,0.12)", color: "#7C3AED", fontSize: 10, fontWeight: 700 }}>
+                  📋 مُحالة: {v.externalOffice || "مكتب استشاري"}
+                </div>}
+                <div style={{ flex: 1 }}></div>
                 <button onClick={function(){
                   var emp = emps.find(function(x){ return x.id === v.empId; }) || { id: v.empId, name: v.empName };
                   exportFormalWarning(v, emp);
                 }} style={{ padding: "6px 12px", borderRadius: 6, border: "1px solid " + B.gold, background: B.gold + "15", color: B.gold, fontSize: 10, fontWeight: 800, cursor: "pointer" }}>
                   📋 إنذار رسمي PDF
                 </button>
+                {/* v6.92 — إحالة لمكتب استشاري — فقط للمخالفات النشطة غير المُطبَّقة */}
+                {v.status === "ACTIVE" && !v.appliedToPayrollId && <button onClick={function(){
+                  var office = window.prompt("اسم المكتب الاستشاري (اختياري):", "");
+                  if (office === null) return; // إلغاء
+                  var notes = window.prompt("ملاحظات إحالة (اختياري):", "");
+                  if (notes === null) return;
+                  var actor = "";
+                  try { actor = (JSON.parse(localStorage.getItem("basma_user") || "{}").id) || ""; } catch(e){}
+                  fetch("/api/data?action=violation-refer-external", {
+                    method: "POST", headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({ violationId: v.id, actor: actor, externalOffice: office, notes: notes })
+                  }).then(function(r){ return r.json(); }).then(function(d){
+                    if (d.ok) { alert("✓ تمت الإحالة"); load(); }
+                    else alert("فشل: " + (d.error || "غير معروف"));
+                  });
+                }} style={{ padding: "6px 12px", borderRadius: 6, border: "1px solid #7C3AED", background: "rgba(124,58,237,0.1)", color: "#7C3AED", fontSize: 10, fontWeight: 800, cursor: "pointer" }}>
+                  📋 إحالة خارجية
+                </button>}
               </div>
             </div>
           );
@@ -11987,6 +12013,7 @@ function PayrollPanel({ t, B, emps }) {
   var [showAudit, setShowAudit] = useState(false);
   var [auditLog, setAuditLog] = useState([]);
   var [accessDenied, setAccessDenied] = useState(false);
+  var [showFinesPreview, setShowFinesPreview] = useState(false); // v6.92
 
   // Get current user
   var currentUser = {};
@@ -12082,6 +12109,7 @@ function PayrollPanel({ t, B, emps }) {
         </div>
       </div>
       <button onClick={function(){ setShowAudit(!showAudit); if (!showAudit) loadAudit(); }} style={{ padding: "8px 14px", borderRadius: 8, background: t.bg, border: "1px solid " + t.sep, fontSize: 12, fontWeight: 700, color: t.tx, cursor: "pointer" }}>🧾 Audit</button>
+      <button onClick={function(){ setShowFinesPreview(true); }} style={{ padding: "8px 14px", borderRadius: 8, background: "rgba(217,119,6,0.1)", border: "1px solid rgba(217,119,6,0.3)", fontSize: 12, fontWeight: 700, color: "#D97706", cursor: "pointer" }}>⚖️ معاينة الغرامات</button>
       <button onClick={function(){ setCreatingNew(true); }} style={{ padding: "8px 14px", background: B.blue, color: "#fff", border: "none", borderRadius: 8, fontSize: 12, fontWeight: 700, cursor: "pointer" }}>+ دورة جديدة</button>
     </div>
 
@@ -12166,6 +12194,10 @@ function PayrollPanel({ t, B, emps }) {
          </div>;
        })}
      </div>}
+
+    {/* v6.92 — Modal معاينة الغرامات */}
+    {showFinesPreview && <FinesPreviewModal t={t} B={B} actorId={actorId} onClose={function(){ setShowFinesPreview(false); }} />}
+
   </div>;
 }
 
@@ -12353,6 +12385,25 @@ function PayrollRunDetail({ run, actorId, t, B, onClose }) {
              <div><span style={{ color: t.txM }}>IBAN:</span> <strong style={{ fontFamily: "monospace", fontSize: 10 }}>{s.iban ? (s.iban.slice(0, 6) + "..." + s.iban.slice(-4)) : "—"}</strong></div>
            </div>
 
+           {/* v6.92 — Fines breakdown */}
+           {s.finesInfo && (s.finesInfo.appliedAmount > 0 || s.finesInfo.deferredCount > 0) && <div style={{ marginTop: 8, padding: 10, background: "rgba(217,119,6,0.08)", border: "1px solid rgba(217,119,6,0.25)", borderRadius: 8 }}>
+             <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 6 }}>
+               <div style={{ fontSize: 12, fontWeight: 800, color: "#D97706" }}>⚖️ غرامات لائحة الجزاءات (المادة 41)</div>
+               <div style={{ flex: 1, fontSize: 10, color: t.txM }}>أجر يومي: {Number(s.finesInfo.dailyWage || 0).toLocaleString("en-US")} · سقف شهري (5 أيام): {Number(s.finesInfo.monthlyCap || 0).toLocaleString("en-US")} ريال</div>
+             </div>
+             {s.finesInfo.applied && s.finesInfo.applied.length > 0 && <div style={{ marginBottom: 6 }}>
+               <div style={{ fontSize: 10, color: "#DC2626", fontWeight: 700, marginBottom: 3 }}>✓ مُطبَّقة هذا الشهر ({s.finesInfo.applied.length}) — مجموع: {Number(s.finesInfo.appliedAmount || 0).toLocaleString("en-US")} ريال</div>
+               {s.finesInfo.applied.map(function(f, i){
+                 return <div key={i} style={{ fontSize: 10, color: t.tx, paddingLeft: 10, lineHeight: 1.6 }}>
+                   · {f.violationRef} — {(f.description || '').slice(0, 60)}{(f.description || '').length > 60 ? '...' : ''} → <strong style={{ color: "#DC2626" }}>{f.penaltyLabel} = {Number(f.amount || 0).toLocaleString("en-US")} ريال</strong>
+                 </div>;
+               })}
+             </div>}
+             {s.finesInfo.deferredCount > 0 && <div style={{ padding: 6, background: "rgba(217,119,6,0.15)", borderRadius: 6, fontSize: 10, color: "#92400E", fontWeight: 700 }}>
+               ⏭️ مُرحَّلة للشهر القادم: {s.finesInfo.deferredCount} غرامة — {Number(s.finesInfo.deferredAmount || 0).toLocaleString("en-US")} ريال (تجاوز سقف المادة 41)
+             </div>}
+           </div>}
+
            {isEditing && <div style={{ marginTop: 10, padding: 12, background: B.blue + "08", borderRadius: 10, border: "1px dashed " + B.blue + "40" }}>
              <div style={{ fontSize: 12, fontWeight: 700, color: B.blue, marginBottom: 10 }}>✏️ تعديل — إضافات وخصومات</div>
              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8, marginBottom: 10 }}>
@@ -12392,3 +12443,142 @@ function PayrollRunDetail({ run, actorId, t, B, onClose }) {
   </div>;
 }
 
+/* ═══════════════════════════════════════════════════════════════
+ * v6.92 — FinesPreviewModal — معاينة الغرامات قبل احتساب الراتب
+ * يعرض لكل موظف:
+ *   - الغرامات المستحقة (ACTIVE + غير مُطبَّقة)
+ *   - المُطبَّقة (ضمن سقف 5 أيام)
+ *   - المُرحَّلة (متجاوزة السقف)
+ *   - إجمالي المُطبَّق والمُرحَّل للشركة
+ * ═══════════════════════════════════════════════════════════════ */
+function FinesPreviewModal({ t, B, actorId, onClose }) {
+  var [loading, setLoading] = useState(true);
+  var [data, setData] = useState(null);
+  var [err, setErr] = useState(null);
+  var [expanded, setExpanded] = useState({});
+
+  async function load() {
+    setLoading(true); setErr(null);
+    try {
+      var r = await fetch("/api/data?action=payroll-fines-preview&actor=" + encodeURIComponent(actorId));
+      var d = await r.json();
+      if (d.error) setErr(d.error);
+      else setData(d);
+    } catch(e) { setErr("فشل التحميل: " + e.message); }
+    setLoading(false);
+  }
+  useEffect(function(){ load(); }, []);
+
+  function toggle(empId) {
+    setExpanded(function(prev){ var n = {...prev}; n[empId] = !n[empId]; return n; });
+  }
+
+  return <div onClick={onClose} style={{
+    position: "fixed", inset: 0, background: "rgba(0,0,0,0.55)", zIndex: 9999,
+    display: "flex", alignItems: "center", justifyContent: "center", padding: 16
+  }}>
+    <div onClick={function(e){e.stopPropagation();}} style={{
+      background: t.card, borderRadius: 16, maxWidth: 900, width: "100%",
+      maxHeight: "92vh", overflowY: "auto", border: "1px solid " + t.sep
+    }}>
+      <div style={{ padding: 16, borderBottom: "1px solid " + t.sep, display: "flex", alignItems: "center", gap: 10, position: "sticky", top: 0, background: t.card, zIndex: 2 }}>
+        <div style={{ fontSize: 24 }}>⚖️</div>
+        <div style={{ flex: 1 }}>
+          <div style={{ fontSize: 16, fontWeight: 800, color: t.tx }}>معاينة الغرامات — لائحة الجزاءات</div>
+          <div style={{ fontSize: 10, color: t.txM, marginTop: 2 }}>
+            المادة 41: أقصى خصم شهري = 5 أيام أجر · الزائد يُرحَّل تلقائياً · الترتيب: الأقدم أولاً
+          </div>
+        </div>
+        <button onClick={onClose} style={{ width: 32, height: 32, borderRadius: 8, border: "1px solid " + t.sep, background: t.bg, cursor: "pointer", fontSize: 16 }}>×</button>
+      </div>
+
+      {loading && <div style={{ padding: 40, textAlign: "center", color: t.txM }}>جارٍ التحميل...</div>}
+      {err && <div style={{ padding: 16, color: "#DC2626", fontSize: 12 }}>❌ {err}</div>}
+
+      {!loading && !err && data && <div style={{ padding: 16 }}>
+        {/* Summary */}
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 10, marginBottom: 14 }}>
+          <div style={{ padding: 12, background: "rgba(220,38,38,0.08)", borderRadius: 10, border: "1px solid rgba(220,38,38,0.25)" }}>
+            <div style={{ fontSize: 10, color: t.txM, fontWeight: 700 }}>✓ إجمالي المُطبَّق</div>
+            <div style={{ fontSize: 20, fontWeight: 800, color: "#DC2626", marginTop: 4 }}>{Number(data.grandTotalApplied || 0).toLocaleString("en-US")} <span style={{ fontSize: 11 }}>ريال</span></div>
+          </div>
+          <div style={{ padding: 12, background: "rgba(217,119,6,0.1)", borderRadius: 10, border: "1px solid rgba(217,119,6,0.25)" }}>
+            <div style={{ fontSize: 10, color: t.txM, fontWeight: 700 }}>⏭️ إجمالي المُرحَّل</div>
+            <div style={{ fontSize: 20, fontWeight: 800, color: "#D97706", marginTop: 4 }}>{Number(data.grandTotalDeferred || 0).toLocaleString("en-US")} <span style={{ fontSize: 11 }}>ريال</span></div>
+          </div>
+          <div style={{ padding: 12, background: t.bg, borderRadius: 10, border: "1px solid " + t.sep }}>
+            <div style={{ fontSize: 10, color: t.txM, fontWeight: 700 }}>👥 موظفون بغرامات</div>
+            <div style={{ fontSize: 20, fontWeight: 800, color: B.blue, marginTop: 4 }}>{(data.rows || []).length}</div>
+          </div>
+        </div>
+
+        {/* Rows */}
+        {(data.rows || []).length === 0 ? <div style={{ padding: 40, textAlign: "center", color: t.txM, background: t.bg, borderRadius: 10 }}>
+          لا توجد غرامات مستحقة على أي موظف في هذه الفترة.
+        </div> : <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+          {(data.rows || []).map(function(row){
+            var isOpen = expanded[row.empId];
+            return <div key={row.empId} style={{ background: t.bg, borderRadius: 10, border: "1px solid " + t.sep, overflow: "hidden" }}>
+              <div onClick={function(){ toggle(row.empId); }} style={{ padding: 12, cursor: "pointer", display: "flex", alignItems: "center", gap: 10 }}>
+                <div style={{ width: 34, height: 34, borderRadius: 8, background: B.blue + "15", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 14 }}>👤</div>
+                <div style={{ flex: 1 }}>
+                  <div style={{ fontSize: 13, fontWeight: 800, color: t.tx }}>{row.empName}</div>
+                  <div style={{ fontSize: 10, color: t.txM }}>{row.department} · أجر يومي: {Number(row.dailyWage).toLocaleString("en-US")} ريال · سقف: {Number(row.monthlyCap).toLocaleString("en-US")}</div>
+                </div>
+                <div style={{ textAlign: "left" }}>
+                  <div style={{ fontSize: 10, color: t.txM }}>مُطبَّق</div>
+                  <div style={{ fontSize: 14, fontWeight: 800, color: "#DC2626" }}>{Number(row.appliedAmount).toLocaleString("en-US")} <span style={{ fontSize: 10 }}>ريال</span></div>
+                </div>
+                {row.deferredCount > 0 && <div style={{ textAlign: "left", paddingRight: 10 }}>
+                  <div style={{ fontSize: 10, color: t.txM }}>مُرحَّل</div>
+                  <div style={{ fontSize: 14, fontWeight: 800, color: "#D97706" }}>{Number(row.deferredAmount).toLocaleString("en-US")} <span style={{ fontSize: 10 }}>ريال</span></div>
+                </div>}
+                <div style={{ fontSize: 14, color: t.txM, transform: isOpen ? "rotate(180deg)" : "rotate(0)", transition: "transform 0.2s" }}>▼</div>
+              </div>
+              {isOpen && <div style={{ padding: 12, borderTop: "1px dashed " + t.sep, background: t.card }}>
+                {row.appliedList && row.appliedList.length > 0 && <div style={{ marginBottom: 10 }}>
+                  <div style={{ fontSize: 11, fontWeight: 800, color: "#DC2626", marginBottom: 6 }}>✓ المُطبَّقة ({row.appliedList.length})</div>
+                  {row.appliedList.map(function(f, i){
+                    return <div key={i} style={{ padding: 6, background: t.bg, borderRadius: 6, marginBottom: 4, fontSize: 11, display: "flex", gap: 6 }}>
+                      <div style={{ flex: 1, color: t.tx }}>
+                        <div style={{ fontSize: 10, color: t.txM, marginBottom: 1 }}>{f.violationRef} · مكرر #{f.occurrence}</div>
+                        <div>{(f.description || '').slice(0, 90)}{(f.description || '').length > 90 ? '...' : ''}</div>
+                      </div>
+                      <div style={{ textAlign: "left", minWidth: 110 }}>
+                        <div style={{ fontSize: 10, color: t.txM }}>{f.penaltyLabel}</div>
+                        <div style={{ fontSize: 13, fontWeight: 800, color: "#DC2626" }}>{Number(f.amount).toLocaleString("en-US")} ريال</div>
+                      </div>
+                    </div>;
+                  })}
+                </div>}
+                {row.deferredList && row.deferredList.length > 0 && <div>
+                  <div style={{ fontSize: 11, fontWeight: 800, color: "#D97706", marginBottom: 6 }}>⏭️ المُرحَّلة للشهر التالي ({row.deferredList.length})</div>
+                  {row.deferredList.map(function(f, i){
+                    return <div key={i} style={{ padding: 6, background: "rgba(217,119,6,0.08)", borderRadius: 6, marginBottom: 4, fontSize: 11, display: "flex", gap: 6 }}>
+                      <div style={{ flex: 1, color: t.tx }}>
+                        <div style={{ fontSize: 10, color: t.txM, marginBottom: 1 }}>{f.violationRef} · مكرر #{f.occurrence}</div>
+                        <div>{(f.description || '').slice(0, 90)}{(f.description || '').length > 90 ? '...' : ''}</div>
+                      </div>
+                      <div style={{ textAlign: "left", minWidth: 110 }}>
+                        <div style={{ fontSize: 10, color: t.txM }}>{f.penaltyLabel}</div>
+                        <div style={{ fontSize: 13, fontWeight: 800, color: "#D97706" }}>{Number(f.amount).toLocaleString("en-US")} ريال</div>
+                      </div>
+                    </div>;
+                  })}
+                </div>}
+              </div>}
+            </div>;
+          })}
+        </div>}
+
+        <div style={{ marginTop: 14, padding: 10, background: "rgba(59,130,246,0.08)", borderRadius: 8, border: "1px solid rgba(59,130,246,0.25)", fontSize: 10, color: t.tx, lineHeight: 1.7 }}>
+          <strong>💡 ملاحظات:</strong><br/>
+          · المعاينة لحظية — الغرامات المُطبَّقة هنا ستظهر فعلياً عند احتساب دورة رواتب.<br/>
+          · الأجر اليومي = إجمالي الراتب (أساسي + بدلات ثابتة) ÷ 30.<br/>
+          · الغرامات تُرتَّب حسب تاريخ الإصدار (الأقدم أولاً). الزائد عن 5 أيام يُرحَّل للدورة التالية.<br/>
+          · لإخراج مخالفة من الحساب الداخلي: افتح ملف المخالفة واضغط <strong>"إحالة لمكتب استشاري"</strong>.
+        </div>
+      </div>}
+    </div>
+  </div>;
+}

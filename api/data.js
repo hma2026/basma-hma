@@ -260,19 +260,114 @@ function computeMonthlySalary(profile, additions, deductions, attendance) {
   const advance = Number(deductions.advance || 0); // سُلفة
   const gosiEmployee = Number(deductions.gosi || 0); // التأمينات
   const otherDed = Number(deductions.other || 0);
+  const fines = Number(deductions.fines || 0); // v6.92 — غرامات لائحة الجزاءات (المادة 41)
 
   const totalEarnings = basic + housing + transport + communication + other + commissions + overtime + bonus + otherAdd;
-  const totalDeductions = fixedDeductions + absence + late + advance + gosiEmployee + otherDed;
+  const totalDeductions = fixedDeductions + absence + late + advance + gosiEmployee + otherDed + fines;
   const netSalary = totalEarnings - totalDeductions;
 
   return {
     breakdown: {
       basic, housing, transport, communication, other, commissions, overtime, bonus, otherAdd,
-      fixedDeductions, absence, late, advance, gosiEmployee, otherDed,
+      fixedDeductions, absence, late, advance, gosiEmployee, otherDed, fines,
+      finesList: deductions.finesList || [], // تفاصيل المخالفات المخصومة للعرض
     },
     totalEarnings: Math.round(totalEarnings * 100) / 100,
     totalDeductions: Math.round(totalDeductions * 100) / 100,
     netSalary: Math.round(netSalary * 100) / 100,
+  };
+}
+
+/* ════════ v6.92 — لائحة الجزاءات: ربط الغرامات بالرواتب ════════
+ * المادة 41 من نظام العمل السعودي:
+ *   "لا يجوز أن تتجاوز الغرامة التي تقع على العامل جزاء المخالفة الواحدة أجر خمسة أيام،
+ *    ولا يجوز اقتطاع أكثر من أجر خمسة أيام في الشهر الواحد وفاءً لما يوقع عليه من الغرامات"
+ * التطبيق: سقف شهري = 5 أيام أجر. الزائد يُرحَّل للشهر التالي.
+ * ═══════════════════════════════════════════════════════════════ */
+
+const FINES_MONTHLY_CAP_DAYS = 5;
+
+// ربط كود الجزاء بنسبة من الأجر اليومي (أو عدد أيام كاملة)
+function penaltyToFactor(penaltyCode) {
+  if (!penaltyCode) return 0;
+  const map = {
+    'WARNING': 0,
+    'FINE_5': 0.05, 'FINE_10': 0.10, 'FINE_15': 0.15,
+    'FINE_20': 0.20, 'FINE_25': 0.25, 'FINE_30': 0.30,
+    'FINE_50': 0.50, 'FINE_75': 0.75,
+    'FINE_1DAY': 1, 'FINE_2DAYS': 2, 'FINE_3DAYS': 3,
+    'FINE_4DAYS': 4, 'FINE_5DAYS': 5,
+    // ليست غرامات بمعنى خصم — تُعالَج بآليات منفصلة
+    'SUSPENSION': 0, 'DENY_PROMOTION': 0,
+    'TERMINATION_WITH': 0, 'TERMINATION_WITHOUT': 0,
+    'WARNING_BEFORE_TERMINATION': 0,
+  };
+  return map[penaltyCode] !== undefined ? map[penaltyCode] : 0;
+}
+
+// الأجر اليومي = إجمالي الراتب الشهري (أساسي + بدلات ثابتة) ÷ 30
+function getDailyWage(profile) {
+  profile = profile || {};
+  const comp = profile.compensation || {};
+  const jobGrade = profile.jobGrade || {};
+  const basic = Number(jobGrade.basic || comp.basicSalary || 0);
+  const housing = Number(jobGrade.housing || comp.housingAllowance || 0);
+  const transport = Number(jobGrade.transport || comp.transportAllowance || 0);
+  const communication = Number(comp.communicationsAllowance || 0);
+  const other = Number(comp.otherAllowances || 0);
+  const monthly = basic + housing + transport + communication + other;
+  return monthly / 30;
+}
+
+// قيمة الغرامة بالريال من كود الجزاء + الأجر اليومي
+function computeFineAmount(penaltyCode, dailyWage) {
+  const factor = penaltyToFactor(penaltyCode);
+  return Math.round(factor * dailyWage * 100) / 100;
+}
+
+// جلب الغرامات المستحقة للتطبيق على موظف + تطبيق سقف المادة 41
+// - status === 'ACTIVE' && !appliedToPayrollId && penaltyCode يبدأ بـ FINE_
+// - الترتيب: الأقدم أولاً (first-come-first-served)
+// - الزائد عن 5 أيام يُرحَّل
+async function getMonthlyFinesForEmp(empId, profile) {
+  const vios = (await dbGet('violations_v2')) || [];
+  const dailyWage = getDailyWage(profile);
+  const eligible = vios.filter(v =>
+    v.empId === empId &&
+    v.status === 'ACTIVE' &&
+    !v.appliedToPayrollId &&
+    v.penaltyCode && v.penaltyCode.startsWith('FINE_')
+  );
+  const items = eligible.map(v => ({
+    violationId: v.id,
+    violationRef: v.violationId,
+    description: v.description,
+    penaltyCode: v.penaltyCode,
+    penaltyLabel: v.penaltyLabel,
+    occurrence: v.occurrence,
+    createdAt: v.createdAt,
+    amount: computeFineAmount(v.penaltyCode, dailyWage),
+  }));
+  items.sort((a, b) => new Date(a.createdAt) - new Date(b.createdAt));
+  const cap = FINES_MONTHLY_CAP_DAYS * dailyWage;
+  let runningTotal = 0;
+  const applied = [];
+  const deferred = [];
+  for (const it of items) {
+    if (runningTotal + it.amount <= cap + 0.01) { // 0.01 tolerance for rounding
+      applied.push(it);
+      runningTotal += it.amount;
+    } else {
+      deferred.push(it);
+    }
+  }
+  return {
+    dailyWage: Math.round(dailyWage * 100) / 100,
+    monthlyCap: Math.round(cap * 100) / 100,
+    appliedAmount: Math.round(runningTotal * 100) / 100,
+    applied,
+    deferred,
+    totalEligibleAmount: Math.round(items.reduce((s, x) => s + x.amount, 0) * 100) / 100,
   };
 }
 
@@ -2603,17 +2698,38 @@ export default async function handler(req, res) {
         const profiles = await dbGet('emp-profiles') || {};
         const existingSlips = await dbGet('payroll-slips') || [];
 
+        // v6.92 — عند إعادة الاحتساب: فكّ ربط المخالفات التي طُبّقت سابقاً على هذه الدورة
+        // حتى تُعاد معاينتها من جديد وتُطبَّق بترتيبها الحالي (مع سقف المادة 41)
+        const allVios = (await dbGet('violations_v2')) || [];
+        let viosChanged = false;
+        for (let i = 0; i < allVios.length; i++) {
+          if (allVios[i].appliedToPayrollId === runId) {
+            allVios[i].appliedToPayrollId = null;
+            allVios[i].appliedAt = null;
+            allVios[i].appliedAmount = null;
+            viosChanged = true;
+          }
+        }
+        if (viosChanged) await dbSet('violations_v2', allVios);
+
         // احذف كشوف هذه الدورة الحالية
         const otherSlips = existingSlips.filter(s => s.runId !== runId);
         const newSlips = [];
         let totalNet = 0;
+        const viosToMark = []; // [{id, payrollId, amount}]
 
         const activeEmps = emps.filter(e => (e.status || 'active') === 'active');
 
         for (const emp of activeEmps) {
           const profile = profiles[emp.id] || {};
           const comp = profile.compensation || {};
-          const computation = computeMonthlySalary(profile, {}, {}, null);
+
+          // v6.92 — جلب غرامات لائحة الجزاءات المستحقة + تطبيق سقف 5 أيام (المادة 41)
+          const finesInfo = await getMonthlyFinesForEmp(emp.id, profile);
+          const deductionsObj = finesInfo.appliedAmount > 0
+            ? { fines: finesInfo.appliedAmount, finesList: finesInfo.applied }
+            : {};
+          const computation = computeMonthlySalary(profile, {}, deductionsObj, null);
 
           const slip = {
             id: 'SL' + Date.now() + Math.random().toString(36).slice(2, 5),
@@ -2635,9 +2751,19 @@ export default async function handler(req, res) {
             totalDeductions: computation.totalDeductions,
             netSalary: computation.netSalary,
 
+            // v6.92 — معلومات الغرامات (للعرض في الكشف)
+            finesInfo: {
+              dailyWage: finesInfo.dailyWage,
+              monthlyCap: finesInfo.monthlyCap,
+              appliedAmount: finesInfo.appliedAmount,
+              applied: finesInfo.applied,
+              deferredCount: finesInfo.deferred.length,
+              deferredAmount: Math.round(finesInfo.deferred.reduce((s, x) => s + x.amount, 0) * 100) / 100,
+            },
+
             // Manual adjustments (empty initially)
             additions: {},
-            deductions: {},
+            deductions: finesInfo.appliedAmount > 0 ? { fines: finesInfo.appliedAmount } : {},
 
             createdAt: new Date().toISOString(),
             calculatedAt: new Date().toISOString(),
@@ -2645,19 +2771,40 @@ export default async function handler(req, res) {
           };
           newSlips.push(slip);
           totalNet += computation.netSalary;
+
+          // سجّل المخالفات للعلامة كـ "مُطبَّقة"
+          for (const f of finesInfo.applied) {
+            viosToMark.push({ id: f.violationId, payrollId: runId, amount: f.amount });
+          }
         }
 
         await dbSet('payroll-slips', [...otherSlips, ...newSlips]);
+
+        // v6.92 — علامة المخالفات المُطبَّقة
+        if (viosToMark.length > 0) {
+          const vios2 = (await dbGet('violations_v2')) || [];
+          const nowStamp = new Date().toISOString();
+          for (const mark of viosToMark) {
+            const idx = vios2.findIndex(v => v.id === mark.id);
+            if (idx >= 0) {
+              vios2[idx].appliedToPayrollId = mark.payrollId;
+              vios2[idx].appliedAt = nowStamp;
+              vios2[idx].appliedAmount = mark.amount;
+            }
+          }
+          await dbSet('violations_v2', vios2);
+        }
 
         run.status = 'calculated';
         run.calculatedAt = new Date().toISOString();
         run.slipsCount = newSlips.length;
         run.totalNetAmount = Math.round(totalNet * 100) / 100;
+        run.totalFinesApplied = Math.round(newSlips.reduce((s, x) => s + ((x.finesInfo && x.finesInfo.appliedAmount) || 0), 0) * 100) / 100;
         runs[runIdx] = run;
         await dbSet('payroll-runs', runs);
 
-        await auditLog(actor, 'calculate_run', runId, { slipsCount: newSlips.length, totalNet });
-        return res.json({ ok: true, run, slipsCount: newSlips.length, totalNet });
+        await auditLog(actor, 'calculate_run', runId, { slipsCount: newSlips.length, totalNet, finesApplied: run.totalFinesApplied });
+        return res.json({ ok: true, run, slipsCount: newSlips.length, totalNet, finesApplied: run.totalFinesApplied });
       }
 
       case 'payroll-slip-edit': {
@@ -2709,6 +2856,91 @@ export default async function handler(req, res) {
 
         await auditLog(actor, 'edit_slip', slipId, { additions, deductions, netSalary: slip.netSalary });
         return res.json({ ok: true, slip: { ...slip, iban: slip.iban ? decryptPayrollField(slip.iban) : '' } });
+      }
+
+      /* ════════ v6.92 — معاينة الغرامات قبل احتساب الرواتب ════════ */
+      case 'payroll-fines-preview': {
+        // GET — يعرض قائمة كل الموظفين مع الغرامات المستحقة + المطبّقة + المرحّلة
+        if (req.method !== 'GET') return res.status(405).json({ error: 'GET required' });
+        const actor = req.query.actor;
+        const access = await canAccessPayroll(actor, 'view_all');
+        if (!access.allowed) return res.status(403).json({ error: 'insufficient permission', reason: access.reason });
+
+        const emps = (await dbGet('employees')) || [];
+        const profiles = (await dbGet('emp-profiles')) || {};
+        const activeEmps = emps.filter(e => (e.status || 'active') === 'active');
+
+        const rows = [];
+        let grandTotalApplied = 0;
+        let grandTotalDeferred = 0;
+        for (const emp of activeEmps) {
+          const profile = profiles[emp.id] || {};
+          const info = await getMonthlyFinesForEmp(emp.id, profile);
+          if (info.applied.length === 0 && info.deferred.length === 0) continue; // تخطَّ الموظفين بلا غرامات
+          rows.push({
+            empId: emp.id,
+            empName: emp.name,
+            department: (profile.employment && profile.employment.department) || emp.department || '',
+            dailyWage: info.dailyWage,
+            monthlyCap: info.monthlyCap,
+            appliedCount: info.applied.length,
+            appliedAmount: info.appliedAmount,
+            deferredCount: info.deferred.length,
+            deferredAmount: Math.round(info.deferred.reduce((s, x) => s + x.amount, 0) * 100) / 100,
+            totalEligibleAmount: info.totalEligibleAmount,
+            appliedList: info.applied,
+            deferredList: info.deferred,
+          });
+          grandTotalApplied += info.appliedAmount;
+          grandTotalDeferred += info.deferred.reduce((s, x) => s + x.amount, 0);
+        }
+        return res.json({
+          rows,
+          grandTotalApplied: Math.round(grandTotalApplied * 100) / 100,
+          grandTotalDeferred: Math.round(grandTotalDeferred * 100) / 100,
+          capDays: FINES_MONTHLY_CAP_DAYS,
+        });
+      }
+
+      /* ════════ v6.92 — إحالة مخالفة لمكتب استشاري خارجي ════════ */
+      case 'violation-refer-external': {
+        // POST — HR تحيل مخالفة لا تريد معالجتها داخلياً
+        if (req.method !== 'POST') return res.status(405).json({ error: 'POST required' });
+        const { violationId, actor, externalOffice, notes } = req.body || {};
+        if (!violationId) return res.status(400).json({ error: 'violationId required' });
+
+        const vios = (await dbGet('violations_v2')) || [];
+        const idx = vios.findIndex(v => v.id === violationId);
+        if (idx < 0) return res.status(404).json({ error: 'violation not found' });
+
+        if (vios[idx].appliedToPayrollId) {
+          return res.status(400).json({ error: 'لا يمكن إحالة مخالفة سبق تطبيقها على راتب' });
+        }
+
+        vios[idx].status = 'REFERRED_EXTERNAL';
+        vios[idx].referredAt = new Date().toISOString();
+        vios[idx].referredBy = actor;
+        vios[idx].externalOffice = externalOffice || '';
+        vios[idx].externalNotes = notes || '';
+        await dbSet('violations_v2', vios);
+
+        // إشعار الموظف
+        try {
+          const notifs = (await dbGet('notifications')) || [];
+          notifs.push({
+            id: 'NTF' + Date.now(),
+            empId: vios[idx].empId,
+            type: 'violation',
+            title: '📋 إحالة المخالفة لجهة خارجية',
+            body: 'أُحيلت المخالفة "' + (vios[idx].description || '').slice(0, 60) + '" إلى ' + (externalOffice || 'مكتب استشاري'),
+            refId: violationId,
+            read: false,
+            createdAt: new Date().toISOString(),
+          });
+          await dbSet('notifications', notifs);
+        } catch(e) { /* ignore */ }
+
+        return res.json({ ok: true, violation: vios[idx] });
       }
 
       case 'payroll-run-approve': {

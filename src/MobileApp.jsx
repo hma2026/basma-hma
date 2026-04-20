@@ -11,7 +11,7 @@ import { exportEmploymentLetter, exportLeaveLetter } from "./formalPdfs";
 
 /* ═══════════ APP CONFIG (إعدادات التطبيق) ═══════════ */
 const APP_CONFIG = {
-  VER: "6.91",
+  VER: "6.92",
   NAME: "بصمة HMA",
   FULL_NAME: "نظام الحضور والانصراف الذكي",
   COMPANY: "هاني محمد عسيري للاستشارات الهندسية",
@@ -11878,6 +11878,13 @@ function LegalTab({ user }) {
                   <span style={{ ...TYPOGRAPHY.tiny, color: COLORS.textMuted }}>{new Date(v.createdAt).toLocaleDateString("ar-SA")}</span>
                   <span style={{ ...TYPOGRAPHY.caption, fontWeight: 800, color: COLORS.textDanger }}>{v.penaltyLabel}</span>
                 </div>
+                {/* v6.92 — مؤشر التطبيق على الراتب أو الإحالة الخارجية */}
+                {v.appliedToPayrollId && <div style={{ marginTop: 6, padding: 6, background: "rgba(220,38,38,0.12)", borderRadius: 6, fontSize: 10, color: "#DC2626", fontWeight: 700, textAlign: "center" }}>
+                  💰 خُصمت من الراتب — {Number(v.appliedAmount || 0).toLocaleString("en-US")} ريال
+                </div>}
+                {v.status === "REFERRED_EXTERNAL" && <div style={{ marginTop: 6, padding: 6, background: "rgba(124,58,237,0.12)", borderRadius: 6, fontSize: 10, color: "#7C3AED", fontWeight: 700, textAlign: "center" }}>
+                  📋 مُحالة لمكتب استشاري خارجي
+                </div>}
               </div>
             );
           })}
@@ -15905,6 +15912,7 @@ function MySalaryTab({ user }) {
      <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
        {slips.map(function(s){
          var st = statusLabels[s.status] || { label: s.status, color: COLORS.textMuted };
+         var finesAmount = (s.breakdown && s.breakdown.fines) || (s.finesInfo && s.finesInfo.appliedAmount) || 0; // v6.92
          return <div key={s.id} onClick={function(){setSelected(s);}} style={{
            background: COLORS.card, borderRadius: 18, padding: SPACING.md,
            border: "1px solid " + COLORS.cardBorder, cursor: "pointer",
@@ -15923,6 +15931,7 @@ function MySalaryTab({ user }) {
              <div style={{ fontSize: 11, color: COLORS.textMuted, marginTop: 4 }}>
                إجمالي مستحق: {Number(s.totalEarnings).toLocaleString("en-US")} · خصومات: {Number(s.totalDeductions).toLocaleString("en-US")}
              </div>
+             {finesAmount > 0 && <div style={{ fontSize: 10, color: "#D97706", marginTop: 4, fontWeight: 700 }}>⚖️ غرامات لائحة: {Number(finesAmount).toLocaleString("en-US")} ريال</div>}
              <div style={{ fontSize: 10, color: st.color, marginTop: 4, fontWeight: 700 }}>{st.label}</div>
            </div>
            <div style={{ fontSize: 20, color: COLORS.textMuted }}>‹</div>
@@ -15954,7 +15963,13 @@ function SalarySlipDetail({ slip, user, onClose }) {
     { label: "سُلفة", value: b.advance },
     { label: "التأمينات", value: b.gosiEmployee },
     { label: "خصومات أخرى", value: b.otherDed },
+    { label: "⚖️ غرامات لائحة الجزاءات", value: b.fines }, // v6.92
   ].filter(function(x){ return x.value && x.value > 0; });
+
+  // v6.92 — قائمة تفصيلية للغرامات (من finesInfo)
+  var finesInfo = slip.finesInfo || null;
+  var appliedFines = (finesInfo && finesInfo.applied) || (b.finesList || []);
+  var hasFinesDetail = appliedFines && appliedFines.length > 0;
 
   return <div style={{ paddingBottom: 40 }}>
     <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: SPACING.md }}>
@@ -16022,6 +16037,34 @@ function SalarySlipDetail({ slip, user, onClose }) {
           </div>;
         })}
       </div>
+    </Card>}
+
+    {/* v6.92 — تفاصيل الغرامات (من سجل المخالفات) */}
+    {hasFinesDetail && <Card>
+      <div style={{ fontSize: 13, fontWeight: 800, color: "#D97706", marginBottom: 4 }}>⚖️ تفاصيل غرامات لائحة الجزاءات</div>
+      <div style={{ fontSize: 10, color: COLORS.textMuted, marginBottom: 10 }}>
+        المادة 41 من نظام العمل · {finesInfo && finesInfo.dailyWage ? ("أجر يومي: " + Number(finesInfo.dailyWage).toLocaleString("en-US") + " ريال · سقف شهري: " + Number(finesInfo.monthlyCap).toLocaleString("en-US") + " ريال") : ""}
+      </div>
+      <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+        {appliedFines.map(function(f, i){
+          return <div key={i} style={{ padding: 10, background: "rgba(217,119,6,0.08)", borderRadius: 10, border: "1px solid rgba(217,119,6,0.2)" }}>
+            <div style={{ display: "flex", gap: 8, alignItems: "center", marginBottom: 4 }}>
+              <span style={{ fontSize: 9, fontWeight: 700, color: "#fff", background: "#D97706", padding: "2px 6px", borderRadius: 4 }}>{f.violationRef || "—"}</span>
+              <span style={{ fontSize: 10, color: COLORS.textMuted }}>المرة #{f.occurrence || 1}</span>
+            </div>
+            <div style={{ fontSize: 11, color: COLORS.textPrimary, lineHeight: 1.6, marginBottom: 4 }}>
+              {(f.description || '').slice(0, 120)}{(f.description || '').length > 120 ? '...' : ''}
+            </div>
+            <div style={{ display: "flex", justifyContent: "space-between", fontSize: 11, marginTop: 4 }}>
+              <span style={{ color: COLORS.textSecondary }}>الجزاء: <strong>{f.penaltyLabel}</strong></span>
+              <strong style={{ color: "#DC2626" }}>{Number(f.amount || 0).toLocaleString("en-US")} ريال</strong>
+            </div>
+          </div>;
+        })}
+      </div>
+      {finesInfo && finesInfo.deferredCount > 0 && <div style={{ marginTop: 8, padding: 10, background: "rgba(217,119,6,0.15)", borderRadius: 10, fontSize: 10, color: "#92400E", fontWeight: 600, lineHeight: 1.7 }}>
+        ⏭️ هناك <strong>{finesInfo.deferredCount}</strong> غرامة مُرحَّلة للشهر القادم بقيمة {Number(finesInfo.deferredAmount || 0).toLocaleString("en-US")} ريال — لم تُخصم هذا الشهر لتجاوز سقف المادة 41 (5 أيام).
+      </div>}
     </Card>}
 
     {/* Bank info */}

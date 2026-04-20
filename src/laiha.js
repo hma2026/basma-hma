@@ -610,4 +610,5 @@ export const VIOLATION_STATUS = {
   APPEALED: { code: "APPEALED", label: "متظلم عليها", color: "#F97316" },
   CANCELLED: { code: "CANCELLED", label: "ملغاة", color: "#64748b" },
   EXPIRED: { code: "EXPIRED", label: "منتهية (180 يوم)", color: "#94a3b8" },
+  REFERRED_EXTERNAL: { code: "REFERRED_EXTERNAL", label: "مُحالة لمكتب استشاري", color: "#7C3AED" }, // v6.92
 };
