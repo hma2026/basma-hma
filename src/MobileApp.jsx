@@ -11,7 +11,7 @@ import { exportEmploymentLetter, exportLeaveLetter } from "./formalPdfs";
 
 /* ═══════════ APP CONFIG (إعدادات التطبيق) ═══════════ */
 const APP_CONFIG = {
-  VER: "7.13",
+  VER: "7.14",
   NAME: "بصمة HMA",
   FULL_NAME: "نظام الحضور والانصراف الذكي",
   COMPANY: "هاني محمد عسيري للاستشارات الهندسية",
@@ -596,13 +596,13 @@ function MobileAppInner() {
     function handleGotoLegal() {
       setPage("profile");
       // Set profile to legal tab
-      setTimeout(function(){ localStorage.setItem("basma_profile_tab", "legal"); window.dispatchEvent(new CustomEvent("basma:profile-tab-changed")); }, 50);
+      setTimeout(function(){ localStorage.setItem("basma_profile_tab", "perf"); window.dispatchEvent(new CustomEvent("basma:profile-tab-changed")); }, 50);
     }
     window.addEventListener("basma:goto-legal", handleGotoLegal);
     // v6.81 — HR banner → open profile → info tab (where tickets card is)
     function handleGotoProfile() {
       setPage("profile");
-      setTimeout(function(){ localStorage.setItem("basma_profile_tab", "info"); window.dispatchEvent(new CustomEvent("basma:profile-tab-changed")); }, 50);
+      setTimeout(function(){ localStorage.setItem("basma_profile_tab", "profile"); window.dispatchEvent(new CustomEvent("basma:profile-tab-changed")); }, 50);
     }
     window.addEventListener("basma_goto_profile", handleGotoProfile);
     return function() {
@@ -1463,7 +1463,7 @@ function MobileAppInner() {
       {!online && <OfflineBanner />}
 
       <div key={page} style={{ flex: 1, display: "flex", flexDirection: "column", animation: "pageIn .3s ease" }}>
-        {page === "home" && <HomePage user={user} branch={branch} workType={workType} now={now} todayAtt={todayAtt} allAtt={allAtt} gps={gps} gpsDist={gpsDist} streak={streak} loading={loading} refreshing={refreshing} dayState={getDayState()} checkpoints={getCheckpoints()} isOffDay={isOffDay()} pendingCount={myLeaves.filter(function(l){ return l.status === "pending"; }).length + myTickets.filter(function(t){ return t.status === "pending"; }).length} teamToday={teamToday} pwaPrompt={pwaPrompt} onPwaInstall={async function(){ if(pwaPrompt){pwaPrompt.prompt();await pwaPrompt.userChoice;setPwaPrompt(null);} }} onCheckin={requestCheckin} onChallenge={function(pts) { var u = { ...user, points: (user.points||0)+pts }; setUser(u); localStorage.setItem("basma_user", JSON.stringify(u)); showToast("🎉 +" + pts + " نقطة!"); }} onLeave={function(){ setPage("profile"); setTimeout(function(){ localStorage.setItem("basma_profile_tab", "my_leaves"); window.dispatchEvent(new CustomEvent("basma:profile-tab-changed")); }, 50); }} onRefresh={refresh} onPreAbsence={function(){ setPreAbsModal(true); }} onManualAtt={function(){ setManualAttModal(true); }} onPermission={function(){ setPermModal(true); }} kadwarNotifs={kadwarNotifs} darkMode={darkMode} announcements={announcements} banners={banners} fieldProjects={fieldProjects} onShowAnnouncements={function(){ setShowAnnModal(true); }} />}
+        {page === "home" && <HomePage user={user} branch={branch} workType={workType} now={now} todayAtt={todayAtt} allAtt={allAtt} gps={gps} gpsDist={gpsDist} streak={streak} loading={loading} refreshing={refreshing} dayState={getDayState()} checkpoints={getCheckpoints()} isOffDay={isOffDay()} pendingCount={myLeaves.filter(function(l){ return l.status === "pending"; }).length + myTickets.filter(function(t){ return t.status === "pending"; }).length} teamToday={teamToday} pwaPrompt={pwaPrompt} onPwaInstall={async function(){ if(pwaPrompt){pwaPrompt.prompt();await pwaPrompt.userChoice;setPwaPrompt(null);} }} onCheckin={requestCheckin} onChallenge={function(pts) { var u = { ...user, points: (user.points||0)+pts }; setUser(u); localStorage.setItem("basma_user", JSON.stringify(u)); showToast("🎉 +" + pts + " نقطة!"); }} onLeave={function(){ setPage("profile"); setTimeout(function(){ localStorage.setItem("basma_profile_tab", "time"); window.dispatchEvent(new CustomEvent("basma:profile-tab-changed")); }, 50); }} onRefresh={refresh} onPreAbsence={function(){ setPreAbsModal(true); }} onManualAtt={function(){ setManualAttModal(true); }} onPermission={function(){ setPermModal(true); }} kadwarNotifs={kadwarNotifs} darkMode={darkMode} announcements={announcements} banners={banners} fieldProjects={fieldProjects} onShowAnnouncements={function(){ setShowAnnModal(true); }} />}
         {page === "report" && <ReportPage user={user} allAtt={allAtt} todayAtt={todayAtt} branch={branch} isOffDay={isOffDay()} myLeaves={myLeaves} allEmps={allEmps} />}
         {page === "benefits" && <BenefitsPage user={user} />}
         {page === "tawasul" && <TawasulPage user={user} allEmps={allEmps} />}
@@ -1484,7 +1484,7 @@ function MobileAppInner() {
       {/* Notification Panel */}
       {showNotifs && <NotificationPanel notifications={notifications} onClose={function(){ setShowNotifs(false); }} onMarkRead={async function(){
         try { await api("notifications", { method: "PUT", body: { markAllRead: true, empId: user.id } }); setUnreadCount(0); setNotifications(function(prev){ return prev.map(function(n){ return {...n, read: true}; }); }); } catch(e) {}
-      }} onGoToLegal={function(){ setShowNotifs(false); setPage("profile"); setTimeout(function(){ localStorage.setItem("basma_profile_tab","legal"); window.dispatchEvent(new CustomEvent("basma:profile-tab-changed")); }, 50); }} />}
+      }} onGoToLegal={function(){ setShowNotifs(false); setPage("profile"); setTimeout(function(){ localStorage.setItem("basma_profile_tab","perf"); window.dispatchEvent(new CustomEvent("basma:profile-tab-changed")); }, 50); }} />}
 
       {/* Floating active-timer indicator — global, shows on all pages */}
       {user && <ActiveTimerFloater user={user} onGoTo={function(taskId){ setPage("tawasul"); setTimeout(function(){ window.dispatchEvent(new CustomEvent("basma:open-task", { detail: { taskId: taskId } })); }, 80); }} />}
@@ -2884,7 +2884,12 @@ function ManagersCard({ user }) {
 }
 
 function ProfilePage({ user, branch, workType, onLogout, onTicket, myTickets, darkMode, toggleDark, kadwarNotifs }) {
-  var [tab, setTab] = useState(function(){ return localStorage.getItem("basma_profile_tab") || "info"; });
+  // v7.14 — legacy tab IDs remapped (info→profile, my_leaves→time, my_salary→pay, my_evals→perf, requests→tickets, docs→pay, legal→perf)
+  var [tab, setTab] = useState(function(){
+    var saved = localStorage.getItem("basma_profile_tab") || "profile";
+    var legacyMap = { info: "profile", my_leaves: "time", my_salary: "pay", my_evals: "perf", requests: "tickets", docs: "pay", legal: "perf" };
+    return legacyMap[saved] || saved;
+  });
   var [kadwarFlip, setKadwarFlip] = useState(false);
   var [showAbout, setShowAbout] = useState(false);
   var kn = kadwarNotifs || { tasks: 0, exams: 0, alerts: 0 };
@@ -2892,7 +2897,9 @@ function ProfilePage({ user, branch, workType, onLogout, onTicket, myTickets, da
   useEffect(function() {
     function handleTabChange() {
       var saved = localStorage.getItem("basma_profile_tab");
-      if (saved) setTab(saved);
+      // v7.14 — apply legacy mapping for old IDs stored before migration
+      var legacyMap = { info: "profile", my_leaves: "time", my_salary: "pay", my_evals: "perf", requests: "tickets", docs: "pay", legal: "perf" };
+      if (saved) setTab(legacyMap[saved] || saved);
     }
     window.addEventListener("basma:profile-tab-changed", handleTabChange);
     return function() { window.removeEventListener("basma:profile-tab-changed", handleTabChange); };
@@ -2915,19 +2922,15 @@ function ProfilePage({ user, branch, workType, onLogout, onTicket, myTickets, da
     ["الالتحاق", user.joinDate || "—"],
     ["النقاط", badge.icon + " " + (user.points || 0) + " نقطة"],
   ];
+  // v7.14 — IA restructure: 7→5 tabs (content redistributed — no deletions)
+  // profile = info | time = my_leaves | pay = my_salary + docs | perf = my_evals + legal | tickets = requests
   var tabs = [
-    { id: "info", emoji: "👤", label: "بياناتي" },
-    { id: "requests", emoji: "📋", label: "طلباتي" },
-    // v6.95 — achievements + السجل الوظيفي دُمجا داخل "بياناتي"
-    { id: "docs", emoji: "📦", label: "العهد" },
-    { id: "legal", emoji: "⚖️", label: "القانونية" },
+    { id: "profile", emoji: "👤", label: "ملفي" },
+    { id: "time",    emoji: "📅", label: "الحضور والإجازات" },
+    { id: "pay",     emoji: "💰", label: "الأجر والاستحقاقات" },
+    { id: "perf",    emoji: "🎯", label: "الأداء والتطوير" },
+    { id: "tickets", emoji: "📨", label: "الطلبات والتذاكر" },
   ];
-  // v6.95 — تقييماتي الموحّدة (موظف + مدير في hub واحد)
-  tabs.push({ id: "my_evals", emoji: "⭐", label: "تقييماتي" });
-  // v6.95 — إجازاتي الموحّدة (طلبات + handover في hub واحد)
-  tabs.push({ id: "my_leaves", emoji: "🏖️", label: "إجازاتي" });
-  // v6.91 — My salary (payslips)
-  tabs.push({ id: "my_salary", emoji: "💰", label: "راتبي" });
 
   return (
     <div style={{ flex: 1, paddingBottom: 80, background: "linear-gradient(180deg, "+COLORS.bg1+" 0%, "+COLORS.bg2+" 50%, "+COLORS.bg3+" 100%)", minHeight: "100vh" }}>
@@ -2965,8 +2968,8 @@ function ProfilePage({ user, branch, workType, onLogout, onTicket, myTickets, da
           })}
         </div>
 
-        {/* Tab: بياناتي (الرئيسية + الإعدادات) */}
-        {tab === "info" && (
+        {/* v7.14 — tab: profile (كان info) — نفس المحتوى بالضبط */}
+        {tab === "profile" && (
           <>
             <Card>
               {rows.map(function(row, i) {
@@ -3064,55 +3067,54 @@ function ProfilePage({ user, branch, workType, onLogout, onTicket, myTickets, da
         )}
 
         {/* v6.95 — "requests" now only shows permissions + preabs (leaves moved to إجازاتي hub) */}
-        {tab === "requests" && (
+        {/* v7.14 — tab: tickets (كان requests) — نفس المحتوى */}
+        {tab === "tickets" && (
           <MyRequestsTab user={user} />
         )}
 
         {/* v6.95 — "achievements" tab removed (merged into "بياناتي") — keep handler as no-op for old links */}
 
-        {/* v6.94 — tab "العهد" (إزالة المرفقات — تُدار من MyProfileCard → مرفقات) */}
-        {tab === "docs" && (
-          <>
-            <div style={{ ...TYPOGRAPHY.h3, color: COLORS.textPrimary, fontFamily: TYPOGRAPHY.fontCairo, marginBottom: SPACING.sm, textAlign: "center" }}>🗄️ العهد</div>
-            <Card><CustodyTab user={user} /></Card>
-            <div style={{ marginTop: SPACING.md, padding: 10, background: "rgba(255,255,255,0.04)", borderRadius: 10, border: "1px dashed " + COLORS.metallicBorder, fontSize: 11, color: COLORS.textMuted, textAlign: "center", lineHeight: 1.7 }}>
-              💡 <strong style={{ color: COLORS.goldLight }}>المرفقات والمستندات الشخصية</strong> تجدها في تبويب <strong style={{ color: COLORS.textPrimary }}>«بياناتي»</strong> → بطاقة ملفي → مرفقات
-            </div>
-          </>
-        )}
+        {/* v7.14 — docs tab removed (merged into pay) */}
 
         {/* v6.94 — tab "deps" محذوف، يُدار من MyProfileCard */}
 
-        {/* v6.69 — القانونية (مع السياسات مدموجة) */}
-        {tab === "legal" && (
-          <>
-            <LegalTab user={user} />
-            <div style={{ marginTop: SPACING.lg, paddingTop: SPACING.md, borderTop: "1px dashed " + COLORS.metallicBorder }}>
-              <div style={{ ...TYPOGRAPHY.h3, color: COLORS.textPrimary, fontFamily: TYPOGRAPHY.fontCairo, marginBottom: SPACING.md, textAlign: "center" }}>📖 السياسات والأسئلة الشائعة</div>
-              <PoliciesTab user={user} />
-            </div>
-          </>
-        )}
+        {/* v7.14 — legal tab removed (merged into perf) */}
 
         {/* v7.02 — orphan "achievements" handler removed (merged into بياناتي) */}
 
         {/* v6.95 — Manager evaluations — merged inside my_evals hub below */}
 
-        {/* v6.95 — Unified evaluations hub: موظف + مدير */}
-        {tab === "my_evals" && (
-          <MyEvalsHub user={user} />
+        {/* v7.14 — tab: perf (كان my_evals + legal مدموجين) */}
+        {tab === "perf" && (
+          <>
+            <MyEvalsHub user={user} />
+            <div style={{ marginTop: SPACING.lg, paddingTop: SPACING.md, borderTop: "1px dashed " + COLORS.metallicBorder }}>
+              <LegalTab user={user} />
+              <div style={{ marginTop: SPACING.lg, paddingTop: SPACING.md, borderTop: "1px dashed " + COLORS.metallicBorder }}>
+                <div style={{ ...TYPOGRAPHY.h3, color: COLORS.textPrimary, fontFamily: TYPOGRAPHY.fontCairo, marginBottom: SPACING.md, textAlign: "center" }}>📖 السياسات والأسئلة الشائعة</div>
+                <PoliciesTab user={user} />
+              </div>
+            </div>
+          </>
         )}
 
-        {/* v6.95 — Unified leaves hub: طلبات + handover */}
-        {tab === "my_leaves" && (
+        {/* v7.14 — tab: time (كان my_leaves) — نفس المحتوى */}
+        {tab === "time" && (
           <MyLeavesHub user={user} />
         )}
 
         {/* v6.95 — tab "handover_tasks" محذوف: دُمج داخل "إجازاتي" */}
 
-        {/* v6.91 — My salary */}
-        {tab === "my_salary" && (
-          <MySalaryTab user={user} />
+        {/* v7.14 — tab: pay (كان my_salary + docs مدموجين) */}
+        {tab === "pay" && (
+          <>
+            <MySalaryTab user={user} />
+            {/* العُهَد (مدموج من تبويب docs القديم) */}
+            <div style={{ marginTop: SPACING.lg, paddingTop: SPACING.md, borderTop: "1px dashed " + COLORS.metallicBorder }}>
+              <div style={{ ...TYPOGRAPHY.h3, color: COLORS.textPrimary, fontFamily: TYPOGRAPHY.fontCairo, marginBottom: SPACING.sm, textAlign: "center" }}>🗄️ العُهَد</div>
+              <Card><CustodyTab user={user} /></Card>
+            </div>
+          </>
         )}
 
         {/* Manager panel button — hidden in desktop session (v6.47) */}
@@ -11870,7 +11872,7 @@ function MyRequestsTab({ user }) {
 
       {/* v7.00 — زر "طلب إجازة" نُقل إلى تبويب "إجازاتي" (نظام الإجازات الجديد مع التسليم) */}
       <div style={{ padding: "10px 14px", marginBottom: 8, borderRadius: 10, background: "rgba(8,145,178,0.08)", border: "1px dashed rgba(8,145,178,0.3)", fontSize: 11, color: COLORS.textMuted, lineHeight: 1.7, textAlign: "center", cursor: "pointer" }}
-        onClick={function(){ localStorage.setItem("basma_profile_tab", "my_leaves"); window.dispatchEvent(new CustomEvent("basma:profile-tab-changed")); }}>
+        onClick={function(){ localStorage.setItem("basma_profile_tab", "time"); window.dispatchEvent(new CustomEvent("basma:profile-tab-changed")); }}>
         🏖️ <strong style={{ color: "#0891B2" }}>لطلب إجازة</strong> — انتقل إلى تبويب <strong style={{ color: COLORS.textPrimary }}>«إجازاتي»</strong> (يدعم تسليم المهام)
       </div>
 
