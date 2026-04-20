@@ -11,7 +11,7 @@ import { exportEmploymentLetter, exportLeaveLetter } from "./formalPdfs";
 
 /* ═══════════ APP CONFIG (إعدادات التطبيق) ═══════════ */
 const APP_CONFIG = {
-  VER: "7.03",
+  VER: "7.04",
   NAME: "بصمة HMA",
   FULL_NAME: "نظام الحضور والانصراف الذكي",
   COMPANY: "هاني محمد عسيري للاستشارات الهندسية",
@@ -8254,11 +8254,15 @@ function MultiAssigneesProgress({ request, myId }) {
   var acceptedCount = assignees.filter(function(a){ return !!a.acceptedAt; }).length;
   var deliveredCount = assignees.filter(function(a){ return !!a.deliveredAt; }).length;
 
-  // Determine per-person state
-  function stateOf(a) {
-    if (a.deliveredAt) return { label: "سلّم", color: "#10b981", icon: "✓", bg: "rgba(16,185,129,0.12)" };
-    if (a.acceptedAt)  return { label: "قيد العمل", color: "#f59e0b", icon: "⏳", bg: "rgba(245,158,11,0.12)" };
-    return { label: "بانتظار الاستلام", color: "#94a3b8", icon: "○", bg: "rgba(148,163,184,0.1)" };
+  // v7.04 — تحديد مرحلة المكلَّف الفردي (pipeline كامل)
+  function getAssigneeStageIdx(a) {
+    // يُقيَّم فردياً (evaluations by this person) — stage 3 (مُقيَّمة)
+    var evals = request.evaluations || [];
+    var myEval = evals.find(function(ev){ return String(ev.by) === String(a.id); });
+    if (myEval) return 3;                      // مُقيَّمة
+    if (a.deliveredAt) return 2;               // تم التسليم
+    if (a.acceptedAt) return 1;                // قيد التنفيذ
+    return 0;                                  // جديدة / بانتظار الاستلام
   }
 
   function relTime(iso) {
@@ -8275,75 +8279,71 @@ function MultiAssigneesProgress({ request, myId }) {
     return "قبل " + days + " أيام";
   }
 
-  var acceptPct = Math.round((acceptedCount / total) * 100);
-  var deliverPct = Math.round((deliveredCount / total) * 100);
-
   return (
     <div style={{ background: C.card, borderRadius: 14, padding: 14, border: "1px solid " + C.cardBorder, marginBottom: 14 }}>
       <div style={{ fontSize: 13, fontWeight: 800, color: C.text, marginBottom: 12, fontFamily: "'Cairo',sans-serif", display: "flex", alignItems: "center", gap: 6 }}>
         <span>👥</span>
-        <span>تقدّم الأطراف ({total})</span>
+        <span>تقدّم كل طرف ({total})</span>
+        <span style={{ marginInlineStart: "auto", fontSize: 10, color: C.sub, fontWeight: 600 }}>
+          سلّم: <b style={{ color: deliveredCount === total ? "#10b981" : C.gold }}>{deliveredCount}/{total}</b>
+        </span>
       </div>
 
-      {/* Summary bars */}
-      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10, marginBottom: 14 }}>
-        <div>
-          <div style={{ display: "flex", justifyContent: "space-between", fontSize: 10, fontWeight: 700, color: C.sub, marginBottom: 4 }}>
-            <span>📥 استلم</span>
-            <span style={{ color: acceptedCount === total ? "#10b981" : "#f59e0b", fontWeight: 900 }}>{acceptedCount} / {total}</span>
-          </div>
-          <div style={{ height: 6, borderRadius: 3, background: C.bg, overflow: "hidden" }}>
-            <div style={{ width: acceptPct + "%", height: "100%", background: acceptedCount === total ? "#10b981" : "#f59e0b", transition: "width 0.3s" }} />
-          </div>
-        </div>
-        <div>
-          <div style={{ display: "flex", justifyContent: "space-between", fontSize: 10, fontWeight: 700, color: C.sub, marginBottom: 4 }}>
-            <span>✅ سلّم</span>
-            <span style={{ color: deliveredCount === total ? "#10b981" : "#94a3b8", fontWeight: 900 }}>{deliveredCount} / {total}</span>
-          </div>
-          <div style={{ height: 6, borderRadius: 3, background: C.bg, overflow: "hidden" }}>
-            <div style={{ width: deliverPct + "%", height: "100%", background: deliveredCount === total ? "#10b981" : C.gold, transition: "width 0.3s" }} />
-          </div>
-        </div>
-      </div>
-
-      {/* Per-person cards */}
-      <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+      {/* v7.04 — Per-assignee full pipeline */}
+      <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
         {assignees.map(function(a, idx){
-          var s = stateOf(a);
+          var stageIdx = getAssigneeStageIdx(a);
           var isMe = String(a.id) === String(myId);
           var initial = ((a.name || "?").trim().charAt(0)) || "?";
+          var myColor = stageIdx === 3 ? "#10b981" : stageIdx === 2 ? "#10b981" : stageIdx === 1 ? "#f59e0b" : "#94a3b8";
           return (
-            <div key={a.id + "_" + idx} style={{ display: "flex", alignItems: "center", gap: 10, padding: "8px 10px", borderRadius: 10, background: isMe ? "rgba(34,197,94,0.08)" : s.bg, border: isMe ? "1.5px solid #22c55e" : "1px solid " + C.cardBorder }}>
-              <div style={{ width: 32, height: 32, borderRadius: 16, background: s.color, color: "#fff", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 13, fontWeight: 800, flexShrink: 0 }}>
-                {initial}
-              </div>
-              <div style={{ flex: 1, minWidth: 0 }}>
-                <div style={{ fontSize: 12, fontWeight: 700, color: C.text, display: "flex", alignItems: "center", gap: 4 }}>
-                  <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{a.name || a.id}</span>
-                  {isMe && <span style={{ padding: "1px 6px", fontSize: 8, fontWeight: 900, background: "#22c55e", color: "#fff", borderRadius: 4, flexShrink: 0 }}>أنت</span>}
-                  {a.addedAsCollab && <span style={{ padding: "1px 6px", fontSize: 8, fontWeight: 900, background: "rgba(124,58,237,0.2)", color: "#7c3aed", borderRadius: 4, flexShrink: 0 }}>متعاون</span>}
+            <div key={a.id + "_" + idx} style={{ padding: "10px 12px", borderRadius: 12, background: isMe ? "rgba(34,197,94,0.06)" : C.bg, border: isMe ? "1.5px solid #22c55e" : "1px solid " + C.cardBorder }}>
+              {/* Row 1: avatar + name + status badge */}
+              <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 10 }}>
+                <div style={{ width: 28, height: 28, borderRadius: 14, background: myColor, color: "#fff", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 12, fontWeight: 800, flexShrink: 0 }}>
+                  {initial}
                 </div>
-                <div style={{ fontSize: 9, color: C.sub, marginTop: 2, display: "flex", gap: 8, flexWrap: "wrap" }}>
-                  {a.acceptedAt && <span>📥 {relTime(a.acceptedAt)}</span>}
-                  {a.deliveredAt && <span style={{ color: "#10b981", fontWeight: 700 }}>✅ {relTime(a.deliveredAt)}</span>}
-                  {!a.acceptedAt && !a.deliveredAt && <span>بانتظار</span>}
-                  {a.returns > 0 && <span style={{ color: "#f59e0b" }}>🔄 {a.returns}</span>}
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div style={{ fontSize: 12, fontWeight: 700, color: C.text, display: "flex", alignItems: "center", gap: 4, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
+                    <span style={{ overflow: "hidden", textOverflow: "ellipsis" }}>{a.name || a.id}</span>
+                    {isMe && <span style={{ padding: "1px 6px", fontSize: 8, fontWeight: 900, background: "#22c55e", color: "#fff", borderRadius: 4, flexShrink: 0 }}>أنت</span>}
+                    {a.addedAsCollab && <span style={{ padding: "1px 6px", fontSize: 8, fontWeight: 900, background: "rgba(124,58,237,0.2)", color: "#7c3aed", borderRadius: 4, flexShrink: 0 }}>متعاون</span>}
+                  </div>
+                  <div style={{ fontSize: 9, color: C.sub, marginTop: 2, display: "flex", gap: 8, flexWrap: "wrap" }}>
+                    {a.acceptedAt && <span>📥 {relTime(a.acceptedAt)}</span>}
+                    {a.deliveredAt && <span style={{ color: "#10b981", fontWeight: 700 }}>✅ {relTime(a.deliveredAt)}</span>}
+                    {!a.acceptedAt && !a.deliveredAt && <span>بانتظار الاستلام</span>}
+                    {a.returns > 0 && <span style={{ color: "#f59e0b" }}>🔄 أُرجعت {a.returns}</span>}
+                  </div>
                 </div>
               </div>
-              <div style={{ padding: "3px 8px", borderRadius: 8, background: s.color, color: "#fff", fontSize: 9, fontWeight: 800, whiteSpace: "nowrap", display: "flex", alignItems: "center", gap: 3 }}>
-                <span>{s.icon}</span>
-                <span>{s.label}</span>
+
+              {/* Row 2: compact pipeline (4 stages for this person) */}
+              <div style={{ display: "flex", alignItems: "center", gap: 2 }}>
+                {TAWASUL_STAGES.map(function(st, i){
+                  var active = i <= stageIdx;
+                  return (
+                    <React.Fragment key={st.key}>
+                      <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 3, flex: "0 0 auto" }}>
+                        <div style={{ width: 22, height: 22, borderRadius: 11, background: active ? myColor : C.bg, border: "1.5px solid " + (active ? myColor : C.cardBorder), display: "flex", alignItems: "center", justifyContent: "center", fontSize: 10, color: active ? "#fff" : C.sub }}>
+                          {active ? "✓" : st.icon}
+                        </div>
+                        <div style={{ fontSize: 8, fontWeight: 600, color: active ? C.text : C.sub, textAlign: "center", maxWidth: 50, lineHeight: 1.2 }}>{st.label}</div>
+                      </div>
+                      {i < TAWASUL_STAGES.length - 1 && <div style={{ flex: 1, height: 2, background: i < stageIdx ? myColor : C.cardBorder, margin: "0 2px", marginBottom: 12, minWidth: 12 }} />}
+                    </React.Fragment>
+                  );
+                })}
               </div>
             </div>
           );
         })}
       </div>
 
-      {/* Summary hint */}
+      {/* Summary hints */}
       {deliveredCount > 0 && deliveredCount < total && (
         <div style={{ marginTop: 10, padding: "8px 10px", borderRadius: 8, background: "rgba(245,158,11,0.1)", border: "1px dashed #f59e0b", fontSize: 10, color: "#92400e", textAlign: "center", fontWeight: 600 }}>
-          💡 {deliveredCount} من {total} سلّم جزءه · الباقي: {total - deliveredCount}
+          💡 {deliveredCount} من {total} سلّم — يمكن تقييمه الآن بانتظار الباقي
         </div>
       )}
       {deliveredCount === total && total > 1 && (
@@ -8354,6 +8354,7 @@ function MultiAssigneesProgress({ request, myId }) {
     </div>
   );
 }
+
 
 /* ═══════════ TAWASUL DETAIL MODAL — with Phase 2 actions (big button + secondary + comment) ═══════════ */
 function TawasulDetailModal({ request, user, allEmps, onClose, nameOf, onUpdated, onEdit, readOnly }) {
@@ -8661,6 +8662,11 @@ function TawasulDetailModal({ request, user, allEmps, onClose, nameOf, onUpdated
   var [showHR, setShowHR] = useState(false);
   // v7.03 — collapsible details
   var [showDetails, setShowDetails] = useState(false);
+  // v7.04 — description truncation
+  var [showFullDesc, setShowFullDesc] = useState(false);
+  var DESC_CHAR_LIMIT = 280;
+  var descTooLong = r.description && r.description.length > DESC_CHAR_LIMIT;
+  var descToShow = (descTooLong && !showFullDesc) ? r.description.slice(0, DESC_CHAR_LIMIT).trim() + "…" : r.description;
 
   return (
     <div onClick={onClose} style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.6)", zIndex: 1000, display: "flex", alignItems: "flex-end", justifyContent: "center", fontFamily: "'Tajawal',sans-serif" }}>
@@ -8688,7 +8694,7 @@ function TawasulDetailModal({ request, user, allEmps, onClose, nameOf, onUpdated
         </div>
 
         <div style={{ padding: 16 }}>
-          {/* v7.03 — DESCRIPTION first (الأهم) */}
+          {/* v7.03 — DESCRIPTION first (الأهم) — v7.04: truncation + show more */}
           {r.description && (
             <div style={{ position: "relative", background: C.card, borderRadius: 12, padding: "16px 16px 16px 20px", border: "1px solid " + C.cardBorder, marginBottom: 14, overflow: "hidden" }}>
               <div style={{ position: "absolute", top: 0, bottom: 0, right: 0, width: 5, background: "linear-gradient(180deg, " + C.gold + ", " + C.gold + "aa)" }} />
@@ -8696,7 +8702,17 @@ function TawasulDetailModal({ request, user, allEmps, onClose, nameOf, onUpdated
                 <span style={{ fontSize: 16 }}>📝</span>
                 <span>وصف المهمة</span>
               </div>
-              <div style={{ fontSize: 14, color: C.text, lineHeight: 1.85, whiteSpace: "pre-wrap", fontWeight: 500 }}>{r.description}</div>
+              <div style={{ fontSize: 14, color: C.text, lineHeight: 1.85, whiteSpace: "pre-wrap", fontWeight: 500 }}>{descToShow}</div>
+              {descTooLong && (
+                <button onClick={function(){ setShowFullDesc(function(s){ return !s; }); }} style={{
+                  marginTop: 8, padding: "4px 12px", background: "transparent",
+                  border: "1px solid " + C.cardBorder, borderRadius: 8,
+                  color: C.gold, fontSize: 11, fontWeight: 800, cursor: "pointer",
+                  fontFamily: "inherit",
+                }}>
+                  {showFullDesc ? "◀ عرض أقل" : "عرض المزيد ▶"}
+                </button>
+              )}
             </div>
           )}
 
@@ -8948,10 +8964,10 @@ function TawasulDetailModal({ request, user, allEmps, onClose, nameOf, onUpdated
 
             {/* Attachments panel */}
             <AttachmentsPanel request={r} user={user} readOnly={readOnly} canEdit={canActAsAssignee || canActAsRequester || isAdmin} onUpdated={onUpdated} />
-          </>}
 
-          {/* v7.03 — Chat panel في الأخير (يظهر دائماً) */}
-          <ChatPanel request={r} user={user} allEmps={allEmps} readOnly={readOnly} onUpdated={onUpdated} nameOf={nameOf} />
+            {/* v7.04 — Chat panel moved INSIDE details */}
+            <ChatPanel request={r} user={user} allEmps={allEmps} readOnly={readOnly} onUpdated={onUpdated} nameOf={nameOf} />
+          </>}
 
           {evals.length > 0 && (
             <div style={{ background: C.card, borderRadius: 12, padding: 14, border: "1px solid " + C.cardBorder, marginBottom: 12 }}>

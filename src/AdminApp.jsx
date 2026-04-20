@@ -4,7 +4,7 @@ import { generateAttendanceReport, generateEmployeeReport, generateMonthlySummar
 import { exportFormalWarning, exportInvestigationRecord, exportAffidavit, exportEmploymentLetter, exportSalaryLetter, exportLeaveLetter } from "./formalPdfs";
 
 const APP = "بصمة HMA";
-const VER = "7.03";
+const VER = "7.04";
 const CO = "هاني محمد عسيري للإستشارات الهندسية";
 const B = { blue: "#2B5EA7", yellow: "#FDD800", red: "#E2192C", black: "#1A1A1A", blueDk: "#1E4478", blueLt: "#EDF3FB", gold: "#D4A017" };
 
@@ -5529,6 +5529,11 @@ function TawasulAdminTaskDetail({ task, t, B, statusMeta, onDelete, onClose }) {
   var evals = r.evaluations || [];
   // v7.03 — collapsible details
   var [showDetails, setShowDetails] = useState(false);
+  // v7.04 — description truncation
+  var [showFullDesc, setShowFullDesc] = useState(false);
+  var DESC_CHAR_LIMIT = 280;
+  var descTooLong = r.description && r.description.length > DESC_CHAR_LIMIT;
+  var descToShow = (descTooLong && !showFullDesc) ? r.description.slice(0, DESC_CHAR_LIMIT).trim() + "…" : r.description;
 
   function fmtDate(iso) { if (!iso) return "—"; try { return new Date(iso).toLocaleString("ar-SA"); } catch(e) { return iso; } }
 
@@ -5557,7 +5562,7 @@ function TawasulAdminTaskDetail({ task, t, B, statusMeta, onDelete, onClose }) {
 
         <div style={{ padding: "18px 20px" }}>
 
-          {/* v7.03 — DESCRIPTION first (الأهم) */}
+          {/* v7.03 — DESCRIPTION first (الأهم) — v7.04: truncation */}
           {r.description && (
             <div style={{ position: "relative", background: t.card, borderRadius: 12, padding: "16px 16px 16px 22px", border: "1px solid " + t.sep, marginBottom: 14, overflow: "hidden" }}>
               <div style={{ position: "absolute", top: 0, bottom: 0, right: 0, width: 6, background: "linear-gradient(180deg, " + B.gold + ", " + B.gold + "aa)" }} />
@@ -5565,7 +5570,17 @@ function TawasulAdminTaskDetail({ task, t, B, statusMeta, onDelete, onClose }) {
                 <span style={{ fontSize: 18 }}>📝</span>
                 <span>وصف المهمة</span>
               </div>
-              <div style={{ fontSize: 14, color: t.tx, lineHeight: 1.95, whiteSpace: "pre-wrap", fontWeight: 500 }}>{r.description}</div>
+              <div style={{ fontSize: 14, color: t.tx, lineHeight: 1.95, whiteSpace: "pre-wrap", fontWeight: 500 }}>{descToShow}</div>
+              {descTooLong && (
+                <button onClick={function(){ setShowFullDesc(function(s){ return !s; }); }} style={{
+                  marginTop: 10, padding: "5px 14px", background: "transparent",
+                  border: "1px solid " + t.sep, borderRadius: 8,
+                  color: B.gold, fontSize: 12, fontWeight: 800, cursor: "pointer",
+                  fontFamily: "inherit",
+                }}>
+                  {showFullDesc ? "◀ عرض أقل" : "عرض المزيد ▶"}
+                </button>
+              )}
             </div>
           )}
 
