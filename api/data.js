@@ -282,19 +282,76 @@ async function safeKadwarPush(action, payload) {
   }
 }
 
-function computeMonthlySalary(profile, additions, deductions, attendance) {
+function computeMonthlySalary(profile, additions, deductions, attendance, period) {
   profile = profile || {};
   additions = additions || {};
   deductions = deductions || {};
   const comp = profile.compensation || {};
   const jobGrade = profile.jobGrade || {};
 
+  // v7.13 — Helper: read allowance value, supporting override structure + pro-rating
+  // Returns: { value, prorated, breakdown (if prorated) }
+  function getAllowanceValue(fieldName, fallback) {
+    const raw = comp[fieldName];
+    let currentValue;
+    // Handle override structure { template, actual, reason }
+    if (raw && typeof raw === 'object' && !Array.isArray(raw)) {
+      currentValue = Number(raw.actual !== undefined && raw.actual !== null ? raw.actual : raw.template) || 0;
+    } else {
+      currentValue = Number(raw || 0);
+    }
+    // Default if nothing
+    if (!currentValue && fallback !== undefined) currentValue = Number(fallback) || 0;
+
+    // Pro-rating: check if a change happened within the period
+    if (period && period.startISO && period.endISO && comp.changeHistory && Array.isArray(comp.changeHistory)) {
+      // Find the most recent change to this field with effectiveDate inside period
+      const changes = comp.changeHistory.filter(function(h){
+        if (h.field !== fieldName) return false;
+        if (!h.effectiveDate) return false;
+        const eff = new Date(h.effectiveDate).getTime();
+        return eff > new Date(period.startISO).getTime() && eff <= new Date(period.endISO).getTime();
+      });
+      if (changes.length > 0) {
+        // Use the latest change if multiple
+        changes.sort(function(a, b){ return new Date(b.effectiveDate).getTime() - new Date(a.effectiveDate).getTime(); });
+        const ch = changes[0];
+        const effDate = new Date(ch.effectiveDate);
+        const periodStart = new Date(period.startISO);
+        const periodEnd = new Date(period.endISO);
+        const totalDays = Math.max(1, Math.round((periodEnd - periodStart) / 86400000) + 1);
+        const daysBefore = Math.max(0, Math.round((effDate - periodStart) / 86400000));
+        const daysAfter = Math.max(0, totalDays - daysBefore);
+        const oldValue = Number(ch.oldValue) || 0;
+        const newValue = Number(ch.newValue) || currentValue;
+        const proratedValue = (daysBefore * oldValue + daysAfter * newValue) / totalDays;
+        return {
+          value: Math.round(proratedValue * 100) / 100,
+          prorated: true,
+          breakdown: {
+            oldValue, newValue,
+            daysBefore, daysAfter, totalDays,
+            effectiveDate: ch.effectiveDate,
+            reason: ch.reason,
+          },
+        };
+      }
+    }
+    return { value: currentValue, prorated: false };
+  }
+
   // الأساسي من jobGrade إن وُجد، وإلا من compensation
-  const basic = Number(jobGrade.basic || comp.basicSalary || 0);
-  const housing = Number(jobGrade.housing || comp.housingAllowance || 0);
-  const transport = Number(jobGrade.transport || comp.transportAllowance || 0);
-  const communication = Number(comp.communicationsAllowance || 0);
-  const other = Number(comp.otherAllowances || 0);
+  const basicInfo = getAllowanceValue('basicSalary', jobGrade.basic);
+  const housingInfo = getAllowanceValue('housingAllowance', jobGrade.housing);
+  const transportInfo = getAllowanceValue('transportAllowance', jobGrade.transport);
+  const commInfo = getAllowanceValue('communicationsAllowance', 0);
+  const otherInfo = getAllowanceValue('otherAllowances', 0);
+
+  const basic = basicInfo.value;
+  const housing = housingInfo.value;
+  const transport = transportInfo.value;
+  const communication = commInfo.value;
+  const other = otherInfo.value;
   const commissions = Number(comp.commissions || 0) + Number(additions.commissions || 0);
   const overtime = Number(additions.overtime || 0);
   const bonus = Number(additions.bonus || 0);
@@ -312,15 +369,30 @@ function computeMonthlySalary(profile, additions, deductions, attendance) {
   const totalDeductions = fixedDeductions + absence + late + advance + gosiEmployee + otherDed + fines;
   const netSalary = totalEarnings - totalDeductions;
 
+  // v7.13 — Collect pro-rating details for transparency
+  const proratings = [];
+  [
+    ['basicSalary', 'الراتب الأساسي', basicInfo],
+    ['housingAllowance', 'بدل السكن', housingInfo],
+    ['transportAllowance', 'بدل النقل', transportInfo],
+    ['communicationsAllowance', 'بدل الاتصالات', commInfo],
+    ['otherAllowances', 'بدلات أخرى', otherInfo],
+  ].forEach(function(row){
+    if (row[2].prorated) {
+      proratings.push({ field: row[0], label: row[1], ...row[2].breakdown, final: row[2].value });
+    }
+  });
+
   return {
     breakdown: {
       basic, housing, transport, communication, other, commissions, overtime, bonus, otherAdd,
       fixedDeductions, absence, late, advance, gosiEmployee, otherDed, fines,
-      finesList: deductions.finesList || [], // تفاصيل المخالفات المخصومة للعرض
+      finesList: deductions.finesList || [],
     },
     totalEarnings: Math.round(totalEarnings * 100) / 100,
     totalDeductions: Math.round(totalDeductions * 100) / 100,
     netSalary: Math.round(netSalary * 100) / 100,
+    proratings: proratings, // v7.13 — لعرض تفاصيل الحساب التناسبي
   };
 }
 
@@ -3173,7 +3245,19 @@ export default async function handler(req, res) {
           const deductionsObj = finesInfo.appliedAmount > 0
             ? { fines: finesInfo.appliedAmount, finesList: finesInfo.applied }
             : {};
-          const computation = computeMonthlySalary(profile, {}, deductionsObj, null);
+          // v7.13 — Pass period info for pro-rating
+          const periodInfo = (function(){
+            if (!run.period) return null;
+            // run.period is like "2026-04" — convert to start/end ISO
+            const parts = run.period.split('-');
+            if (parts.length !== 2) return null;
+            const y = parseInt(parts[0]);
+            const m = parseInt(parts[1]);
+            const startISO = new Date(y, m - 1, 1).toISOString();
+            const endISO = new Date(y, m, 0, 23, 59, 59).toISOString(); // last day of month
+            return { startISO, endISO, period: run.period };
+          })();
+          const computation = computeMonthlySalary(profile, {}, deductionsObj, null, periodInfo);
 
           const slip = {
             id: 'SL' + Date.now() + Math.random().toString(36).slice(2, 5),
@@ -3194,6 +3278,9 @@ export default async function handler(req, res) {
             totalEarnings: computation.totalEarnings,
             totalDeductions: computation.totalDeductions,
             netSalary: computation.netSalary,
+
+            // v7.13 — Pro-rated details (if any allowance changed mid-month)
+            proratings: computation.proratings || [],
 
             // v6.92 — معلومات الغرامات (للعرض في الكشف)
             finesInfo: {
@@ -3274,7 +3361,16 @@ export default async function handler(req, res) {
         // Recompute
         const profiles = await dbGet('emp-profiles') || {};
         const profile = profiles[slip.empId] || {};
-        const computation = computeMonthlySalary(profile, additions || slip.additions || {}, deductions || slip.deductions || {}, null);
+        // v7.13 — Pass period info for pro-rating
+        const slipPeriodInfo = (function(){
+          if (!slip.period) return null;
+          const parts = slip.period.split('-');
+          if (parts.length !== 2) return null;
+          const y = parseInt(parts[0]);
+          const m = parseInt(parts[1]);
+          return { startISO: new Date(y, m - 1, 1).toISOString(), endISO: new Date(y, m, 0, 23, 59, 59).toISOString(), period: slip.period };
+        })();
+        const computation = computeMonthlySalary(profile, additions || slip.additions || {}, deductions || slip.deductions || {}, null, slipPeriodInfo);
 
         slip.additions = additions || slip.additions || {};
         slip.deductions = deductions || slip.deductions || {};
@@ -3282,6 +3378,7 @@ export default async function handler(req, res) {
         slip.totalEarnings = computation.totalEarnings;
         slip.totalDeductions = computation.totalDeductions;
         slip.netSalary = computation.netSalary;
+        slip.proratings = computation.proratings || []; // v7.13
         slip.editedAt = new Date().toISOString();
         slip.editedBy = actor;
         slip.editNote = note || '';
