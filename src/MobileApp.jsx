@@ -4518,10 +4518,13 @@ function TawasulReasonModal({ title, reasons, requireLegal, onConfirm, onClose, 
 /* ═══════════ TAWASUL EVALUATION MODAL (spec section 12) ═══════════ */
 var EVAL_CRITERIA = ["الجودة", "الدقة", "السرعة", "التعاون"];
 
-function TawasulEvalModal({ request, user, role, onClose, onSaved }) {
+function TawasulEvalModal({ request, user, role, forAssigneeId, onClose, onSaved }) {
   var [scores, setScores] = useState({});
   var [saving, setSaving] = useState(false);
   var [err, setErr] = useState("");
+
+  // v7.07 — per-assignee evaluation context
+  var forAssignee = forAssigneeId ? (request.assignees || []).find(function(a){ return String(a.id) === String(forAssigneeId); }) : null;
 
   function setScore(crit, val) {
     setScores(function(prev){ var n = Object.assign({}, prev); n[crit] = val; return n; });
@@ -4546,9 +4549,14 @@ function TawasulEvalModal({ request, user, role, onClose, onSaved }) {
         avgScore: avgScore,
         at: now,
       };
+      // v7.07 — scope to single assignee if requested
+      if (forAssigneeId) {
+        newEval.forAssignee = forAssigneeId;
+        newEval.forAssigneeName = forAssignee ? (forAssignee.name || forAssignee.id) : forAssigneeId;
+      }
 
       var evaluations = (request.evaluations || []).concat([newEval]);
-      var hasRequester = evaluations.some(function(e){ return e.role === "requester"; });
+      var hasRequester = evaluations.some(function(e){ return e.role === "requester" && !e.forAssignee; });
       var hasAssignee = evaluations.some(function(e){ return e.role === "assignee"; });
 
       var updates = {
@@ -4556,14 +4564,17 @@ function TawasulEvalModal({ request, user, role, onClose, onSaved }) {
         finalScore: Math.round(evaluations.reduce(function(s,e){ return s + (e.avgScore || 0); }, 0) / evaluations.length),
         updatedAt: now,
       };
-      // If both sides rated → close as evaluated
-      if (hasRequester && hasAssignee) {
+      // If both sides rated (full task, not per-assignee) → close as evaluated
+      if (!forAssigneeId && hasRequester && hasAssignee) {
         updates.status = "evaluated";
         updates.closedAt = now;
       }
 
       var updated = Object.assign({}, request, updates);
-      updated.log = (request.log || []).concat([{ text: "⭐ تقييم (" + avgScore + "/100) بواسطة " + myName, by: myName, at: now }]);
+      var logText = forAssigneeId
+        ? "⭐ تقييم فردي لـ " + (newEval.forAssigneeName) + " (" + avgScore + "/100) بواسطة " + myName
+        : "⭐ تقييم (" + avgScore + "/100) بواسطة " + myName;
+      updated.log = (request.log || []).concat([{ text: logText, by: myName, at: now }]);
       await saveTawasul(updated);
       setSaving(false);
       onSaved();
@@ -4577,7 +4588,10 @@ function TawasulEvalModal({ request, user, role, onClose, onSaved }) {
     <div onClick={onClose} style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.7)", zIndex: 1100, display: "flex", alignItems: "center", justifyContent: "center", padding: 14, fontFamily: "'Tajawal',sans-serif" }}>
       <div onClick={function(e){ e.stopPropagation(); }} style={{ background: C.bg, borderRadius: 16, maxWidth: 420, width: "100%", maxHeight: "90vh", overflowY: "auto", direction: "rtl", color: C.text }}>
         <div style={{ padding: 16, borderBottom: "1px solid " + C.cardBorder, display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-          <div style={{ fontSize: 15, fontWeight: 900 }}>⭐ تقييم المهمة</div>
+          <div style={{ fontSize: 15, fontWeight: 900 }}>
+            ⭐ تقييم المهمة
+            {forAssignee && <div style={{ fontSize: 11, fontWeight: 700, color: "#f59e0b", marginTop: 4 }}>👤 تقييم فردي لـ {forAssignee.name || forAssignee.id}</div>}
+          </div>
           <button onClick={onClose} style={{ background: "none", border: "none", fontSize: 22, color: C.sub, cursor: "pointer" }}>×</button>
         </div>
         <div style={{ padding: 16 }}>
@@ -8342,7 +8356,26 @@ function MultiAssigneesProgress({ request, myId, onUpdated }) {
 
               {/* v7.06 — Row 3: per-assignee actions (requester only, not for closed) */}
               {isRequester && !a.closedAt && (a.acceptedAt || a.deliveredAt) && (
-                <div style={{ display: "flex", gap: 6, marginTop: 10 }}>
+                <div style={{ display: "flex", gap: 6, marginTop: 10, flexWrap: "wrap" }}>
+                  {/* v7.07 — Evaluate this specific assignee (only if delivered, not already evaluated) */}
+                  {a.deliveredAt && !(function(){
+                    var evals = request.evaluations || [];
+                    return evals.some(function(ev){ return String(ev.forAssignee) === String(a.id) || (!ev.forAssignee && String(ev.by) !== String(request.requesterId) && String(ev.by) === String(a.id)); });
+                  })() && (
+                    <button onClick={function(){
+                      // Trigger parent's evaluate modal with scope = this assignee
+                      if (typeof window !== "undefined") {
+                        var evt = new CustomEvent("basma:open-assignee-eval", { detail: { taskId: request.id, assigneeId: a.id, assigneeName: a.name || a.id } });
+                        window.dispatchEvent(evt);
+                      }
+                    }} style={{
+                      flex: "1 1 100%", padding: "8px 10px", borderRadius: 8,
+                      background: "#f59e0b", border: "none",
+                      color: "#fff", fontSize: 11, fontWeight: 900, cursor: "pointer",
+                      fontFamily: "inherit", display: "flex", alignItems: "center", justifyContent: "center", gap: 4,
+                    }}>⭐ قيّم {a.name || a.id}</button>
+                  )}
+
                   {/* Return to this assignee only */}
                   <button onClick={async function(){
                     var reason = window.prompt("سبب إرجاع المهمة لـ " + (a.name || a.id) + ":", "");
@@ -8743,6 +8776,18 @@ function TawasulDetailModal({ request, user, allEmps, onClose, nameOf, onUpdated
   var canHR = !readOnly && isHR && r.escalation && r.status !== "evaluated" && r.status !== "closed";
 
   var [showEval, setShowEval] = useState(false);
+  // v7.07 — per-assignee evaluation scope
+  var [evalAssigneeId, setEvalAssigneeId] = useState(null);
+  useEffect(function(){
+    function openAssigneeEval(e) {
+      if (!e || !e.detail) return;
+      if (String(e.detail.taskId) !== String(request && request.id)) return;
+      setEvalAssigneeId(e.detail.assigneeId);
+      setShowEval(true);
+    }
+    window.addEventListener("basma:open-assignee-eval", openAssigneeEval);
+    return function(){ window.removeEventListener("basma:open-assignee-eval", openAssigneeEval); };
+  }, [request && request.id]);
   var [showHR, setShowHR] = useState(false);
   // v7.03 — collapsible details
   var [showDetails, setShowDetails] = useState(false);
@@ -8829,25 +8874,41 @@ function TawasulDetailModal({ request, user, allEmps, onClose, nameOf, onUpdated
           )}
 
           {/* v7.03 — Status placeholder + MultiAssigneesProgress في صف واحد نصف الحجم (عند الانتظار) */}
-          {bigBtn && !canPressBig && bigBtn.who === "requester" && (
-            <div style={{ display: "grid", gridTemplateColumns: (r.assignees || []).length >= 2 ? "1fr 1fr" : "1fr", gap: 10, marginBottom: 14 }}>
-              <div style={{ padding: 12, borderRadius: 12, background: C.card, border: "2px dashed " + C.cardBorder, textAlign: "center" }}>
-                <div style={{ fontSize: 13, fontWeight: 800, color: bigBtn.color, marginBottom: 2 }}>{bigBtn.label}</div>
-                <div style={{ fontSize: 10, color: C.sub }}>{bigBtn.sub}</div>
+          {/* v7.07 — يظهر أيضاً عند partial_delivered (أحد الأطراف سلّم وأنا صاحب المهمة) */}
+          {(function(){
+            var iAmRequester = String(r.requesterId) === String(myId);
+            var hasAnyDelivered = (r.assignees || []).some(function(a){ return !!a.deliveredAt && !a.closedAt; });
+            var showWaitingBox = (bigBtn && !canPressBig && bigBtn.who === "requester") ||
+                                 (iAmRequester && hasAnyDelivered && r.status !== "delivered" && r.status !== "evaluated");
+            r._showedWaitingBox = showWaitingBox; // flag for downstream render
+            if (!showWaitingBox) return null;
+            var deliveredCountLocal = (r.assignees || []).filter(function(a){ return !!a.deliveredAt && !a.closedAt; }).length;
+            var totalLocal = (r.assignees || []).length;
+            var boxLabel = bigBtn ? bigBtn.label : "⏳ بانتظار التقييم";
+            var boxColor = bigBtn ? bigBtn.color : "#94a3b8";
+            var boxSub = (totalLocal >= 2 && deliveredCountLocal < totalLocal)
+              ? deliveredCountLocal + " من " + totalLocal + " سلّم — يمكن تقييمه"
+              : (bigBtn ? bigBtn.sub : "قيّم المهمة المُسلّمة");
+            return (
+              <div style={{ display: "grid", gridTemplateColumns: totalLocal >= 2 ? "1fr 1fr" : "1fr", gap: 10, marginBottom: 14 }}>
+                <div style={{ padding: 12, borderRadius: 12, background: C.card, border: "2px dashed " + C.cardBorder, textAlign: "center" }}>
+                  <div style={{ fontSize: 13, fontWeight: 800, color: boxColor, marginBottom: 2 }}>{boxLabel}</div>
+                  <div style={{ fontSize: 10, color: C.sub }}>{boxSub}</div>
+                </div>
+                {totalLocal >= 2 && (
+                  <MultiAssigneesProgress request={r} myId={myId} onUpdated={onUpdated} />
+                )}
               </div>
-              {(r.assignees || []).length >= 2 && (
-                <MultiAssigneesProgress request={r} myId={myId} onUpdated={onUpdated} />
-              )}
-            </div>
-          )}
+            );
+          })()}
 
           {/* Multi-progress when action IS pressable (full width below big button) */}
-          {bigBtn && canPressBig && (r.assignees || []).length >= 2 && (
+          {!r._showedWaitingBox && bigBtn && canPressBig && (r.assignees || []).length >= 2 && (
             <MultiAssigneesProgress request={r} myId={myId} onUpdated={onUpdated} />
           )}
 
           {/* No bigBtn but multi-assignees still visible */}
-          {!bigBtn && (r.assignees || []).length >= 2 && (
+          {!r._showedWaitingBox && !bigBtn && (r.assignees || []).length >= 2 && (
             <MultiAssigneesProgress request={r} myId={myId} onUpdated={onUpdated} />
           )}
 
@@ -9097,7 +9158,7 @@ function TawasulDetailModal({ request, user, allEmps, onClose, nameOf, onUpdated
         {showTransfer && <TransferModal request={r} allEmps={allEmps} currentAssignees={r.assignees || []} onConfirm={doTransfer} onClose={function(){ setShowTransfer(false); }} />}
         {showCollab && <CollabRequestModal allEmps={allEmps} currentAssignees={r.assignees || []} onConfirm={doRequestCollab} onClose={function(){ setShowCollab(false); }} />}
 
-        {showEval && <TawasulEvalModal request={r} user={user} role={evalRole} onClose={function(){ setShowEval(false); }} onSaved={function(){ setShowEval(false); onUpdated(); }} />}
+        {showEval && <TawasulEvalModal request={r} user={user} role={evalRole} forAssigneeId={evalAssigneeId} onClose={function(){ setShowEval(false); setEvalAssigneeId(null); }} onSaved={function(){ setShowEval(false); setEvalAssigneeId(null); onUpdated(); }} />}
         {showHR && <TawasulHRActionsModal request={r} user={user} allEmps={allEmps} onClose={function(){ setShowHR(false); }} onSaved={function(){ setShowHR(false); onUpdated(); }} />}
       </div>
     </div>
