@@ -11,7 +11,7 @@ import { exportEmploymentLetter, exportLeaveLetter } from "./formalPdfs";
 
 /* ═══════════ APP CONFIG (إعدادات التطبيق) ═══════════ */
 const APP_CONFIG = {
-  VER: "6.88",
+  VER: "6.89",
   NAME: "بصمة HMA",
   FULL_NAME: "نظام الحضور والانصراف الذكي",
   COMPANY: "هاني محمد عسيري للاستشارات الهندسية",
@@ -2929,6 +2929,9 @@ function ProfilePage({ user, branch, workType, onLogout, onTicket, myTickets, da
   }
   // My evaluations tab (for everyone — to see their approved quarterly/annual)
   tabs.push({ id: "my_evals", emoji: "📊", label: "تقييماتي" });
+  // v6.89 — Leave system tabs
+  tabs.push({ id: "my_leaves", emoji: "🏖️", label: "إجازاتي" });
+  tabs.push({ id: "handover_tasks", emoji: "📥", label: "مهام استلامها" });
 
   return (
     <div style={{ flex: 1, paddingBottom: 80, background: "linear-gradient(180deg, "+COLORS.bg1+" 0%, "+COLORS.bg2+" 50%, "+COLORS.bg3+" 100%)", minHeight: "100vh" }}>
@@ -3100,6 +3103,16 @@ function ProfilePage({ user, branch, workType, onLogout, onTicket, myTickets, da
         {/* v6.88 — My evaluations (for everyone) */}
         {tab === "my_evals" && (
           <MyEvaluationsTab user={user} />
+        )}
+
+        {/* v6.89 — Leave requests */}
+        {tab === "my_leaves" && (
+          <LeaveRequestsTab user={user} />
+        )}
+
+        {/* v6.89 — Handover tasks (received from colleagues) */}
+        {tab === "handover_tasks" && (
+          <HandoverTasksTab user={user} />
         )}
 
         {/* Manager panel button — hidden in desktop session (v6.47) */}
@@ -15164,6 +15177,673 @@ function MyEvaluationDetail({ evaluation, user, onClose }) {
         {evaluation.approvalNote}
       </div>
     </Card>}
+  </div>;
+}
+
+
+/* ═══════════════════════════════════════════════════════════════════
+ * v6.89 — BATCH 3 — نظام الإجازات المتقدم + Handover (UI)
+ * ═══════════════════════════════════════════════════════════════════ */
+
+/* ────── LeaveRequestsTab — قائمة طلبات إجازاتي + إنشاء جديد ────── */
+function LeaveRequestsTab({ user }) {
+  var [loading, setLoading] = useState(true);
+  var [requests, setRequests] = useState([]);
+  var [view, setView] = useState("list");  // list | new | handover
+  var [selectedRequest, setSelectedRequest] = useState(null);
+
+  async function load() {
+    setLoading(true);
+    try {
+      var r = await fetch("/api/data?action=leave-requests&empId=" + encodeURIComponent(user.id));
+      var d = await r.json();
+      if (d.ok) setRequests(d.requests || []);
+    } catch(e) {}
+    setLoading(false);
+  }
+
+  useEffect(function(){ load(); }, [user && user.id]);
+
+  if (view === "new") {
+    return <LeaveRequestForm user={user} onClose={function(){ setView("list"); load(); }} />;
+  }
+
+  if (view === "handover" && selectedRequest) {
+    return <LeaveHandoverForm request={selectedRequest} user={user} onClose={function(){
+      setView("list");
+      setSelectedRequest(null);
+      load();
+    }} />;
+  }
+
+  var statusLabels = {
+    draft: { label: "مسودة", color: "#6B7280", bg: "rgba(107,114,128,0.1)" },
+    pending_m1: { label: "⏳ بانتظار المدير", color: "#D97706", bg: "rgba(217,119,6,0.1)" },
+    handover_open: { label: "📋 يلزم تسليم المهام", color: "#8B5CF6", bg: "rgba(139,92,246,0.1)" },
+    pending_delegates: { label: "⏳ بانتظار المفوَّضين", color: "#06B6D4", bg: "rgba(6,182,212,0.1)" },
+    pending_final: { label: "🎯 مراجعة نهائية", color: "#3B82F6", bg: "rgba(59,130,246,0.1)" },
+    approved: { label: "✅ معتمد", color: "#16A34A", bg: "rgba(34,197,94,0.1)" },
+    rejected_m1: { label: "❌ مرفوض", color: "#DC2626", bg: "rgba(239,68,68,0.1)" },
+    rejected_final: { label: "❌ مرفوض", color: "#DC2626", bg: "rgba(239,68,68,0.1)" },
+    cancelled: { label: "ملغي", color: "#6B7280", bg: "rgba(107,114,128,0.1)" },
+  };
+
+  var typeLabels = {
+    annual: "سنوية", sick: "مرضية", emergency: "طارئة", personal: "شخصية",
+    maternity: "أمومة", bereavement: "وفاة", hajj: "حج", unpaid: "بدون راتب"
+  };
+
+  return <div>
+    <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: SPACING.md }}>
+      <div style={{ ...TYPOGRAPHY.h2, color: COLORS.textPrimary, fontFamily: TYPOGRAPHY.fontCairo }}>
+        🏖️ طلبات إجازاتي
+      </div>
+      <button onClick={function(){setView("new");}} style={{
+        padding: "8px 14px", background: COLORS.primary, color: "#fff",
+        border: "none", borderRadius: 12, fontSize: 12, fontWeight: 700,
+        cursor: "pointer", fontFamily: TYPOGRAPHY.fontTajawal
+      }}>+ طلب جديد</button>
+    </div>
+
+    {loading ? <div style={{ padding: 40, textAlign: "center", color: COLORS.textMuted }}>جارٍ التحميل...</div> :
+     requests.length === 0 ? <Card>
+       <div style={{ padding: 30, textAlign: "center" }}>
+         <div style={{ fontSize: 48, marginBottom: 10, opacity: 0.4 }}>🏖️</div>
+         <div style={{ fontSize: 14, fontWeight: 700, color: COLORS.textPrimary, marginBottom: 6 }}>لا توجد طلبات إجازة بعد</div>
+         <div style={{ fontSize: 11, color: COLORS.textMuted, marginBottom: 12 }}>اضغط "+ طلب جديد" لتقديم طلب</div>
+       </div>
+     </Card> :
+     <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+       {requests.map(function(r){
+         var st = statusLabels[r.status] || { label: r.status, color: COLORS.textMuted, bg: COLORS.bgSecondary };
+         var canStartHandover = r.status === "handover_open";
+         var canCancel = !['approved','rejected_final','cancelled'].includes(r.status);
+
+         return <div key={r.id} style={{
+           background: COLORS.card, borderRadius: 18, padding: SPACING.md,
+           border: "1px solid " + COLORS.cardBorder
+         }}>
+           <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 10 }}>
+             <div style={{
+               width: 44, height: 44, borderRadius: 14, background: COLORS.primary + "15",
+               display: "flex", alignItems: "center", justifyContent: "center", fontSize: 20
+             }}>🏖️</div>
+             <div style={{ flex: 1 }}>
+               <div style={{ fontSize: 13, fontWeight: 800, color: COLORS.textPrimary }}>
+                 {typeLabels[r.type] || r.type} · {r.days} يوم
+               </div>
+               <div style={{ fontSize: 11, color: COLORS.textMuted, marginTop: 2 }}>
+                 {r.from} → {r.to}
+               </div>
+             </div>
+             <div style={{
+               padding: "4px 10px", borderRadius: 10, background: st.bg, color: st.color,
+               fontSize: 10, fontWeight: 800
+             }}>{st.label}</div>
+           </div>
+
+           {r.reason && <div style={{ fontSize: 11, color: COLORS.textSecondary, padding: "8px 10px", background: COLORS.bgSecondary, borderRadius: 8, marginBottom: 8 }}>
+             💬 {r.reason}
+           </div>}
+
+           {r.m1Note && <div style={{ fontSize: 10, color: COLORS.textMuted, marginBottom: 6 }}>
+             ملاحظة المدير: {r.m1Note}
+           </div>}
+           {r.finalNote && <div style={{ fontSize: 10, color: COLORS.textMuted, marginBottom: 6 }}>
+             ملاحظة نهائية: {r.finalNote}
+           </div>}
+
+           {/* Handover progress */}
+           {r.handoverItems && r.handoverItems.length > 0 && <div style={{ marginBottom: 8 }}>
+             <div style={{ fontSize: 10, color: COLORS.textMuted, marginBottom: 4 }}>
+               تسليم المهام: {r.handoverItems.filter(function(i){return i.delegateDecision;}).length}/{r.handoverItems.length}
+             </div>
+             <div style={{ display: "flex", gap: 2 }}>
+               {r.handoverItems.map(function(i, idx){
+                 var c = i.delegateDecision === 'accept' ? '#16A34A' :
+                         i.delegateDecision === 'decline' ? '#DC2626' :
+                         '#E5E7EB';
+                 return <div key={idx} style={{ flex: 1, height: 4, background: c, borderRadius: 2 }}></div>;
+               })}
+             </div>
+           </div>}
+
+           <div style={{ display: "flex", gap: 6 }}>
+             {canStartHandover && <button onClick={function(){
+               setSelectedRequest(r);
+               setView("handover");
+             }} style={{
+               flex: 1, padding: 10, background: COLORS.primary, color: "#fff",
+               border: "none", borderRadius: 10, fontSize: 11, fontWeight: 700,
+               cursor: "pointer", fontFamily: TYPOGRAPHY.fontTajawal
+             }}>📋 ابدأ تسليم المهام</button>}
+
+             {canCancel && r.status !== 'handover_open' && <button onClick={async function(){
+               if (!confirm("إلغاء طلب الإجازة؟")) return;
+               await fetch("/api/data?action=leave-cancel", {
+                 method: "POST", headers: { "Content-Type": "application/json" },
+                 body: JSON.stringify({ requestId: r.id, empId: user.id })
+               });
+               load();
+             }} style={{
+               padding: "10px 14px", background: "rgba(239,68,68,0.1)", color: "#DC2626",
+               border: "none", borderRadius: 10, fontSize: 11, fontWeight: 700,
+               cursor: "pointer", fontFamily: TYPOGRAPHY.fontTajawal
+             }}>إلغاء</button>}
+           </div>
+         </div>;
+       })}
+     </div>
+    }
+  </div>;
+}
+
+/* ────── LeaveRequestForm — نموذج طلب إجازة جديد ────── */
+function LeaveRequestForm({ user, onClose }) {
+  var [type, setType] = useState("annual");
+  var [from, setFrom] = useState("");
+  var [to, setTo] = useState("");
+  var [reason, setReason] = useState("");
+  var [contact, setContact] = useState("");
+  var [saving, setSaving] = useState(false);
+  var [msg, setMsg] = useState(null);
+
+  var days = 1;
+  if (from && to) {
+    var diff = (new Date(to) - new Date(from)) / (24*3600*1000) + 1;
+    days = Math.max(1, Math.round(diff));
+  }
+
+  async function submit() {
+    if (!from || !to) { setMsg({type:"error",text:"حدد تاريخ البداية والنهاية"}); return; }
+    if (new Date(to) < new Date(from)) { setMsg({type:"error",text:"تاريخ النهاية قبل البداية"}); return; }
+    setSaving(true);
+    try {
+      var r = await fetch("/api/data?action=leave-requests", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          empId: user.id, empName: user.name, type, from, to, reason,
+          contactDuringLeave: contact
+        })
+      });
+      var d = await r.json();
+      if (d.ok) {
+        setMsg({ type: "success", text: "✓ تم إرسال طلبك للمدير" });
+        setTimeout(onClose, 1200);
+      } else {
+        setMsg({ type: "error", text: d.error || "فشل الإرسال" });
+      }
+    } catch(e) { setMsg({ type: "error", text: "فشل: " + e.message }); }
+    setSaving(false);
+  }
+
+  return <div style={{ paddingBottom: 40 }}>
+    <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: SPACING.md }}>
+      <button onClick={onClose} style={{
+        width: 36, height: 36, borderRadius: 12, border: "none",
+        background: COLORS.bgSecondary, color: COLORS.textPrimary, cursor: "pointer",
+        fontSize: 18
+      }}>×</button>
+      <div style={{ ...TYPOGRAPHY.h3, color: COLORS.textPrimary, fontFamily: TYPOGRAPHY.fontCairo }}>
+        🏖️ طلب إجازة جديد
+      </div>
+    </div>
+
+    <Card>
+      <div style={{ marginBottom: SPACING.md }}>
+        <label style={{ display: "block", fontSize: 11, fontWeight: 700, color: COLORS.textSecondary, marginBottom: 6 }}>نوع الإجازة</label>
+        <select value={type} onChange={function(e){setType(e.target.value);}} style={{
+          width: "100%", padding: 12, borderRadius: 12,
+          border: "1px solid " + COLORS.cardBorder, background: COLORS.bgSecondary,
+          fontFamily: TYPOGRAPHY.fontTajawal, fontSize: 13
+        }}>
+          <option value="annual">🌴 سنوية</option>
+          <option value="sick">🤒 مرضية</option>
+          <option value="emergency">🚨 طارئة</option>
+          <option value="personal">🙋 شخصية</option>
+          <option value="maternity">👶 أمومة</option>
+          <option value="bereavement">🕊️ وفاة</option>
+          <option value="hajj">🕋 حج</option>
+          <option value="unpaid">💼 بدون راتب</option>
+        </select>
+      </div>
+
+      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10, marginBottom: SPACING.md }}>
+        <div>
+          <label style={{ display: "block", fontSize: 11, fontWeight: 700, color: COLORS.textSecondary, marginBottom: 6 }}>من</label>
+          <input type="date" value={from} onChange={function(e){setFrom(e.target.value);}} style={{
+            width: "100%", padding: 12, borderRadius: 12,
+            border: "1px solid " + COLORS.cardBorder, background: COLORS.bgSecondary,
+            fontFamily: TYPOGRAPHY.fontTajawal, fontSize: 12, boxSizing: "border-box"
+          }} />
+        </div>
+        <div>
+          <label style={{ display: "block", fontSize: 11, fontWeight: 700, color: COLORS.textSecondary, marginBottom: 6 }}>إلى</label>
+          <input type="date" value={to} onChange={function(e){setTo(e.target.value);}} style={{
+            width: "100%", padding: 12, borderRadius: 12,
+            border: "1px solid " + COLORS.cardBorder, background: COLORS.bgSecondary,
+            fontFamily: TYPOGRAPHY.fontTajawal, fontSize: 12, boxSizing: "border-box"
+          }} />
+        </div>
+      </div>
+
+      {from && to && <div style={{ padding: 10, background: COLORS.primary + "10", borderRadius: 10, marginBottom: SPACING.md, fontSize: 12, fontWeight: 700, color: COLORS.primary, textAlign: "center" }}>
+        📅 {days} يوم
+      </div>}
+
+      <div style={{ marginBottom: SPACING.md }}>
+        <label style={{ display: "block", fontSize: 11, fontWeight: 700, color: COLORS.textSecondary, marginBottom: 6 }}>السبب (اختياري)</label>
+        <textarea value={reason} onChange={function(e){setReason(e.target.value);}} rows={3}
+          placeholder="اكتب سبب الإجازة..."
+          style={{
+            width: "100%", padding: 12, borderRadius: 12,
+            border: "1px solid " + COLORS.cardBorder, background: COLORS.bgSecondary,
+            fontFamily: TYPOGRAPHY.fontTajawal, fontSize: 12,
+            resize: "vertical", boxSizing: "border-box"
+          }} />
+      </div>
+
+      <div style={{ marginBottom: SPACING.md }}>
+        <label style={{ display: "block", fontSize: 11, fontWeight: 700, color: COLORS.textSecondary, marginBottom: 6 }}>كيفية التواصل خلال الإجازة</label>
+        <input type="text" value={contact} onChange={function(e){setContact(e.target.value);}}
+          placeholder="جوال احتياطي، إيميل، أو لا يمكن التواصل..."
+          style={{
+            width: "100%", padding: 12, borderRadius: 12,
+            border: "1px solid " + COLORS.cardBorder, background: COLORS.bgSecondary,
+            fontFamily: TYPOGRAPHY.fontTajawal, fontSize: 12, boxSizing: "border-box"
+          }} />
+      </div>
+
+      <div style={{ padding: 10, background: "rgba(59,130,246,0.08)", borderRadius: 10, fontSize: 10, color: COLORS.primary, marginBottom: SPACING.md, lineHeight: 1.6 }}>
+        ℹ️ بعد الإرسال:<br/>
+        1. المدير المباشر يراجع الطلب<br/>
+        2. إن وافق مبدئياً، ستفتح لك شاشة تسليم المهام<br/>
+        3. المفوَّضون يوافقون على استلام بنودك<br/>
+        4. المراجعة النهائية من المدير + HR
+      </div>
+
+      {msg && <div style={{
+        padding: 10, borderRadius: 10, marginBottom: SPACING.md, fontSize: 12, fontWeight: 700, textAlign: "center",
+        background: msg.type === "error" ? "rgba(239,68,68,0.1)" : "rgba(34,197,94,0.1)",
+        color: msg.type === "error" ? "#DC2626" : "#16A34A"
+      }}>{msg.text}</div>}
+
+      <button onClick={submit} disabled={saving} style={{
+        width: "100%", padding: 14, background: COLORS.primary, color: "#fff",
+        border: "none", borderRadius: 14, fontSize: 13, fontWeight: 800,
+        cursor: saving ? "wait" : "pointer", fontFamily: TYPOGRAPHY.fontTajawal
+      }}>{saving ? "جارٍ الإرسال..." : "📤 إرسال الطلب"}</button>
+    </Card>
+  </div>;
+}
+
+/* ────── LeaveHandoverForm — شاشة تسليم المهام ────── */
+function LeaveHandoverForm({ request, user, onClose }) {
+  var [items, setItems] = useState([]);
+  var [allEmps, setAllEmps] = useState([]);
+  var [showAdd, setShowAdd] = useState(false);
+  var [saving, setSaving] = useState(false);
+  var [msg, setMsg] = useState(null);
+
+  useEffect(function(){
+    fetch("/api/data?action=employees")
+      .then(function(r){return r.json();})
+      .then(function(d){
+        setAllEmps((d || []).filter(function(e){ return String(e.id) !== String(user.id); }));
+      }).catch(function(){});
+  }, []);
+
+  function addItem(newItem) {
+    setItems(function(prev){ return [...prev, { ...newItem, tempId: Date.now() + Math.random() }]; });
+    setShowAdd(false);
+  }
+
+  function removeItem(tempId) {
+    setItems(function(prev){ return prev.filter(function(i){ return i.tempId !== tempId; }); });
+  }
+
+  async function submit() {
+    setSaving(true);
+    try {
+      var r = await fetch("/api/data?action=leave-handover-submit", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          requestId: request.id,
+          empId: user.id,
+          handoverItems: items.map(function(i){
+            return {
+              category: i.category,
+              title: i.title,
+              description: i.description || '',
+              delegateId: i.delegateId,
+              receivedByDelegation: !!i.receivedByDelegation,
+            };
+          })
+        })
+      });
+      var d = await r.json();
+      if (d.ok) {
+        setMsg({ type: "success", text: "✓ تم إرسال التسليم للمفوَّضين" });
+        setTimeout(onClose, 1200);
+      } else {
+        setMsg({ type: "error", text: d.error || "فشل الإرسال" });
+      }
+    } catch(e) { setMsg({ type: "error", text: "فشل: " + e.message }); }
+    setSaving(false);
+  }
+
+  var categoryLabels = {
+    individual: "معاملة/تذكرة فردية",
+    project: "مشروع",
+    task_type: "نوع مهمة متكرر",
+    investigation: "تحقيق (مُستلَم بالتسليم فقط)"
+  };
+
+  return <div style={{ paddingBottom: 80 }}>
+    <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: SPACING.md }}>
+      <button onClick={onClose} style={{
+        width: 36, height: 36, borderRadius: 12, border: "none",
+        background: COLORS.bgSecondary, color: COLORS.textPrimary, cursor: "pointer",
+        fontSize: 18
+      }}>×</button>
+      <div style={{ flex: 1 }}>
+        <div style={{ ...TYPOGRAPHY.h3, color: COLORS.textPrimary, fontFamily: TYPOGRAPHY.fontCairo }}>📋 تسليم المهام</div>
+        <div style={{ fontSize: 11, color: COLORS.textMuted, marginTop: 2 }}>
+          إجازة {request.from} → {request.to} ({request.days} يوم)
+        </div>
+      </div>
+    </div>
+
+    <div style={{ padding: 12, background: "rgba(139,92,246,0.08)", borderRadius: 12, marginBottom: SPACING.md, fontSize: 11, color: "#8B5CF6", fontWeight: 600, lineHeight: 1.7 }}>
+      💡 أضف كل المهام/المعاملات التي تحتاج تسليمها قبل إجازتك.<br/>
+      ⛔ التحقيقات لا تُسلَّم — يجب أن تنتهي منها أو تُؤجَّل، إلا إن وصلتك بالتسليم.
+    </div>
+
+    {items.length === 0 ? <Card>
+      <div style={{ padding: 24, textAlign: "center" }}>
+        <div style={{ fontSize: 40, marginBottom: 10, opacity: 0.4 }}>📋</div>
+        <div style={{ fontSize: 13, fontWeight: 700, color: COLORS.textPrimary, marginBottom: 6 }}>
+          لم تُضف بنود بعد
+        </div>
+        <div style={{ fontSize: 11, color: COLORS.textMuted, marginBottom: 12 }}>
+          اضغط "+ إضافة بند" لبدء التسليم
+        </div>
+      </div>
+    </Card> : <div style={{ display: "flex", flexDirection: "column", gap: 10, marginBottom: SPACING.md }}>
+      {items.map(function(item){
+        var delegate = allEmps.find(function(e){ return String(e.id) === String(item.delegateId); });
+        return <div key={item.tempId} style={{
+          background: COLORS.card, borderRadius: 14, padding: SPACING.md,
+          border: "1px solid " + COLORS.cardBorder
+        }}>
+          <div style={{ display: "flex", alignItems: "flex-start", gap: 8, marginBottom: 8 }}>
+            <div style={{ flex: 1 }}>
+              <div style={{ fontSize: 10, color: COLORS.primary, fontWeight: 700, marginBottom: 2 }}>
+                {categoryLabels[item.category] || item.category}
+              </div>
+              <div style={{ fontSize: 13, fontWeight: 700, color: COLORS.textPrimary }}>{item.title}</div>
+              {item.description && <div style={{ fontSize: 11, color: COLORS.textMuted, marginTop: 4 }}>{item.description}</div>}
+            </div>
+            <button onClick={function(){removeItem(item.tempId);}} style={{
+              padding: "4px 8px", background: "rgba(239,68,68,0.1)", color: "#DC2626",
+              border: "none", borderRadius: 6, fontSize: 11, cursor: "pointer"
+            }}>🗑</button>
+          </div>
+          <div style={{ padding: 8, background: COLORS.bgSecondary, borderRadius: 8, fontSize: 11, color: COLORS.textSecondary }}>
+            👤 يُسلَّم إلى: <strong>{delegate ? delegate.name : "موظف غير موجود"}</strong>
+          </div>
+        </div>;
+      })}
+    </div>}
+
+    {showAdd ? <HandoverItemForm allEmps={allEmps} onAdd={addItem} onCancel={function(){setShowAdd(false);}} /> :
+      <button onClick={function(){setShowAdd(true);}} style={{
+        width: "100%", padding: 14, background: COLORS.bgSecondary, color: COLORS.primary,
+        border: "2px dashed " + COLORS.primary + "50", borderRadius: 14,
+        fontSize: 13, fontWeight: 700, cursor: "pointer", fontFamily: TYPOGRAPHY.fontTajawal, marginBottom: SPACING.md
+      }}>+ إضافة بند تسليم</button>}
+
+    {msg && <div style={{
+      padding: 10, borderRadius: 10, marginBottom: SPACING.md, fontSize: 12, fontWeight: 700, textAlign: "center",
+      background: msg.type === "error" ? "rgba(239,68,68,0.1)" : "rgba(34,197,94,0.1)",
+      color: msg.type === "error" ? "#DC2626" : "#16A34A"
+    }}>{msg.text}</div>}
+
+    <button onClick={submit} disabled={saving || items.length === 0} style={{
+      width: "100%", padding: 14,
+      background: items.length === 0 ? COLORS.bgSecondary : COLORS.primary,
+      color: items.length === 0 ? COLORS.textMuted : "#fff",
+      border: "none", borderRadius: 14, fontSize: 13, fontWeight: 800,
+      cursor: (saving || items.length === 0) ? "not-allowed" : "pointer",
+      fontFamily: TYPOGRAPHY.fontTajawal, opacity: (saving || items.length === 0) ? 0.6 : 1
+    }}>{saving ? "جارٍ الإرسال..." : items.length === 0 ? "أضف بنداً أولاً" : "📤 إرسال التسليم للمفوَّضين (" + items.length + ")"}</button>
+  </div>;
+}
+
+/* ────── HandoverItemForm — نموذج إضافة بند تسليم ────── */
+function HandoverItemForm({ allEmps, onAdd, onCancel }) {
+  var [category, setCategory] = useState("individual");
+  var [title, setTitle] = useState("");
+  var [description, setDescription] = useState("");
+  var [delegateId, setDelegateId] = useState("");
+  var [receivedByDelegation, setReceivedByDelegation] = useState(false);
+  var [err, setErr] = useState("");
+
+  function add() {
+    if (!title.trim()) { setErr("العنوان مطلوب"); return; }
+    if (!delegateId) { setErr("اختر المُفوَّض إليه"); return; }
+    if (category === 'investigation' && !receivedByDelegation) {
+      setErr("التحقيق لا يُسلَّم — إلا إن كان وصلك أصلاً بالتسليم");
+      return;
+    }
+    onAdd({ category, title: title.trim(), description: description.trim(), delegateId, receivedByDelegation });
+  }
+
+  return <Card>
+    <div style={{ fontSize: 13, fontWeight: 800, color: COLORS.textPrimary, marginBottom: SPACING.md }}>
+      + بند تسليم جديد
+    </div>
+
+    <div style={{ marginBottom: SPACING.md }}>
+      <label style={{ display: "block", fontSize: 11, fontWeight: 700, color: COLORS.textSecondary, marginBottom: 6 }}>الفئة</label>
+      <select value={category} onChange={function(e){setCategory(e.target.value); setErr("");}} style={{
+        width: "100%", padding: 12, borderRadius: 12,
+        border: "1px solid " + COLORS.cardBorder, background: COLORS.bgSecondary,
+        fontFamily: TYPOGRAPHY.fontTajawal, fontSize: 12
+      }}>
+        <option value="individual">📄 معاملة/تذكرة فردية</option>
+        <option value="project">🚀 مشروع</option>
+        <option value="task_type">🔁 نوع مهمة متكرر</option>
+        <option value="investigation">🔍 تحقيق (حالة خاصة)</option>
+      </select>
+    </div>
+
+    {category === 'investigation' && <div style={{
+      padding: 10, background: "rgba(239,68,68,0.08)", borderRadius: 10,
+      fontSize: 11, color: "#DC2626", fontWeight: 600, marginBottom: SPACING.md, lineHeight: 1.6
+    }}>
+      ⚠️ التحقيقات <strong>لا تُسلَّم</strong>. إن لم تنتهِ من التحقيق، يجب تأجيله أو إنهاءه قبل الإجازة.<br/><br/>
+      <label style={{ display: "flex", alignItems: "center", gap: 6, cursor: "pointer" }}>
+        <input type="checkbox" checked={receivedByDelegation} onChange={function(e){setReceivedByDelegation(e.target.checked); setErr("");}} />
+        <span>هذا التحقيق وصلني أصلاً بالتسليم من موظف آخر (استثناء)</span>
+      </label>
+    </div>}
+
+    <div style={{ marginBottom: SPACING.md }}>
+      <label style={{ display: "block", fontSize: 11, fontWeight: 700, color: COLORS.textSecondary, marginBottom: 6 }}>عنوان البند</label>
+      <input type="text" value={title} onChange={function(e){setTitle(e.target.value); setErr("");}}
+        placeholder="مثال: متابعة مشروع الفيلا 123"
+        style={{
+          width: "100%", padding: 12, borderRadius: 12,
+          border: "1px solid " + COLORS.cardBorder, background: COLORS.bgSecondary,
+          fontFamily: TYPOGRAPHY.fontTajawal, fontSize: 12, boxSizing: "border-box"
+        }} />
+    </div>
+
+    <div style={{ marginBottom: SPACING.md }}>
+      <label style={{ display: "block", fontSize: 11, fontWeight: 700, color: COLORS.textSecondary, marginBottom: 6 }}>تفاصيل (اختياري)</label>
+      <textarea value={description} onChange={function(e){setDescription(e.target.value);}} rows={3}
+        placeholder="أي تعليمات أو ملاحظات للمُفوَّض..."
+        style={{
+          width: "100%", padding: 12, borderRadius: 12,
+          border: "1px solid " + COLORS.cardBorder, background: COLORS.bgSecondary,
+          fontFamily: TYPOGRAPHY.fontTajawal, fontSize: 12,
+          resize: "vertical", boxSizing: "border-box"
+        }} />
+    </div>
+
+    <div style={{ marginBottom: SPACING.md }}>
+      <label style={{ display: "block", fontSize: 11, fontWeight: 700, color: COLORS.textSecondary, marginBottom: 6 }}>المُفوَّض إليه</label>
+      <select value={delegateId} onChange={function(e){setDelegateId(e.target.value); setErr("");}} style={{
+        width: "100%", padding: 12, borderRadius: 12,
+        border: "1px solid " + COLORS.cardBorder, background: COLORS.bgSecondary,
+        fontFamily: TYPOGRAPHY.fontTajawal, fontSize: 12
+      }}>
+        <option value="">-- اختر موظفاً --</option>
+        {allEmps.map(function(e){
+          return <option key={e.id} value={e.id}>{e.name} — {e.role || ""}</option>;
+        })}
+      </select>
+    </div>
+
+    {err && <div style={{ padding: 8, background: "rgba(239,68,68,0.1)", color: "#DC2626", borderRadius: 8, fontSize: 11, fontWeight: 700, marginBottom: SPACING.md }}>{err}</div>}
+
+    <div style={{ display: "flex", gap: 8 }}>
+      <button onClick={onCancel} style={{
+        flex: 1, padding: 12, background: COLORS.bgSecondary, color: COLORS.textPrimary,
+        border: "1px solid " + COLORS.cardBorder, borderRadius: 12, fontSize: 12, fontWeight: 700,
+        cursor: "pointer", fontFamily: TYPOGRAPHY.fontTajawal
+      }}>إلغاء</button>
+      <button onClick={add} style={{
+        flex: 2, padding: 12, background: COLORS.primary, color: "#fff",
+        border: "none", borderRadius: 12, fontSize: 12, fontWeight: 700,
+        cursor: "pointer", fontFamily: TYPOGRAPHY.fontTajawal
+      }}>✓ إضافة البند</button>
+    </div>
+  </Card>;
+}
+
+/* ────── HandoverTasksTab — المهام التي طُلب مني استلامها ────── */
+function HandoverTasksTab({ user }) {
+  var [loading, setLoading] = useState(true);
+  var [tasks, setTasks] = useState([]);
+  var [decidingId, setDecidingId] = useState(null);
+  var [note, setNote] = useState("");
+
+  async function load() {
+    setLoading(true);
+    try {
+      var r = await fetch("/api/data?action=leave-my-handover-tasks&delegateId=" + encodeURIComponent(user.id));
+      var d = await r.json();
+      if (d.ok) setTasks(d.tasks || []);
+    } catch(e) {}
+    setLoading(false);
+  }
+
+  useEffect(function(){ load(); }, [user && user.id]);
+
+  async function decide(task, decision) {
+    try {
+      var r = await fetch("/api/data?action=leave-delegate-decision", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          requestId: task.requestId, itemId: task.item.id,
+          delegateId: user.id, decision, note
+        })
+      });
+      var d = await r.json();
+      if (d.ok) {
+        setDecidingId(null);
+        setNote("");
+        load();
+      }
+    } catch(e) {}
+  }
+
+  var categoryLabels = {
+    individual: "📄 معاملة فردية",
+    project: "🚀 مشروع",
+    task_type: "🔁 نوع مهمة",
+    investigation: "🔍 تحقيق"
+  };
+
+  if (loading) {
+    return <div style={{ padding: 40, textAlign: "center", color: COLORS.textMuted }}>جارٍ التحميل...</div>;
+  }
+
+  return <div>
+    <div style={{ ...TYPOGRAPHY.h2, color: COLORS.textPrimary, marginBottom: SPACING.md, fontFamily: TYPOGRAPHY.fontCairo }}>
+      📋 مهام طُلب مني استلامها
+    </div>
+
+    {tasks.length === 0 ? <Card>
+      <div style={{ padding: 30, textAlign: "center" }}>
+        <div style={{ fontSize: 48, marginBottom: 10, opacity: 0.4 }}>✨</div>
+        <div style={{ fontSize: 14, fontWeight: 700, color: COLORS.textPrimary, marginBottom: 6 }}>
+          لا توجد مهام مطلوب استلامها
+        </div>
+        <div style={{ fontSize: 11, color: COLORS.textMuted }}>
+          ستظهر هنا عندما يطلب زميل منك استلام مهامه خلال إجازته
+        </div>
+      </div>
+    </Card> : <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+      {tasks.map(function(t){
+        var isDeciding = decidingId === t.item.id;
+        return <div key={t.item.id} style={{
+          background: COLORS.card, borderRadius: 16, padding: SPACING.md,
+          border: "1px solid " + COLORS.cardBorder
+        }}>
+          <div style={{ fontSize: 10, color: COLORS.primary, fontWeight: 700, marginBottom: 4 }}>
+            {categoryLabels[t.item.category] || t.item.category}
+          </div>
+          <div style={{ fontSize: 14, fontWeight: 800, color: COLORS.textPrimary, marginBottom: 6 }}>
+            {t.item.title}
+          </div>
+          {t.item.description && <div style={{ fontSize: 11, color: COLORS.textSecondary, padding: 8, background: COLORS.bgSecondary, borderRadius: 8, marginBottom: 8, lineHeight: 1.6 }}>
+            💬 {t.item.description}
+          </div>}
+          <div style={{ display: "flex", gap: 8, fontSize: 11, color: COLORS.textMuted, marginBottom: 10, flexWrap: "wrap" }}>
+            <div>من: <strong>{t.requesterName}</strong></div>
+            <div>·</div>
+            <div>الفترة: {t.leaveFrom} → {t.leaveTo} ({t.leaveDays} يوم)</div>
+          </div>
+
+          {isDeciding && <div style={{ marginBottom: 10 }}>
+            <textarea value={note} onChange={function(e){setNote(e.target.value);}} rows={2}
+              placeholder="ملاحظاتك (اختياري)..."
+              style={{
+                width: "100%", padding: 10, borderRadius: 10,
+                border: "1px solid " + COLORS.cardBorder, background: COLORS.bgSecondary,
+                fontFamily: TYPOGRAPHY.fontTajawal, fontSize: 11, boxSizing: "border-box", marginBottom: 8
+              }} />
+          </div>}
+
+          {!isDeciding ? <div style={{ display: "flex", gap: 8 }}>
+            <button onClick={function(){setDecidingId(t.item.id);}} style={{
+              flex: 1, padding: 10, background: COLORS.primary, color: "#fff",
+              border: "none", borderRadius: 10, fontSize: 11, fontWeight: 700,
+              cursor: "pointer", fontFamily: TYPOGRAPHY.fontTajawal
+            }}>📝 اتخذ قراراً</button>
+          </div> : <div style={{ display: "flex", gap: 6 }}>
+            <button onClick={function(){decide(t, 'accept');}} style={{
+              flex: 1, padding: 10, background: "#16A34A", color: "#fff",
+              border: "none", borderRadius: 10, fontSize: 11, fontWeight: 700,
+              cursor: "pointer", fontFamily: TYPOGRAPHY.fontTajawal
+            }}>✓ أستلم</button>
+            <button onClick={function(){decide(t, 'decline');}} style={{
+              flex: 1, padding: 10, background: "#DC2626", color: "#fff",
+              border: "none", borderRadius: 10, fontSize: 11, fontWeight: 700,
+              cursor: "pointer", fontFamily: TYPOGRAPHY.fontTajawal
+            }}>✕ أرفض</button>
+            <button onClick={function(){setDecidingId(null); setNote("");}} style={{
+              padding: "10px 12px", background: COLORS.bgSecondary, color: COLORS.textPrimary,
+              border: "1px solid " + COLORS.cardBorder, borderRadius: 10, fontSize: 11, fontWeight: 700,
+              cursor: "pointer", fontFamily: TYPOGRAPHY.fontTajawal
+            }}>إلغاء</button>
+          </div>}
+        </div>;
+      })}
+    </div>}
   </div>;
 }
 

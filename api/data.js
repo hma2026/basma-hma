@@ -1926,6 +1926,448 @@ export default async function handler(req, res) {
         });
       }
 
+      /* ═══════════════════════════════════════════════════════════════════
+       * v6.89 — BATCH 3 — نظام الإجازات المتقدم + Handover (تسليم المهام)
+       * ═══════════════════════════════════════════════════════════════════
+       *
+       * فلسفة التسليم:
+       *   - قبل منح الإجازة، الموظف يُسلّم أعماله الجارية
+       *   - 3 مستويات: فردي (معاملة) / مشروع / نوع مهمة
+       *   - استثناء: التحقيقات لا تُسلَّم (الموظف يرجع أو يؤجل) إلا التحقيقات التي وصلته بالتسليم
+       *
+       * الحالات (status):
+       *   - draft          (مسودة — الموظف لم يُرسل بعد)
+       *   - pending_m1     (بانتظار موافقة المدير المبدئية)
+       *   - handover_open  (موافقة مبدئية — شاشة التسليم مفتوحة للموظف)
+       *   - pending_delegates (بعض المُفوَّضين لم يوافقوا بعد)
+       *   - pending_final  (التسليم مكتمل — بانتظار المراجعة النهائية)
+       *   - approved       (موافقة نهائية — الإجازة معتمدة)
+       *   - rejected_m1    (رفض مبدئي من المدير)
+       *   - rejected_final (رفض نهائي من المدير أو HR)
+       *   - cancelled      (ألغاها الموظف)
+       */
+
+      case 'leave-requests': {
+        // GET — جلب طلبات الإجازات المتقدمة (مع فلاتر)
+        if (req.method === 'GET') {
+          const reqs = await dbGet('leave-requests') || [];
+          const { empId, status, managerId, hrView } = req.query;
+          let filtered = reqs;
+          if (empId) filtered = filtered.filter(r => String(r.empId) === String(empId));
+          if (managerId) filtered = filtered.filter(r => String(r.managerId) === String(managerId));
+          if (status) filtered = filtered.filter(r => r.status === status);
+          if (hrView === '1') {
+            // HR sees only those in pending_final or handover_open+
+            filtered = filtered.filter(r => ['pending_final','approved','rejected_final'].includes(r.status));
+          }
+          filtered.sort((a, b) => String(b.createdAt || '').localeCompare(String(a.createdAt || '')));
+          return res.json({ ok: true, count: filtered.length, requests: filtered });
+        }
+        // POST — إنشاء طلب إجازة جديد
+        if (req.method === 'POST') {
+          const { empId, empName, type, from, to, reason, contactDuringLeave } = req.body || {};
+          if (!empId || !type || !from || !to) return res.status(400).json({ error: 'empId + type + from + to required' });
+
+          // Compute days
+          const fromD = new Date(from);
+          const toD = new Date(to);
+          const daysCount = Math.max(1, Math.round((toD - fromD) / (24*3600*1000)) + 1);
+
+          // Determine manager from hierarchy
+          const hierarchy = await dbGet('org_hierarchy') || {};
+          const rec = hierarchy[String(empId)];
+          const managerId = rec && rec.manager1 ? String(rec.manager1) : null;
+
+          const reqs = await dbGet('leave-requests') || [];
+          const newReq = {
+            id: 'LR' + Date.now() + Math.random().toString(36).slice(2, 5),
+            empId: String(empId),
+            empName: empName || '',
+            type,
+            from, to, days: daysCount,
+            reason: reason || '',
+            contactDuringLeave: contactDuringLeave || '',
+            managerId,
+            status: 'pending_m1',
+            handoverItems: [],      // قائمة بنود التسليم
+            handoverComplete: false,
+            m1Decision: null,
+            m1DecidedAt: null,
+            m1Note: '',
+            finalDecision: null,
+            finalDecidedBy: null,
+            finalDecidedAt: null,
+            finalNote: '',
+            hrDecision: null,
+            hrDecidedBy: null,
+            hrDecidedAt: null,
+            hrNote: '',
+            cancelledAt: null,
+            createdAt: new Date().toISOString(),
+          };
+          reqs.push(newReq);
+          await dbSet('leave-requests', reqs);
+
+          // Notify manager
+          if (managerId) {
+            const notifs = await dbGet('notifications') || [];
+            notifs.push({
+              id: 'n_lr_' + Date.now(),
+              empId: managerId,
+              type: 'leave_request',
+              title: '📝 طلب إجازة جديد',
+              message: (empName || 'موظف') + ' طلب إجازة (' + daysCount + ' يوم)',
+              link: '/admin#leave-requests',
+              leaveRequestId: newReq.id,
+              read: false,
+              ts: new Date().toISOString(),
+            });
+            await dbSet('notifications', notifs);
+          }
+
+          return res.json({ ok: true, request: newReq });
+        }
+        break;
+      }
+
+      case 'leave-request-m1': {
+        // POST — المدير المباشر يوافق/يرفض مبدئياً
+        if (req.method !== 'POST') return res.status(405).json({ error: 'POST required' });
+        const { requestId, decision, managerId, note } = req.body || {};
+        if (!requestId || !decision || !managerId) return res.status(400).json({ error: 'requestId + decision + managerId required' });
+
+        const reqs = await dbGet('leave-requests') || [];
+        const idx = reqs.findIndex(r => r.id === requestId);
+        if (idx < 0) return res.status(404).json({ error: 'request not found' });
+        const lr = reqs[idx];
+
+        if (String(lr.managerId) !== String(managerId)) return res.status(403).json({ error: 'ليس لديك صلاحية' });
+        if (lr.status !== 'pending_m1') return res.status(400).json({ error: 'الطلب ليس في مرحلة الموافقة المبدئية' });
+
+        lr.m1Decision = decision;
+        lr.m1DecidedAt = new Date().toISOString();
+        lr.m1Note = note || '';
+
+        if (decision === 'approve') {
+          lr.status = 'handover_open';
+        } else if (decision === 'reject') {
+          lr.status = 'rejected_m1';
+        }
+
+        reqs[idx] = lr;
+        await dbSet('leave-requests', reqs);
+
+        // Notify employee
+        const notifs = await dbGet('notifications') || [];
+        notifs.push({
+          id: 'n_lrm1_' + Date.now(),
+          empId: lr.empId,
+          type: 'leave_m1_decision',
+          title: decision === 'approve' ? '✅ تمت الموافقة المبدئية' : '❌ رفض طلب الإجازة',
+          message: decision === 'approve'
+            ? 'تمت الموافقة المبدئية. يرجى إكمال شاشة تسليم المهام.'
+            : 'تم رفض طلبك.' + (note ? ' السبب: ' + note : ''),
+          link: '/my/leaves',
+          leaveRequestId: lr.id,
+          read: false,
+          ts: new Date().toISOString(),
+        });
+        await dbSet('notifications', notifs);
+
+        return res.json({ ok: true, request: lr });
+      }
+
+      case 'leave-handover-submit': {
+        // POST — الموظف يُرسل التسليم (بعد اختيار المُفوَّضين لكل بند)
+        if (req.method !== 'POST') return res.status(405).json({ error: 'POST required' });
+        const { requestId, handoverItems, empId } = req.body || {};
+        if (!requestId || !Array.isArray(handoverItems)) return res.status(400).json({ error: 'requestId + handoverItems required' });
+
+        const reqs = await dbGet('leave-requests') || [];
+        const idx = reqs.findIndex(r => r.id === requestId);
+        if (idx < 0) return res.status(404).json({ error: 'request not found' });
+        const lr = reqs[idx];
+
+        if (String(lr.empId) !== String(empId)) return res.status(403).json({ error: 'ليس طلبك' });
+        if (lr.status !== 'handover_open') return res.status(400).json({ error: 'شاشة التسليم ليست مفتوحة' });
+
+        // Validate each handover item
+        const emps = await dbGet('employees') || [];
+        const enrichedItems = [];
+        for (const item of handoverItems) {
+          if (!item.category || !item.title || !item.delegateId) {
+            return res.status(400).json({ error: 'كل بند يحتاج: الفئة، العنوان، المُفوَّض إليه' });
+          }
+          // Reject investigations unless they were received via delegation
+          if (item.category === 'investigation' && !item.receivedByDelegation) {
+            return res.status(400).json({ error: 'لا يمكن تسليم التحقيقات — إما يعود الموظف لإنجازها أو تُؤجَّل' });
+          }
+          const delegate = emps.find(e => String(e.id) === String(item.delegateId));
+          if (!delegate) return res.status(400).json({ error: 'المُفوَّض إليه غير موجود: ' + item.delegateId });
+
+          enrichedItems.push({
+            id: 'HI' + Date.now() + Math.random().toString(36).slice(2, 5),
+            category: item.category,           // individual | project | task_type | investigation
+            title: item.title,
+            description: item.description || '',
+            delegateId: String(item.delegateId),
+            delegateName: delegate.name || '',
+            receivedByDelegation: !!item.receivedByDelegation,
+            delegateDecision: null,            // pending | accept | decline
+            delegateDecidedAt: null,
+            delegateNote: '',
+            hrDecision: null,                  // HR يقدر يرفض ("غير كفء")
+            hrNote: '',
+            createdAt: new Date().toISOString(),
+          });
+        }
+
+        lr.handoverItems = enrichedItems;
+        lr.handoverSubmittedAt = new Date().toISOString();
+        lr.status = enrichedItems.length > 0 ? 'pending_delegates' : 'pending_final';
+        reqs[idx] = lr;
+        await dbSet('leave-requests', reqs);
+
+        // Notify each delegate
+        const notifs = await dbGet('notifications') || [];
+        const uniqueDelegates = [...new Set(enrichedItems.map(i => i.delegateId))];
+        for (const dId of uniqueDelegates) {
+          const count = enrichedItems.filter(i => i.delegateId === dId).length;
+          notifs.push({
+            id: 'n_del_' + Date.now() + '_' + dId,
+            empId: dId,
+            type: 'handover_request',
+            title: '📋 طلب استلام مهام',
+            message: lr.empName + ' يطلب منك استلام ' + count + ' بند في إجازته',
+            link: '/my/handover',
+            leaveRequestId: lr.id,
+            read: false,
+            ts: new Date().toISOString(),
+          });
+        }
+        await dbSet('notifications', notifs);
+
+        return res.json({ ok: true, request: lr });
+      }
+
+      case 'leave-delegate-decision': {
+        // POST — المُفوَّض إليه يوافق/يرفض بند تسليم
+        if (req.method !== 'POST') return res.status(405).json({ error: 'POST required' });
+        const { requestId, itemId, delegateId, decision, note } = req.body || {};
+        if (!requestId || !itemId || !delegateId || !decision) return res.status(400).json({ error: 'requestId + itemId + delegateId + decision required' });
+
+        const reqs = await dbGet('leave-requests') || [];
+        const idx = reqs.findIndex(r => r.id === requestId);
+        if (idx < 0) return res.status(404).json({ error: 'request not found' });
+        const lr = reqs[idx];
+
+        const itemIdx = (lr.handoverItems || []).findIndex(i => i.id === itemId);
+        if (itemIdx < 0) return res.status(404).json({ error: 'item not found' });
+        const item = lr.handoverItems[itemIdx];
+
+        if (String(item.delegateId) !== String(delegateId)) return res.status(403).json({ error: 'لست المُفوَّض إليه' });
+
+        item.delegateDecision = decision;
+        item.delegateDecidedAt = new Date().toISOString();
+        item.delegateNote = note || '';
+        lr.handoverItems[itemIdx] = item;
+
+        // Check if all delegates have decided
+        const allDecided = lr.handoverItems.every(i => i.delegateDecision != null);
+        const anyDeclined = lr.handoverItems.some(i => i.delegateDecision === 'decline');
+
+        if (allDecided) {
+          lr.status = 'pending_final';
+          // Notify employee + manager
+          const notifs = await dbGet('notifications') || [];
+          notifs.push({
+            id: 'n_handdone_' + Date.now(),
+            empId: lr.empId,
+            type: 'handover_complete',
+            title: anyDeclined ? '⚠️ بعض المفوَّضين رفضوا' : '✅ كل المفوَّضين وافقوا',
+            message: 'طلب إجازتك الآن في المراجعة النهائية',
+            link: '/my/leaves',
+            leaveRequestId: lr.id,
+            read: false,
+            ts: new Date().toISOString(),
+          });
+          if (lr.managerId) {
+            notifs.push({
+              id: 'n_mgr_final_' + Date.now(),
+              empId: lr.managerId,
+              type: 'leave_final_review',
+              title: '🎯 مراجعة نهائية لإجازة',
+              message: lr.empName + ' — التسليم اكتمل، بانتظار موافقتك النهائية',
+              link: '/admin#leave-requests',
+              leaveRequestId: lr.id,
+              read: false,
+              ts: new Date().toISOString(),
+            });
+          }
+          await dbSet('notifications', notifs);
+        }
+
+        reqs[idx] = lr;
+        await dbSet('leave-requests', reqs);
+        return res.json({ ok: true, request: lr, allDecided });
+      }
+
+      case 'leave-final-decision': {
+        // POST — المدير المباشر يوافق نهائياً + HR يقدر يرفض مفوَّض "غير كفء"
+        if (req.method !== 'POST') return res.status(405).json({ error: 'POST required' });
+        const { requestId, decision, decidedBy, role, note, rejectedDelegates } = req.body || {};
+        // role: 'manager' | 'hr'
+        // rejectedDelegates: [itemId...] — IDs of handover items where HR rejected the delegate
+        if (!requestId || !decision || !decidedBy || !role) return res.status(400).json({ error: 'requestId + decision + decidedBy + role required' });
+
+        const reqs = await dbGet('leave-requests') || [];
+        const idx = reqs.findIndex(r => r.id === requestId);
+        if (idx < 0) return res.status(404).json({ error: 'request not found' });
+        const lr = reqs[idx];
+
+        if (lr.status !== 'pending_final') return res.status(400).json({ error: 'الطلب ليس في مرحلة المراجعة النهائية' });
+
+        // Validate role
+        if (role === 'manager' && String(lr.managerId) !== String(decidedBy)) {
+          return res.status(403).json({ error: 'فقط المدير المباشر يوافق كمدير' });
+        }
+
+        if (role === 'manager') {
+          lr.finalDecision = decision;
+          lr.finalDecidedBy = decidedBy;
+          lr.finalDecidedAt = new Date().toISOString();
+          lr.finalNote = note || '';
+          if (decision === 'approve') {
+            // Next: HR reviews
+            lr.status = 'pending_final'; // stays until HR approves
+            lr.awaitingHR = true;
+          } else {
+            lr.status = 'rejected_final';
+          }
+        } else if (role === 'hr') {
+          lr.hrDecision = decision;
+          lr.hrDecidedBy = decidedBy;
+          lr.hrDecidedAt = new Date().toISOString();
+          lr.hrNote = note || '';
+
+          // Mark any rejected delegates
+          if (Array.isArray(rejectedDelegates) && rejectedDelegates.length > 0) {
+            lr.handoverItems = lr.handoverItems.map(item => {
+              if (rejectedDelegates.includes(item.id)) {
+                return { ...item, hrDecision: 'reject', hrNote: 'غير كفء — يحتاج مُفوَّض آخر' };
+              }
+              return item;
+            });
+          }
+
+          if (decision === 'approve') {
+            lr.status = 'approved';
+          } else {
+            lr.status = 'rejected_final';
+          }
+        }
+
+        reqs[idx] = lr;
+        await dbSet('leave-requests', reqs);
+
+        // Notify employee
+        const notifs = await dbGet('notifications') || [];
+        if (lr.status === 'approved') {
+          notifs.push({
+            id: 'n_lvappr_' + Date.now(),
+            empId: lr.empId,
+            type: 'leave_approved',
+            title: '🎉 تم اعتماد إجازتك',
+            message: 'إجازتك من ' + lr.from + ' إلى ' + lr.to + ' معتمدة رسمياً',
+            link: '/my/leaves',
+            leaveRequestId: lr.id,
+            read: false,
+            ts: new Date().toISOString(),
+          });
+        } else if (lr.status === 'rejected_final') {
+          notifs.push({
+            id: 'n_lvrej_' + Date.now(),
+            empId: lr.empId,
+            type: 'leave_rejected',
+            title: '❌ رفض الإجازة',
+            message: 'تم رفض إجازتك.' + (note ? ' السبب: ' + note : ''),
+            link: '/my/leaves',
+            leaveRequestId: lr.id,
+            read: false,
+            ts: new Date().toISOString(),
+          });
+        }
+        await dbSet('notifications', notifs);
+
+        return res.json({ ok: true, request: lr });
+      }
+
+      case 'leave-cancel': {
+        // POST — الموظف يلغي طلبه
+        if (req.method !== 'POST') return res.status(405).json({ error: 'POST required' });
+        const { requestId, empId, reason } = req.body || {};
+        if (!requestId || !empId) return res.status(400).json({ error: 'requestId + empId required' });
+        const reqs = await dbGet('leave-requests') || [];
+        const idx = reqs.findIndex(r => r.id === requestId);
+        if (idx < 0) return res.status(404).json({ error: 'request not found' });
+        const lr = reqs[idx];
+        if (String(lr.empId) !== String(empId)) return res.status(403).json({ error: 'ليس طلبك' });
+        if (['approved','rejected_final','cancelled'].includes(lr.status)) return res.status(400).json({ error: 'لا يمكن إلغاء طلب منتهٍ' });
+        lr.status = 'cancelled';
+        lr.cancelledAt = new Date().toISOString();
+        lr.cancelReason = reason || '';
+        reqs[idx] = lr;
+        await dbSet('leave-requests', reqs);
+        return res.json({ ok: true });
+      }
+
+      case 'leave-my-handover-tasks': {
+        // GET — قائمة بنود التسليم المطلوب استلامها (للمُفوَّض إليه)
+        if (req.method !== 'GET') return res.status(405).json({ error: 'GET required' });
+        const delegateId = req.query.delegateId;
+        if (!delegateId) return res.status(400).json({ error: 'delegateId required' });
+        const reqs = await dbGet('leave-requests') || [];
+        const tasks = [];
+        for (const lr of reqs) {
+          if (!['pending_delegates','pending_final'].includes(lr.status)) continue;
+          for (const item of (lr.handoverItems || [])) {
+            if (String(item.delegateId) === String(delegateId) && item.delegateDecision == null) {
+              tasks.push({
+                requestId: lr.id,
+                requesterName: lr.empName,
+                requesterId: lr.empId,
+                leaveFrom: lr.from,
+                leaveTo: lr.to,
+                leaveDays: lr.days,
+                item,
+              });
+            }
+          }
+        }
+        return res.json({ ok: true, count: tasks.length, tasks });
+      }
+
+      case 'leave-stats': {
+        // GET — إحصائيات الإجازات للوحة HR
+        if (req.method !== 'GET') return res.status(405).json({ error: 'GET required' });
+        const reqs = await dbGet('leave-requests') || [];
+        const byStatus = {};
+        let pendingM1 = 0, pendingDelegates = 0, pendingFinal = 0, approved = 0;
+        reqs.forEach(r => {
+          byStatus[r.status] = (byStatus[r.status] || 0) + 1;
+          if (r.status === 'pending_m1') pendingM1++;
+          if (r.status === 'pending_delegates') pendingDelegates++;
+          if (r.status === 'pending_final') pendingFinal++;
+          if (r.status === 'approved') approved++;
+        });
+        return res.json({
+          ok: true,
+          total: reqs.length,
+          byStatus,
+          pendingM1, pendingDelegates, pendingFinal, approved,
+        });
+      }
+
       case 'checkin': {
         const { empId, type, lat, lng, facePhoto } = req.body || {};
         const recs = await dbGet('attendance') || [];
