@@ -4,7 +4,7 @@ import { generateAttendanceReport, generateEmployeeReport, generateMonthlySummar
 import { exportFormalWarning, exportInvestigationRecord, exportAffidavit, exportEmploymentLetter, exportSalaryLetter, exportLeaveLetter } from "./formalPdfs";
 
 const APP = "بصمة HMA";
-const VER = "7.00";
+const VER = "7.02";
 const CO = "هاني محمد عسيري للإستشارات الهندسية";
 const B = { blue: "#2B5EA7", yellow: "#FDD800", red: "#E2192C", black: "#1A1A1A", blueDk: "#1E4478", blueLt: "#EDF3FB", gold: "#D4A017" };
 
@@ -535,7 +535,6 @@ export default function AdminApp() {
       items: [
         { id: "tawasul", icon: "🤝", label: "نظام تواصل" },
         { id: "attendance_hub", icon: "⏰", label: "الحضور والتنظيم" },
-        { id: "geofence", icon: "📍", label: "النطاق الجغرافي" },
         { id: "custody_hub", icon: "📦", label: "العهد والأصول" },
         { id: "reports", icon: "📄", label: "التقارير" },
       ],
@@ -902,67 +901,7 @@ export default function AdminApp() {
       </>}
 
       {/* ═══ GEOFENCE ═══ */}
-      {tab === "geofence" && <>
-        {/* Add Branch */}
-        <div style={{ background: t.card, borderRadius: 14, padding: "16px", border: "1px solid " + t.sep, marginBottom: 14 }}>
-          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>
-            <div style={{ fontSize: 14, fontWeight: 700 }}>📍 إدارة مواقع العمل</div>
-            <span style={{ fontSize: 11, color: t.txM }}>{branches.length} موقع</span>
-          </div>
-          <div style={{ display: "flex", gap: 6, marginBottom: 10 }}>
-            <input id="new-branch-name" placeholder="اسم الموقع الجديد" style={{ flex: 2, padding: 10, borderRadius: 10, border: "1px solid " + t.sep, fontSize: 12, background: t.inp, color: t.tx, fontFamily: Fn }} />
-            <input id="new-branch-radius" type="number" placeholder="النطاق (م)" defaultValue="150" style={{ flex: 1, padding: 10, borderRadius: 10, border: "1px solid " + t.sep, fontSize: 12, background: t.inp, color: t.tx }} />
-            <button onClick={async function() {
-              var name = document.getElementById("new-branch-name").value;
-              var radius = parseInt(document.getElementById("new-branch-radius").value) || 150;
-              if (!name) return alert("اكتب اسم الموقع");
-              var id = name.replace(/\s/g, "_").toLowerCase().substring(0, 10) + "_" + Date.now().toString(36);
-              var nb = branches.concat([{ id: id, name: name, start: "08:30", end: "17:00", breakS: "12:30", breakE: "13:00", offDay: "الجمعة", tz: "Asia/Riyadh", radius: radius, lat: 0, lng: 0 }]);
-              await saveBranches(nb);
-              document.getElementById("new-branch-name").value = "";
-              alert("✅ تم إضافة الموقع — حدد إحداثياته من الخريطة");
-            }} style={{ padding: "10px 16px", borderRadius: 10, background: B.blue, color: "#fff", fontSize: 12, fontWeight: 700, border: "none", cursor: "pointer", whiteSpace: "nowrap" }}>+ إضافة</button>
-          </div>
-        </div>
-
-        {/* Branch cards */}
-        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(200px, 1fr))", gap: 10, marginBottom: 14 }}>{branches.map(function(b) {
-          var brEmps = safeEmps.filter(function(e) { return e.branch === b.id || e.branch === b.name; });
-          return <div key={b.id} style={{ background: t.card, borderRadius: 14, padding: "14px", border: "1px solid " + t.sep }}>
-            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-              <div style={{ fontSize: 13, fontWeight: 700 }}>{b.name}</div>
-              {role === "manager" && <button onClick={async function() {
-                if (!confirm("حذف موقع " + b.name + "؟")) return;
-                var nb = branches.filter(function(x) { return x.id !== b.id; });
-                await saveBranches(nb);
-              }} style={{ background: "none", border: "none", color: t.bad, fontSize: 14, cursor: "pointer" }}>🗑</button>}
-            </div>
-            <div style={{ fontSize: 10, color: B.blue, marginTop: 6 }}>📍 {b.radius < 1000 ? b.radius + " م" : (b.radius / 1000).toFixed(1) + " كم"}</div>
-            {b.lat && b.lat !== 0 ? <div style={{ fontSize: 9, color: t.txM, marginTop: 2, fontFamily: "monospace" }}>{b.lat.toFixed(4)}, {b.lng.toFixed(4)}</div> : <div style={{ fontSize: 9, color: t.warn, marginTop: 2 }}>⚠️ لم يُحدد الموقع</div>}
-            <button onClick={function() { setMapTarget({ type: "branch", id: b.id }); }} style={{ width: "100%", marginTop: 8, padding: "7px", borderRadius: 8, background: B.blue + "12", color: B.blue, fontSize: 11, fontWeight: 700, border: "none", cursor: "pointer" }}>🗺️ تحديد الموقع</button>
-            {/* Assigned employees */}
-            <div style={{ marginTop: 8, paddingTop: 8, borderTop: "1px solid " + t.sep }}>
-              <div style={{ fontSize: 10, fontWeight: 600, color: t.tx2, marginBottom: 4 }}>👥 الموظفين ({brEmps.length})</div>
-              {brEmps.length === 0 && <div style={{ fontSize: 9, color: t.txM }}>لا يوجد موظفين</div>}
-              {brEmps.map(function(e) { return <div key={e.id} style={{ fontSize: 10, color: t.tx2, padding: "2px 0" }}>• {e.name} ({e.id})</div>; })}
-              {role === "manager" && <button onClick={async function() {
-                var empId = prompt("أدخل الرقم الوظيفي للموظف (مثل E004):");
-                if (!empId) return;
-                empId = empId.toUpperCase();
-                var allEmps = await api("employees") || [];
-                var emp2 = allEmps.find(function(e) { return e.id === empId; });
-                if (!emp2) return alert("الموظف غير موجود");
-                emp2.branch = b.id;
-                await api("employees", "PUT", { id: empId, branch: b.id });
-                alert("✅ تم نقل " + emp2.name + " إلى " + b.name);
-                location.reload();
-              }} style={{ width: "100%", marginTop: 6, padding: "5px", borderRadius: 6, background: t.okLt, color: t.ok, fontSize: 9, fontWeight: 700, border: "none", cursor: "pointer" }}>+ نقل موظف هنا</button>}
-            </div>
-          </div>; })}</div>
-
-        {/* Map Picker Modal */}
-        {mapTarget && mapTarget.type === "branch" && (function() { var br = branches.find(function(x) { return x.id === mapTarget.id; }); if (!br) return null; return <MapPicker lat={br.lat} lng={br.lng} radius={br.radius} name={br.name} t={t} onClose={function() { setMapTarget(null); }} onSave={function(lat, lng, rad) { var nb = branches.map(function(x) { return x.id === br.id ? Object.assign({}, x, { lat: lat, lng: lng, radius: rad }) : x; }); saveBranches(nb); setMapTarget(null); }} />; })()}
-      </>}
+      {tab === "geofence" && <GeofencePanel branches={branches} saveBranches={saveBranches} safeEmps={safeEmps} mapTarget={mapTarget} setMapTarget={setMapTarget} role={role} t={t} B={B} Fn={Fn} />}
 
       {/* ═══ TRACKING (Admin only — secret) ═══ */}
       {tab === "tracking" && <TrackingPanel t={t} B={B} emps={safeEmps} branches={branches} />}
@@ -973,7 +912,7 @@ export default function AdminApp() {
 
       {/* ═══ v6.96 — 3 admin hubs ═══ */}
       {tab === "custody_hub" && <CustodyHub t={t} B={B} emps={safeEmps} />}
-      {tab === "attendance_hub" && <AttendanceHub t={t} B={B} emps={safeEmps} branches={branches} />}
+      {tab === "attendance_hub" && <AttendanceHub t={t} B={B} emps={safeEmps} branches={branches} saveBranches={saveBranches} mapTarget={mapTarget} setMapTarget={setMapTarget} role={role} Fn={Fn} />}
       {tab === "content_hub" && <ContentHub t={t} B={B} emps={safeEmps} branches={branches} events={events} setEvents={setEvents} hrQuestions={hrQuestions} setHrQuestions={setHrQuestions} saveSettings={saveSettings} newQ={newQ} setNewQ={setNewQ} Fn={Fn} Toggle={Toggle} />}
 
       {/* ═══ REPORTS ═══ */}
@@ -12559,7 +12498,7 @@ function CustodyHub({ t, B, emps }) {
 }
 
 /* AttendanceHub — الحضور والتنظيم (4 named, geofence remains separate) */
-function AttendanceHub({ t, B, emps, branches }) {
+function AttendanceHub({ t, B, emps, branches, saveBranches, mapTarget, setMapTarget, role, Fn }) {
   var [sub, setSub] = useState("insights");
   return <div>
     <SubTabBar t={t} B={B} active={sub} onChange={setSub}
@@ -12567,11 +12506,13 @@ function AttendanceHub({ t, B, emps, branches }) {
         { id: "insights",  icon: "📈", label: "ذكاء الحضور" },
         { id: "branches",  icon: "🏢", label: "الفروع" },
         { id: "work",      icon: "⏰", label: "أنواع الدوام" },
+        { id: "geofence",  icon: "📍", label: "النطاق الجغرافي" },
         { id: "tracking",  icon: "🛰️", label: "تتبّع الحركة" },
       ]} />
     {sub === "insights" && <AttendanceInsightsPanel t={t} B={B} emps={emps} />}
     {sub === "branches" && <BranchesPanel t={t} B={B} />}
     {sub === "work" && <WorkTypesPanel t={t} B={B} emps={emps} />}
+    {sub === "geofence" && <GeofencePanel branches={branches} saveBranches={saveBranches} safeEmps={emps} mapTarget={mapTarget} setMapTarget={setMapTarget} role={role} t={t} B={B} Fn={Fn} />}
     {sub === "tracking" && <TrackingPanel t={t} B={B} emps={emps} branches={branches} />}
   </div>;
 }
@@ -12843,5 +12784,72 @@ function QuestionsPanel({ hrQuestions, setHrQuestions, saveSettings, newQ, setNe
         if (confirm("مسح كل الأسئلة المحفوظة؟ سيعود النظام لاستخدام الأسئلة الافتراضية المضمّنة في الكود.")) { setHrQuestions([]); saveSettings({ questions: [] }); }
       }} style={{ flex: 1, padding: "12px 16px", borderRadius: 10, background: "transparent", color: t.tx, border: "1px solid " + t.sep, fontSize: 12, fontWeight: 700, cursor: "pointer", fontFamily: "inherit" }}>🗑 مسح الكل</button>
     </div>
+  </>;
+}
+
+/* ═══════════════════════════════════════════════════════════════════
+ * v7.01 — GeofencePanel (wrapper) — دمج geofence inline في AttendanceHub
+ * ═══════════════════════════════════════════════════════════════════ */
+function GeofencePanel({ branches, saveBranches, safeEmps, mapTarget, setMapTarget, role, t, B, Fn }) {
+  return <>
+    <div style={{ background: t.card, borderRadius: 14, padding: "16px", border: "1px solid " + t.sep, marginBottom: 14 }}>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>
+        <div style={{ fontSize: 14, fontWeight: 700 }}>📍 إدارة مواقع العمل</div>
+        <span style={{ fontSize: 11, color: t.txM }}>{branches.length} موقع</span>
+      </div>
+      <div style={{ display: "flex", gap: 6, marginBottom: 10 }}>
+        <input id="new-branch-name" placeholder="اسم الموقع الجديد" style={{ flex: 2, padding: 10, borderRadius: 10, border: "1px solid " + t.sep, fontSize: 12, background: t.inp, color: t.tx, fontFamily: Fn }} />
+        <input id="new-branch-radius" type="number" placeholder="النطاق (م)" defaultValue="150" style={{ flex: 1, padding: 10, borderRadius: 10, border: "1px solid " + t.sep, fontSize: 12, background: t.inp, color: t.tx }} />
+        <button onClick={async function() {
+          var name = document.getElementById("new-branch-name").value;
+          var radius = parseInt(document.getElementById("new-branch-radius").value) || 150;
+          if (!name) return alert("اكتب اسم الموقع");
+          var id = name.replace(/\s/g, "_").toLowerCase().substring(0, 10) + "_" + Date.now().toString(36);
+          var nb = branches.concat([{ id: id, name: name, start: "08:30", end: "17:00", breakS: "12:30", breakE: "13:00", offDay: "الجمعة", tz: "Asia/Riyadh", radius: radius, lat: 0, lng: 0 }]);
+          await saveBranches(nb);
+          document.getElementById("new-branch-name").value = "";
+          alert("✅ تم إضافة الموقع — حدد إحداثياته من الخريطة");
+        }} style={{ padding: "10px 16px", borderRadius: 10, background: B.blue, color: "#fff", fontSize: 12, fontWeight: 700, border: "none", cursor: "pointer", whiteSpace: "nowrap" }}>+ إضافة</button>
+      </div>
+    </div>
+
+    <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(200px, 1fr))", gap: 10, marginBottom: 14 }}>{branches.map(function(b) {
+      var brEmps = safeEmps.filter(function(e) { return e.branch === b.id || e.branch === b.name; });
+      return <div key={b.id} style={{ background: t.card, borderRadius: 14, padding: "14px", border: "1px solid " + t.sep }}>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+          <div style={{ fontSize: 13, fontWeight: 700 }}>{b.name}</div>
+          {role === "manager" && <button onClick={async function() {
+            if (!confirm("حذف موقع " + b.name + "؟")) return;
+            var nb = branches.filter(function(x) { return x.id !== b.id; });
+            await saveBranches(nb);
+          }} style={{ background: "none", border: "none", color: t.bad, fontSize: 14, cursor: "pointer" }}>🗑</button>}
+        </div>
+        <div style={{ fontSize: 10, color: B.blue, marginTop: 6 }}>📍 {b.radius < 1000 ? b.radius + " م" : (b.radius / 1000).toFixed(1) + " كم"}</div>
+        {b.lat && b.lat !== 0 ? <div style={{ fontSize: 9, color: t.txM, marginTop: 2, fontFamily: "monospace" }}>{b.lat.toFixed(4)}, {b.lng.toFixed(4)}</div> : <div style={{ fontSize: 9, color: t.warn, marginTop: 2 }}>⚠️ لم يُحدد الموقع</div>}
+        <button onClick={function() { setMapTarget({ type: "branch", id: b.id }); }} style={{ width: "100%", marginTop: 8, padding: "7px", borderRadius: 8, background: B.blue + "12", color: B.blue, fontSize: 11, fontWeight: 700, border: "none", cursor: "pointer" }}>🗺️ تحديد الموقع</button>
+        <div style={{ marginTop: 8, paddingTop: 8, borderTop: "1px solid " + t.sep }}>
+          <div style={{ fontSize: 10, fontWeight: 600, color: t.tx2, marginBottom: 4 }}>👥 الموظفين ({brEmps.length})</div>
+          {brEmps.length === 0 && <div style={{ fontSize: 9, color: t.txM }}>لا يوجد موظفين</div>}
+          {brEmps.map(function(e) { return <div key={e.id} style={{ fontSize: 10, color: t.tx2, padding: "2px 0" }}>• {e.name} ({e.id})</div>; })}
+          {role === "manager" && <button onClick={async function() {
+            var empId = prompt("أدخل الرقم الوظيفي للموظف (مثل E004):");
+            if (!empId) return;
+            empId = empId.toUpperCase();
+            var allEmps = await api("employees") || [];
+            var emp2 = allEmps.find(function(e) { return e.id === empId; });
+            if (!emp2) return alert("الموظف غير موجود");
+            emp2.branch = b.id;
+            await api("employees", "PUT", { id: empId, branch: b.id });
+            alert("✅ تم نقل " + emp2.name + " إلى " + b.name);
+            location.reload();
+          }} style={{ width: "100%", marginTop: 6, padding: "5px", borderRadius: 6, background: t.okLt, color: t.ok, fontSize: 9, fontWeight: 700, border: "none", cursor: "pointer" }}>+ نقل موظف هنا</button>}
+        </div>
+      </div>; })}</div>
+
+    {mapTarget && mapTarget.type === "branch" && (function() {
+      var br = branches.find(function(x) { return x.id === mapTarget.id; });
+      if (!br) return null;
+      return <MapPicker lat={br.lat} lng={br.lng} radius={br.radius} name={br.name} t={t} onClose={function() { setMapTarget(null); }} onSave={function(lat, lng, rad) { var nb = branches.map(function(x) { return x.id === br.id ? Object.assign({}, x, { lat: lat, lng: lng, radius: rad }) : x; }); saveBranches(nb); setMapTarget(null); }} />;
+    })()}
   </>;
 }
