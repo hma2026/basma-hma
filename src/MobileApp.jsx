@@ -11,7 +11,7 @@ import { exportEmploymentLetter, exportLeaveLetter } from "./formalPdfs";
 
 /* ═══════════ APP CONFIG (إعدادات التطبيق) ═══════════ */
 const APP_CONFIG = {
-  VER: "6.74",
+  VER: "6.76",
   NAME: "بصمة HMA",
   FULL_NAME: "نظام الحضور والانصراف الذكي",
   COMPANY: "هاني محمد عسيري للاستشارات الهندسية",
@@ -1618,11 +1618,11 @@ function OfflineQueueModal({ onClose }) {
 function SplashScreen() {
   return (
     <div style={{ minHeight: "100vh", background: "linear-gradient(180deg,"+C.hdr1+","+C.hdr3+")", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center" }}>
-      <div className="basma-pulse" style={{ width: 120, height: 120, borderRadius: 24, background: "#fff", display: "flex", alignItems: "center", justifyContent: "center", padding: 12, boxShadow: "0 8px 32px rgba(0,0,0,0.4)" }}>
-        <img src="/hma-logo.png" alt="HMA" style={{ width: "100%", height: "100%", objectFit: "contain" }} />
+      <div className="basma-pulse" style={{ width: 180, height: 180, borderRadius: "50%", overflow: "hidden", boxShadow: "0 12px 40px rgba(0,0,0,0.5)" }}>
+        <img src="/app-icon-512.png" alt="بصمة HMA" style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }} />
       </div>
-      <div style={{ color: "#fff", fontSize: 22, fontWeight: 900, fontFamily: "'Cairo',sans-serif", marginTop: 20 }}>بصمة HMA</div>
-      <div style={{ color: "rgba(255,255,255,.45)", fontSize: 11, marginTop: 8 }}>جارِ التحميل...</div>
+      <div style={{ color: "#fff", fontSize: 24, fontWeight: 900, fontFamily: "'Cairo',sans-serif", marginTop: 24 }}>بصمة HMA</div>
+      <div style={{ color: "rgba(255,255,255,.5)", fontSize: 11, marginTop: 8 }}>جارِ التحميل...</div>
     </div>
   );
 }
@@ -1633,12 +1633,12 @@ function ConsentScreen({ onAccept }) {
     <div style={{ minHeight: "100vh", background: "linear-gradient(180deg," + COLORS.bg1 + "," + COLORS.bg2 + "," + COLORS.bg3 + ")", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", direction: "rtl", fontFamily: TYPOGRAPHY.fontTajawal, padding: SPACING.lg }}>
 
       <div style={{ maxWidth: 420, width: "100%" }}>
-        {/* v6.74 — HMA Logo */}
+        {/* v6.76 — HMA clock logo */}
         <div style={{ textAlign: "center", marginBottom: SPACING.lg }}>
-          <div style={{ width: 100, height: 100, borderRadius: 20, background: "#fff", margin: "0 auto", display: "flex", alignItems: "center", justifyContent: "center", padding: 10, boxShadow: "0 6px 20px rgba(0,0,0,0.2)" }}>
-            <img src="/hma-logo.png" alt="HMA" style={{ width: "100%", height: "100%", objectFit: "contain" }} />
+          <div style={{ width: 120, height: 120, borderRadius: "50%", overflow: "hidden", margin: "0 auto", boxShadow: "0 8px 28px rgba(0,0,0,0.35)" }}>
+            <img src="/app-icon-512.png" alt="بصمة HMA" style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }} />
           </div>
-          <div style={{ fontSize: 16, fontWeight: 900, color: COLORS.textPrimary, marginTop: 12, fontFamily: TYPOGRAPHY.fontCairo }}>بصمة HMA</div>
+          <div style={{ fontSize: 17, fontWeight: 900, color: COLORS.textPrimary, marginTop: 14, fontFamily: TYPOGRAPHY.fontCairo }}>بصمة HMA</div>
           <div style={{ fontSize: 10, color: COLORS.textMuted, marginTop: 3 }}>هاني محمد عسيري للاستشارات الهندسية</div>
         </div>
 
@@ -1746,10 +1746,10 @@ function LoginScreen({ onLogin, onBiometric, loading }) {
 
   return (
     <div style={{ minHeight: "100vh", background: "linear-gradient(180deg,"+C.hdr1+" 0%,"+C.hdr2+" 50%,"+C.hdr3+" 100%)", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", padding: 24 }}>
-      <div className="basma-fadein" style={{ width: 110, height: 110, borderRadius: 24, background: "#fff", display: "flex", alignItems: "center", justifyContent: "center", marginBottom: 18, padding: 10, boxShadow: "0 8px 32px rgba(0,0,0,0.35)" }}>
-        <img src="/hma-logo.png" alt="HMA Engineering" style={{ width: "100%", height: "100%", objectFit: "contain" }} />
+      <div className="basma-fadein" style={{ width: 140, height: 140, borderRadius: "50%", overflow: "hidden", marginBottom: 20, boxShadow: "0 12px 40px rgba(0,0,0,0.45)" }}>
+        <img src="/app-icon-512.png" alt="بصمة HMA" style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }} />
       </div>
-      <div className="basma-fadein-d1" style={{ color: "#fff", fontSize: 24, fontWeight: 900, fontFamily: "'Cairo',sans-serif", marginBottom: 4 }}>بصمة HMA</div>
+      <div className="basma-fadein-d1" style={{ color: "#fff", fontSize: 26, fontWeight: 900, fontFamily: "'Cairo',sans-serif", marginBottom: 4 }}>بصمة HMA</div>
       <div className="basma-fadein-d1" style={{ color: "rgba(255,255,255,.65)", fontSize: 11, fontWeight: 500, marginBottom: 26, textAlign: "center", lineHeight: 1.6 }}>
         نظام الحضور والانصراف الذكي<br/>
         <span style={{ fontSize: 10, opacity: 0.8 }}>هاني محمد عسيري للاستشارات الهندسية</span>
@@ -2861,8 +2861,8 @@ function ProfilePage({ user, branch, workType, onLogout, onTicket, myTickets, da
         {/* Footer — with HMA logo (v6.73) + clickable to open About (v6.74) */}
         <Card padding={SPACING.md}>
           <div onClick={function(){ setShowAbout(true); }} style={{ textAlign: "center", cursor: "pointer" }}>
-            <div style={{ width: 60, height: 60, margin: "0 auto 10px", borderRadius: 12, background: "#fff", padding: 6, display: "flex", alignItems: "center", justifyContent: "center", boxShadow: "0 2px 10px rgba(0,0,0,0.2)" }}>
-              <img src="/hma-logo.png" alt="HMA" style={{ width: "100%", height: "100%", objectFit: "contain" }} />
+            <div style={{ width: 64, height: 64, margin: "0 auto 10px", borderRadius: "50%", overflow: "hidden", boxShadow: "0 4px 14px rgba(0,0,0,0.3)" }}>
+              <img src="/app-icon-192.png" alt="بصمة HMA" style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }} />
             </div>
             <div style={{ ...TYPOGRAPHY.h3, color: COLORS.goldLight, fontFamily: TYPOGRAPHY.fontCairo }}>بصمة HMA</div>
             <div style={{ ...TYPOGRAPHY.caption, color: COLORS.textMuted, marginTop: SPACING.xs }}>نظام الحضور والانصراف الذكي</div>
@@ -2899,8 +2899,8 @@ function AboutAppModal({ onClose, onTicket }) {
         {/* Hero */}
         <div style={{ padding: "28px 20px 20px", textAlign: "center", borderBottom: "1px solid " + COLORS.metallicBorder, position: "relative" }}>
           <button onClick={onClose} style={{ position: "absolute", top: 12, left: 12, background: "rgba(255,255,255,0.08)", border: "none", width: 32, height: 32, borderRadius: 16, fontSize: 18, color: COLORS.textPrimary, cursor: "pointer" }}>×</button>
-          <div style={{ width: 100, height: 100, borderRadius: 20, background: "#fff", margin: "0 auto 14px", padding: 10, display: "flex", alignItems: "center", justifyContent: "center", boxShadow: "0 6px 20px rgba(0,0,0,0.3)" }}>
-            <img src="/hma-logo.png" alt="HMA" style={{ width: "100%", height: "100%", objectFit: "contain" }} />
+          <div style={{ width: 120, height: 120, borderRadius: "50%", overflow: "hidden", margin: "0 auto 14px", boxShadow: "0 8px 28px rgba(0,0,0,0.45)" }}>
+            <img src="/app-icon-512.png" alt="بصمة HMA" style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }} />
           </div>
           <div style={{ fontSize: 22, fontWeight: 900, color: COLORS.goldLight, fontFamily: TYPOGRAPHY.fontCairo }}>بصمة HMA</div>
           <div style={{ fontSize: 12, color: COLORS.textMuted, marginTop: 4 }}>نظام الحضور والانصراف الذكي</div>

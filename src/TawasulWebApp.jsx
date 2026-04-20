@@ -188,13 +188,16 @@ function PairingSplash({ onAuthorized }) {
         <div>
           <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 8 }}>
             <div style={{
-              width: 44, height: 44, borderRadius: 10,
-              background: "#fff",
-              padding: 4,
-              boxShadow: "0 2px 8px rgba(0,0,0,0.1)",
+              width: 56, height: 56, borderRadius: "50%",
+              background: "linear-gradient(135deg, #1a3a6e 0%, #2b5ea7 100%)",
+              padding: 8,
+              boxShadow: "0 4px 14px rgba(26,58,110,0.35)",
               display: "flex", alignItems: "center", justifyContent: "center",
+              flexShrink: 0,
             }}>
-              <img src="/hma-logo.png" alt="HMA" style={{ width: "100%", height: "100%", objectFit: "contain" }} />
+              <div style={{ width: "100%", height: "100%", borderRadius: "50%", background: "#fff", display: "flex", alignItems: "center", justifyContent: "center", padding: 4 }}>
+                <img src="/hma-logo.png" alt="HMA" style={{ maxWidth: "100%", maxHeight: "100%", objectFit: "contain", display: "block" }} />
+              </div>
             </div>
             <div>
               <div style={{ fontSize: 17, fontWeight: 900, color: "#1a3a6e" }}>بصمة HMA · تواصل</div>
@@ -409,12 +412,16 @@ function DesktopFrame({ session, onLogout }) {
       }}>
         <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
           <div style={{
-            width: 32, height: 32, borderRadius: 7,
-            background: "#fff",
-            padding: 3,
+            width: 44, height: 44, borderRadius: "50%",
+            background: "linear-gradient(135deg, #1a3a6e 0%, #2b5ea7 100%)",
+            padding: 6,
+            boxShadow: "0 3px 10px rgba(26,58,110,0.4)",
             display: "flex", alignItems: "center", justifyContent: "center",
+            flexShrink: 0,
           }}>
-            <img src="/hma-logo.png" alt="HMA" style={{ width: "100%", height: "100%", objectFit: "contain" }} />
+            <div style={{ width: "100%", height: "100%", borderRadius: "50%", background: "#fff", display: "flex", alignItems: "center", justifyContent: "center", padding: 3 }}>
+              <img src="/hma-logo.png" alt="HMA" style={{ maxWidth: "100%", maxHeight: "100%", objectFit: "contain", display: "block" }} />
+            </div>
           </div>
           <div>
             <div style={{ fontSize: 13, fontWeight: 800, color: "#fff" }}>بصمة HMA · تواصل</div>
