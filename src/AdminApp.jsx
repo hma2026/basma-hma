@@ -4,7 +4,7 @@ import { generateAttendanceReport, generateEmployeeReport, generateMonthlySummar
 import { exportFormalWarning, exportInvestigationRecord, exportAffidavit, exportEmploymentLetter, exportSalaryLetter, exportLeaveLetter } from "./formalPdfs";
 
 const APP = "بصمة HMA";
-const VER = "7.08";
+const VER = "7.09";
 const CO = "هاني محمد عسيري للإستشارات الهندسية";
 const B = { blue: "#2B5EA7", yellow: "#FDD800", red: "#E2192C", black: "#1A1A1A", blueDk: "#1E4478", blueLt: "#EDF3FB", gold: "#D4A017" };
 
@@ -5537,48 +5537,68 @@ function TawasulAdminTaskDetail({ task, t, B, statusMeta, onDelete, onClose }) {
   var DESC_CHAR_LIMIT = 280;
   var descTooLong = r.description && r.description.length > DESC_CHAR_LIMIT;
   var descToShow = (descTooLong && !showFullDesc) ? r.description.slice(0, DESC_CHAR_LIMIT).trim() + "…" : r.description;
+  // v7.09 — accordion sections
+  var [openSections, setOpenSections] = useState({});
+  function toggleSection(id) { setOpenSections(function(p){ var n = Object.assign({}, p); n[id] = !n[id]; return n; }); }
+  function expandAllSections() { setOpenSections({ details: true, delivery: true, evals: true, log: true }); }
+  function collapseAllSections() { setOpenSections({}); }
+  var anySectionOpen = Object.values(openSections).some(function(v){ return !!v; });
 
   function fmtDate(iso) { if (!iso) return "—"; try { return new Date(iso).toLocaleString("ar-SA"); } catch(e) { return iso; } }
 
   return (
     <div onClick={onClose} style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.72)", zIndex: 1500, display: "flex", alignItems: "center", justifyContent: "center", padding: 16, fontFamily: "inherit" }}>
-      <div onClick={function(e){ e.stopPropagation(); }} style={{ background: t.bg, borderRadius: 16, maxWidth: 720, width: "100%", maxHeight: "92vh", overflowY: "auto", direction: "rtl", color: t.tx, border: "1px solid " + t.sep }}>
+      <div onClick={function(e){ e.stopPropagation(); }} style={{ background: t.bg, borderRadius: 20, maxWidth: 720, width: "100%", maxHeight: "92vh", overflowY: "auto", direction: "rtl", color: t.tx, border: "1px solid " + t.sep }}>
 
-        {/* Header */}
-        <div style={{ padding: "18px 20px", borderBottom: "1px solid " + t.sep, display: "flex", alignItems: "flex-start", gap: 12, position: "sticky", top: 0, background: t.bg, zIndex: 2 }}>
-          <div style={{ flex: 1, minWidth: 0 }}>
-            <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 6, flexWrap: "wrap" }}>
-              {r.serial && <span style={{ fontSize: 13, fontWeight: 900, fontFamily: "monospace", color: B.gold }}>#{r.serial}</span>}
-              <span style={{ padding: "3px 10px", borderRadius: 8, fontSize: 11, fontWeight: 800, background: m.color + "22", color: m.color }}>{m.label}</span>
-              {r.escalation && <span style={{ padding: "3px 8px", borderRadius: 8, fontSize: 10, fontWeight: 800, background: r.escalation === "red" ? "#fee" : "#fef3c7", color: r.escalation === "red" ? "#ef4444" : "#b45309" }}>{r.escalation === "red" ? "🔴 تصعيد أحمر" : "🟡 تصعيد أصفر"}</span>}
-              {r.urgency === "urgent" && <span style={{ padding: "3px 8px", borderRadius: 8, fontSize: 10, fontWeight: 800, background: "#fee", color: "#ef4444" }}>🔴 عاجل</span>}
+        {/* v7.09 — DARK GRADIENT HEADER (same style as mobile v7.08) */}
+        <div style={{
+          background: "linear-gradient(135deg, #0b2b3d 0%, #1c4e6e 100%)",
+          padding: "18px 22px 20px",
+          color: "#fff",
+          position: "sticky",
+          top: 0,
+          zIndex: 2,
+        }}>
+          {/* Top row: serial + status + badges + close */}
+          <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 10, flexWrap: "wrap" }}>
+            {r.serial && <span style={{ fontSize: 14, fontWeight: 900, fontFamily: "monospace", color: "#ffb347" }}>#{r.serial}</span>}
+            <span style={{ padding: "4px 12px", borderRadius: 999, fontSize: 11, fontWeight: 900, background: "#ffb347", color: "#1e2f3a" }}>{m.label}</span>
+            {r.escalation && <span style={{ padding: "4px 10px", borderRadius: 999, fontSize: 10, fontWeight: 800, background: r.escalation === "red" ? "#ef4444" : "#fbbf24", color: "#fff" }}>{r.escalation === "red" ? "🔴 تصعيد أحمر" : "🟡 تصعيد أصفر"}</span>}
+            {r.urgency === "urgent" && <span style={{ padding: "4px 10px", borderRadius: 999, fontSize: 10, fontWeight: 800, background: "#ef4444", color: "#fff" }}>🔴 عاجل</span>}
+            <div style={{ flex: 1 }} />
+            <button onClick={onClose} style={{ background: "rgba(255,255,255,0.15)", border: "1px solid rgba(255,255,255,0.25)", fontSize: 18, color: "#fff", cursor: "pointer", padding: "0 12px", lineHeight: "28px", borderRadius: 8, fontFamily: "inherit" }}>×</button>
+          </div>
+
+          {/* Title */}
+          <div style={{ fontSize: 20, fontWeight: 900, color: "#fff", lineHeight: 1.35, marginBottom: 4 }}>{r.title || "(بدون عنوان)"}</div>
+
+          {/* Category/Dept/Project */}
+          {(r.category || r.department || r.projectName) && (
+            <div style={{ fontSize: 11, color: "rgba(255,255,255,0.7)", marginBottom: 8, fontWeight: 600 }}>
+              {r.category && <span>🏷 {r.category}</span>}{r.department && <span>{r.category ? " • " : ""}🏢 {r.department}</span>}{r.projectName && <span>{(r.category || r.department) ? " • " : ""}🏗️ {r.projectName}</span>}
             </div>
-            <div style={{ fontSize: 18, fontWeight: 900, color: t.tx }}>{r.title || "(بدون عنوان)"}</div>
-          </div>
-          <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
-            <button onClick={onDelete} style={{ padding: "10px 16px", borderRadius: 10, background: B.red, color: "#fff", border: "none", fontSize: 12, fontWeight: 800, cursor: "pointer", fontFamily: "inherit", display: "flex", alignItems: "center", gap: 6, boxShadow: "0 2px 8px rgba(239,68,68,0.4)" }}>
-              <span>🗑</span><span>حذف المهمة</span>
-            </button>
-            <button onClick={onClose} style={{ padding: "8px 10px", borderRadius: 8, background: t.card, color: t.tx, border: "1px solid " + t.sep, fontSize: 16, cursor: "pointer", fontFamily: "inherit" }}>×</button>
-          </div>
-        </div>
+          )}
 
-        <div style={{ padding: "18px 20px" }}>
-
-          {/* v7.03 — DESCRIPTION first (الأهم) — v7.04: truncation */}
+          {/* v7.09 — DESCRIPTION INSIDE header */}
           {r.description && (
-            <div style={{ position: "relative", background: t.card, borderRadius: 12, padding: "16px 16px 16px 22px", border: "1px solid " + t.sep, marginBottom: 14, overflow: "hidden" }}>
-              <div style={{ position: "absolute", top: 0, bottom: 0, right: 0, width: 6, background: "linear-gradient(180deg, " + B.gold + ", " + B.gold + "aa)" }} />
-              <div style={{ fontSize: 14, fontWeight: 900, color: B.gold, marginBottom: 12, display: "flex", alignItems: "center", gap: 8 }}>
-                <span style={{ fontSize: 18 }}>📝</span>
+            <div style={{
+              marginTop: 12,
+              background: "rgba(255,255,255,0.12)",
+              border: "1px solid rgba(255,255,255,0.18)",
+              borderRadius: 14,
+              padding: "14px 16px",
+              color: "#fff",
+            }}>
+              <div style={{ fontSize: 12, fontWeight: 900, color: "#ffb347", marginBottom: 8, display: "flex", alignItems: "center", gap: 6 }}>
+                <span style={{ fontSize: 15 }}>📝</span>
                 <span>وصف المهمة</span>
               </div>
-              <div style={{ fontSize: 14, color: t.tx, lineHeight: 1.95, whiteSpace: "pre-wrap", fontWeight: 500 }}>{descToShow}</div>
+              <div style={{ fontSize: 13, color: "rgba(255,255,255,0.95)", lineHeight: 1.75, whiteSpace: "pre-wrap", fontWeight: 500 }}>{descToShow}</div>
               {descTooLong && (
                 <button onClick={function(){ setShowFullDesc(function(s){ return !s; }); }} style={{
-                  marginTop: 10, padding: "5px 14px", background: "transparent",
-                  border: "1px solid " + t.sep, borderRadius: 8,
-                  color: B.gold, fontSize: 12, fontWeight: 800, cursor: "pointer",
+                  marginTop: 10, padding: "5px 14px", background: "rgba(255,255,255,0.18)",
+                  border: "1px solid rgba(255,255,255,0.3)", borderRadius: 999,
+                  color: "#fff", fontSize: 11, fontWeight: 800, cursor: "pointer",
                   fontFamily: "inherit",
                 }}>
                   {showFullDesc ? "◀ عرض أقل" : "عرض المزيد ▶"}
@@ -5587,123 +5607,153 @@ function TawasulAdminTaskDetail({ task, t, B, statusMeta, onDelete, onClose }) {
             </div>
           )}
 
-          {/* v7.03 — Rejection/Return reason visible (مهم يظهر مباشرة) */}
+          {/* Toolbar — same as mobile (PDF / Delete / Expand) */}
+          <div style={{ display: "flex", gap: 8, marginTop: 14, flexWrap: "wrap" }}>
+            <button onClick={onDelete} style={{
+              padding: "9px 16px", borderRadius: 999,
+              background: B.red, color: "#fff", border: "none",
+              fontSize: 12, fontWeight: 800, cursor: "pointer",
+              fontFamily: "inherit", boxShadow: "0 2px 6px rgba(239,68,68,0.35)",
+              display: "flex", alignItems: "center", gap: 6,
+            }}>🗑 حذف المهمة</button>
+            <button onClick={function(){ anySectionOpen ? collapseAllSections() : expandAllSections(); }} style={{
+              padding: "9px 14px", borderRadius: 999,
+              background: "transparent", color: "#fff", border: "1px solid rgba(255,255,255,0.4)",
+              fontSize: 12, fontWeight: 700, cursor: "pointer", fontFamily: "inherit",
+            }}>{anySectionOpen ? "🔼 طي الكل" : "🔍 توسيع الكل"}</button>
+          </div>
+        </div>
+
+        <div style={{ padding: "16px 20px 20px" }}>
+
+          {/* Rejection/Return reason (visible if exists) */}
           {(r.rejectionReason || r.returnReason) && (
-            <div style={{ background: "rgba(239,68,68,0.06)", borderRadius: 12, padding: 14, border: "1px solid rgba(239,68,68,0.3)", marginBottom: 14 }}>
+            <div style={{ background: "rgba(239,68,68,0.06)", borderRadius: 14, padding: 14, border: "1px solid rgba(239,68,68,0.3)", marginBottom: 14 }}>
               <div style={{ fontSize: 11, fontWeight: 800, color: "#ef4444", marginBottom: 6 }}>{r.rejectionReason ? "❌ سبب الرفض" : "📋 سبب الإرجاع"}</div>
-              <div style={{ fontSize: 12, color: t.tx, lineHeight: 1.6 }}>{r.rejectionReason || r.returnReason}</div>
+              <div style={{ fontSize: 13, color: t.tx, lineHeight: 1.6 }}>{r.rejectionReason || r.returnReason}</div>
             </div>
           )}
 
-          {/* v7.03 — TOGGLE */}
-          <button onClick={function(){ setShowDetails(function(s){ return !s; }); }} style={{
-            width: "100%",
-            padding: "12px 16px",
-            borderRadius: 12,
-            background: showDetails ? t.bg : t.card,
-            color: t.tx,
-            border: "1px solid " + t.sep,
-            fontSize: 13,
-            fontWeight: 800,
-            cursor: "pointer",
-            fontFamily: "inherit",
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "center",
-            gap: 8,
-            marginBottom: 14,
-          }}>
-            <span>{showDetails ? "▲" : "▼"}</span>
-            <span>{showDetails ? "إخفاء التفاصيل" : "عرض التفاصيل الكاملة"}</span>
-          </button>
-
-          {/* v7.03 — التفاصيل الموسّعة */}
-          {showDetails && <>
-
-            {/* Meta grid */}
-            <div style={{ background: t.card, borderRadius: 12, padding: 14, border: "1px solid " + t.sep, marginBottom: 14 }}>
-              <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(200px, 1fr))", gap: 10 }}>
-                {[
-                  { label: "من", value: r.requesterName || "—", icon: "👤" },
-                  { label: "إلى", value: (r.assignees || []).map(function(a){ return a.name; }).join("، ") || "—", icon: "📬" },
-                  { label: "التصنيف", value: r.category || "—", icon: "🏷" },
-                  { label: "القسم", value: r.department || "—", icon: "🏢" },
-                  { label: "المشروع", value: r.projectName || "—", icon: "🏗" },
-                  { label: "تاريخ الإنشاء", value: fmtDate(r.createdAt), icon: "📅" },
-                  r.deadline ? { label: "الموعد النهائي", value: fmtDate(r.deadline), icon: "⏰" } : null,
-                  r.deliveredAt ? { label: "تاريخ التسليم", value: fmtDate(r.deliveredAt), icon: "📦" } : null,
-                  r.linkedFromSerial ? { label: "محوّلة من", value: "#" + r.linkedFromSerial, icon: "↪️" } : null,
-                  rejectedCount > 0 ? { label: "عدد الرفضات", value: String(rejectedCount), icon: "❌" } : null,
-                  returnCount > 0 ? { label: "عدد الإرجاعات", value: String(returnCount), icon: "📋" } : null,
-                  resendCount > 0 ? { label: "عدد إعادات الإرسال", value: String(resendCount), icon: "🔄" } : null,
-                ].filter(Boolean).map(function(row, idx){
-                  return (
-                    <div key={idx} style={{ fontSize: 12, display: "flex", justifyContent: "space-between", gap: 6, padding: 6, borderRadius: 6, background: t.bg }}>
-                      <span style={{ color: t.tx2, fontWeight: 600 }}><span style={{ marginLeft: 4 }}>{row.icon}</span>{row.label}</span>
-                      <span style={{ color: t.tx, fontWeight: 700, textAlign: "left", wordBreak: "break-word" }}>{row.value}</span>
-                    </div>
-                  );
-                })}
-              </div>
-            </div>
-
-            {/* Delivery methods */}
-            {r.deliveryMethods && r.deliveryMethods.length > 0 && (
-              <div style={{ background: t.card, borderRadius: 12, padding: 14, border: "1px solid " + t.sep, marginBottom: 14 }}>
-                <div style={{ fontSize: 11, fontWeight: 800, color: t.tx2, marginBottom: 8 }}>📦 طرق التسليم</div>
-                {r.deliveryMethods.map(function(dm, idx){
-                  return (
-                    <div key={idx} style={{ padding: "8px 10px", borderRadius: 8, background: t.bg, marginBottom: 6, fontSize: 12 }}>
-                      <div style={{ fontWeight: 700, color: t.tx, marginBottom: 2 }}>{dm.label || dm.type}</div>
-                      {dm.value && <div style={{ fontSize: 11, color: t.tx2, wordBreak: "break-all" }}>{dm.value}</div>}
-                    </div>
-                  );
-                })}
-              </div>
-            )}
-
-          {/* Evaluations */}
-          {evals.length > 0 && (
-            <div style={{ background: t.card, borderRadius: 12, padding: 14, border: "1px solid " + t.sep, marginBottom: 14 }}>
-              <div style={{ fontSize: 11, fontWeight: 800, color: t.tx2, marginBottom: 8, display: "flex", justifyContent: "space-between" }}>
-                <span>⭐ التقييمات ({evals.length})</span>
-                {r.finalScore !== undefined && r.finalScore !== null && <span style={{ color: B.gold, fontWeight: 900 }}>{r.finalScore}/100</span>}
-              </div>
-              {evals.map(function(ev, idx){
-                return (
-                  <div key={idx} style={{ padding: "8px 10px", borderRadius: 8, background: t.bg, marginBottom: 6, fontSize: 12, display: "flex", justifyContent: "space-between" }}>
-                    <span style={{ fontWeight: 700, color: t.tx }}>{ev.byName || ev.by}</span>
-                    <span style={{ color: B.gold, fontWeight: 800 }}>{ev.avgScore || "-"}/100</span>
-                  </div>
-                );
-              })}
-            </div>
-          )}
-
-          {/* Log */}
-          <div style={{ background: t.card, borderRadius: 12, padding: 14, border: "1px solid " + t.sep, marginBottom: 14 }}>
-            <div style={{ fontSize: 11, fontWeight: 800, color: t.tx2, marginBottom: 10 }}>📜 السجل ({log.length})</div>
-            {log.length === 0 ? (
-              <div style={{ fontSize: 11, color: t.tx2, textAlign: "center", padding: 10 }}>لا يوجد سجل</div>
-            ) : log.map(function(entry, idx){
+          {/* v7.09 — ACCORDIONS */}
+          {(function(){
+            function Accordion(props) {
+              var isOpen = !!openSections[props.id];
               return (
-                <div key={idx} style={{ padding: "8px 0", borderBottom: idx < log.length - 1 ? "1px solid " + t.sep : "none", display: "flex", gap: 8, fontSize: 11 }}>
-                  <div style={{ width: 6, height: 6, borderRadius: 3, background: B.gold, marginTop: 6, flexShrink: 0 }} />
-                  <div style={{ flex: 1, minWidth: 0 }}>
-                    <div style={{ color: t.tx, fontWeight: 600, lineHeight: 1.5, wordBreak: "break-word" }}>{entry.text || entry.action || "تحديث"}</div>
-                    <div style={{ fontSize: 10, color: t.tx2, marginTop: 2 }}>{entry.by || "—"} • {fmtDate(entry.at)}</div>
+                <div style={{ background: t.card, borderRadius: 14, border: "1px solid " + t.sep, marginBottom: 10, overflow: "hidden" }}>
+                  <div onClick={function(){ toggleSection(props.id); }} style={{
+                    padding: "14px 18px", cursor: "pointer",
+                    display: "flex", justifyContent: "space-between", alignItems: "center",
+                    userSelect: "none", background: isOpen ? t.bg : "transparent",
+                    transition: "background 0.15s",
+                  }}>
+                    <div style={{ fontSize: 13, fontWeight: 800, color: t.tx, display: "flex", alignItems: "center", gap: 8 }}>
+                      <span style={{ fontSize: 16 }}>{props.icon}</span>
+                      <span>{props.title}</span>
+                      {props.badge && <span style={{ padding: "2px 10px", borderRadius: 999, background: B.gold + "22", color: B.gold, fontSize: 10, fontWeight: 800 }}>{props.badge}</span>}
+                    </div>
+                    <span style={{ fontSize: 14, color: t.tx2, transition: "transform 0.2s", transform: isOpen ? "rotate(180deg)" : "none" }}>▼</span>
                   </div>
+                  {isOpen && (
+                    <div style={{ padding: "14px 18px", borderTop: "1px solid " + t.sep }}>
+                      {props.children}
+                    </div>
+                  )}
                 </div>
               );
-            })}
-          </div>
+            }
 
-          </>}
+            return (
+              <>
+                {/* Details accordion */}
+                <Accordion id="details" icon="📌" title="تفاصيل المهمة">
+                  <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(200px, 1fr))", gap: 10 }}>
+                    {[
+                      { label: "من", value: r.requesterName || "—", icon: "👤" },
+                      { label: "إلى", value: (r.assignees || []).map(function(a){ return a.name; }).join("، ") || "—", icon: "📬" },
+                      { label: "التصنيف", value: r.category || "—", icon: "🏷" },
+                      { label: "القسم", value: r.department || "—", icon: "🏢" },
+                      { label: "المشروع", value: r.projectName || "—", icon: "🏗" },
+                      { label: "تاريخ الإنشاء", value: fmtDate(r.createdAt), icon: "📅" },
+                      r.deadline ? { label: "الموعد النهائي", value: fmtDate(r.deadline), icon: "⏰" } : null,
+                      r.deliveredAt ? { label: "تاريخ التسليم", value: fmtDate(r.deliveredAt), icon: "📦" } : null,
+                      r.linkedFromSerial ? { label: "محوّلة من", value: "#" + r.linkedFromSerial, icon: "↪️" } : null,
+                      rejectedCount > 0 ? { label: "عدد الرفضات", value: String(rejectedCount), icon: "❌" } : null,
+                      returnCount > 0 ? { label: "عدد الإرجاعات", value: String(returnCount), icon: "📋" } : null,
+                      resendCount > 0 ? { label: "عدد إعادات الإرسال", value: String(resendCount), icon: "🔄" } : null,
+                    ].filter(Boolean).map(function(row, idx){
+                      return (
+                        <div key={idx} style={{ fontSize: 12, display: "flex", justifyContent: "space-between", gap: 6, padding: 8, borderRadius: 8, background: t.bg }}>
+                          <span style={{ color: t.tx2, fontWeight: 600 }}><span style={{ marginLeft: 4 }}>{row.icon}</span>{row.label}</span>
+                          <span style={{ color: t.tx, fontWeight: 700, textAlign: "left", wordBreak: "break-word" }}>{row.value}</span>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </Accordion>
 
-          {/* Bottom action bar */}
-          <div style={{ display: "flex", gap: 10, paddingTop: 6 }}>
-            <button onClick={onClose} style={{ flex: 1, padding: 12, borderRadius: 10, background: t.card, color: t.tx, border: "1px solid " + t.sep, fontSize: 13, fontWeight: 700, cursor: "pointer", fontFamily: "inherit" }}>إغلاق</button>
-            <button onClick={onDelete} style={{ flex: 1, padding: 12, borderRadius: 10, background: B.red, color: "#fff", border: "none", fontSize: 13, fontWeight: 800, cursor: "pointer", fontFamily: "inherit" }}>🗑 حذف نهائي</button>
+                {/* Delivery methods */}
+                {r.deliveryMethods && r.deliveryMethods.length > 0 && (
+                  <Accordion id="delivery" icon="📦" title="طرق التسليم" badge={String(r.deliveryMethods.length)}>
+                    {r.deliveryMethods.map(function(dm, idx){
+                      return (
+                        <div key={idx} style={{ padding: "10px 12px", borderRadius: 10, background: t.bg, marginBottom: 6, fontSize: 12 }}>
+                          <div style={{ fontWeight: 700, color: t.tx, marginBottom: 2 }}>{dm.label || dm.type}</div>
+                          {dm.value && <div style={{ fontSize: 11, color: t.tx2, wordBreak: "break-all" }}>{dm.value}</div>}
+                        </div>
+                      );
+                    })}
+                  </Accordion>
+                )}
+
+                {/* Evaluations */}
+                {evals.length > 0 && (
+                  <Accordion id="evals" icon="⭐" title="التقييمات" badge={String(evals.length)}>
+                    {r.finalScore !== undefined && r.finalScore !== null && (
+                      <div style={{ padding: "10px 14px", background: B.gold + "15", border: "1px solid " + B.gold + "40", borderRadius: 10, marginBottom: 10, display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                        <span style={{ fontSize: 12, fontWeight: 700, color: t.tx }}>التقييم النهائي</span>
+                        <span style={{ fontSize: 16, fontWeight: 900, color: B.gold }}>{r.finalScore}/100</span>
+                      </div>
+                    )}
+                    {evals.map(function(ev, idx){
+                      return (
+                        <div key={idx} style={{ padding: "10px 12px", borderRadius: 10, background: t.bg, marginBottom: 6, fontSize: 12, display: "flex", justifyContent: "space-between" }}>
+                          <span style={{ fontWeight: 700, color: t.tx }}>
+                            {ev.byName || ev.by}
+                            {ev.forAssigneeName && <span style={{ fontSize: 10, color: "#f59e0b", marginInlineStart: 6, fontWeight: 600 }}>→ {ev.forAssigneeName}</span>}
+                          </span>
+                          <span style={{ color: B.gold, fontWeight: 800 }}>{ev.avgScore || "-"}/100</span>
+                        </div>
+                      );
+                    })}
+                  </Accordion>
+                )}
+
+                {/* Log */}
+                <Accordion id="log" icon="📜" title="السجل" badge={String(log.length)}>
+                  {log.length === 0 ? (
+                    <div style={{ fontSize: 12, color: t.tx2, textAlign: "center", padding: 14 }}>لا يوجد سجل بعد</div>
+                  ) : log.map(function(entry, idx){
+                    return (
+                      <div key={idx} style={{ padding: "10px 0", borderBottom: idx < log.length - 1 ? "1px solid " + t.sep : "none", display: "flex", gap: 10, fontSize: 11 }}>
+                        <div style={{ width: 7, height: 7, borderRadius: 4, background: B.gold, marginTop: 6, flexShrink: 0 }} />
+                        <div style={{ flex: 1, minWidth: 0 }}>
+                          <div style={{ color: t.tx, fontWeight: 600, lineHeight: 1.5, wordBreak: "break-word" }}>{entry.text || entry.action || "تحديث"}</div>
+                          <div style={{ fontSize: 10, color: t.tx2, marginTop: 3 }}>{entry.by || "—"} • {fmtDate(entry.at)}</div>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </Accordion>
+              </>
+            );
+          })()}
+
+          {/* Bottom action bar — close + expand/collapse */}
+          <div style={{ display: "flex", gap: 10, paddingTop: 10, marginTop: 6 }}>
+            <button onClick={onClose} style={{ flex: 1, padding: "12px 14px", borderRadius: 999, background: t.card, color: t.tx, border: "1px solid " + t.sep, fontSize: 13, fontWeight: 700, cursor: "pointer", fontFamily: "inherit" }}>إغلاق</button>
+            <button onClick={function(){ anySectionOpen ? collapseAllSections() : expandAllSections(); }} style={{ flex: 2, padding: "12px 14px", borderRadius: 999, background: "#eef2f8", color: "#1e4a6e", border: "1px solid #cddfed", fontSize: 13, fontWeight: 800, cursor: "pointer", fontFamily: "inherit" }}>
+              {anySectionOpen ? "🔼 طي كل الأقسام" : "🔲 توسيع كل الأقسام لعرض جميع التفاصيل"}
+            </button>
           </div>
         </div>
       </div>
