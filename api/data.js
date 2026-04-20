@@ -5758,6 +5758,116 @@ export default async function handler(req, res) {
         }
       }
 
+      /* v7.06 — إرجاع مهمة لمستلم واحد (بدون تأثير على الباقي) */
+      case 'tawasul-assignee-return': {
+        if (req.method !== 'POST') return res.status(405).json({ error: 'POST required' });
+        try {
+          const b = req.body || {};
+          const { taskId, assigneeId, reason, actor, actorName } = b;
+          if (!taskId || !assigneeId) return res.status(400).json({ error: 'taskId + assigneeId required' });
+          const reqs = (await dbGet('tawasul-requests')) || [];
+          const i = reqs.findIndex(function(x){ return String(x.id) === String(taskId); });
+          if (i < 0) return res.status(404).json({ error: 'المهمة غير موجودة' });
+          const task = reqs[i];
+          // صاحب المهمة أو admin فقط
+          if (String(actor) !== String(task.requesterId) && !b.isAdmin) {
+            return res.status(403).json({ error: 'فقط صاحب المهمة يستطيع الإرجاع' });
+          }
+          const ai = (task.assignees || []).findIndex(function(a){ return String(a.id) === String(assigneeId); });
+          if (ai < 0) return res.status(404).json({ error: 'المستلم غير موجود في المهمة' });
+          // إعادة ضبط حالة هذا المستلم
+          const a = task.assignees[ai];
+          const returns = (a.returns || 0) + 1;
+          task.assignees[ai] = Object.assign({}, a, {
+            acceptedAt: null,
+            deliveredAt: null,
+            returnedAt: new Date().toISOString(),
+            returnedBy: actor,
+            returnReason: reason || '',
+            returns: returns,
+            status: 'returned',
+          });
+          // إضافة للسجل
+          task.log = task.log || [];
+          task.log.push({
+            at: new Date().toISOString(),
+            by: actorName || actor,
+            text: '📋 أُرجعت المهمة لـ ' + (a.name || a.id) + ' (المرة #' + returns + ')' + (reason ? ' — ' + reason : ''),
+            action: 'assignee_return',
+            assigneeId: assigneeId,
+          });
+          task.updatedAt = new Date().toISOString();
+          reqs[i] = task;
+          await dbSet('tawasul-requests', reqs);
+          // إشعار المستلم
+          try {
+            var notifs = await dbGet('notifications') || [];
+            notifs.push({
+              id: 'NTF' + Date.now(),
+              empId: assigneeId,
+              type: 'tawasul_return',
+              title: '📋 أُرجعت المهمة إليك',
+              body: (task.title || '(بدون عنوان)') + (reason ? ' — السبب: ' + reason : ''),
+              refId: taskId,
+              read: false,
+              createdAt: new Date().toISOString(),
+            });
+            await dbSet('notifications', notifs);
+          } catch(e) { /**/ }
+          return res.json({ ok: true, task: task });
+        } catch(e) {
+          console.error('[tawasul-assignee-return]', e);
+          return res.status(500).json({ error: 'tawasul-assignee-return error: ' + (e.message || 'unknown') });
+        }
+      }
+
+      /* v7.06 — إغلاق جزء مستلم واحد (صاحب المهمة فقط) */
+      case 'tawasul-assignee-close': {
+        if (req.method !== 'POST') return res.status(405).json({ error: 'POST required' });
+        try {
+          const b = req.body || {};
+          const { taskId, assigneeId, actor, actorName } = b;
+          if (!taskId || !assigneeId) return res.status(400).json({ error: 'taskId + assigneeId required' });
+          const reqs = (await dbGet('tawasul-requests')) || [];
+          const i = reqs.findIndex(function(x){ return String(x.id) === String(taskId); });
+          if (i < 0) return res.status(404).json({ error: 'المهمة غير موجودة' });
+          const task = reqs[i];
+          if (String(actor) !== String(task.requesterId) && !b.isAdmin) {
+            return res.status(403).json({ error: 'فقط صاحب المهمة يستطيع الإغلاق' });
+          }
+          const ai = (task.assignees || []).findIndex(function(a){ return String(a.id) === String(assigneeId); });
+          if (ai < 0) return res.status(404).json({ error: 'المستلم غير موجود' });
+          const a = task.assignees[ai];
+          if (!a.deliveredAt) return res.status(400).json({ error: 'لم يسلّم بعد — لا يمكن الإغلاق' });
+          task.assignees[ai] = Object.assign({}, a, {
+            closedAt: new Date().toISOString(),
+            closedBy: actor,
+            status: 'closed',
+          });
+          task.log = task.log || [];
+          task.log.push({
+            at: new Date().toISOString(),
+            by: actorName || actor,
+            text: '✅ أُغلق جزء ' + (a.name || a.id),
+            action: 'assignee_close',
+            assigneeId: assigneeId,
+          });
+          // إن أُغلق الكل — حدّث حالة المهمة
+          var allClosed = (task.assignees || []).every(function(x){ return !!x.closedAt; });
+          if (allClosed && task.status !== 'evaluated' && task.status !== 'closed') {
+            task.status = 'evaluated';
+            task.fullyClosedAt = new Date().toISOString();
+          }
+          task.updatedAt = new Date().toISOString();
+          reqs[i] = task;
+          await dbSet('tawasul-requests', reqs);
+          return res.json({ ok: true, task: task, allClosed: allClosed });
+        } catch(e) {
+          console.error('[tawasul-assignee-close]', e);
+          return res.status(500).json({ error: 'tawasul-assignee-close error: ' + (e.message || 'unknown') });
+        }
+      }
+
       case 'tawasul-delete': {
         if (req.method !== 'POST') return res.status(405).json({ error: 'POST required' });
         try {

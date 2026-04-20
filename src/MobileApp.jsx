@@ -11,7 +11,7 @@ import { exportEmploymentLetter, exportLeaveLetter } from "./formalPdfs";
 
 /* ═══════════ APP CONFIG (إعدادات التطبيق) ═══════════ */
 const APP_CONFIG = {
-  VER: "7.05",
+  VER: "7.06",
   NAME: "بصمة HMA",
   FULL_NAME: "نظام الحضور والانصراف الذكي",
   COMPANY: "هاني محمد عسيري للاستشارات الهندسية",
@@ -8246,13 +8246,17 @@ function AttachmentsPanel({ request, user, readOnly, canEdit, onUpdated }) {
 }
 
 /* ═══════════ MULTI-ASSIGNEES PROGRESS — "2/3 استلموا · 1/3 سلّم" ═══════════ */
-function MultiAssigneesProgress({ request, myId }) {
+function MultiAssigneesProgress({ request, myId, onUpdated }) {
   var assignees = request.assignees || [];
   var total = assignees.length;
   if (total < 2) return null;
 
   var acceptedCount = assignees.filter(function(a){ return !!a.acceptedAt; }).length;
   var deliveredCount = assignees.filter(function(a){ return !!a.deliveredAt; }).length;
+
+  // v7.06 — هل المستخدم الحالي هو صاحب المهمة؟
+  var isRequester = String(request.requesterId) === String(myId);
+  var [busyAssignee, setBusyAssignee] = useState(null);
 
   // v7.04 — تحديد مرحلة المكلَّف الفردي (pipeline كامل)
   function getAssigneeStageIdx(a) {
@@ -8335,6 +8339,69 @@ function MultiAssigneesProgress({ request, myId }) {
                   );
                 })}
               </div>
+
+              {/* v7.06 — Row 3: per-assignee actions (requester only, not for closed) */}
+              {isRequester && !a.closedAt && (a.acceptedAt || a.deliveredAt) && (
+                <div style={{ display: "flex", gap: 6, marginTop: 10 }}>
+                  {/* Return to this assignee only */}
+                  <button onClick={async function(){
+                    var reason = window.prompt("سبب إرجاع المهمة لـ " + (a.name || a.id) + ":", "");
+                    if (reason === null) return; // cancelled
+                    setBusyAssignee(a.id);
+                    try {
+                      var r = await fetch("/api/data?action=tawasul-assignee-return", {
+                        method: "POST", headers: { "Content-Type": "application/json" },
+                        body: JSON.stringify({ taskId: request.id, assigneeId: a.id, reason: reason, actor: myId, actorName: request.requesterName })
+                      }).then(function(x){ return x.json(); });
+                      if (r.ok) { alert("✅ أُرجعت لـ " + (a.name || a.id)); if (onUpdated) onUpdated(); }
+                      else alert("فشل: " + (r.error || "غير معروف"));
+                    } catch(e) { alert("فشل: " + e.message); }
+                    setBusyAssignee(null);
+                  }} disabled={busyAssignee === a.id} style={{
+                    flex: 1, padding: "7px 10px", borderRadius: 8,
+                    background: "rgba(245,158,11,0.12)", border: "1px solid rgba(245,158,11,0.4)",
+                    color: "#f59e0b", fontSize: 10, fontWeight: 800, cursor: busyAssignee === a.id ? "wait" : "pointer",
+                    fontFamily: "inherit",
+                  }}>📋 إرجاع لهذا</button>
+
+                  {/* Close this assignee's part (only if delivered, not closed) */}
+                  {a.deliveredAt && !a.closedAt && (
+                    <button onClick={async function(){
+                      if (!window.confirm("إغلاق جزء " + (a.name || a.id) + "؟ (بقية الأطراف يستمرون)")) return;
+                      setBusyAssignee(a.id);
+                      try {
+                        var r = await fetch("/api/data?action=tawasul-assignee-close", {
+                          method: "POST", headers: { "Content-Type": "application/json" },
+                          body: JSON.stringify({ taskId: request.id, assigneeId: a.id, actor: myId, actorName: request.requesterName })
+                        }).then(function(x){ return x.json(); });
+                        if (r.ok) {
+                          if (r.allClosed) alert("🎉 تم إغلاق الجزء — وكل الأطراف اكتملوا!");
+                          else alert("✅ أُغلق جزء " + (a.name || a.id));
+                          if (onUpdated) onUpdated();
+                        } else alert("فشل: " + (r.error || "غير معروف"));
+                      } catch(e) { alert("فشل: " + e.message); }
+                      setBusyAssignee(null);
+                    }} disabled={busyAssignee === a.id} style={{
+                      flex: 1, padding: "7px 10px", borderRadius: 8,
+                      background: "rgba(16,185,129,0.12)", border: "1px solid rgba(16,185,129,0.4)",
+                      color: "#10b981", fontSize: 10, fontWeight: 800, cursor: busyAssignee === a.id ? "wait" : "pointer",
+                      fontFamily: "inherit",
+                    }}>✅ إغلاق جزئي</button>
+                  )}
+                </div>
+              )}
+
+              {/* v7.06 — Show return info if returned */}
+              {a.returnedAt && !a.acceptedAt && (
+                <div style={{ marginTop: 8, padding: "6px 10px", borderRadius: 6, background: "rgba(245,158,11,0.08)", border: "1px dashed rgba(245,158,11,0.3)", fontSize: 9, color: "#92400e" }}>
+                  📋 أُرجعت في {relTime(a.returnedAt)}{a.returnReason ? " — " + a.returnReason : ""}
+                </div>
+              )}
+              {a.closedAt && (
+                <div style={{ marginTop: 8, padding: "6px 10px", borderRadius: 6, background: "rgba(16,185,129,0.1)", border: "1px solid rgba(16,185,129,0.3)", fontSize: 9, color: "#065f46", fontWeight: 700 }}>
+                  ✅ مُغلق — {relTime(a.closedAt)}
+                </div>
+              )}
             </div>
           );
         })}
@@ -8752,19 +8819,19 @@ function TawasulDetailModal({ request, user, allEmps, onClose, nameOf, onUpdated
                 <div style={{ fontSize: 10, color: C.sub }}>{bigBtn.sub}</div>
               </div>
               {(r.assignees || []).length >= 2 && (
-                <MultiAssigneesProgress request={r} myId={myId} />
+                <MultiAssigneesProgress request={r} myId={myId} onUpdated={onUpdated} />
               )}
             </div>
           )}
 
           {/* Multi-progress when action IS pressable (full width below big button) */}
           {bigBtn && canPressBig && (r.assignees || []).length >= 2 && (
-            <MultiAssigneesProgress request={r} myId={myId} />
+            <MultiAssigneesProgress request={r} myId={myId} onUpdated={onUpdated} />
           )}
 
           {/* No bigBtn but multi-assignees still visible */}
           {!bigBtn && (r.assignees || []).length >= 2 && (
-            <MultiAssigneesProgress request={r} myId={myId} />
+            <MultiAssigneesProgress request={r} myId={myId} onUpdated={onUpdated} />
           )}
 
           {/* Action buttons — uniform grid (all same size) */}
