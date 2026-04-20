@@ -4,7 +4,7 @@ import { generateAttendanceReport, generateEmployeeReport, generateMonthlySummar
 import { exportFormalWarning, exportInvestigationRecord, exportAffidavit, exportEmploymentLetter, exportSalaryLetter, exportLeaveLetter } from "./formalPdfs";
 
 const APP = "بصمة HMA";
-const VER = "7.10";
+const VER = "7.11";
 const CO = "هاني محمد عسيري للإستشارات الهندسية";
 const B = { blue: "#2B5EA7", yellow: "#FDD800", red: "#E2192C", black: "#1A1A1A", blueDk: "#1E4478", blueLt: "#EDF3FB", gold: "#D4A017" };
 
@@ -520,6 +520,7 @@ export default function AdminApp() {
         { id: "org_hierarchy", icon: "🏢", label: "الهيكل التنظيمي" },
         { id: "leaves_hub", icon: "🏖️", label: "الإجازات", badge: pending },
         { id: "payroll", icon: "💰", label: "الرواتب 🔒" },
+        { id: "salary_changes", icon: "📈", label: "تعديلات الرواتب" },
         { id: "letters", icon: "📄", label: "الإفادات" },
         { id: "surveys", icon: "📊", label: "الاستطلاعات" },
         { id: "hr_tickets", icon: "📨", label: "رسائل الموظفين" },
@@ -1293,6 +1294,7 @@ export default function AdminApp() {
       {tab === "evaluations_hr" && <EvaluationsHRPanel t={t} B={B} emps={safeEmps} />}
       {tab === "leave_requests_v2" && <LeaveRequestsHRPanel t={t} B={B} emps={safeEmps} />}
       {tab === "payroll" && <PayrollPanel t={t} B={B} emps={safeEmps} />}
+      {tab === "salary_changes" && <SalaryChangeApprovalsPanel t={t} B={B} role={role} />}
       {tab === "benefits" && <BenefitsPanel t={t} B={B} />}
       {tab === "announcements" && <AnnouncementsPanel t={t} B={B} emps={safeEmps} branches={branches} />}
       {tab === "banners" && <BannersPanel t={t} B={B} />}
@@ -13406,6 +13408,252 @@ function DepartmentHistoryView({ empId, t, B }) {
             {h.changedBy && <div style={{ marginTop: 2 }}>بواسطة: {h.changedBy}</div>}
           </div>
         </div>
+      </div>;
+    })}
+  </div>;
+}
+
+/* ═══════════════════════════════════════════════════════════════════
+ * v7.11 — SalaryChangeRequestPanel (HR proposes)
+ * ═══════════════════════════════════════════════════════════════════ */
+function SalaryChangeRequestPanel({ t, B, emp, onClose, onSubmitted }) {
+  var [field, setField] = useState("basicSalary");
+  var [oldValue, setOldValue] = useState("");
+  var [newValue, setNewValue] = useState("");
+  var [reason, setReason] = useState("");
+  var [effectiveDate, setEffectiveDate] = useState(new Date().toISOString().slice(0, 10));
+  var [busy, setBusy] = useState(false);
+  var [err, setErr] = useState("");
+
+  var fields = [
+    { id: "basicSalary",        label: "الراتب الأساسي" },
+    { id: "housingAllowance",   label: "بدل السكن" },
+    { id: "transportAllowance", label: "بدل النقل" },
+    { id: "foodAllowance",      label: "بدل طعام" },
+    { id: "phoneAllowance",     label: "بدل جوال" },
+    { id: "otherAllowance",     label: "بدلات أخرى" },
+  ];
+
+  async function submit() {
+    setErr("");
+    if (!newValue || isNaN(parseFloat(newValue))) { setErr("القيمة الجديدة مطلوبة"); return; }
+    if (!reason || reason.trim().length < 3) { setErr("السبب مطلوب"); return; }
+    setBusy(true);
+    try {
+      var r = await fetch("/api/data?action=salary-change-request", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          empId: emp.id,
+          empName: emp.name,
+          field: field,
+          oldValue: oldValue ? parseFloat(oldValue) : null,
+          newValue: parseFloat(newValue),
+          reason: reason,
+          effectiveDate: effectiveDate,
+          proposedBy: "hr",
+        })
+      }).then(function(x){ return x.json(); });
+      if (r.ok) {
+        alert("✅ تم إرسال طلب التعديل للمدير العام للاعتماد");
+        if (onSubmitted) onSubmitted();
+        if (onClose) onClose();
+      } else setErr(r.error || "فشل");
+    } catch(e) { setErr(e.message); }
+    setBusy(false);
+  }
+
+  return <div onClick={onClose} style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.6)", zIndex: 1500, display: "flex", alignItems: "center", justifyContent: "center", padding: 16 }}>
+    <div onClick={function(e){ e.stopPropagation(); }} style={{ background: t.bg, borderRadius: 16, maxWidth: 500, width: "100%", direction: "rtl", padding: 20, border: "1px solid " + t.sep }}>
+      <div style={{ fontSize: 16, fontWeight: 900, color: t.tx, marginBottom: 6 }}>💰 طلب تعديل راتب/بدل</div>
+      <div style={{ fontSize: 12, color: t.tx2, marginBottom: 14 }}>
+        👤 {emp.name} <span style={{ fontSize: 10, color: t.txM }}>({emp.id})</span>
+      </div>
+      <div style={{ background: B.yellow + "15", border: "1px solid " + B.yellow + "40", borderRadius: 10, padding: 10, fontSize: 11, color: "#92400e", marginBottom: 14 }}>
+        ⚠️ هذا التعديل يحتاج موافقة المدير العام قبل تطبيقه. سيُحفظ كطلب معلّق.
+      </div>
+
+      <div style={{ marginBottom: 10 }}>
+        <label style={{ fontSize: 11, fontWeight: 700, color: t.tx, display: "block", marginBottom: 4 }}>الحقل</label>
+        <select value={field} onChange={function(e){ setField(e.target.value); }} style={{ width: "100%", padding: 10, borderRadius: 8, border: "1px solid " + t.sep, background: t.inp, color: t.tx, fontSize: 12, fontFamily: "inherit" }}>
+          {fields.map(function(f){ return <option key={f.id} value={f.id}>{f.label}</option>; })}
+        </select>
+      </div>
+
+      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10, marginBottom: 10 }}>
+        <div>
+          <label style={{ fontSize: 11, fontWeight: 700, color: t.tx2, display: "block", marginBottom: 4 }}>القيمة القديمة (اختياري)</label>
+          <input type="number" value={oldValue} onChange={function(e){ setOldValue(e.target.value); }} style={{ width: "100%", padding: 10, borderRadius: 8, border: "1px solid " + t.sep, background: t.inp, color: t.tx, fontSize: 12, fontFamily: "inherit" }} />
+        </div>
+        <div>
+          <label style={{ fontSize: 11, fontWeight: 700, color: t.tx, display: "block", marginBottom: 4 }}>القيمة الجديدة *</label>
+          <input type="number" value={newValue} onChange={function(e){ setNewValue(e.target.value); }} style={{ width: "100%", padding: 10, borderRadius: 8, border: "2px solid " + B.blue, background: t.inp, color: t.tx, fontSize: 12, fontFamily: "inherit", fontWeight: 700 }} />
+        </div>
+      </div>
+
+      <div style={{ marginBottom: 10 }}>
+        <label style={{ fontSize: 11, fontWeight: 700, color: t.tx, display: "block", marginBottom: 4 }}>تاريخ السريان</label>
+        <input type="date" value={effectiveDate} onChange={function(e){ setEffectiveDate(e.target.value); }} style={{ width: "100%", padding: 10, borderRadius: 8, border: "1px solid " + t.sep, background: t.inp, color: t.tx, fontSize: 12, fontFamily: "inherit" }} />
+        <div style={{ fontSize: 10, color: t.txM, marginTop: 2 }}>يُطبَّق في كشف الرواتب الذي يتضمن هذا التاريخ (pro-rated لو في منتصف الشهر)</div>
+      </div>
+
+      <div style={{ marginBottom: 14 }}>
+        <label style={{ fontSize: 11, fontWeight: 700, color: t.tx, display: "block", marginBottom: 4 }}>السبب / المبرّر *</label>
+        <textarea value={reason} onChange={function(e){ setReason(e.target.value); }} rows="3" placeholder="ترقية، مراجعة سنوية، اتفاق خاص، ..." style={{ width: "100%", padding: 10, borderRadius: 8, border: "1px solid " + t.sep, background: t.inp, color: t.tx, fontSize: 12, fontFamily: "inherit", resize: "vertical" }} />
+      </div>
+
+      {err && <div style={{ padding: "8px 10px", background: "rgba(239,68,68,0.1)", borderRadius: 8, fontSize: 11, color: "#DC2626", marginBottom: 10 }}>❌ {err}</div>}
+
+      <div style={{ display: "flex", gap: 8 }}>
+        <button onClick={onClose} style={{ flex: 1, padding: 12, borderRadius: 999, background: t.card, color: t.tx, border: "1px solid " + t.sep, fontSize: 12, fontWeight: 700, cursor: "pointer", fontFamily: "inherit" }}>إلغاء</button>
+        <button onClick={submit} disabled={busy} style={{ flex: 2, padding: 12, borderRadius: 999, background: busy ? t.sep : B.blue, color: "#fff", border: "none", fontSize: 12, fontWeight: 800, cursor: busy ? "wait" : "pointer", fontFamily: "inherit" }}>{busy ? "جارٍ الإرسال..." : "📤 إرسال الطلب للمدير العام"}</button>
+      </div>
+    </div>
+  </div>;
+}
+
+/* ═══════════════════════════════════════════════════════════════════
+ * v7.11 — SalaryChangeApprovalsPanel (GM approves/rejects)
+ * ═══════════════════════════════════════════════════════════════════ */
+function SalaryChangeApprovalsPanel({ t, B, role }) {
+  var [items, setItems] = useState([]);
+  var [loading, setLoading] = useState(true);
+  var [filter, setFilter] = useState("pending");
+  var [busy, setBusy] = useState({});
+
+  var canApprove = role === "manager"; // only GM
+
+  async function load() {
+    setLoading(true);
+    try {
+      var d = await fetch("/api/data?action=salary-change-list").then(function(r){ return r.json(); });
+      setItems(d.items || []);
+    } catch(e) {}
+    setLoading(false);
+  }
+  useEffect(function(){ load(); }, []);
+
+  async function approve(x) {
+    if (!confirm("اعتماد تعديل راتب " + x.empName + " من " + (x.oldValue || "—") + " إلى " + x.newValue + " ريال؟")) return;
+    setBusy(function(p){ var n = {...p}; n[x.id] = "approve"; return n; });
+    try {
+      var r = await fetch("/api/data?action=salary-change-approve", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ id: x.id, actor: "gm" })
+      }).then(function(y){ return y.json(); });
+      if (r.ok) { alert("✅ تم الاعتماد وتطبيق التعديل"); load(); }
+      else alert("فشل: " + (r.error || "غير معروف"));
+    } catch(e) { alert("فشل: " + e.message); }
+    setBusy(function(p){ var n = {...p}; delete n[x.id]; return n; });
+  }
+
+  async function reject(x) {
+    var reason = prompt("سبب الرفض (اختياري):", "");
+    if (reason === null) return;
+    setBusy(function(p){ var n = {...p}; n[x.id] = "reject"; return n; });
+    try {
+      var r = await fetch("/api/data?action=salary-change-reject", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ id: x.id, actor: "gm", rejectionReason: reason })
+      }).then(function(y){ return y.json(); });
+      if (r.ok) { alert("تم الرفض"); load(); }
+      else alert("فشل: " + (r.error || "غير معروف"));
+    } catch(e) { alert("فشل: " + e.message); }
+    setBusy(function(p){ var n = {...p}; delete n[x.id]; return n; });
+  }
+
+  var fieldLabels = {
+    basicSalary: "الراتب الأساسي",
+    housingAllowance: "بدل السكن",
+    transportAllowance: "بدل النقل",
+    foodAllowance: "بدل طعام",
+    phoneAllowance: "بدل جوال",
+    otherAllowance: "بدلات أخرى",
+  };
+
+  var statusMeta = {
+    pending:  { label: "⏳ معلّق",  color: "#D97706", bg: "rgba(217,119,6,0.12)" },
+    approved: { label: "✅ معتمد", color: "#16A34A", bg: "rgba(22,163,74,0.12)" },
+    rejected: { label: "❌ مرفوض", color: "#DC2626", bg: "rgba(220,38,38,0.12)" },
+  };
+
+  var filtered = filter === "all" ? items : items.filter(function(x){ return x.status === filter; });
+  var pendingCount = items.filter(function(x){ return x.status === "pending"; }).length;
+  var approvedCount = items.filter(function(x){ return x.status === "approved"; }).length;
+  var rejectedCount = items.filter(function(x){ return x.status === "rejected"; }).length;
+
+  return <div style={{ background: t.card, borderRadius: 14, padding: 18, border: "1px solid " + t.sep }}>
+    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 14 }}>
+      <div>
+        <div style={{ fontSize: 14, fontWeight: 800, color: t.tx }}>💰 طلبات تعديل الرواتب والبدلات</div>
+        <div style={{ fontSize: 11, color: t.txM, marginTop: 4 }}>
+          {pendingCount > 0 && <span style={{ color: "#D97706", fontWeight: 700 }}>⏳ {pendingCount} بانتظار اعتمادك • </span>}
+          <span>✅ {approvedCount} معتمد • </span>
+          <span>❌ {rejectedCount} مرفوض</span>
+        </div>
+      </div>
+      <button onClick={load} style={{ padding: "7px 14px", borderRadius: 8, background: t.bg, border: "1px solid " + t.sep, fontSize: 11, fontWeight: 700, color: t.tx, cursor: "pointer" }}>🔄 تحديث</button>
+    </div>
+
+    {!canApprove && <div style={{ padding: 10, background: B.yellow + "15", border: "1px solid " + B.yellow + "40", borderRadius: 8, fontSize: 11, color: "#92400e", marginBottom: 12 }}>
+      ⚠️ وضع عرض فقط — فقط المدير العام يعتمد/يرفض الطلبات
+    </div>}
+
+    <div style={{ display: "flex", gap: 6, marginBottom: 14 }}>
+      {[
+        { id: "pending",  label: "⏳ معلّقة",  count: pendingCount },
+        { id: "approved", label: "✅ معتمدة", count: approvedCount },
+        { id: "rejected", label: "❌ مرفوضة", count: rejectedCount },
+        { id: "all",      label: "الكل",     count: items.length },
+      ].map(function(f){
+        var active = filter === f.id;
+        return <button key={f.id} onClick={function(){ setFilter(f.id); }} style={{ padding: "8px 14px", borderRadius: 999, background: active ? B.blue : "transparent", color: active ? "#fff" : t.tx, border: "1px solid " + (active ? B.blue : t.sep), fontSize: 11, fontWeight: 700, cursor: "pointer", fontFamily: "inherit" }}>{f.label} ({f.count})</button>;
+      })}
+    </div>
+
+    {loading && <div style={{ padding: 24, textAlign: "center", color: t.txM, fontSize: 12 }}>جارٍ التحميل...</div>}
+
+    {!loading && filtered.length === 0 && <div style={{ padding: 30, textAlign: "center", color: t.txM, fontSize: 13 }}>لا توجد طلبات</div>}
+
+    {!loading && filtered.map(function(x){
+      var st = statusMeta[x.status];
+      var isBusy = !!busy[x.id];
+      var delta = (x.newValue || 0) - (x.oldValue || 0);
+      var deltaColor = delta > 0 ? "#16A34A" : (delta < 0 ? "#DC2626" : "#6b7280");
+      return <div key={x.id} style={{ padding: 14, background: t.bg, borderRadius: 10, border: "1px solid " + t.sep, marginBottom: 8 }}>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 10, marginBottom: 10, flexWrap: "wrap" }}>
+          <div style={{ flex: 1, minWidth: 200 }}>
+            <div style={{ fontSize: 13, fontWeight: 800, color: t.tx, marginBottom: 4 }}>
+              {x.empName} <span style={{ fontSize: 10, color: t.txM, fontWeight: 600 }}>({x.empId})</span>
+            </div>
+            <div style={{ display: "flex", gap: 6, flexWrap: "wrap", fontSize: 10, marginBottom: 6 }}>
+              <span style={{ padding: "2px 8px", borderRadius: 6, background: st.bg, color: st.color, fontWeight: 700 }}>{st.label}</span>
+              <span style={{ padding: "2px 8px", borderRadius: 6, background: B.blue + "15", color: B.blue, fontWeight: 700 }}>💰 {fieldLabels[x.field] || x.field}</span>
+            </div>
+          </div>
+          <div style={{ textAlign: "left", fontFamily: "monospace" }}>
+            <div style={{ fontSize: 10, color: t.txM }}>{x.oldValue === null ? "" : (x.oldValue + " →")}</div>
+            <div style={{ fontSize: 18, fontWeight: 900, color: t.tx }}>{(x.newValue || 0).toLocaleString("en-US")} ر.س</div>
+            {x.oldValue !== null && delta !== 0 && <div style={{ fontSize: 11, color: deltaColor, fontWeight: 700 }}>{delta > 0 ? "+" : ""}{delta.toLocaleString("en-US")}</div>}
+          </div>
+        </div>
+
+        <div style={{ fontSize: 11, color: t.tx2, lineHeight: 1.6, marginBottom: 6 }}>
+          <div style={{ background: t.card, padding: "8px 10px", borderRadius: 6, marginBottom: 4 }}>
+            <span style={{ fontWeight: 700, color: t.tx }}>📝 السبب:</span> {x.reason}
+          </div>
+          <div style={{ fontSize: 10, color: t.txM }}>
+            📅 تاريخ السريان: {x.effectiveDate} • اقترحه: {x.proposedBy} • {new Date(x.proposedAt).toLocaleString("ar-SA")}
+          </div>
+          {x.approvedAt && <div style={{ fontSize: 10, color: "#16A34A", marginTop: 4 }}>✓ اعتمده {x.approvedBy} في {new Date(x.approvedAt).toLocaleString("ar-SA")}</div>}
+          {x.rejectedAt && <div style={{ fontSize: 10, color: "#DC2626", marginTop: 4 }}>✗ رفضه {x.rejectedBy} في {new Date(x.rejectedAt).toLocaleString("ar-SA")}{x.rejectionReason ? " — " + x.rejectionReason : ""}</div>}
+        </div>
+
+        {x.status === "pending" && canApprove && (
+          <div style={{ display: "flex", gap: 6, marginTop: 10 }}>
+            <button onClick={function(){ approve(x); }} disabled={isBusy} style={{ flex: 2, padding: "8px 12px", background: "#16A34A", color: "#fff", border: "none", borderRadius: 8, fontSize: 12, fontWeight: 800, cursor: isBusy ? "wait" : "pointer", fontFamily: "inherit" }}>{isBusy && busy[x.id] === "approve" ? "جارٍ..." : "✅ اعتماد وتطبيق"}</button>
+            <button onClick={function(){ reject(x); }} disabled={isBusy} style={{ flex: 1, padding: "8px 12px", background: "transparent", color: t.bad, border: "1px solid " + t.bad, borderRadius: 8, fontSize: 11, fontWeight: 700, cursor: isBusy ? "wait" : "pointer", fontFamily: "inherit" }}>{isBusy && busy[x.id] === "reject" ? "جارٍ..." : "❌ رفض"}</button>
+          </div>
+        )}
       </div>;
     })}
   </div>;

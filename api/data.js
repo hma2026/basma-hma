@@ -1135,6 +1135,114 @@ export default async function handler(req, res) {
         return res.json({ ok: true });
       }
 
+      /* v7.11 — Salary change request (HR proposes — GM approves) */
+      case 'salary-change-request': {
+        if (req.method !== 'POST') return res.status(405).json({ error: 'POST required' });
+        const { empId, empName, field, oldValue, newValue, reason, effectiveDate, proposedBy } = req.body || {};
+        if (!empId || !field || newValue === undefined) return res.status(400).json({ error: 'empId + field + newValue required' });
+        if (!reason || reason.trim().length < 3) return res.status(400).json({ error: 'السبب مطلوب' });
+        const list = await dbGet('salary-change-requests') || [];
+        const item = {
+          id: 'SCR' + Date.now(),
+          empId, empName: empName || empId,
+          field,
+          oldValue: oldValue === undefined ? null : oldValue,
+          newValue,
+          reason,
+          effectiveDate: effectiveDate || new Date().toISOString().slice(0, 10),
+          proposedBy: proposedBy || 'hr',
+          proposedAt: new Date().toISOString(),
+          status: 'pending',
+        };
+        list.push(item);
+        await dbSet('salary-change-requests', list);
+        await auditLog(proposedBy || 'hr', 'salary_change_request', item.id, { empId, field, newValue });
+        return res.json({ ok: true, request: item });
+      }
+
+      /* v7.11 — List salary change requests */
+      case 'salary-change-list': {
+        if (req.method !== 'GET') return res.status(405).json({ error: 'GET required' });
+        const list = await dbGet('salary-change-requests') || [];
+        return res.json({ items: list.slice().reverse() });
+      }
+
+      /* v7.11 — Approve salary change (GM only) — applies the change */
+      case 'salary-change-approve': {
+        if (req.method !== 'POST') return res.status(405).json({ error: 'POST required' });
+        const { id, actor } = req.body || {};
+        if (!id) return res.status(400).json({ error: 'id required' });
+        const list = await dbGet('salary-change-requests') || [];
+        const i = list.findIndex(x => x.id === id);
+        if (i < 0) return res.status(404).json({ error: 'request not found' });
+        if (list[i].status !== 'pending') return res.status(400).json({ error: 'already processed' });
+        // Apply change
+        const emps = await dbGet('employees') || [];
+        const ei = emps.findIndex(e => e.id === list[i].empId || e.idNumber === list[i].empId);
+        if (ei < 0) return res.status(404).json({ error: 'employee not found' });
+        const empKey = emps[ei].id;
+        const profiles = await dbGet('emp-profiles') || {};
+        if (!profiles[empKey]) profiles[empKey] = {};
+        if (!profiles[empKey].compensation) profiles[empKey].compensation = {};
+        const comp = profiles[empKey].compensation;
+        const field = list[i].field;
+        const newVal = list[i].newValue;
+        // If field ends with "Allowance", support override structure { template, actual, reason }
+        if (/Allowance$/.test(field) && typeof newVal === 'number') {
+          const prev = comp[field];
+          const template = typeof prev === 'object' ? prev.template : (typeof prev === 'number' ? prev : null);
+          comp[field] = { template, actual: newVal, reason: list[i].reason };
+        } else {
+          comp[field] = newVal;
+        }
+        // Track change history
+        comp.changeHistory = comp.changeHistory || [];
+        comp.changeHistory.push({
+          field,
+          oldValue: list[i].oldValue,
+          newValue: newVal,
+          reason: list[i].reason,
+          effectiveDate: list[i].effectiveDate,
+          proposedBy: list[i].proposedBy,
+          approvedBy: actor || 'gm',
+          approvedAt: new Date().toISOString(),
+        });
+        comp._updatedAt = new Date().toISOString();
+        comp._updatedBy = actor || 'gm';
+        await dbSet('emp-profiles', profiles);
+        // Update request
+        list[i].status = 'approved';
+        list[i].approvedBy = actor || 'gm';
+        list[i].approvedAt = new Date().toISOString();
+        await dbSet('salary-change-requests', list);
+        // Lock employee locally (edited)
+        emps[ei].localLocked = true;
+        emps[ei].localLockedAt = new Date().toISOString();
+        emps[ei].localLockedBy = actor || 'gm';
+        emps[ei].localLockReason = 'تعديل راتب/بدل معتمد';
+        await dbSet('employees', emps);
+        await auditLog(actor || 'gm', 'salary_change_approve', id, { empId: list[i].empId, field, newValue: newVal });
+        return res.json({ ok: true, request: list[i] });
+      }
+
+      /* v7.11 — Reject salary change (GM) */
+      case 'salary-change-reject': {
+        if (req.method !== 'POST') return res.status(405).json({ error: 'POST required' });
+        const { id, actor, rejectionReason } = req.body || {};
+        if (!id) return res.status(400).json({ error: 'id required' });
+        const list = await dbGet('salary-change-requests') || [];
+        const i = list.findIndex(x => x.id === id);
+        if (i < 0) return res.status(404).json({ error: 'request not found' });
+        if (list[i].status !== 'pending') return res.status(400).json({ error: 'already processed' });
+        list[i].status = 'rejected';
+        list[i].rejectedBy = actor || 'gm';
+        list[i].rejectedAt = new Date().toISOString();
+        list[i].rejectionReason = rejectionReason || '';
+        await dbSet('salary-change-requests', list);
+        await auditLog(actor || 'gm', 'salary_change_reject', id, { empId: list[i].empId, reason: rejectionReason });
+        return res.json({ ok: true });
+      }
+
       case 'emp-attachments': {
         // GET ?empId=X — قائمة المرفقات
         if (req.method === 'GET') {
