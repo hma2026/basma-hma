@@ -4,7 +4,7 @@ import { generateAttendanceReport, generateEmployeeReport, generateMonthlySummar
 import { exportFormalWarning, exportInvestigationRecord, exportAffidavit, exportEmploymentLetter, exportSalaryLetter, exportLeaveLetter } from "./formalPdfs";
 
 const APP = "بصمة HMA";
-const VER = "6.66";
+const VER = "6.69";
 const CO = "هاني محمد عسيري للإستشارات الهندسية";
 const B = { blue: "#2B5EA7", yellow: "#FDD800", red: "#E2192C", black: "#1A1A1A", blueDk: "#1E4478", blueLt: "#EDF3FB", gold: "#D4A017" };
 
@@ -521,6 +521,7 @@ export default function AdminApp() {
         { id: "branches", icon: "🏢", label: "الفروع" },
         { id: "att_insights", icon: "📈", label: "ذكاء الحضور" },
         { id: "system_settings", icon: "⚙️", label: "إعدادات النظام" },
+        { id: "surveys", icon: "📊", label: "الاستطلاعات" },
         { id: "admin_requests", icon: "📝", label: "الطلبات" },
         { id: "complaints", icon: "📣", label: "الشكاوى", badge: badgeCounts.complaints },
         { id: "investigations", icon: "🔍", label: "التحقيقات", badge: badgeCounts.investigations },
@@ -1471,6 +1472,7 @@ export default function AdminApp() {
       {tab === "branches" && <BranchesPanel t={t} B={B} />}
       {tab === "att_insights" && <AttendanceInsightsPanel t={t} B={B} emps={safeEmps} />}
       {tab === "system_settings" && <SystemSettingsPanel t={t} B={B} />}
+      {tab === "surveys" && <SurveysPanel t={t} B={B} emps={safeEmps} />}
       {tab === "benefits" && <BenefitsPanel t={t} B={B} />}
       {tab === "announcements" && <AnnouncementsPanel t={t} B={B} emps={safeEmps} branches={branches} />}
       {tab === "banners" && <BannersPanel t={t} B={B} />}
@@ -2200,6 +2202,345 @@ function LeaveHistoryModal({ t, B, emp, leaves, onClose }) {
               );
             })
           )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/* ═══════════════════════════════════════════════════════════════
+   SURVEYS PANEL — استطلاعات الرأي الداخلي (v6.67)
+   ═══════════════════════════════════════════════════════════════ */
+function SurveysPanel({ t, B, emps }) {
+  var [surveys, setSurveys] = useState([]);
+  var [loading, setLoading] = useState(true);
+  var [view, setView] = useState("list"); // list | create | results
+  var [selected, setSelected] = useState(null);
+  var [results, setResults] = useState(null);
+
+  async function load() {
+    setLoading(true);
+    try {
+      var r = await fetch("/api/data?action=surveys");
+      var d = await r.json();
+      setSurveys(Array.isArray(d) ? d : []);
+    } catch(e) {}
+    setLoading(false);
+  }
+
+  useEffect(function(){ load(); }, []);
+
+  async function loadResults(surveyId) {
+    try {
+      var r = await fetch("/api/data?action=survey-results&surveyId=" + encodeURIComponent(surveyId));
+      var d = await r.json();
+      if (!d.error) setResults(d);
+    } catch(e) {}
+  }
+
+  async function deleteSurvey(id) {
+    if (!window.confirm("حذف الاستطلاع نهائياً؟ لا يمكن التراجع.")) return;
+    try {
+      await fetch("/api/data?action=surveys", {
+        method: "DELETE",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ id: id }),
+      });
+      await load();
+      if (selected && selected.id === id) { setSelected(null); setView("list"); }
+    } catch(e) { alert("فشل"); }
+  }
+
+  async function toggleStatus(survey) {
+    var newStatus = survey.status === "active" ? "closed" : "active";
+    try {
+      await fetch("/api/data?action=surveys", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ id: survey.id, status: newStatus }),
+      });
+      await load();
+    } catch(e) { alert("فشل"); }
+  }
+
+  function exportResults() {
+    if (!results) return;
+    var BOM = "\uFEFF";
+    var rows = [["الخيار", "الأصوات", "النسبة %"]];
+    results.results.forEach(function(r){
+      var pct = results.totalVoters > 0 ? Math.round((r.votes / results.totalVoters) * 100) : 0;
+      rows.push([r.text, r.votes, pct + "%"]);
+    });
+    if (!results.anonymous) {
+      rows.push([""]);
+      rows.push(["المصوِّتون (غير مجهولي الهوية)"]);
+      rows.push(["الاسم", "الخيار", "وقت التصويت"]);
+      results.results.forEach(function(r){
+        r.voters.forEach(function(v){
+          rows.push([v.name, r.text, new Date(v.votedAt).toLocaleString("ar-SA")]);
+        });
+      });
+    }
+    var csv = rows.map(function(r){ return r.map(function(c){ return '"' + String(c).replace(/"/g, '""') + '"'; }).join(","); }).join("\n");
+    var blob = new Blob([BOM + csv], { type: "text/csv;charset=utf-8" });
+    var url = URL.createObjectURL(blob);
+    var a = document.createElement("a");
+    a.href = url;
+    a.download = "استطلاع_" + results.survey.title.replace(/\s+/g, "_") + ".csv";
+    a.click();
+    URL.revokeObjectURL(url);
+  }
+
+  if (loading) return <div style={{ padding: 30, textAlign: "center", color: t.txM }}>جارِ التحميل...</div>;
+
+  // Render view
+  if (view === "create") {
+    return <SurveyCreateForm t={t} B={B} onBack={function(){ setView("list"); }} onSaved={function(){ setView("list"); load(); }} />;
+  }
+
+  if (view === "results" && selected) {
+    var totalVotes = selected.totalVotes || 0;
+    return (
+      <div style={{ maxWidth: 900 }}>
+        <div style={{ background: "linear-gradient(135deg, " + B.blue + " 0%, " + B.blueDk + " 100%)", borderRadius: 16, padding: "20px 22px", marginBottom: 16, color: "#fff", display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 10 }}>
+          <div>
+            <div style={{ fontSize: 18, fontWeight: 800, marginBottom: 4 }}>📊 {selected.title}</div>
+            <div style={{ fontSize: 11, opacity: 0.9 }}>
+              {selected.anonymous ? "🔒 مجهول" : "👁 غير مجهول"} · {selected.multipleChoice ? "اختيار متعدد" : "اختيار واحد"}
+              {results && " · نسبة المشاركة: " + results.participationRate + "%"}
+            </div>
+          </div>
+          <div style={{ display: "flex", gap: 8 }}>
+            {results && <button onClick={exportResults} style={{ padding: "8px 14px", borderRadius: 8, background: "#10B981", color: "#fff", border: "none", fontSize: 11, fontWeight: 800, cursor: "pointer", fontFamily: "inherit" }}>📥 تصدير CSV</button>}
+            <button onClick={function(){ setView("list"); setSelected(null); setResults(null); }} style={{ padding: "8px 14px", borderRadius: 8, background: "rgba(255,255,255,0.15)", color: "#fff", border: "1px solid rgba(255,255,255,0.3)", fontSize: 11, fontWeight: 800, cursor: "pointer", fontFamily: "inherit" }}>← رجوع</button>
+          </div>
+        </div>
+
+        {selected.description && (
+          <div style={{ padding: 14, borderRadius: 12, background: t.card, border: "1px solid " + t.sep, marginBottom: 14, fontSize: 12, color: t.tx, lineHeight: 1.8 }}>
+            {selected.description}
+          </div>
+        )}
+
+        {/* Results bars */}
+        <div style={{ padding: 16, borderRadius: 14, background: t.card, border: "1px solid " + t.sep, marginBottom: 14 }}>
+          <div style={{ fontSize: 13, fontWeight: 800, color: t.tx, marginBottom: 12 }}>
+            النتائج ({totalVotes} صوت · {results ? results.totalVoters : 0} مصوِّت)
+          </div>
+          {selected.options.map(function(opt){
+            var pct = totalVotes > 0 ? Math.round((opt.votes / totalVotes) * 100) : 0;
+            var colors = ["#3B82F6", "#10B981", "#F59E0B", "#DC2626", "#7C3AED", "#0891B2"];
+            var c = colors[selected.options.indexOf(opt) % colors.length];
+            return (
+              <div key={opt.id} style={{ marginBottom: 12 }}>
+                <div style={{ display: "flex", justifyContent: "space-between", fontSize: 12, marginBottom: 5 }}>
+                  <span style={{ color: t.tx, fontWeight: 700 }}>{opt.text}</span>
+                  <span style={{ color: c, fontWeight: 800 }}>{opt.votes} ({pct}%)</span>
+                </div>
+                <div style={{ height: 12, borderRadius: 6, background: t.bg, overflow: "hidden" }}>
+                  <div style={{ height: "100%", width: pct + "%", background: c, transition: "width 0.5s" }}></div>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+
+        {/* Detailed voters list for non-anonymous */}
+        {results && !results.anonymous && results.totalVoters > 0 && (
+          <div style={{ padding: 16, borderRadius: 14, background: t.card, border: "1px solid " + t.sep }}>
+            <div style={{ fontSize: 13, fontWeight: 800, color: t.tx, marginBottom: 12 }}>
+              👁 المصوِّتون ({results.totalVoters})
+            </div>
+            {results.results.map(function(r){
+              if (r.voters.length === 0) return null;
+              return (
+                <div key={r.id} style={{ marginBottom: 12 }}>
+                  <div style={{ fontSize: 11, fontWeight: 700, color: B.blue, marginBottom: 6 }}>{r.text} ({r.voters.length})</div>
+                  {r.voters.map(function(v, i){
+                    return (
+                      <div key={i} style={{ padding: "6px 10px", fontSize: 11, color: t.tx, background: t.bg, marginBottom: 3, borderRadius: 6, display: "flex", justifyContent: "space-between" }}>
+                        <span>{v.name}</span>
+                        <span style={{ color: t.txM, fontSize: 10 }}>{new Date(v.votedAt).toLocaleString("ar-SA")}</span>
+                      </div>
+                    );
+                  })}
+                </div>
+              );
+            })}
+          </div>
+        )}
+      </div>
+    );
+  }
+
+  // List view
+  return (
+    <div style={{ maxWidth: 1000 }}>
+      <div style={{ background: "linear-gradient(135deg, " + B.blue + " 0%, " + B.blueDk + " 100%)", borderRadius: 16, padding: "20px 22px", marginBottom: 16, color: "#fff", display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 10 }}>
+        <div>
+          <div style={{ fontSize: 20, fontWeight: 800, marginBottom: 4 }}>📊 استطلاعات الرأي</div>
+          <div style={{ fontSize: 11, opacity: 0.9 }}>اعرف آراء فريقك — مجهولة الهوية أو معلنة</div>
+        </div>
+        <button onClick={function(){ setView("create"); }} style={{ padding: "10px 18px", borderRadius: 10, background: B.gold, color: "#000", border: "none", fontSize: 12, fontWeight: 800, cursor: "pointer", fontFamily: "inherit" }}>+ استطلاع جديد</button>
+      </div>
+
+      {surveys.length === 0 ? (
+        <div style={{ padding: 40, textAlign: "center", color: t.txM, fontSize: 13, background: t.card, borderRadius: 14, border: "1px dashed " + t.sep }}>
+          <div style={{ fontSize: 40, marginBottom: 12 }}>📊</div>
+          <div style={{ fontWeight: 700, marginBottom: 6 }}>لا توجد استطلاعات بعد</div>
+          <div style={{ fontSize: 11 }}>اضغط "+ استطلاع جديد" لإنشاء أول استطلاع</div>
+        </div>
+      ) : (
+        <div style={{ display: "grid", gap: 10 }}>
+          {surveys.slice().sort(function(a,b){ return (b.createdAt || "").localeCompare(a.createdAt || ""); }).map(function(s){
+            var isActive = s.status === "active";
+            var endedText = s.endDate && new Date(s.endDate) < new Date() ? "منتهي" : (isActive ? "نشط" : "مغلق");
+            var statusColor = isActive && endedText === "نشط" ? "#10B981" : "#64748B";
+            return (
+              <div key={s.id} style={{ padding: 14, borderRadius: 12, background: t.card, border: "1px solid " + t.sep, borderRight: "3px solid " + statusColor }}>
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 10, marginBottom: 8 }}>
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div style={{ fontSize: 14, fontWeight: 800, color: t.tx, marginBottom: 4 }}>{s.title}</div>
+                    {s.description && <div style={{ fontSize: 10, color: t.txM, marginBottom: 6, lineHeight: 1.7 }}>{s.description}</div>}
+                    <div style={{ display: "flex", gap: 8, flexWrap: "wrap", fontSize: 9 }}>
+                      <span style={{ padding: "2px 8px", borderRadius: 6, background: statusColor + "20", color: statusColor, fontWeight: 800 }}>
+                        {endedText === "نشط" ? "🟢" : endedText === "منتهي" ? "⏰" : "🔴"} {endedText}
+                      </span>
+                      <span style={{ padding: "2px 8px", borderRadius: 6, background: t.bg, color: t.txM, fontWeight: 700 }}>
+                        {s.anonymous ? "🔒 مجهول" : "👁 معلن"}
+                      </span>
+                      <span style={{ padding: "2px 8px", borderRadius: 6, background: t.bg, color: t.txM, fontWeight: 700 }}>
+                        {s.multipleChoice ? "✅✅ متعدد" : "◉ واحد"}
+                      </span>
+                      <span style={{ padding: "2px 8px", borderRadius: 6, background: t.bg, color: t.txM, fontWeight: 700 }}>
+                        📊 {s.totalVotes || 0} صوت
+                      </span>
+                      <span style={{ padding: "2px 8px", borderRadius: 6, background: t.bg, color: t.txM, fontWeight: 700 }}>
+                        📅 {new Date(s.createdAt).toLocaleDateString("ar-SA")}
+                      </span>
+                    </div>
+                  </div>
+                </div>
+                <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+                  <button onClick={function(){ setSelected(s); loadResults(s.id); setView("results"); }} style={{ flex: 1, minWidth: 100, padding: "7px 12px", borderRadius: 8, background: B.blue, color: "#fff", border: "none", fontSize: 11, fontWeight: 800, cursor: "pointer", fontFamily: "inherit" }}>📊 النتائج</button>
+                  <button onClick={function(){ toggleStatus(s); }} style={{ flex: 1, minWidth: 100, padding: "7px 12px", borderRadius: 8, background: isActive ? "#F59E0B" : "#10B981", color: "#fff", border: "none", fontSize: 11, fontWeight: 800, cursor: "pointer", fontFamily: "inherit" }}>
+                    {isActive ? "⏸ إغلاق" : "▶ تفعيل"}
+                  </button>
+                  <button onClick={function(){ deleteSurvey(s.id); }} style={{ padding: "7px 12px", borderRadius: 8, background: "transparent", color: "#DC2626", border: "1px solid rgba(220,38,38,0.4)", fontSize: 11, fontWeight: 800, cursor: "pointer", fontFamily: "inherit" }}>🗑</button>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function SurveyCreateForm({ t, B, onBack, onSaved }) {
+  var [title, setTitle] = useState("");
+  var [description, setDescription] = useState("");
+  var [options, setOptions] = useState(["", ""]);
+  var [anonymous, setAnonymous] = useState(false);
+  var [multipleChoice, setMultipleChoice] = useState(false);
+  var [endDate, setEndDate] = useState("");
+  var [saving, setSaving] = useState(false);
+
+  function addOption() { setOptions([].concat(options, [""])); }
+  function removeOption(i) {
+    if (options.length <= 2) { alert("يجب أن يكون هناك خياران على الأقل"); return; }
+    setOptions(options.filter(function(_, idx){ return idx !== i; }));
+  }
+  function updateOption(i, v) {
+    var n = options.slice(); n[i] = v; setOptions(n);
+  }
+
+  async function save() {
+    if (!title.trim()) { alert("أدخل عنوان الاستطلاع"); return; }
+    var validOpts = options.filter(function(o){ return o.trim(); });
+    if (validOpts.length < 2) { alert("أضف خيارين على الأقل"); return; }
+    setSaving(true);
+    try {
+      var r = await fetch("/api/data?action=surveys", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          title: title.trim(),
+          description: description.trim(),
+          options: validOpts,
+          anonymous: anonymous,
+          multipleChoice: multipleChoice,
+          endDate: endDate || null,
+          createdBy: "admin",
+        }),
+      });
+      var d = await r.json();
+      if (d.ok) onSaved();
+      else alert("خطأ: " + (d.error || ""));
+    } catch(e) { alert("خطأ: " + e.message); }
+    setSaving(false);
+  }
+
+  var inputStyle = { width: "100%", padding: "10px 12px", borderRadius: 8, border: "1px solid " + t.sep, background: t.inp, color: t.tx, fontSize: 12, outline: "none", boxSizing: "border-box", fontFamily: "inherit" };
+
+  return (
+    <div style={{ maxWidth: 700 }}>
+      <div style={{ background: "linear-gradient(135deg, " + B.blue + " 0%, " + B.blueDk + " 100%)", borderRadius: 16, padding: "20px 22px", marginBottom: 16, color: "#fff", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+        <div>
+          <div style={{ fontSize: 18, fontWeight: 800 }}>+ استطلاع جديد</div>
+          <div style={{ fontSize: 11, opacity: 0.9, marginTop: 4 }}>أنشئ استطلاعاً سيصل لكل الموظفين</div>
+        </div>
+        <button onClick={onBack} style={{ padding: "8px 14px", borderRadius: 8, background: "rgba(255,255,255,0.15)", color: "#fff", border: "1px solid rgba(255,255,255,0.3)", fontSize: 11, fontWeight: 800, cursor: "pointer", fontFamily: "inherit" }}>← رجوع</button>
+      </div>
+
+      <div style={{ padding: 18, background: t.card, borderRadius: 14, border: "1px solid " + t.sep }}>
+        <div style={{ marginBottom: 14 }}>
+          <div style={{ fontSize: 11, color: t.txM, fontWeight: 700, marginBottom: 5 }}>عنوان الاستطلاع *</div>
+          <input type="text" value={title} onChange={function(e){ setTitle(e.target.value); }} placeholder="مثال: ما رأيك بالنظام الجديد؟" style={inputStyle} />
+        </div>
+
+        <div style={{ marginBottom: 14 }}>
+          <div style={{ fontSize: 11, color: t.txM, fontWeight: 700, marginBottom: 5 }}>الوصف (اختياري)</div>
+          <textarea value={description} onChange={function(e){ setDescription(e.target.value); }} placeholder="شرح مختصر للاستطلاع..." style={Object.assign({}, inputStyle, { minHeight: 60, resize: "vertical" })} />
+        </div>
+
+        <div style={{ marginBottom: 14 }}>
+          <div style={{ fontSize: 11, color: t.txM, fontWeight: 700, marginBottom: 8 }}>الخيارات *</div>
+          {options.map(function(opt, i){
+            return (
+              <div key={i} style={{ display: "flex", gap: 8, marginBottom: 6, alignItems: "center" }}>
+                <span style={{ fontSize: 13, color: t.txM, fontWeight: 800, minWidth: 22 }}>{i + 1}.</span>
+                <input type="text" value={opt} onChange={function(e){ updateOption(i, e.target.value); }} placeholder={"الخيار " + (i + 1)} style={Object.assign({}, inputStyle, { flex: 1 })} />
+                {options.length > 2 && (
+                  <button onClick={function(){ removeOption(i); }} style={{ padding: "8px 10px", borderRadius: 6, background: "transparent", color: "#DC2626", border: "1px solid rgba(220,38,38,0.3)", fontSize: 12, cursor: "pointer", fontFamily: "inherit" }}>✕</button>
+                )}
+              </div>
+            );
+          })}
+          <button onClick={addOption} style={{ marginTop: 6, padding: "7px 14px", borderRadius: 8, background: "transparent", color: B.blue, border: "1px dashed " + B.blue, fontSize: 11, fontWeight: 700, cursor: "pointer", fontFamily: "inherit" }}>+ أضف خيار آخر</button>
+        </div>
+
+        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10, marginBottom: 14 }}>
+          <label style={{ display: "flex", alignItems: "center", gap: 8, padding: 10, borderRadius: 8, background: t.bg, border: "1px solid " + t.sep, cursor: "pointer", fontSize: 11, color: t.tx }}>
+            <input type="checkbox" checked={anonymous} onChange={function(e){ setAnonymous(e.target.checked); }} />
+            <span><strong>🔒 مجهول</strong><br/><span style={{ fontSize: 9, color: t.txM }}>لن يُعرف من صوّت</span></span>
+          </label>
+          <label style={{ display: "flex", alignItems: "center", gap: 8, padding: 10, borderRadius: 8, background: t.bg, border: "1px solid " + t.sep, cursor: "pointer", fontSize: 11, color: t.tx }}>
+            <input type="checkbox" checked={multipleChoice} onChange={function(e){ setMultipleChoice(e.target.checked); }} />
+            <span><strong>✅✅ اختيار متعدد</strong><br/><span style={{ fontSize: 9, color: t.txM }}>يختار أكثر من خيار</span></span>
+          </label>
+        </div>
+
+        <div style={{ marginBottom: 14 }}>
+          <div style={{ fontSize: 11, color: t.txM, fontWeight: 700, marginBottom: 5 }}>تاريخ الانتهاء (اختياري)</div>
+          <input type="date" value={endDate} onChange={function(e){ setEndDate(e.target.value); }} style={inputStyle} />
+        </div>
+
+        <div style={{ display: "flex", gap: 10 }}>
+          <button onClick={onBack} style={{ flex: 1, padding: 12, borderRadius: 10, background: t.bg, color: t.tx, border: "1px solid " + t.sep, fontSize: 12, fontWeight: 700, cursor: "pointer", fontFamily: "inherit" }}>إلغاء</button>
+          <button onClick={save} disabled={saving} style={{ flex: 2, padding: 12, borderRadius: 10, background: B.blue, color: "#fff", border: "none", fontSize: 13, fontWeight: 800, cursor: "pointer", fontFamily: "inherit" }}>
+            {saving ? "جارِ الحفظ..." : "📊 إنشاء الاستطلاع"}
+          </button>
         </div>
       </div>
     </div>

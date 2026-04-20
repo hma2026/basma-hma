@@ -1800,6 +1800,179 @@ export default async function handler(req, res) {
         break;
       }
 
+      /* v6.67 — Internal Surveys (استطلاعات الرأي) */
+      case 'surveys': {
+        if (req.method === 'GET') {
+          let list = (await dbGet('surveys')) || [];
+          const { status, id } = req.query || {};
+          if (id) {
+            var one = list.find(function(s){ return s.id === id; });
+            if (!one) return res.status(404).json({ error: 'not found' });
+            return res.json(one);
+          }
+          if (status === 'active') {
+            var today = new Date().toISOString().split('T')[0];
+            list = list.filter(function(s){
+              if (s.status !== 'active') return false;
+              if (s.endDate && s.endDate < today) return false;
+              return true;
+            });
+          }
+          return res.json(list);
+        }
+        if (req.method === 'POST') {
+          var body = req.body || {};
+          if (!body.title || !Array.isArray(body.options) || body.options.length < 2) {
+            return res.status(400).json({ error: 'عنوان وخيارين على الأقل مطلوبان' });
+          }
+          var list = (await dbGet('surveys')) || [];
+          var survey = {
+            id: 'SRV' + Date.now(),
+            title: body.title,
+            description: body.description || '',
+            options: body.options.map(function(o, i){
+              return { id: 'o' + i, text: typeof o === 'string' ? o : o.text, votes: 0 };
+            }),
+            anonymous: !!body.anonymous,
+            multipleChoice: !!body.multipleChoice,
+            targetGroups: body.targetGroups || ['all'],
+            startDate: body.startDate || new Date().toISOString().split('T')[0],
+            endDate: body.endDate || null,
+            status: body.status || 'active',
+            createdBy: body.createdBy || 'admin',
+            createdAt: new Date().toISOString(),
+            totalVotes: 0,
+          };
+          list.push(survey);
+          await dbSet('surveys', list);
+          return res.json({ ok: true, survey: survey });
+        }
+        if (req.method === 'PUT') {
+          var body = req.body || {};
+          if (!body.id) return res.status(400).json({ error: 'id required' });
+          var list = (await dbGet('surveys')) || [];
+          var i = list.findIndex(function(s){ return s.id === body.id; });
+          if (i < 0) return res.status(404).json({ error: 'not found' });
+          ['title', 'description', 'status', 'endDate', 'targetGroups'].forEach(function(k){
+            if (body[k] !== undefined) list[i][k] = body[k];
+          });
+          await dbSet('surveys', list);
+          return res.json({ ok: true });
+        }
+        if (req.method === 'DELETE') {
+          var body = req.body || {};
+          if (!body.id) return res.status(400).json({ error: 'id required' });
+          var list = (await dbGet('surveys')) || [];
+          list = list.filter(function(s){ return s.id !== body.id; });
+          await dbSet('surveys', list);
+          // Also clear votes
+          var votes = (await dbGet('survey_votes')) || {};
+          delete votes[body.id];
+          await dbSet('survey_votes', votes);
+          return res.json({ ok: true });
+        }
+        break;
+      }
+
+      /* v6.67 — Submit vote for a survey */
+      case 'survey-vote': {
+        if (req.method !== 'POST') break;
+        var body = req.body || {};
+        if (!body.surveyId || !body.empId || !Array.isArray(body.optionIds) || body.optionIds.length === 0) {
+          return res.status(400).json({ error: 'surveyId, empId, and optionIds required' });
+        }
+        var list = (await dbGet('surveys')) || [];
+        var survey = list.find(function(s){ return s.id === body.surveyId; });
+        if (!survey) return res.status(404).json({ error: 'استطلاع غير موجود' });
+        if (survey.status !== 'active') return res.status(400).json({ error: 'الاستطلاع غير نشط' });
+        var today = new Date().toISOString().split('T')[0];
+        if (survey.endDate && survey.endDate < today) return res.status(400).json({ error: 'انتهى الاستطلاع' });
+
+        // Check if already voted
+        var votes = (await dbGet('survey_votes')) || {};
+        if (!votes[body.surveyId]) votes[body.surveyId] = {};
+
+        // For anonymous: hash the empId so we can check duplicates without revealing identity
+        var voterKey = survey.anonymous
+          ? 'a_' + Buffer.from(body.empId + body.surveyId).toString('base64').substring(0, 20)
+          : body.empId;
+
+        if (votes[body.surveyId][voterKey]) {
+          return res.status(400).json({ error: 'سبق أن صوّتَ في هذا الاستطلاع' });
+        }
+
+        // Record vote
+        votes[body.surveyId][voterKey] = {
+          optionIds: body.optionIds,
+          votedAt: new Date().toISOString(),
+          anonymous: !!survey.anonymous,
+        };
+        await dbSet('survey_votes', votes);
+
+        // Update tallies on the survey
+        body.optionIds.forEach(function(optId){
+          var opt = survey.options.find(function(o){ return o.id === optId; });
+          if (opt) opt.votes = (opt.votes || 0) + 1;
+        });
+        survey.totalVotes = (survey.totalVotes || 0) + 1;
+        await dbSet('surveys', list);
+
+        return res.json({ ok: true, survey: survey });
+      }
+
+      /* v6.67 — Check if user has voted on a given survey */
+      case 'survey-has-voted': {
+        var empId = req.query.empId;
+        var surveyId = req.query.surveyId;
+        if (!empId || !surveyId) return res.status(400).json({ error: 'empId and surveyId required' });
+        var list = (await dbGet('surveys')) || [];
+        var survey = list.find(function(s){ return s.id === surveyId; });
+        if (!survey) return res.json({ voted: false });
+        var votes = (await dbGet('survey_votes')) || {};
+        var surveyVotes = votes[surveyId] || {};
+        var voterKey = survey.anonymous
+          ? 'a_' + Buffer.from(empId + surveyId).toString('base64').substring(0, 20)
+          : empId;
+        return res.json({ voted: !!surveyVotes[voterKey], vote: surveyVotes[voterKey] || null });
+      }
+
+      /* v6.67 — Get detailed results (only survey creator or admin can see who voted for non-anonymous) */
+      case 'survey-results': {
+        var surveyId = req.query.surveyId;
+        if (!surveyId) return res.status(400).json({ error: 'surveyId required' });
+        var list = (await dbGet('surveys')) || [];
+        var survey = list.find(function(s){ return s.id === surveyId; });
+        if (!survey) return res.status(404).json({ error: 'not found' });
+        var votes = (await dbGet('survey_votes')) || {};
+        var surveyVotes = votes[surveyId] || {};
+        var emps = (await dbGet('employees')) || [];
+        var voterCount = Object.keys(surveyVotes).length;
+
+        var detailed = survey.options.map(function(opt){
+          return { id: opt.id, text: opt.text, votes: opt.votes || 0, voters: [] };
+        });
+
+        if (!survey.anonymous) {
+          Object.keys(surveyVotes).forEach(function(empId){
+            var vote = surveyVotes[empId];
+            var emp = emps.find(function(e){ return e.id === empId; });
+            vote.optionIds.forEach(function(optId){
+              var row = detailed.find(function(d){ return d.id === optId; });
+              if (row) row.voters.push({ id: empId, name: emp ? emp.name : empId, votedAt: vote.votedAt });
+            });
+          });
+        }
+
+        return res.json({
+          survey: survey,
+          totalVoters: voterCount,
+          results: detailed,
+          anonymous: survey.anonymous,
+          eligibleEmployees: emps.length,
+          participationRate: emps.length > 0 ? Math.round((voterCount / emps.length) * 100) : 0,
+        });
+      }
+
       case 'settings': {
         if (req.method === 'GET') return res.json(await dbGet('settings') || {});
         if (req.method === 'PUT') { await dbSet('settings', req.body); return res.json({ ok: true }); }

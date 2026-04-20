@@ -11,7 +11,7 @@ import { exportEmploymentLetter, exportLeaveLetter } from "./formalPdfs";
 
 /* ═══════════ APP CONFIG (إعدادات التطبيق) ═══════════ */
 const APP_CONFIG = {
-  VER: "6.66",
+  VER: "6.69",
   NAME: "بصمة HMA",
   FULL_NAME: "نظام الحضور والانصراف الذكي",
   COMPANY: "هاني محمد عسيري للاستشارات الهندسية",
@@ -1775,6 +1775,144 @@ function LoginScreen({ onLogin, onBiometric, loading }) {
 }
 
 /* ═══════════ HOME ═══════════ */
+/* ═══ SURVEY BANNER — بانر استطلاع نشط في الرئيسية (v6.67) ═══ */
+function SurveyBanner({ user }) {
+  var [surveys, setSurveys] = useState([]);
+  var [votedMap, setVotedMap] = useState({});
+  var [selected, setSelected] = useState(null);
+  var [selectedOpts, setSelectedOpts] = useState([]);
+  var [submitting, setSubmitting] = useState(false);
+  var [justVotedId, setJustVotedId] = useState(null);
+
+  async function load() {
+    try {
+      var r = await fetch("/api/data?action=surveys&status=active");
+      var d = await r.json();
+      var list = Array.isArray(d) ? d : [];
+      setSurveys(list);
+      // Check voted status for each
+      var map = {};
+      await Promise.all(list.map(async function(s){
+        try {
+          var vr = await fetch("/api/data?action=survey-has-voted&surveyId=" + encodeURIComponent(s.id) + "&empId=" + encodeURIComponent(user.id));
+          var vd = await vr.json();
+          map[s.id] = vd.voted;
+        } catch(e) { map[s.id] = false; }
+      }));
+      setVotedMap(map);
+    } catch(e) {}
+  }
+
+  useEffect(function(){ if (user && user.id) load(); }, [user && user.id]);
+
+  var pending = surveys.filter(function(s){ return !votedMap[s.id]; });
+  if (pending.length === 0) return null;
+  var survey = pending[0]; // Show first unvoted
+
+  function toggleOption(optId) {
+    if (survey.multipleChoice) {
+      if (selectedOpts.indexOf(optId) >= 0) setSelectedOpts(selectedOpts.filter(function(o){ return o !== optId; }));
+      else setSelectedOpts([].concat(selectedOpts, [optId]));
+    } else {
+      setSelectedOpts([optId]);
+    }
+  }
+
+  async function submit() {
+    if (selectedOpts.length === 0) { alert("اختر خياراً"); return; }
+    setSubmitting(true);
+    try {
+      var r = await fetch("/api/data?action=survey-vote", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ surveyId: survey.id, empId: user.id, optionIds: selectedOpts }),
+      });
+      var d = await r.json();
+      if (d.ok) {
+        setJustVotedId(survey.id);
+        setTimeout(function(){
+          setSelected(null);
+          setSelectedOpts([]);
+          load();
+        }, 2500);
+      } else {
+        alert(d.error || "فشل التصويت");
+      }
+    } catch(e) { alert("خطأ: " + e.message); }
+    setSubmitting(false);
+  }
+
+  if (selected) {
+    // Voting modal
+    return (
+      <div onClick={function(){ if (!submitting) { setSelected(null); setSelectedOpts([]); } }} style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.7)", zIndex: 9000, display: "flex", alignItems: "center", justifyContent: "center", padding: 16 }}>
+        <div onClick={function(e){ e.stopPropagation(); }} style={{ background: COLORS.bg1, borderRadius: 18, maxWidth: 420, width: "100%", maxHeight: "85vh", overflowY: "auto", border: "1px solid " + COLORS.metallicBorder }}>
+          {justVotedId ? (
+            <div style={{ padding: "40px 20px", textAlign: "center" }}>
+              <div style={{ fontSize: 56, marginBottom: 14 }}>✅</div>
+              <div style={{ fontSize: 16, fontWeight: 800, color: COLORS.goldLight, marginBottom: 6 }}>شكراً على رأيك!</div>
+              <div style={{ fontSize: 12, color: COLORS.textMuted }}>تم تسجيل تصويتك بنجاح</div>
+            </div>
+          ) : (
+            <>
+              <div style={{ padding: "18px 20px", borderBottom: "1px solid " + COLORS.metallicBorder }}>
+                <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 8 }}>
+                  <span style={{ fontSize: 20 }}>📊</span>
+                  <span style={{ fontSize: 10, fontWeight: 800, color: COLORS.goldLight, padding: "2px 8px", borderRadius: 6, background: "rgba(201,168,76,0.15)" }}>
+                    {survey.anonymous ? "🔒 مجهول" : "👁 معلن"}
+                  </span>
+                  {survey.multipleChoice && <span style={{ fontSize: 10, fontWeight: 800, color: "#7C3AED", padding: "2px 8px", borderRadius: 6, background: "rgba(124,58,237,0.15)" }}>✅✅ متعدد</span>}
+                </div>
+                <div style={{ fontSize: 16, fontWeight: 800, color: COLORS.textPrimary, fontFamily: TYPOGRAPHY.fontCairo, lineHeight: 1.5 }}>{survey.title}</div>
+                {survey.description && <div style={{ fontSize: 11, color: COLORS.textMuted, marginTop: 6, lineHeight: 1.7 }}>{survey.description}</div>}
+              </div>
+              <div style={{ padding: 16 }}>
+                <div style={{ fontSize: 10, color: COLORS.textMuted, fontWeight: 700, marginBottom: 8 }}>
+                  {survey.multipleChoice ? "اختر خيار أو أكثر:" : "اختر خياراً واحداً:"}
+                </div>
+                {survey.options.map(function(opt){
+                  var isSelected = selectedOpts.indexOf(opt.id) >= 0;
+                  return (
+                    <button key={opt.id} onClick={function(){ toggleOption(opt.id); }} style={{ width: "100%", padding: "12px 14px", borderRadius: 10, background: isSelected ? "rgba(201,168,76,0.2)" : COLORS.metallic, color: COLORS.textPrimary, border: "1px solid " + (isSelected ? COLORS.goldLight : COLORS.metallicBorder), fontSize: 13, fontWeight: 700, cursor: "pointer", fontFamily: TYPOGRAPHY.fontTajawal, marginBottom: 6, display: "flex", alignItems: "center", gap: 10, textAlign: "right" }}>
+                      <span style={{ fontSize: 16 }}>{isSelected ? (survey.multipleChoice ? "✅" : "🔘") : (survey.multipleChoice ? "☐" : "⚪")}</span>
+                      <span style={{ flex: 1 }}>{opt.text}</span>
+                    </button>
+                  );
+                })}
+              </div>
+              <div style={{ padding: "12px 20px", borderTop: "1px solid " + COLORS.metallicBorder, display: "flex", gap: 10 }}>
+                <button onClick={function(){ setSelected(null); setSelectedOpts([]); }} disabled={submitting} style={{ flex: 1, padding: 10, borderRadius: 10, background: COLORS.metallic, color: COLORS.textPrimary, border: "1px solid " + COLORS.metallicBorder, fontSize: 12, fontWeight: 700, cursor: "pointer", fontFamily: TYPOGRAPHY.fontTajawal }}>إلغاء</button>
+                <button onClick={submit} disabled={submitting || selectedOpts.length === 0} style={{ flex: 2, padding: 10, borderRadius: 10, background: selectedOpts.length === 0 ? COLORS.metallic : "linear-gradient(135deg, " + COLORS.goldLight + ", " + COLORS.gold + ")", color: selectedOpts.length === 0 ? COLORS.textMuted : "#000", border: "none", fontSize: 13, fontWeight: 800, cursor: selectedOpts.length === 0 ? "default" : "pointer", fontFamily: TYPOGRAPHY.fontTajawal }}>
+                  {submitting ? "جارِ الإرسال..." : "📊 صوِّت"}
+                </button>
+              </div>
+            </>
+          )}
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div onClick={function(){ setSelected(survey); }} style={{ background: "linear-gradient(135deg, rgba(124,58,237,0.22), rgba(91,33,182,0.14))", borderRadius: 12, padding: "10px 14px", marginBottom: 10, cursor: "pointer", display: "flex", alignItems: "center", gap: 10, border: "1px solid rgba(124,58,237,0.4)", animation: "basmaSurveyPulse 2.5s ease-in-out infinite" }}>
+      <style>{`
+        @keyframes basmaSurveyPulse {
+          0%, 100% { box-shadow: 0 0 0 0 rgba(124,58,237,0.35); }
+          50% { box-shadow: 0 0 0 8px rgba(124,58,237,0); }
+        }
+      `}</style>
+      <div style={{ fontSize: 22 }}>📊</div>
+      <div style={{ flex: 1, minWidth: 0 }}>
+        <div style={{ fontSize: 10, fontWeight: 800, color: "#c4b5fd", marginBottom: 2 }}>
+          استطلاع نشط {pending.length > 1 && "(" + pending.length + ")"}
+        </div>
+        <div style={{ fontSize: 12, fontWeight: 800, color: COLORS.textPrimary, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", fontFamily: "'Tajawal',sans-serif" }}>{survey.title}</div>
+      </div>
+      <span style={{ padding: "5px 10px", borderRadius: 8, background: "rgba(124,58,237,0.3)", color: "#fff", fontSize: 10, fontWeight: 800, whiteSpace: "nowrap" }}>شارك برأيك ›</span>
+    </div>
+  );
+}
+
 /* ═══ GM KPI CARD — لوحة انضباط للمدير العام في الجوال (v6.59)
    نطاق هذه البطاقة هو بصمة فقط: نقاط وانضباط.
    KPIs الأداء الوظيفي التفصيلية مصدرها كوادر (HMA HR) — لا تظهر هنا. ═══ */
@@ -2088,7 +2226,7 @@ function HomePage({ user, branch, workType, now, todayAtt, allAtt, gps, gpsDist,
             </div>
           );
         })}
-        <InvestigationBanner user={user} /><MembershipFreezeNotice user={user} /><BranchHolidayBanner branch={branch} /><OccasionBanner user={user} />
+        <InvestigationBanner user={user} /><MembershipFreezeNotice user={user} /><BranchHolidayBanner branch={branch} /><OccasionBanner user={user} /><SurveyBanner user={user} />
       </div>
 
       {/* Clock centered */}
@@ -2513,15 +2651,11 @@ function ProfilePage({ user, branch, workType, onLogout, onTicket, myTickets, da
   ];
   var tabs = [
     { id: "info", emoji: "👤", label: "بياناتي" },
-    { id: "requests", emoji: "📋", label: "طلباتي" },
+    { id: "requests", emoji: "📋", label: "الطلبات والسجل الوظيفي" },
     { id: "achievements", emoji: "🏆", label: "إنجازاتي" },
     { id: "deps", emoji: "👨‍👩‍👧", label: "المرافقين" },
-    { id: "docs", emoji: "📎", label: "المرفقات" },
-    { id: "custody", emoji: "🗄️", label: "العهد" },
-    { id: "record", emoji: "📚", label: "السجل الوظيفي" },
-    { id: "policies", emoji: "📖", label: "السياسات" },
+    { id: "docs", emoji: "📎", label: "العهد والمرفقات" },
     { id: "legal", emoji: "⚖️", label: "القانونية" },
-    { id: "settings", emoji: "⚙️", label: "الإعدادات" },
   ];
 
   return (
@@ -2554,7 +2688,7 @@ function ProfilePage({ user, branch, workType, onLogout, onTicket, myTickets, da
           })}
         </div>
 
-        {/* Tab: بياناتي */}
+        {/* Tab: بياناتي (الرئيسية + الإعدادات) */}
         {tab === "info" && (
           <>
             <Card>
@@ -2567,8 +2701,6 @@ function ProfilePage({ user, branch, workType, onLogout, onTicket, myTickets, da
                 );
               })}
             </Card>
-
-            <MembershipCard points={user.points || 0} />
 
             {user.sceNumber && (
               <Card>
@@ -2602,30 +2734,8 @@ function ProfilePage({ user, branch, workType, onLogout, onTicket, myTickets, da
                 })}
               </Card>
             )}
-          </>
-        )}
 
-        {tab === "deps" && <Card><DependentsTab user={user} /></Card>}
-        {tab === "docs" && <Card><AttachmentsTab user={user} /></Card>}
-        {tab === "custody" && <Card><CustodyTab user={user} /></Card>}
-        {tab === "record" && <EmployeeRecordTab user={user} />}
-        {tab === "legal" && <LegalTab user={user} />}
-        {tab === "requests" && <MyRequestsTab user={user} />}
-        {tab === "policies" && <PoliciesTab user={user} />}
-
-        {tab === "achievements" && (
-          <>
-            <MembershipCard points={user.points || 0} />
-            <PointsLogCard user={user} allAtt={[]} />
-            <AchievementsCard user={user} />
-          </>
-        )}
-
-        {tab === "benefits" && null /* v6.66 — الامتيازات موجودة في bottom nav */}
-
-        {tab === "settings" && (
-          <>
-            {/* كوادر — flippable card */}
+            {/* v6.69 — الإعدادات المدمجة */}
             <div className="basma-flip-container">
               <div className={"basma-flip-inner" + (kadwarFlip ? " flipped" : "")} style={{ minHeight: 44 }}>
                 <div className="basma-flip-front">
@@ -2645,7 +2755,7 @@ function ProfilePage({ user, branch, workType, onLogout, onTicket, myTickets, da
             <BiometricSettingsCard user={user} />
 
             <Card>
-              <div style={{ ...TYPOGRAPHY.h3, color: COLORS.textPrimary, marginBottom: SPACING.md }}>الإعدادات</div>
+              <div style={{ ...TYPOGRAPHY.h3, color: COLORS.textPrimary, marginBottom: SPACING.md }}>⚙️ الإعدادات</div>
               <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: SPACING.sm + "px 0", borderBottom: "1px solid " + COLORS.cardBorder }}>
                 <span style={{ ...TYPOGRAPHY.bodySm, fontWeight: 600, color: COLORS.textPrimary }}>الوضع الليلي</span>
                 <div onClick={toggleDark} style={{ width: 44, height: 24, borderRadius: 12, background: darkMode ? COLORS.goldLight : COLORS.metallic, border: "1px solid " + COLORS.metallicBorder, position: "relative", cursor: "pointer", transition: "background .3s" }}>
@@ -2667,6 +2777,50 @@ function ProfilePage({ user, branch, workType, onLogout, onTicket, myTickets, da
             <Button variant="secondary" size="md" icon={<Icons.alert size={20} />} onClick={onTicket}>
               تذكرة دعم جديدة
             </Button>
+          </>
+        )}
+
+        {/* v6.69 — الطلبات والسجل الوظيفي (مدموجين) */}
+        {tab === "requests" && (
+          <>
+            <MyRequestsTab user={user} />
+            <div style={{ marginTop: SPACING.lg, paddingTop: SPACING.md, borderTop: "1px dashed " + COLORS.metallicBorder }}>
+              <div style={{ ...TYPOGRAPHY.h3, color: COLORS.textPrimary, fontFamily: TYPOGRAPHY.fontCairo, marginBottom: SPACING.md, textAlign: "center" }}>📚 السجل الوظيفي</div>
+              <EmployeeRecordTab user={user} />
+            </div>
+          </>
+        )}
+
+        {/* v6.69 — العهد والمرفقات (مدموجين) */}
+        {tab === "docs" && (
+          <>
+            <div style={{ ...TYPOGRAPHY.h3, color: COLORS.textPrimary, fontFamily: TYPOGRAPHY.fontCairo, marginBottom: SPACING.sm, textAlign: "center" }}>📎 المرفقات</div>
+            <Card><AttachmentsTab user={user} /></Card>
+
+            <div style={{ marginTop: SPACING.lg, paddingTop: SPACING.md, borderTop: "1px dashed " + COLORS.metallicBorder }}>
+              <div style={{ ...TYPOGRAPHY.h3, color: COLORS.textPrimary, fontFamily: TYPOGRAPHY.fontCairo, marginBottom: SPACING.sm, textAlign: "center" }}>🗄️ العهد</div>
+              <Card><CustodyTab user={user} /></Card>
+            </div>
+          </>
+        )}
+
+        {tab === "deps" && <Card><DependentsTab user={user} /></Card>}
+
+        {/* v6.69 — القانونية (مع السياسات مدموجة) */}
+        {tab === "legal" && (
+          <>
+            <LegalTab user={user} />
+            <div style={{ marginTop: SPACING.lg, paddingTop: SPACING.md, borderTop: "1px dashed " + COLORS.metallicBorder }}>
+              <div style={{ ...TYPOGRAPHY.h3, color: COLORS.textPrimary, fontFamily: TYPOGRAPHY.fontCairo, marginBottom: SPACING.md, textAlign: "center" }}>📖 السياسات والأسئلة الشائعة</div>
+              <PoliciesTab user={user} />
+            </div>
+          </>
+        )}
+
+        {tab === "achievements" && (
+          <>
+            <PointsLogCard user={user} allAtt={[]} />
+            <AchievementsCard user={user} />
           </>
         )}
 
@@ -2770,17 +2924,19 @@ function BenefitsPage({ user }) {
 
       <div style={{ padding: "0 " + SPACING.lg + "px", display: "flex", flexDirection: "column", gap: SPACING.md }}>
 
-        {/* Current level */}
-        <Card>
-          <div style={{ display: "flex", alignItems: "center", gap: SPACING.md }}>
-            <div style={{ width: 56, height: 56, borderRadius: RADIUS.pill, background: COLORS.metallic, border: "1px solid " + COLORS.metallicBorder, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 28, boxShadow: SHADOWS.button }}>{badge.icon}</div>
-            <div style={{ flex: 1 }}>
-              <div style={{ ...TYPOGRAPHY.h2, color: COLORS.goldLight }}>{badge.label}</div>
-              <div style={{ ...TYPOGRAPHY.caption, color: COLORS.textMuted }}>{(user.points || 0) + " نقطة"}</div>
+        {/* v6.68 — Full Membership Card (moved from حسابي → إنجازاتي) */}
+        <MembershipCard points={user.points || 0} />
+
+        {/* Coupons quick stat */}
+        <Card padding={SPACING.md}>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+            <div>
+              <div style={{ ...TYPOGRAPHY.caption, color: COLORS.textMuted, fontWeight: 700 }}>🎁 كوبونات متاحة لك</div>
+              <div style={{ ...TYPOGRAPHY.tiny, color: COLORS.textMuted, marginTop: 4 }}>حسب مستواك الحالي</div>
             </div>
             <div style={{ textAlign: "center" }}>
-              <div style={{ ...TYPOGRAPHY.h3, color: COLORS.goldLight }}>{filtered.filter(function(c){ return (c.minTier || 0) <= badge.tier; }).length}</div>
-              <div style={{ ...TYPOGRAPHY.tiny, color: COLORS.textMuted }}>{"متاح من " + filtered.length}</div>
+              <div style={{ fontSize: 24, fontWeight: 900, color: COLORS.goldLight }}>{filtered.filter(function(c){ return (c.minTier || 0) <= badge.tier; }).length}</div>
+              <div style={{ ...TYPOGRAPHY.tiny, color: COLORS.textMuted }}>{"من أصل " + filtered.length}</div>
             </div>
           </div>
         </Card>
