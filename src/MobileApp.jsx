@@ -11,7 +11,7 @@ import { exportEmploymentLetter, exportLeaveLetter } from "./formalPdfs";
 
 /* ═══════════ APP CONFIG (إعدادات التطبيق) ═══════════ */
 const APP_CONFIG = {
-  VER: "6.62",
+  VER: "6.66",
   NAME: "بصمة HMA",
   FULL_NAME: "نظام الحضور والانصراف الذكي",
   COMPANY: "هاني محمد عسيري للاستشارات الهندسية",
@@ -2050,7 +2050,7 @@ function HomePage({ user, branch, workType, now, todayAtt, allAtt, gps, gpsDist,
   }
 
   return (
-    <div style={{ flex: 1, paddingBottom: 70, minHeight: "100vh", background: "linear-gradient(180deg,"+C.hdr1+" 0%,"+C.hdr2+" 40%,"+C.hdr3+" 100%)", display: "flex", flexDirection: "column" }}>
+    <div style={{ flex: 1, paddingBottom: 70, height: "100vh", maxHeight: "100vh", overflow: "hidden", background: "linear-gradient(180deg,"+C.hdr1+" 0%,"+C.hdr2+" 40%,"+C.hdr3+" 100%)", display: "flex", flexDirection: "column" }}>
       {/* Header */}
       <div style={{ padding: "16px 20px 0", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
         <div>
@@ -2089,8 +2089,6 @@ function HomePage({ user, branch, workType, now, todayAtt, allAtt, gps, gpsDist,
           );
         })}
         <InvestigationBanner user={user} /><MembershipFreezeNotice user={user} /><BranchHolidayBanner branch={branch} /><OccasionBanner user={user} />
-        {/* v6.59 — General Manager KPIs card (visible only to GM/admin) */}
-        {(user.isGeneralManager || user.isAdmin) && <GMKPICard user={user} />}
       </div>
 
       {/* Clock centered */}
@@ -2197,35 +2195,35 @@ function HomePage({ user, branch, workType, now, todayAtt, allAtt, gps, gpsDist,
       </div>
 
       {/* ═══ BOTTOM (unified buttons, uniform height) ═══ */}
-      <div style={{ padding: SPACING.lg, display: "flex", flexDirection: "column", gap: SPACING.sm }}>
+      <div style={{ padding: "12px 16px", display: "flex", flexDirection: "column", gap: 6 }}>
 
-        {/* PRIMARY — سجّل حضورك (gold) */}
+        {/* GPS indicator — smaller pill, above the check-in button (v6.63) */}
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 6, padding: "5px 12px", borderRadius: 16, background: gps ? (inAnyValidZone ? "rgba(48,209,88,0.12)" : "rgba(239,68,68,0.15)") : "rgba(150,150,150,0.1)", border: "1px solid " + (gps ? (inAnyValidZone ? "rgba(48,209,88,0.45)" : "rgba(239,68,68,0.5)") : "rgba(150,150,150,0.25)"), width: "100%", boxSizing: "border-box" }}>
+          <div style={{ width: 7, height: 7, borderRadius: RADIUS.pill, background: gps ? (inAnyValidZone ? "#30D158" : "#EF4444") : COLORS.textMuted, boxShadow: gps ? "0 0 6px " + (inAnyValidZone ? "rgba(48,209,88,0.6)" : "rgba(239,68,68,0.6)") : "none", flexShrink: 0 }} />
+          <span style={{ fontSize: 11, fontWeight: 700, color: gps ? (inAnyValidZone ? "#30D158" : "#EF4444") : COLORS.textMuted, fontFamily: "'Tajawal',sans-serif", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{zoneText}</span>
+          {streak > 0 && <span style={{ fontSize: 11, fontWeight: 800, color: COLORS.goldLight, marginRight: "auto", flexShrink: 0 }}>{"🔥 " + streak}</span>}
+        </div>
+
+        {/* PRIMARY — سجّل حضورك (gold, reduced height) */}
         {!showChallenge && challengeAnswer === null && btnAction && (
-          <Button variant="primary" size="lg" icon={<Icons.sun size={20} />} onClick={function(){ if(!loading) onCheckin(btnAction, btnLabel); }} disabled={loading}>
+          <Button variant="primary" size="md" icon={<Icons.sun size={20} />} onClick={function(){ if(!loading) onCheckin(btnAction, btnLabel); }} disabled={loading}>
             {loading ? "جارٍ التسجيل..." : btnText}
           </Button>
         )}
 
-        {/* GPS indicator — enlarged pill */}
-        <div style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 8, padding: "8px 18px", borderRadius: 22, background: gps ? (inAnyValidZone ? "rgba(48,209,88,0.12)" : "rgba(239,68,68,0.15)") : "rgba(150,150,150,0.1)", border: "1.5px solid " + (gps ? (inAnyValidZone ? "rgba(48,209,88,0.45)" : "rgba(239,68,68,0.5)") : "rgba(150,150,150,0.25)"), margin: "2px auto", width: "fit-content", maxWidth: "90%" }}>
-          <div style={{ width: 9, height: 9, borderRadius: RADIUS.pill, background: gps ? (inAnyValidZone ? "#30D158" : "#EF4444") : COLORS.textMuted, boxShadow: gps ? "0 0 8px " + (inAnyValidZone ? "rgba(48,209,88,0.6)" : "rgba(239,68,68,0.6)") : "none" }} />
-          <span style={{ fontSize: 13, fontWeight: 700, color: gps ? (inAnyValidZone ? "#30D158" : "#EF4444") : COLORS.textMuted, fontFamily: "'Tajawal',sans-serif" }}>{zoneText}</span>
-          {streak > 0 && <span style={{ fontSize: 13, fontWeight: 800, color: COLORS.goldLight, marginRight: 4 }}>{"🔥 " + streak}</span>}
-        </div>
-
-        {/* v6.33 — Work Type badge (shows employee's work schedule type) */}
+        {/* v6.33 — Work Type badge (compact) */}
         {workType && (
-          <div style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 6, margin: "6px auto 0", padding: "5px 14px", borderRadius: 16, background: workType.flexible ? "rgba(139,92,246,0.15)" : "rgba(201,168,76,0.18)", border: "1px solid " + (workType.flexible ? "rgba(139,92,246,0.35)" : "rgba(201,168,76,0.45)"), width: "fit-content", maxWidth: "90%" }}>
-            <span style={{ fontSize: 11 }}>{workType.flexible ? "🔄" : "⏰"}</span>
-            <span style={{ fontSize: 10, fontWeight: 800, color: workType.flexible ? "#8b5cf6" : COLORS.goldLight, fontFamily: "'Tajawal',sans-serif" }}>{workType.label}</span>
-            <span style={{ fontSize: 9, color: COLORS.textMuted, fontWeight: 600 }}>· {workType.workHours} س</span>
+          <div style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 5, padding: "3px 10px", borderRadius: 12, background: workType.flexible ? "rgba(139,92,246,0.15)" : "rgba(201,168,76,0.18)", border: "1px solid " + (workType.flexible ? "rgba(139,92,246,0.35)" : "rgba(201,168,76,0.45)"), width: "fit-content", maxWidth: "100%", alignSelf: "center" }}>
+            <span style={{ fontSize: 10 }}>{workType.flexible ? "🔄" : "⏰"}</span>
+            <span style={{ fontSize: 9, fontWeight: 800, color: workType.flexible ? "#8b5cf6" : COLORS.goldLight, fontFamily: "'Tajawal',sans-serif" }}>{workType.label}</span>
+            <span style={{ fontSize: 8, color: COLORS.textMuted, fontWeight: 600 }}>· {workType.workHours} س</span>
             {workType.breakWindow && (
-              <span style={{ fontSize: 9, color: COLORS.textMuted, fontWeight: 600 }}>· ☕ {workType.breakWindow.start}-{workType.breakWindow.end}</span>
+              <span style={{ fontSize: 8, color: COLORS.textMuted, fontWeight: 600 }}>· ☕ {workType.breakWindow.start}-{workType.breakWindow.end}</span>
             )}
           </div>
         )}
 
-        {/* Home Banner — admin-managed rotating banners with image/link support */}
+        {/* Home Banner — admin-managed rotating banners */}
         <HomeBanner banners={banners} user={user} onShowAnnouncements={onShowAnnouncements} announcements={announcements} />
 
         {/* إجازة + إذن (secondary) */}
@@ -2514,14 +2512,16 @@ function ProfilePage({ user, branch, workType, onLogout, onTicket, myTickets, da
     ["النقاط", badge.icon + " " + (user.points || 0) + " نقطة"],
   ];
   var tabs = [
-    { id: "info", icon: <Icons.user size={18} />, label: "بياناتي" },
-    { id: "requests", icon: <Icons.clipboard size={18} />, label: "طلباتي" },
-    { id: "policies", icon: <Icons.clipboard size={18} />, label: "السياسات" },
-    { id: "deps", icon: <Icons.user size={18} />, label: "المرافقين" },
-    { id: "docs", icon: <Icons.clipboard size={18} />, label: "المرفقات" },
-    { id: "custody", icon: <Icons.building size={18} />, label: "العهد" },
-    { id: "record", icon: <Icons.clipboard size={18} />, label: "السجل الوظيفي" },
-    { id: "legal", icon: <Icons.alert size={18} />, label: "القانونية" },
+    { id: "info", emoji: "👤", label: "بياناتي" },
+    { id: "requests", emoji: "📋", label: "طلباتي" },
+    { id: "achievements", emoji: "🏆", label: "إنجازاتي" },
+    { id: "deps", emoji: "👨‍👩‍👧", label: "المرافقين" },
+    { id: "docs", emoji: "📎", label: "المرفقات" },
+    { id: "custody", emoji: "🗄️", label: "العهد" },
+    { id: "record", emoji: "📚", label: "السجل الوظيفي" },
+    { id: "policies", emoji: "📖", label: "السياسات" },
+    { id: "legal", emoji: "⚖️", label: "القانونية" },
+    { id: "settings", emoji: "⚙️", label: "الإعدادات" },
   ];
 
   return (
@@ -2541,14 +2541,14 @@ function ProfilePage({ user, branch, workType, onLogout, onTicket, myTickets, da
           <div style={{ ...TYPOGRAPHY.caption, color: COLORS.textMuted }}>{user.role + " — " + user.id}</div>
         </div>
 
-        {/* Profile Tabs */}
-        <div style={{ display: "flex", gap: 2, background: COLORS.metallic, border: "1px solid " + COLORS.metallicBorder, borderRadius: RADIUS.lg, padding: 4, boxShadow: SHADOWS.button, overflowX: "auto", justifyContent: "center" }}>
+        {/* Profile Tabs — horizontal scroll with emoji icons */}
+        <div style={{ display: "flex", gap: 4, background: COLORS.metallic, border: "1px solid " + COLORS.metallicBorder, borderRadius: RADIUS.lg, padding: 4, boxShadow: SHADOWS.button, overflowX: "auto", WebkitOverflowScrolling: "touch" }}>
           {tabs.map(function(t) {
             var active = tab === t.id;
             return (
-              <button key={t.id} onClick={function(){ setTab(t.id); }} style={{ flex: 1, minWidth: 56, padding: "8px 4px", borderRadius: RADIUS.md, background: active ? COLORS.metallic : "transparent", border: "1px solid " + (active ? COLORS.goldLight : "transparent"), cursor: "pointer", textAlign: "center", display: "flex", flexDirection: "column", alignItems: "center", gap: 2, color: active ? COLORS.goldLight : COLORS.textMuted }}>
-                {t.icon}
-                <span style={{ ...TYPOGRAPHY.tiny, fontWeight: 700 }}>{t.label}</span>
+              <button key={t.id} onClick={function(){ setTab(t.id); }} style={{ flex: "0 0 auto", minWidth: 60, padding: "8px 6px", borderRadius: RADIUS.md, background: active ? COLORS.metallic : "transparent", border: "1px solid " + (active ? COLORS.goldLight : "transparent"), cursor: "pointer", textAlign: "center", display: "flex", flexDirection: "column", alignItems: "center", gap: 3, color: active ? COLORS.goldLight : COLORS.textMuted }}>
+                <span style={{ fontSize: 18 }}>{t.emoji}</span>
+                <span style={{ ...TYPOGRAPHY.tiny, fontWeight: 700, whiteSpace: "nowrap" }}>{t.label}</span>
               </button>
             );
           })}
@@ -2569,45 +2569,6 @@ function ProfilePage({ user, branch, workType, onLogout, onTicket, myTickets, da
             </Card>
 
             <MembershipCard points={user.points || 0} />
-            <PointsLogCard user={user} allAtt={[]} />
-            <AchievementsCard user={user} />
-            <BiometricSettingsCard user={user} />
-
-            {/* كوادر — flippable card (moved from home) */}
-            <div className="basma-flip-container">
-              <div className={"basma-flip-inner" + (kadwarFlip ? " flipped" : "")} style={{ minHeight: 44 }}>
-                <div className="basma-flip-front">
-                  <Button variant="secondary" size="md" icon={<Icons.building size={20} />} onClick={function(){ setKadwarFlip(true); }}>
-                    الدخول إلى منصة كوادر
-                  </Button>
-                </div>
-                <div className="basma-flip-back">
-                  <div style={{ display: "flex", gap: SPACING.xs }}>
-                    <KadwarBtn icon={<Icons.edit size={18} />} label="اختبار" count={kn.exams} />
-                    <KadwarBtn icon={<Icons.user size={18} />} label="حسابي" count={kn.alerts} />
-                  </div>
-                </div>
-              </div>
-            </div>
-
-            {/* Settings card */}
-            <Card>
-              <div style={{ ...TYPOGRAPHY.h3, color: COLORS.textPrimary, marginBottom: SPACING.md }}>الإعدادات</div>
-              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: SPACING.sm + "px 0", borderBottom: "1px solid " + COLORS.cardBorder }}>
-                <span style={{ ...TYPOGRAPHY.bodySm, fontWeight: 600, color: COLORS.textPrimary }}>الوضع الليلي</span>
-                <div onClick={toggleDark} style={{ width: 44, height: 24, borderRadius: 12, background: darkMode ? COLORS.goldLight : COLORS.metallic, border: "1px solid " + COLORS.metallicBorder, position: "relative", cursor: "pointer", transition: "background .3s" }}>
-                  <div style={{ width: 18, height: 18, borderRadius: 9, background: COLORS.white, position: "absolute", top: 3, transition: "all .3s", left: darkMode ? 3 : undefined, right: darkMode ? undefined : 3, boxShadow: "0 1px 3px rgba(0,0,0,.2)" }} />
-                </div>
-              </div>
-              <ToggleRow label="تذكير بالحضور" storeKey="remind_in" border={true} />
-              <ToggleRow label="تذكير بالانصراف" storeKey="remind_out" border={true} />
-              <FaceResetRow empId={user.id} />
-              <DesktopPairRow user={user} />
-              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: SPACING.sm + "px 0", borderTop: "1px solid " + COLORS.cardBorder }}>
-                <span style={{ ...TYPOGRAPHY.bodySm, fontWeight: 600, color: COLORS.textPrimary }}>إصدار التطبيق</span>
-                <span style={{ ...TYPOGRAPHY.caption, fontWeight: 800, color: COLORS.goldLight }}>{"v" + VER}</span>
-              </div>
-            </Card>
 
             {user.sceNumber && (
               <Card>
@@ -2641,12 +2602,6 @@ function ProfilePage({ user, branch, workType, onLogout, onTicket, myTickets, da
                 })}
               </Card>
             )}
-
-            <HelpGuideSection />
-
-            <Button variant="secondary" size="md" icon={<Icons.alert size={20} />} onClick={onTicket}>
-              تذكرة دعم جديدة
-            </Button>
           </>
         )}
 
@@ -2657,6 +2612,63 @@ function ProfilePage({ user, branch, workType, onLogout, onTicket, myTickets, da
         {tab === "legal" && <LegalTab user={user} />}
         {tab === "requests" && <MyRequestsTab user={user} />}
         {tab === "policies" && <PoliciesTab user={user} />}
+
+        {tab === "achievements" && (
+          <>
+            <MembershipCard points={user.points || 0} />
+            <PointsLogCard user={user} allAtt={[]} />
+            <AchievementsCard user={user} />
+          </>
+        )}
+
+        {tab === "benefits" && null /* v6.66 — الامتيازات موجودة في bottom nav */}
+
+        {tab === "settings" && (
+          <>
+            {/* كوادر — flippable card */}
+            <div className="basma-flip-container">
+              <div className={"basma-flip-inner" + (kadwarFlip ? " flipped" : "")} style={{ minHeight: 44 }}>
+                <div className="basma-flip-front">
+                  <Button variant="secondary" size="md" icon={<Icons.building size={20} />} onClick={function(){ setKadwarFlip(true); }}>
+                    الدخول إلى منصة كوادر
+                  </Button>
+                </div>
+                <div className="basma-flip-back">
+                  <div style={{ display: "flex", gap: SPACING.xs }}>
+                    <KadwarBtn icon={<Icons.edit size={18} />} label="اختبار" count={kn.exams} />
+                    <KadwarBtn icon={<Icons.user size={18} />} label="حسابي" count={kn.alerts} />
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <BiometricSettingsCard user={user} />
+
+            <Card>
+              <div style={{ ...TYPOGRAPHY.h3, color: COLORS.textPrimary, marginBottom: SPACING.md }}>الإعدادات</div>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: SPACING.sm + "px 0", borderBottom: "1px solid " + COLORS.cardBorder }}>
+                <span style={{ ...TYPOGRAPHY.bodySm, fontWeight: 600, color: COLORS.textPrimary }}>الوضع الليلي</span>
+                <div onClick={toggleDark} style={{ width: 44, height: 24, borderRadius: 12, background: darkMode ? COLORS.goldLight : COLORS.metallic, border: "1px solid " + COLORS.metallicBorder, position: "relative", cursor: "pointer", transition: "background .3s" }}>
+                  <div style={{ width: 18, height: 18, borderRadius: 9, background: COLORS.white, position: "absolute", top: 3, transition: "all .3s", left: darkMode ? 3 : undefined, right: darkMode ? undefined : 3, boxShadow: "0 1px 3px rgba(0,0,0,.2)" }} />
+                </div>
+              </div>
+              <ToggleRow label="تذكير بالحضور" storeKey="remind_in" border={true} />
+              <ToggleRow label="تذكير بالانصراف" storeKey="remind_out" border={true} />
+              <FaceResetRow empId={user.id} />
+              <DesktopPairRow user={user} />
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: SPACING.sm + "px 0", borderTop: "1px solid " + COLORS.cardBorder }}>
+                <span style={{ ...TYPOGRAPHY.bodySm, fontWeight: 600, color: COLORS.textPrimary }}>إصدار التطبيق</span>
+                <span style={{ ...TYPOGRAPHY.caption, fontWeight: 800, color: COLORS.goldLight }}>{"v" + VER}</span>
+              </div>
+            </Card>
+
+            <HelpGuideSection />
+
+            <Button variant="secondary" size="md" icon={<Icons.alert size={20} />} onClick={onTicket}>
+              تذكرة دعم جديدة
+            </Button>
+          </>
+        )}
 
         {/* Manager panel button — hidden in desktop session (v6.47) */}
         {(user.isManager || user.isAssistant) && !(user && user._desktopSession) && (
@@ -8514,23 +8526,23 @@ function HomeBanner({ banners, user, onShowAnnouncements, announcements }) {
   return (
     <div onClick={handleClick} style={{
       cursor: "pointer",
-      borderRadius: 16,
-      padding: hasImage ? 0 : "12px 16px",
+      borderRadius: 12,
+      padding: hasImage ? 0 : "7px 12px",
       background: isUrgent
         ? "linear-gradient(135deg, rgba(239,68,68,0.22), rgba(220,38,38,0.14))"
         : isImportant
           ? "linear-gradient(135deg, rgba(245,158,11,0.2), rgba(217,119,6,0.12))"
           : "linear-gradient(135deg, rgba(201,168,76,0.18), rgba(139,105,20,0.1))",
-      border: "1.5px solid " + (isUrgent ? "rgba(239,68,68,0.55)" : isImportant ? "rgba(245,158,11,0.5)" : "rgba(201,168,76,0.45)"),
+      border: "1px solid " + (isUrgent ? "rgba(239,68,68,0.55)" : isImportant ? "rgba(245,158,11,0.5)" : "rgba(201,168,76,0.45)"),
       display: "flex",
       alignItems: "stretch",
-      gap: hasImage ? 0 : 12,
+      gap: hasImage ? 0 : 10,
       opacity: fade ? 1 : 0,
       transition: "opacity 0.4s ease",
       animation: isUrgent ? "basmaBnrUrgent 1.8s ease-in-out infinite" : "basmaBnrGentle 3s ease-in-out infinite",
       position: "relative",
       overflow: "hidden",
-      minHeight: hasImage ? 70 : "auto",
+      minHeight: hasImage ? 50 : "auto",
     }}>
       <style>{`
         @keyframes basmaBnrGentle {
@@ -8544,32 +8556,32 @@ function HomeBanner({ banners, user, onShowAnnouncements, announcements }) {
       `}</style>
 
       {hasImage && (
-        <div style={{ width: 80, minHeight: 70, background: "rgba(0,0,0,0.2)", flexShrink: 0, overflow: "hidden" }}>
+        <div style={{ width: 56, minHeight: 50, background: "rgba(0,0,0,0.2)", flexShrink: 0, overflow: "hidden" }}>
           <img src={current.imageUrl} alt="" style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }} onError={function(e){ e.target.parentNode.style.display = "none"; }} />
         </div>
       )}
 
-      <div style={{ flex: 1, minWidth: 0, padding: hasImage ? "12px 14px" : 0, display: "flex", flexDirection: "column", justifyContent: "center" }}>
-        <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 3 }}>
-          <span style={{ fontSize: 14, flexShrink: 0 }}>{mainIcon}</span>
-          <span style={{ fontSize: 10, fontWeight: 800, color: isUrgent ? "#EF4444" : isImportant ? "#F59E0B" : COLORS.goldLight, fontFamily: "'Tajawal',sans-serif", opacity: 0.95 }}>
+      <div style={{ flex: 1, minWidth: 0, padding: hasImage ? "6px 10px" : 0, display: "flex", flexDirection: "column", justifyContent: "center" }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 5, marginBottom: 2 }}>
+          <span style={{ fontSize: 11, flexShrink: 0 }}>{mainIcon}</span>
+          <span style={{ fontSize: 9, fontWeight: 800, color: isUrgent ? "#EF4444" : isImportant ? "#F59E0B" : COLORS.goldLight, fontFamily: "'Tajawal',sans-serif", opacity: 0.95 }}>
             {labelText}
-            {items.length > 1 && <span style={{ marginRight: 6, opacity: 0.7, fontWeight: 600 }}>· {idx + 1}/{items.length}</span>}
+            {items.length > 1 && <span style={{ marginRight: 5, opacity: 0.7, fontWeight: 600 }}>· {idx + 1}/{items.length}</span>}
           </span>
-          {current.linkUrl && <span style={{ fontSize: 10, color: COLORS.textMuted, marginRight: "auto" }}>🔗</span>}
+          {current.linkUrl && <span style={{ fontSize: 9, color: COLORS.textMuted, marginRight: "auto" }}>🔗</span>}
         </div>
-        <div style={{ fontSize: 13, fontWeight: 700, color: COLORS.textPrimary, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", fontFamily: "'Tajawal',sans-serif" }}>
+        <div style={{ fontSize: 11, fontWeight: 700, color: COLORS.textPrimary, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", fontFamily: "'Tajawal',sans-serif" }}>
           {current.title || current.content || ""}
         </div>
         {current.content && current.content !== current.title && (
-          <div style={{ fontSize: 11, color: COLORS.textMuted, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", fontFamily: "'Tajawal',sans-serif", marginTop: 2 }}>
+          <div style={{ fontSize: 9, color: COLORS.textMuted, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", fontFamily: "'Tajawal',sans-serif", marginTop: 1 }}>
             {current.content}
           </div>
         )}
       </div>
 
       {!hasImage && (
-        <div style={{ fontSize: 18, color: COLORS.textMuted, flexShrink: 0, alignSelf: "center" }}>‹</div>
+        <div style={{ fontSize: 14, color: COLORS.textMuted, flexShrink: 0, alignSelf: "center" }}>‹</div>
       )}
     </div>
   );
@@ -10363,7 +10375,7 @@ function MyTeamPage({ user, allEmps }) {
 }
 
 function BottomNav({ page, setPage, legalAlerts, tawasulUnread, user }) {
-  // v6.56 — Show "فريقي" tab only for managers
+  // v6.56 — Show "فريقي" tab only for managers (alongside امتيازات)
   var isManagerOrAdmin = user && (user.isManager || user.isAssistant || user.isAdmin || user.isGeneralManager);
   var items = [
     { id: "home", icon: Icons.home, label: "الرئيسية" },
@@ -10371,9 +10383,8 @@ function BottomNav({ page, setPage, legalAlerts, tawasulUnread, user }) {
   ];
   if (isManagerOrAdmin) {
     items.push({ id: "team", icon: Icons.users || Icons.user, label: "فريقي" });
-  } else {
-    items.push({ id: "benefits", icon: Icons.medal, label: "الامتيازات" });
   }
+  items.push({ id: "benefits", icon: Icons.medal, label: "الامتيازات" });
   items.push({ id: "report", icon: Icons.chart, label: "تقريري" });
   items.push({ id: "profile", icon: Icons.user, label: "حسابي", badge: legalAlerts || 0 });
   return (
@@ -10382,7 +10393,7 @@ function BottomNav({ page, setPage, legalAlerts, tawasulUnread, user }) {
         var active = page === n.id;
         var IconComp = n.icon;
         return (
-          <button key={n.id} onClick={function(){ setPage(n.id); }} style={{ background: "none", border: "none", display: "flex", flexDirection: "column", alignItems: "center", gap: 2, cursor: "pointer", position: "relative", padding: "4px 12px" }}>
+          <button key={n.id} onClick={function(){ setPage(n.id); }} style={{ background: "none", border: "none", display: "flex", flexDirection: "column", alignItems: "center", gap: 2, cursor: "pointer", position: "relative", padding: "4px 6px", flex: 1 }}>
             {active && <div style={{ position: "absolute", top: -10, left: "50%", transform: "translateX(-50%)", width: 24, height: 3, borderRadius: 2, background: COLORS.gold }} />}
             <div style={{ position: "relative" }}>
               <IconComp size={22} color={active ? COLORS.gold : COLORS.textMuted} />
@@ -10727,11 +10738,9 @@ function MyRequestsTab({ user }) {
         <button onClick={function(){ setShowPerm(true); }} style={{ padding: "10px 4px", borderRadius: 10, background: "rgba(124,58,237,0.15)", border: "1px solid rgba(124,58,237,0.4)", color: "#7C3AED", fontWeight: 800, fontSize: 11, cursor: "pointer", fontFamily: TYPOGRAPHY.fontTajawal }}>⏱ استئذان</button>
         <button onClick={function(){ setShowPreAbs(true); }} style={{ padding: "10px 4px", borderRadius: 10, background: "rgba(217,119,6,0.15)", border: "1px solid rgba(217,119,6,0.4)", color: "#D97706", fontWeight: 800, fontSize: 11, cursor: "pointer", fontFamily: TYPOGRAPHY.fontTajawal }}>🏥 إفادة غياب</button>
       </div>
-      {/* v6.52 — Employment letter self-service */}
-      <div style={{ marginBottom: SPACING.md }}>
-        <button onClick={function(){ exportEmploymentLetter(user, {}); }} style={{ width: "100%", padding: "10px 14px", borderRadius: 10, background: "linear-gradient(135deg, " + COLORS.goldLight + ", " + COLORS.gold + ")", border: "none", color: "#000", fontWeight: 800, fontSize: 12, cursor: "pointer", fontFamily: TYPOGRAPHY.fontTajawal, display: "flex", alignItems: "center", justifyContent: "center", gap: 6 }}>
-          📄 اطبع إفادة تعريف بالعمل (PDF)
-        </button>
+      {/* v6.64 — الإفادات تُصدر من لوحة الإدارة (شؤون الموظفين) */}
+      <div style={{ padding: "10px 14px", marginBottom: SPACING.md, borderRadius: 10, background: "rgba(201,168,76,0.08)", border: "1px dashed rgba(201,168,76,0.3)", fontSize: 10, color: COLORS.textMuted, lineHeight: 1.7, textAlign: "center" }}>
+        📄 لطلب <strong style={{ color: COLORS.goldLight }}>إفادة تعريف بالعمل</strong> أو أي إفادة رسمية — تواصل مع الموارد البشرية عبر تذكرة دعم
       </div>
 
       {/* Filter tabs */}
