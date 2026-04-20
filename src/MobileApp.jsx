@@ -11,7 +11,7 @@ import { exportEmploymentLetter, exportLeaveLetter } from "./formalPdfs";
 
 /* ═══════════ APP CONFIG (إعدادات التطبيق) ═══════════ */
 const APP_CONFIG = {
-  VER: "7.06",
+  VER: "7.07",
   NAME: "بصمة HMA",
   FULL_NAME: "نظام الحضور والانصراف الذكي",
   COMPANY: "هاني محمد عسيري للاستشارات الهندسية",
@@ -8388,6 +8388,23 @@ function MultiAssigneesProgress({ request, myId, onUpdated }) {
                       fontFamily: "inherit",
                     }}>✅ إغلاق جزئي</button>
                   )}
+                </div>
+              )}
+
+              {/* v7.07 — شارة "بانتظار التقييم" الفورية (لمن سلّم ولم يُغلق/يُقيَّم بعد) */}
+              {a.deliveredAt && !a.closedAt && stageIdx < 3 && (
+                <div style={{ marginTop: 8, padding: "6px 10px", borderRadius: 6, background: "rgba(148,163,184,0.12)", border: "1px dashed #94a3b8", fontSize: 10, color: "#64748b", fontWeight: 700, display: "flex", alignItems: "center", gap: 6 }}>
+                  <span>⏳</span>
+                  <span>بانتظار التقييم</span>
+                  <span style={{ marginInlineStart: "auto", fontSize: 9, fontWeight: 600, opacity: 0.8 }}>منذ {relTime(a.deliveredAt)}</span>
+                </div>
+              )}
+
+              {/* v7.07 — شارة "تم التقييم" */}
+              {stageIdx === 3 && !a.closedAt && (
+                <div style={{ marginTop: 8, padding: "6px 10px", borderRadius: 6, background: "rgba(16,185,129,0.08)", border: "1px solid rgba(16,185,129,0.3)", fontSize: 10, color: "#065f46", fontWeight: 700, display: "flex", alignItems: "center", gap: 6 }}>
+                  <span>⭐</span>
+                  <span>مُقيَّم</span>
                 </div>
               )}
 
