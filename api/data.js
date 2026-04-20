@@ -1077,56 +1077,165 @@ export default async function handler(req, res) {
           const profiles = await dbGet('emp-profiles') || {};
           const existingById = Object.fromEntries(existingEmps.map(e => [e.id, e]));
           const updatedEmps = [...existingEmps];
+          const importedSamples = [];
           for (const ke of kd.employees) {
             try {
-              const kId = ke.id || ke.idNumber || ke.uid;
-              if (!kId) { summary.totals.errors++; continue; }
+              // Accept any id format from kadwar
+              const kId = ke.id || ke.idNumber || ke.id_number || ke.uid || ke.username;
+              if (!kId) {
+                summary.totals.errors++;
+                summary.steps.push({ step: 'skip-no-id', sample: ke, at: new Date().toISOString() });
+                continue;
+              }
               // Find or create employee in basma
               const existing = existingById[kId];
               const baseEmp = existing || { id: kId };
+
+              // Normalize — handle both nested (personal.phone) and flat (phone) structures
+              const getPersonal = (k) => (ke.personal && ke.personal[k]) || ke[k];
+              const getEmployment = (k) => (ke.employment && ke.employment[k]) || ke[k];
+              const getComp = (k) => (ke.compensation && ke.compensation[k]) || ke[k];
+              const getContract = (k) => (ke.contract && ke.contract[k]) || ke[k];
+
               const mergedEmp = {
                 ...baseEmp,
-                idNumber: ke.id_number || ke.idNumber || baseEmp.idNumber,
-                name: ke.full_name || ke.fullName || baseEmp.name,
-                email: (ke.personal && ke.personal.email) || ke.email || baseEmp.email,
-                phone: (ke.personal && ke.personal.phone) || ke.phone || baseEmp.phone,
-                role: (ke.employment && ke.employment.job_title) || ke.job_title || baseEmp.role,
-                department: (ke.employment && ke.employment.department) || ke.department || baseEmp.department,
-                branch: (ke.employment && ke.employment.branch) || ke.branch || baseEmp.branch,
+                id: kId,
+                idNumber: ke.id_number || ke.idNumber || baseEmp.idNumber || kId,
+                name: ke.full_name || ke.fullName || ke.name || baseEmp.name,
+                email: getPersonal('email') || baseEmp.email,
+                phone: getPersonal('phone') || baseEmp.phone,
+                role: ke.job_title || ke.jobTitle || ke.role || (ke.employment && ke.employment.job_title) || baseEmp.role,
+                department: getEmployment('department') || baseEmp.department,
+                branch: getEmployment('branch') || baseEmp.branch,
               };
               if (existing) {
                 const idx = updatedEmps.findIndex(e => e.id === kId);
                 if (idx >= 0) updatedEmps[idx] = mergedEmp;
+                else updatedEmps.push(mergedEmp);
               } else {
                 updatedEmps.push(mergedEmp);
               }
-              // Build extended profile
+
+              // Build extended profile — accept both structured and flat data
               profiles[kId] = profiles[kId] || {};
-              if (ke.personal) profiles[kId].personal = { ...(profiles[kId].personal || {}), ...ke.personal, _migratedFrom: 'kadwar', _migratedAt: new Date().toISOString() };
-              if (ke.employment) profiles[kId].employment = { ...(profiles[kId].employment || {}), ...ke.employment, _migratedFrom: 'kadwar' };
-              if (ke.compensation) profiles[kId].compensation = { ...(profiles[kId].compensation || {}), ...ke.compensation, _migratedFrom: 'kadwar' };
-              if (ke.contract) profiles[kId].contract = { ...(profiles[kId].contract || {}), ...ke.contract, _migratedFrom: 'kadwar' };
+              const now = new Date().toISOString();
+
+              // Personal — merge nested + flat fields
+              const personalData = {
+                ...(ke.personal || {}),
+              };
+              // Pull flat fields that belong to personal
+              ['dateOfBirth','date_of_birth','nationality','maritalStatus','marital_status','address','emergencyContact','emergency_contact','idExpiry','id_expiry','fullNameParts','full_name_parts'].forEach(k => {
+                if (ke[k] != null && personalData[k.replace(/_([a-z])/g, (m,c) => c.toUpperCase())] == null) {
+                  const normKey = k.replace(/_([a-z])/g, (m,c) => c.toUpperCase());
+                  personalData[normKey] = ke[k];
+                }
+              });
+              if (Object.keys(personalData).length > 0) {
+                profiles[kId].personal = { ...(profiles[kId].personal || {}), ...personalData, _migratedFrom: 'kadwar', _migratedAt: now };
+              }
+
+              // Employment
+              const employmentData = { ...(ke.employment || {}) };
+              ['hireDate','hire_date','jobGrade','job_grade','workType','work_type','supervisor','jobDescription','job_description'].forEach(k => {
+                if (ke[k] != null) {
+                  const normKey = k.replace(/_([a-z])/g, (m,c) => c.toUpperCase());
+                  if (employmentData[normKey] == null) employmentData[normKey] = ke[k];
+                }
+              });
+              if (Object.keys(employmentData).length > 0) {
+                profiles[kId].employment = { ...(profiles[kId].employment || {}), ...employmentData, _migratedFrom: 'kadwar', _migratedAt: now };
+              }
+
+              // Compensation
+              const compData = { ...(ke.compensation || {}) };
+              ['basicSalary','basic_salary','salary','housingAllowance','housing_allowance','transportAllowance','transport_allowance','communicationsAllowance','communications_allowance','otherAllowances','other_allowances','iban','bankName','bank_name','totalSalary','total_salary'].forEach(k => {
+                if (ke[k] != null) {
+                  const normKey = k.replace(/_([a-z])/g, (m,c) => c.toUpperCase());
+                  if (compData[normKey] == null) compData[normKey] = ke[k];
+                }
+              });
+              if (Object.keys(compData).length > 0) {
+                profiles[kId].compensation = { ...(profiles[kId].compensation || {}), ...compData, _migratedFrom: 'kadwar', _migratedAt: now };
+              }
+
+              // Contract
+              const contractData = { ...(ke.contract || {}) };
+              ['startDate','start_date','contractStart','contract_start','endDate','end_date','contractEnd','contract_end','type','contractType','contract_type'].forEach(k => {
+                if (ke[k] != null) {
+                  const normKey = k.replace(/_([a-z])/g, (m,c) => c.toUpperCase());
+                  if (contractData[normKey] == null) contractData[normKey] = ke[k];
+                }
+              });
+              if (Object.keys(contractData).length > 0) {
+                profiles[kId].contract = { ...(profiles[kId].contract || {}), ...contractData, _migratedFrom: 'kadwar', _migratedAt: now };
+              }
+
               summary.totals.imported++;
+              if (importedSamples.length < 3) importedSamples.push({ id: kId, name: mergedEmp.name, sections: Object.keys(profiles[kId]) });
             } catch (err) {
               summary.totals.errors++;
+              summary.steps.push({ step: 'error', error: err.message, at: new Date().toISOString() });
             }
           }
           // 3. Save
-          await dbSet('employees', updatedEmps);
-          await dbSet('emp-profiles', profiles);
+          try {
+            await dbSet('employees', updatedEmps);
+            summary.steps.push({ step: 'employees-saved', count: updatedEmps.length, at: new Date().toISOString() });
+          } catch (e) {
+            summary.error = 'فشل حفظ الموظفين: ' + e.message;
+            return res.status(500).json(summary);
+          }
+          try {
+            await dbSet('emp-profiles', profiles);
+            summary.steps.push({ step: 'profiles-saved', count: Object.keys(profiles).length, at: new Date().toISOString() });
+          } catch (e) {
+            summary.error = 'فشل حفظ الـ profiles: ' + e.message;
+            return res.status(500).json(summary);
+          }
           // 4. Mark migration as done
           await dbSet('kadwar-migration-status', {
             completedAt: new Date().toISOString(),
             totals: summary.totals,
             kadwar_export_date: kd.export_date,
+            samples: importedSamples,
           });
-          summary.steps.push({ step: 'saved', at: new Date().toISOString() });
+          summary.samples = importedSamples;
           summary.completedAt = new Date().toISOString();
           summary.ok = true;
           return res.json(summary);
         } catch (e) {
           summary.error = e.message;
           return res.status(500).json(summary);
+        }
+      }
+
+      // ═══ تشخيص: ماذا يُرسله كوادر بالضبط ═══
+      case 'kadwar-debug-export': {
+        if (req.method !== 'GET') return res.status(405).json({ error: 'GET required' });
+        try {
+          const kr = await fetch('https://hma.engineer/api/basma-sync?action=full-export', { method: 'GET' });
+          if (!kr.ok) return res.status(502).json({ error: 'فشل جلب البيانات: ' + kr.status, statusText: kr.statusText });
+          const kd = await kr.json();
+          // Return sample + structure analysis
+          const sample = (kd.employees && kd.employees[0]) || {};
+          const allKeys = kd.employees ? [...new Set(kd.employees.flatMap(e => Object.keys(e)))] : [];
+          return res.json({
+            ok: true,
+            kadwar_response_keys: Object.keys(kd),
+            employees_count: kd.employees ? kd.employees.length : 0,
+            first_employee_sample: sample,
+            first_employee_keys: Object.keys(sample),
+            first_employee_nested_keys: {
+              personal: sample.personal ? Object.keys(sample.personal) : null,
+              employment: sample.employment ? Object.keys(sample.employment) : null,
+              compensation: sample.compensation ? Object.keys(sample.compensation) : null,
+              contract: sample.contract ? Object.keys(sample.contract) : null,
+            },
+            all_fields_across_employees: allKeys,
+          });
+        } catch (e) {
+          return res.status(500).json({ error: e.message });
         }
       }
 
