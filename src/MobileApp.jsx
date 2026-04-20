@@ -11,7 +11,7 @@ import { exportEmploymentLetter, exportLeaveLetter } from "./formalPdfs";
 
 /* ═══════════ APP CONFIG (إعدادات التطبيق) ═══════════ */
 const APP_CONFIG = {
-  VER: "7.14",
+  VER: "7.15",
   NAME: "بصمة HMA",
   FULL_NAME: "نظام الحضور والانصراف الذكي",
   COMPANY: "هاني محمد عسيري للاستشارات الهندسية",
@@ -2789,6 +2789,12 @@ function ReportPage({ user, allAtt, todayAtt, branch, isOffDay, myLeaves, allEmp
         <ViolationsCard user={user} />
         <DelegationCard user={user} />
 
+        {/* v7.15 — تقييماتي انتقلت من حسابي إلى تقريري (هنا) */}
+        <div style={{ marginTop: SPACING.md, paddingTop: SPACING.md, borderTop: "1px dashed " + COLORS.metallicBorder }}>
+          <div style={{ ...TYPOGRAPHY.h3, color: COLORS.textPrimary, fontFamily: TYPOGRAPHY.fontCairo, marginBottom: SPACING.sm, textAlign: "center" }}>⭐ تقييماتي</div>
+          <MyEvalsHub user={user} />
+        </div>
+
         <Button variant="primary" size="md" icon={<Icons.chart size={20} />} onClick={exportCSV}>
           تصدير التقرير
         </Button>
@@ -2884,10 +2890,18 @@ function ManagersCard({ user }) {
 }
 
 function ProfilePage({ user, branch, workType, onLogout, onTicket, myTickets, darkMode, toggleDark, kadwarNotifs }) {
-  // v7.14 — legacy tab IDs remapped (info→profile, my_leaves→time, my_salary→pay, my_evals→perf, requests→tickets, docs→pay, legal→perf)
+  // v7.15 — legacy tab IDs remapped to new 5-tab structure
+  // Old (v7.14): profile/time/pay/perf/tickets → New (v7.15): profile/records/achievements/pay/legal
+  // Older (v6.x): info/my_leaves/my_salary/my_evals/requests/docs/legal → mapped accordingly
   var [tab, setTab] = useState(function(){
     var saved = localStorage.getItem("basma_profile_tab") || "profile";
-    var legacyMap = { info: "profile", my_leaves: "time", my_salary: "pay", my_evals: "perf", requests: "tickets", docs: "pay", legal: "perf" };
+    var legacyMap = {
+      // v6.x → v7.15
+      info: "profile", my_leaves: "records", my_salary: "pay",
+      my_evals: "legal", requests: "records", docs: "pay", legal: "legal",
+      // v7.14 → v7.15
+      time: "records", perf: "legal", tickets: "records",
+    };
     return legacyMap[saved] || saved;
   });
   var [kadwarFlip, setKadwarFlip] = useState(false);
@@ -2897,8 +2911,11 @@ function ProfilePage({ user, branch, workType, onLogout, onTicket, myTickets, da
   useEffect(function() {
     function handleTabChange() {
       var saved = localStorage.getItem("basma_profile_tab");
-      // v7.14 — apply legacy mapping for old IDs stored before migration
-      var legacyMap = { info: "profile", my_leaves: "time", my_salary: "pay", my_evals: "perf", requests: "tickets", docs: "pay", legal: "perf" };
+      var legacyMap = {
+        info: "profile", my_leaves: "records", my_salary: "pay",
+        my_evals: "legal", requests: "records", docs: "pay", legal: "legal",
+        time: "records", perf: "legal", tickets: "records",
+      };
       if (saved) setTab(legacyMap[saved] || saved);
     }
     window.addEventListener("basma:profile-tab-changed", handleTabChange);
@@ -2922,14 +2939,13 @@ function ProfilePage({ user, branch, workType, onLogout, onTicket, myTickets, da
     ["الالتحاق", user.joinDate || "—"],
     ["النقاط", badge.icon + " " + (user.points || 0) + " نقطة"],
   ];
-  // v7.14 — IA restructure: 7→5 tabs (content redistributed — no deletions)
-  // profile = info | time = my_leaves | pay = my_salary + docs | perf = my_evals + legal | tickets = requests
+  // v7.15 — IA restructure: 5 tabs (records merges time+tickets+employee_record, achievements is separate, perf becomes legal)
   var tabs = [
-    { id: "profile", emoji: "👤", label: "ملفي" },
-    { id: "time",    emoji: "📅", label: "الحضور والإجازات" },
-    { id: "pay",     emoji: "💰", label: "الأجر والاستحقاقات" },
-    { id: "perf",    emoji: "🎯", label: "الأداء والتطوير" },
-    { id: "tickets", emoji: "📨", label: "الطلبات والتذاكر" },
+    { id: "profile",      emoji: "👤", label: "ملفي" },
+    { id: "records",      emoji: "📋", label: "سجلي وطلباتي" },
+    { id: "achievements", emoji: "🏆", label: "إنجازاتي" },
+    { id: "pay",          emoji: "💰", label: "الأجر والاستحقاقات" },
+    { id: "legal",        emoji: "⚖️", label: "الشؤون القانونية" },
   ];
 
   return (
@@ -3047,18 +3063,8 @@ function ProfilePage({ user, branch, workType, onLogout, onTicket, myTickets, da
 
             <HelpGuideSection />
 
-            {/* v6.95 — merged from old "achievements" tab */}
-            <div style={{ marginTop: SPACING.md, paddingTop: SPACING.md, borderTop: "1px dashed " + COLORS.metallicBorder }}>
-              <div style={{ ...TYPOGRAPHY.h3, color: COLORS.textPrimary, fontFamily: TYPOGRAPHY.fontCairo, marginBottom: SPACING.sm, textAlign: "center" }}>🏆 إنجازاتي</div>
-              <PointsLogCard user={user} allAtt={[]} />
-              <AchievementsCard user={user} />
-            </div>
-
-            {/* v6.95 — merged from old "السجل الوظيفي" (was inside الطلبات) */}
-            <div style={{ marginTop: SPACING.md, paddingTop: SPACING.md, borderTop: "1px dashed " + COLORS.metallicBorder }}>
-              <div style={{ ...TYPOGRAPHY.h3, color: COLORS.textPrimary, fontFamily: TYPOGRAPHY.fontCairo, marginBottom: SPACING.sm, textAlign: "center" }}>📚 سجلي الوظيفي</div>
-              <EmployeeRecordTab user={user} />
-            </div>
+            {/* v7.15 — إنجازاتي انتقل لتبويب achievements مستقل */}
+            {/* v7.15 — السجل الوظيفي انتقل لتبويب records مع الطلبات والإجازات */}
 
             <Button variant="secondary" size="md" icon={<Icons.alert size={20} />} onClick={onTicket}>
               تذكرة دعم جديدة
@@ -3067,10 +3073,7 @@ function ProfilePage({ user, branch, workType, onLogout, onTicket, myTickets, da
         )}
 
         {/* v6.95 — "requests" now only shows permissions + preabs (leaves moved to إجازاتي hub) */}
-        {/* v7.14 — tab: tickets (كان requests) — نفس المحتوى */}
-        {tab === "tickets" && (
-          <MyRequestsTab user={user} />
-        )}
+        {/* v7.15 — tickets tab removed (merged into records) */}
 
         {/* v6.95 — "achievements" tab removed (merged into "بياناتي") — keep handler as no-op for old links */}
 
@@ -3084,23 +3087,39 @@ function ProfilePage({ user, branch, workType, onLogout, onTicket, myTickets, da
 
         {/* v6.95 — Manager evaluations — merged inside my_evals hub below */}
 
-        {/* v7.14 — tab: perf (كان my_evals + legal مدموجين) */}
-        {tab === "perf" && (
+        {/* v7.15 — tab: legal (الشؤون القانونية) — تقييماتي انتقلت لتقريري في BottomNav */}
+        {tab === "legal" && (
           <>
-            <MyEvalsHub user={user} />
+            <LegalTab user={user} />
             <div style={{ marginTop: SPACING.lg, paddingTop: SPACING.md, borderTop: "1px dashed " + COLORS.metallicBorder }}>
-              <LegalTab user={user} />
-              <div style={{ marginTop: SPACING.lg, paddingTop: SPACING.md, borderTop: "1px dashed " + COLORS.metallicBorder }}>
-                <div style={{ ...TYPOGRAPHY.h3, color: COLORS.textPrimary, fontFamily: TYPOGRAPHY.fontCairo, marginBottom: SPACING.md, textAlign: "center" }}>📖 السياسات والأسئلة الشائعة</div>
-                <PoliciesTab user={user} />
-              </div>
+              <div style={{ ...TYPOGRAPHY.h3, color: COLORS.textPrimary, fontFamily: TYPOGRAPHY.fontCairo, marginBottom: SPACING.md, textAlign: "center" }}>📖 السياسات والأسئلة الشائعة</div>
+              <PoliciesTab user={user} />
             </div>
           </>
         )}
 
-        {/* v7.14 — tab: time (كان my_leaves) — نفس المحتوى */}
-        {tab === "time" && (
-          <MyLeavesHub user={user} />
+        {/* v7.15 — tab: records (سجلي وطلباتي) — يدمج الإجازات + الطلبات + السجل الوظيفي */}
+        {tab === "records" && (
+          <>
+            <MyRequestsTab user={user} />
+            <div style={{ marginTop: SPACING.lg, paddingTop: SPACING.md, borderTop: "1px dashed " + COLORS.metallicBorder }}>
+              <div style={{ ...TYPOGRAPHY.h3, color: COLORS.textPrimary, fontFamily: TYPOGRAPHY.fontCairo, marginBottom: SPACING.sm, textAlign: "center" }}>🏖️ الإجازات والاستئذانات</div>
+              <MyLeavesHub user={user} />
+            </div>
+            <div style={{ marginTop: SPACING.lg, paddingTop: SPACING.md, borderTop: "1px dashed " + COLORS.metallicBorder }}>
+              <div style={{ ...TYPOGRAPHY.h3, color: COLORS.textPrimary, fontFamily: TYPOGRAPHY.fontCairo, marginBottom: SPACING.sm, textAlign: "center" }}>📚 السجل الوظيفي</div>
+              <EmployeeRecordTab user={user} />
+            </div>
+          </>
+        )}
+
+        {/* v7.15 — tab: achievements (إنجازاتي مستقل) */}
+        {tab === "achievements" && (
+          <>
+            <div style={{ ...TYPOGRAPHY.h3, color: COLORS.textPrimary, fontFamily: TYPOGRAPHY.fontCairo, marginBottom: SPACING.sm, textAlign: "center" }}>🏆 إنجازاتي</div>
+            <PointsLogCard user={user} allAtt={[]} />
+            <AchievementsCard user={user} />
+          </>
         )}
 
         {/* v6.95 — tab "handover_tasks" محذوف: دُمج داخل "إجازاتي" */}
@@ -3117,21 +3136,24 @@ function ProfilePage({ user, branch, workType, onLogout, onTicket, myTickets, da
           </>
         )}
 
-        {/* Manager panel button — hidden in desktop session (v6.47) */}
-        {(user.isManager || user.isAssistant) && !(user && user._desktopSession) && (
-          <Button variant="primary" size="md" icon={<Icons.building size={20} />} onClick={function(){ window.location.hash = "admin"; }}>
-            لوحة الإدارة
-          </Button>
-        )}
+        {/* v7.15 — System actions (admin/logout/footer) shown ONLY in profile tab */}
+        {tab === "profile" && (
+          <>
+            {/* Manager panel button — hidden in desktop session (v6.47) */}
+            {(user.isManager || user.isAssistant) && !(user && user._desktopSession) && (
+              <Button variant="primary" size="md" icon={<Icons.building size={20} />} onClick={function(){ window.location.hash = "admin"; }}>
+                لوحة الإدارة
+              </Button>
+            )}
 
-        {/* Logout */}
-        <Button variant="danger" size="md" onClick={onLogout}>
-          تسجيل خروج
-        </Button>
+            {/* Logout */}
+            <Button variant="danger" size="md" onClick={onLogout}>
+              تسجيل خروج
+            </Button>
 
-        {/* Footer — with HMA logo (v6.73) + clickable to open About (v6.74) */}
-        <Card padding={SPACING.md}>
-          <div onClick={function(){ setShowAbout(true); }} style={{ textAlign: "center", cursor: "pointer" }}>
+            {/* Footer — with HMA logo (v6.73) + clickable to open About (v6.74) */}
+            <Card padding={SPACING.md}>
+              <div onClick={function(){ setShowAbout(true); }} style={{ textAlign: "center", cursor: "pointer" }}>
             <div style={{ width: 64, height: 64, margin: "0 auto 10px", borderRadius: "50%", overflow: "hidden", boxShadow: "0 4px 14px rgba(0,0,0,0.3)" }}>
               <img src="/app-icon-192.png" alt="بصمة HMA" style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }} />
             </div>
@@ -3142,6 +3164,9 @@ function ProfilePage({ user, branch, workType, onLogout, onTicket, myTickets, da
             <div style={{ fontSize: 10, color: COLORS.goldLight, marginTop: 6, fontWeight: 700 }}>ℹ️ عن التطبيق ›</div>
           </div>
         </Card>
+
+          </>
+        )}
 
         {showAbout && <AboutAppModal onClose={function(){ setShowAbout(false); }} onTicket={onTicket} />}
       </div>
