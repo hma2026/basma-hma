@@ -4,7 +4,7 @@ import { generateAttendanceReport, generateEmployeeReport, generateMonthlySummar
 import { exportFormalWarning, exportInvestigationRecord, exportAffidavit, exportEmploymentLetter, exportSalaryLetter, exportLeaveLetter } from "./formalPdfs";
 
 const APP = "بصمة HMA";
-const VER = "7.30";
+const VER = "7.31";
 const CO = "هاني محمد عسيري للإستشارات الهندسية";
 const B = { blue: "#2B5EA7", yellow: "#FDD800", red: "#E2192C", black: "#1A1A1A", blueDk: "#1E4478", blueLt: "#EDF3FB", gold: "#D4A017" };
 
@@ -3142,43 +3142,34 @@ function BackupPanel({ t, B }) {
 
       setProgress("📦 تحضير " + fmtSize(totalSize) + " (" + totalKeys + " عنصر)...");
 
-      // 2. رفع مباشر إلى Vercel Blob
-      var { upload } = await import("@vercel/blob/client");
+      // v7.31: chunked upload via Redis → R2 (no @vercel/blob)
       var json = JSON.stringify(allData);
       var backupId = "basma-" + new Date().toISOString().slice(0, 19).replace(/[:T]/g, "-");
+      var base64 = btoa(unescape(encodeURIComponent(json)));
+      var CHUNK = 2 * 1024 * 1024;
+      var totalChunks = Math.ceil(base64.length / CHUNK);
+      var sessionId = Date.now() + '_' + Math.random().toString(36).substring(2, 8);
 
-      setProgress("📤 رفع " + fmtSize(json.length) + "...");
+      for (var ci = 0; ci < totalChunks; ci++) {
+        setProgress("📤 رفع الجزء " + (ci + 1) + " من " + totalChunks + "...");
+        var chunkData = base64.substring(ci * CHUNK, (ci + 1) * CHUNK);
+        var cr = await fetch("/api/backup?action=upload-chunk", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ sessionId: sessionId, chunkIndex: ci, totalChunks: totalChunks, data: chunkData }),
+        });
+        var cResult = await cr.json();
+        if (!cResult.ok) throw new Error("فشل رفع الجزء " + (ci + 1));
+      }
 
-      var blob = await upload(
-        "basma-backup/" + backupId + ".json",
-        new Blob([json], { type: "application/json" }),
-        {
-          access: "public",
-          handleUploadUrl: "/api/backup-upload",
-          onUploadProgress: function(p) {
-            var pct = p.percentage || Math.round((p.loaded / p.total) * 100);
-            setProgress("📤 " + (p.loaded / 1024 / 1024).toFixed(1) + " / " + (p.total / 1024 / 1024).toFixed(1) + " MB (" + pct + "%)");
-          },
-        }
-      );
-
-      setProgress("⏳ تسجيل النسخة...");
-
-      // 3. تسجيل النسخة
-      var regRes = await fetch("/api/backup?action=register", {
+      setProgress("⏳ تجميع وتسجيل النسخة...");
+      var finRes = await fetch("/api/backup?action=upload-finalize", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          backupId: backupId,
-          url: blob.url,
-          size: json.length,
-          pathname: blob.pathname,
-          scope: "all",
-          keys: Object.keys(allData),
-        }),
+        body: JSON.stringify({ sessionId: sessionId, totalChunks: totalChunks, backupId: backupId, scope: "all", keys: Object.keys(allData) }),
       });
-
-      if (!regRes.ok) throw new Error("فشل التسجيل");
+      var finResult = await finRes.json();
+      if (!finResult.success) throw new Error(finResult.error || "فشل التسجيل");
 
       setMsg({ type: "success", text: "✅ تم الحفظ بنجاح — " + fmtSize(json.length) + " (" + totalKeys + " عنصر)" });
       setProgress("");
@@ -3281,40 +3272,34 @@ function BackupPanel({ t, B }) {
 
       if (!data || typeof data !== "object") throw new Error("بيانات غير صحيحة");
 
-      // رفع للسحابة كنسخة جديدة
-      var { upload } = await import("@vercel/blob/client");
+      // v7.31: chunked upload via Redis → R2 (no @vercel/blob)
       var json = JSON.stringify(data);
       var backupId = "uploaded-" + new Date().toISOString().slice(0, 19).replace(/[:T]/g, "-");
+      var base64 = btoa(unescape(encodeURIComponent(json)));
+      var CHUNK = 2 * 1024 * 1024;
+      var totalChunks = Math.ceil(base64.length / CHUNK);
+      var sessionId = Date.now() + '_' + Math.random().toString(36).substring(2, 8);
 
-      setProgress("📤 رفع الملف للسحابة...");
+      for (var ci = 0; ci < totalChunks; ci++) {
+        setProgress("📤 رفع الجزء " + (ci + 1) + " من " + totalChunks + "...");
+        var chunkData = base64.substring(ci * CHUNK, (ci + 1) * CHUNK);
+        var cr = await fetch("/api/backup?action=upload-chunk", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ sessionId: sessionId, chunkIndex: ci, totalChunks: totalChunks, data: chunkData }),
+        });
+        var cResult = await cr.json();
+        if (!cResult.ok) throw new Error("فشل رفع الجزء " + (ci + 1));
+      }
 
-      var blob = await upload(
-        "basma-backup/" + backupId + ".json",
-        new Blob([json], { type: "application/json" }),
-        {
-          access: "public",
-          handleUploadUrl: "/api/backup-upload",
-          onUploadProgress: function(p) {
-            var pct = p.percentage || Math.round((p.loaded / p.total) * 100);
-            setProgress("📤 " + pct + "%");
-          },
-        }
-      );
-
-      var regRes = await fetch("/api/backup?action=register", {
+      setProgress("⏳ تجميع وتسجيل...");
+      var finRes = await fetch("/api/backup?action=upload-finalize", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          backupId: backupId,
-          url: blob.url,
-          size: json.length,
-          pathname: blob.pathname,
-          scope: "uploaded",
-          keys: Object.keys(data),
-        }),
+        body: JSON.stringify({ sessionId: sessionId, totalChunks: totalChunks, backupId: backupId, scope: "uploaded", keys: Object.keys(data) }),
       });
-
-      if (!regRes.ok) throw new Error("فشل تسجيل الملف");
+      var finResult = await finRes.json();
+      if (!finResult.success) throw new Error(finResult.error || "فشل تسجيل الملف");
 
       setMsg({ type: "success", text: "✅ تم رفع " + Object.keys(data).length + " عنصر. يمكنك الآن استعادتها من القائمة." });
       setProgress("");

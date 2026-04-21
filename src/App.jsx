@@ -168,18 +168,75 @@ function UpdateScreen() {
   const doUpload = async () => {
     if (!file) return;
     setStatus("uploading");
-    setMsg("جارِ رفع الملف وتحديث GitHub...");
+
     try {
+      /* ═══════════════════════════════════════════════════════════════════
+       *  ⚠️ DO NOT MODIFY — نظام رفع حرج ومستقر (v7.31)
+       *  ⚠️ DO NOT use @vercel/blob — chunked upload via Redis only
+       *  المسار: المتصفح يقسّم الملف → يرسل أجزاء صغيرة → Redis مؤقتاً
+       *  ثم: API يجمّع → يفكّ → يرفع لـ GitHub → Vercel يبني تلقائياً
+       * ═══════════════════════════════════════════════════════════════════ */
+
+      setMsg("جارِ قراءة الملف...");
       const base64 = await new Promise((resolve, reject) => {
         const reader = new FileReader();
         reader.onload = (e) => resolve(e.target.result.split(',')[1]);
         reader.onerror = () => reject(new Error("فشل قراءة الملف"));
         reader.readAsDataURL(file);
       });
+
+      const CHUNK_SIZE = 2 * 1024 * 1024; // 2MB per chunk (safe for Vercel 4.5MB payload)
+      const totalChunks = Math.ceil(base64.length / CHUNK_SIZE);
+
+      if (totalChunks <= 1) {
+        // Small file — direct upload (no chunking needed)
+        setMsg("جارِ رفع الملف وتحديث GitHub...");
+        const r = await fetch('/api/update', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ zip: base64 }),
+        });
+        const text = await r.text();
+        var data;
+        try { data = JSON.parse(text); } catch { data = { error: text.substring(0, 200) }; }
+        if (data.success) {
+          setStatus("success");
+          setMsg("تم التحديث بنجاح! Vercel يبني الآن...");
+          setDetails(data);
+        } else {
+          setStatus("error");
+          setMsg(data.error || "حدث خطأ");
+          setDetails(data);
+        }
+        return;
+      }
+
+      // Large file — chunked upload
+      const sessionId = Date.now() + '_' + Math.random().toString(36).substring(2, 8);
+
+      // Send chunks
+      for (let i = 0; i < totalChunks; i++) {
+        setMsg("جارِ رفع الجزء " + (i + 1) + " من " + totalChunks + "...");
+        const chunkData = base64.substring(i * CHUNK_SIZE, (i + 1) * CHUNK_SIZE);
+        const r = await fetch('/api/update', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ action: 'chunk', sessionId, chunkIndex: i, totalChunks, data: chunkData }),
+        });
+        const result = await r.json();
+        if (!result.ok) {
+          setStatus("error");
+          setMsg(result.error || "فشل رفع الجزء " + (i + 1));
+          return;
+        }
+      }
+
+      // Finalize — assemble and push to GitHub
+      setMsg("جارِ تجميع الملف ورفعه إلى GitHub...");
       const r = await fetch('/api/update', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ zip: base64 }),
+        body: JSON.stringify({ action: 'finalize', sessionId, totalChunks }),
       });
       const text = await r.text();
       var data;
@@ -190,7 +247,7 @@ function UpdateScreen() {
         setDetails(data);
       } else {
         setStatus("error");
-        setMsg(data.error || "حدث خطأ — status " + r.status);
+        setMsg(data.error || "حدث خطأ");
         setDetails(data);
       }
     } catch (err) {
@@ -211,7 +268,7 @@ function UpdateScreen() {
         )}
       </div>
       <div style={{ fontSize: 22, fontWeight: 700 }}>تحديث النظام</div>
-      <div style={{ fontSize: 13, color: "#6E6E73", marginTop: 6 }}>بصمة HMA v7.30 — Pipeline كامل لكل مكلَّف على حدة</div>
+      <div style={{ fontSize: 13, color: "#6E6E73", marginTop: 6 }}>بصمة HMA v7.31 — Pipeline كامل لكل مكلَّف على حدة</div>
       
       <div style={{ marginTop: 20, width: "100%", maxWidth: 400 }}>
         <div style={{ background: "#FFFFFF", borderRadius: 14, padding: 20, border: "1px solid rgba(0,0,0,0.05)", boxShadow: "0 1px 3px rgba(0,0,0,0.08)" }}>
@@ -269,7 +326,7 @@ function UpdateScreen() {
       </div>
 
       <button onClick={() => { window.location.hash = ""; window.location.search = ""; }} style={{ marginTop: 20, padding: "10px 24px", borderRadius: 12, background: "#FFFFFF", border: "1px solid #E5E5EA", color: "#0A84FF", fontSize: 15, fontWeight: 600, cursor: "pointer" }}>رجوع للتطبيق</button>
-      <div style={{ marginTop: 12, fontSize: 11, color: "#8E8E93" }}>v7.30 · basma-hma.vercel.app</div>
+      <div style={{ marginTop: 12, fontSize: 11, color: "#8E8E93" }}>v7.31 · basma-hma.vercel.app</div>
     </div>
   );
 }

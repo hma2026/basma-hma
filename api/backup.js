@@ -1,238 +1,267 @@
-// backup.js — Backup API for Basma HMA using Vercel Blob
-// v6.77 — Mirror of Kawader's proven backup system
+/* ═══════════════════════════════════════════════════════════════════
+ *  api/backup.js — Backup API using Cloudflare R2 + Upstash Redis
+ * ═══════════════════════════════════════════════════════════════════
+ *  ⚠️ DO NOT use @vercel/blob or @vercel/kv — R2 + Redis only (v7.31)
+ *
+ *  Actions:
+ *    upload-chunk   — accept chunk of backup data (stores in Redis temp)
+ *    upload-finalize — assemble chunks, store in R2, register metadata
+ *    register       — register a backup (metadata in Redis)
+ *    list           — list all backups
+ *    load           — download backup data (returns R2 public URL)
+ *    restore        — read backup from R2, write to Redis
+ *    delete         — delete from R2 + Redis metadata
+ *    info           — storage info
+ * ═══════════════════════════════════════════════════════════════════ */
 
-export const config = { runtime: "nodejs", maxDuration: 60 };
+import crypto from 'crypto';
 
-const PFX_MANIFEST = "basma-manifest/";
-const PFX_BACKUP = "basma-backup/";
+export const config = { runtime: "nodejs", maxDuration: 60, api: { bodyParser: { sizeLimit: '4mb' } } };
 
+/* ────── Environment ────── */
+const REDIS_URL = (process.env.UPSTASH_REDIS_REST_URL || '').trim();
+const REDIS_TOKEN = (process.env.UPSTASH_REDIS_REST_TOKEN || '').trim();
+const R2_ACCOUNT_ID = (process.env.R2_ACCOUNT_ID || '').trim();
+const R2_ACCESS_KEY = (process.env.R2_ACCESS_KEY_ID || '').trim();
+const R2_SECRET_KEY = (process.env.R2_SECRET_ACCESS_KEY || '').trim();
+const R2_BUCKET = (process.env.R2_BUCKET || 'basma-hma').trim();
+const R2_PUBLIC_URL = (process.env.R2_PUBLIC_URL || '').trim();
+const USE_R2 = !!(R2_ACCOUNT_ID && R2_ACCESS_KEY && R2_SECRET_KEY);
+const SYSTEM = (process.env.STORAGE_PREFIX || 'basma').trim();
+const PFX = SYSTEM + ':';
+const META_KEY = PFX + 'backup_manifests';
+const KEEP_MAX = 5;
+
+/* ────── Redis ────── */
+async function redis(cmd, ...args) {
+  var r = await fetch(REDIS_URL, {
+    method: 'POST',
+    headers: { 'Authorization': 'Bearer ' + REDIS_TOKEN, 'Content-Type': 'application/json' },
+    body: JSON.stringify([cmd, ...args]),
+  });
+  if (!r.ok) throw new Error('Redis ' + cmd + ': ' + r.status);
+  return (await r.json()).result;
+}
+
+/* ────── R2 via AWS SigV4 ────── */
+function r2Sign(method, path, body, contentType) {
+  var host = R2_ACCOUNT_ID + '.r2.cloudflarestorage.com';
+  var url = 'https://' + host + '/' + R2_BUCKET + path;
+  var date = new Date();
+  var amzDate = date.toISOString().replace(/[:\-]|\.\d{3}/g, '');
+  var dateStamp = amzDate.slice(0, 8);
+  var encoder = new TextEncoder();
+  var bodyBytes = body instanceof Uint8Array ? body : typeof body === 'string' ? encoder.encode(body) : new Uint8Array(body || []);
+  var payloadHash = crypto.createHash('sha256').update(bodyBytes).digest('hex');
+  var canonicalHeaders = 'host:' + host + '\nx-amz-content-sha256:' + payloadHash + '\nx-amz-date:' + amzDate + '\n';
+  if (contentType) canonicalHeaders = 'content-type:' + contentType + '\n' + canonicalHeaders;
+  var signedHeaders = contentType ? 'content-type;host;x-amz-content-sha256;x-amz-date' : 'host;x-amz-content-sha256;x-amz-date';
+  var canonicalRequest = method + '\n/' + R2_BUCKET + path + '\n\n' + canonicalHeaders + '\n' + signedHeaders + '\n' + payloadHash;
+  var credentialScope = dateStamp + '/auto/s3/aws4_request';
+  var stringToSign = 'AWS4-HMAC-SHA256\n' + amzDate + '\n' + credentialScope + '\n' + crypto.createHash('sha256').update(canonicalRequest).digest('hex');
+  var kDate = crypto.createHmac('sha256', 'AWS4' + R2_SECRET_KEY).update(dateStamp).digest();
+  var kRegion = crypto.createHmac('sha256', kDate).update('auto').digest();
+  var kService = crypto.createHmac('sha256', kRegion).update('s3').digest();
+  var kSigning = crypto.createHmac('sha256', kService).update('aws4_request').digest();
+  var signature = crypto.createHmac('sha256', kSigning).update(stringToSign).digest('hex');
+  var authorization = 'AWS4-HMAC-SHA256 Credential=' + R2_ACCESS_KEY + '/' + credentialScope + ', SignedHeaders=' + signedHeaders + ', Signature=' + signature;
+  var headers = { 'Authorization': authorization, 'x-amz-content-sha256': payloadHash, 'x-amz-date': amzDate };
+  if (contentType) headers['Content-Type'] = contentType;
+  return { url, headers, body: bodyBytes };
+}
+
+async function r2Put(key, data, ct) {
+  var s = r2Sign('PUT', '/' + key, data, ct || 'application/json');
+  var r = await fetch(s.url, { method: 'PUT', headers: s.headers, body: s.body });
+  if (!r.ok) throw new Error('R2 PUT failed: ' + r.status);
+  return R2_PUBLIC_URL ? R2_PUBLIC_URL + '/' + key : s.url;
+}
+
+async function r2Get(key) {
+  var s = r2Sign('GET', '/' + key, '');
+  var r = await fetch(s.url, { method: 'GET', headers: s.headers });
+  if (!r.ok) return null;
+  return await r.text();
+}
+
+async function r2Del(key) {
+  var s = r2Sign('DELETE', '/' + key, '');
+  await fetch(s.url, { method: 'DELETE', headers: s.headers });
+}
+
+/* ────── Metadata helpers ────── */
+async function getManifests() {
+  var raw = await redis('GET', META_KEY);
+  if (!raw) return [];
+  try { return JSON.parse(raw); } catch { return []; }
+}
+
+async function saveManifests(list) {
+  await redis('SET', META_KEY, JSON.stringify(list));
+}
+
+/* ────── Handler ────── */
 export default async function handler(req, res) {
   res.setHeader("Access-Control-Allow-Origin", "*");
   res.setHeader("Access-Control-Allow-Methods", "GET, POST, DELETE, OPTIONS");
   res.setHeader("Access-Control-Allow-Headers", "Content-Type");
-
   if (req.method === "OPTIONS") return res.status(200).end();
 
+  if (!REDIS_URL || !REDIS_TOKEN) return res.json({ error: 'Redis غير مفعّل' });
+
   try {
-    const { put, list, del } = await import("@vercel/blob");
-    const action = req.query.action;
+    var action = req.query.action;
 
-    /* ─── REGISTER — تسجيل نسخة بعد client upload ─── */
-    if (action === "register" && req.method === "POST") {
-      const { backupId, url, size, pathname, scope, keys } = req.body || {};
-      if (!backupId || !url) return res.status(400).json({ error: "backupId و url مطلوبان" });
+    /* ═══ UPLOAD CHUNK ═══ */
+    if (action === 'upload-chunk' && req.method === 'POST') {
+      var { sessionId, chunkIndex, totalChunks, data } = req.body || {};
+      if (!sessionId || chunkIndex === undefined || !data) return res.json({ error: 'missing fields' });
+      await redis('SET', PFX + 'bkup_' + sessionId + '_' + chunkIndex, data, 'EX', 600);
+      return res.json({ ok: true, chunkIndex });
+    }
 
-      // حذف النسخ القديمة (نبقي آخر 5 manifests + الفعلية المرتبطة بها)
-      const KEEP = 5;
-      try {
-        const allManifests = await list({ prefix: PFX_MANIFEST });
-        const sorted = (allManifests.blobs || []).sort(
-          (a, b) => new Date(b.uploadedAt) - new Date(a.uploadedAt)
-        );
+    /* ═══ UPLOAD FINALIZE ═══ */
+    if (action === 'upload-finalize' && req.method === 'POST') {
+      var { sessionId, totalChunks, backupId, scope, keys } = req.body || {};
+      if (!sessionId || !totalChunks || !backupId) return res.json({ error: 'missing fields' });
 
-        // معرّفات الـ backups التي يجب الإبقاء عليها (بما فيها الجديد)
-        const keepIds = new Set([backupId]);
-        for (let i = 0; i < Math.min(KEEP - 1, sorted.length); i++) {
-          // قراءة manifest لمعرفة الـ backupId
-          try {
-            const r = await fetch(sorted[i].url);
-            const m = await r.json();
-            if (m && m.backupId) keepIds.add(m.backupId);
-          } catch (e) {}
-        }
+      // Assemble chunks
+      var allData = '';
+      for (var i = 0; i < totalChunks; i++) {
+        var chunk = await redis('GET', PFX + 'bkup_' + sessionId + '_' + i);
+        if (!chunk) return res.json({ error: 'Chunk ' + i + ' missing/expired' });
+        allData += chunk;
+      }
+      // Cleanup temp
+      for (var i = 0; i < totalChunks; i++) redis('DEL', PFX + 'bkup_' + sessionId + '_' + i).catch(function(){});
 
-        // حذف manifests القديمة
-        for (let i = 0; i < sorted.length; i++) {
-          try {
-            const r = await fetch(sorted[i].url);
-            const m = await r.json();
-            if (m && m.backupId && !keepIds.has(m.backupId)) {
-              await del(sorted[i].url).catch(() => {});
-            }
-          } catch (e) {}
-        }
-
-        // حذف backups القديمة
-        const allBackups = await list({ prefix: PFX_BACKUP });
-        for (const blob of allBackups.blobs || []) {
-          let found = false;
-          for (const id of keepIds) {
-            if (blob.pathname.includes(id)) {
-              found = true;
-              break;
-            }
-          }
-          if (!found) {
-            await del(blob.url).catch(() => {});
-          }
-        }
-      } catch (e) {
-        console.warn("Cleanup warning:", e.message);
+      // Store in R2
+      var r2Key = 'basma-backup/' + backupId + '.json';
+      if (USE_R2) {
+        var url = await r2Put(r2Key, allData, 'application/json');
       }
 
-      // حفظ manifest صغير
-      const manifest = {
-        backupId,
-        url,
-        pathname: pathname || "",
-        size: size || 0,
-        scope: scope || "all",
+      // Save metadata
+      var manifests = await getManifests();
+      manifests.unshift({
+        backupId: backupId,
+        r2Key: r2Key,
+        url: url || '',
+        size: allData.length,
+        scope: scope || 'all',
         keys: keys || [],
         createdAt: new Date().toISOString(),
-      };
-      await put(
-        PFX_MANIFEST + backupId + ".json",
-        JSON.stringify(manifest),
-        {
-          access: "public",
-          contentType: "application/json",
-          addRandomSuffix: false,
-          allowOverwrite: true,
-        }
-      );
-
-      return res.status(200).json({ success: true, backupId });
-    }
-
-    /* ─── LOAD — تحميل بيانات النسخة الأخيرة (أو محددة بـ id) ─── */
-    if (action === "load") {
-      const targetId = req.query.id;
-      const manifestsList = await list({ prefix: PFX_MANIFEST });
-      const manifests = manifestsList.blobs || [];
-      if (manifests.length === 0) {
-        return res.status(200).json({ success: false, error: "لا توجد نسخة احتياطية" });
-      }
-
-      let target;
-      if (targetId) {
-        target = manifests.find((b) => b.pathname.includes(targetId));
-        if (!target) return res.status(404).json({ success: false, error: "النسخة غير موجودة" });
-      } else {
-        target = manifests.sort(
-          (a, b) => new Date(b.uploadedAt) - new Date(a.uploadedAt)
-        )[0];
-      }
-
-      const mRes = await fetch(target.url);
-      const manifest = await mRes.json();
-      const dRes = await fetch(manifest.url);
-      const data = await dRes.json();
-
-      return res.status(200).json({
-        success: true,
-        data,
-        backupId: manifest.backupId,
-        date: manifest.createdAt,
-        size: manifest.size || 0,
-        scope: manifest.scope || "all",
-        keys: manifest.keys || [],
       });
-    }
-
-    /* ─── INFO — آخر نسخة معلوماتها فقط بدون البيانات ─── */
-    if (action === "info") {
-      const manifestsList = await list({ prefix: PFX_MANIFEST });
-      const manifests = manifestsList.blobs || [];
-      if (manifests.length === 0) return res.status(200).json({ exists: false });
-      const latest = manifests.sort(
-        (a, b) => new Date(b.uploadedAt) - new Date(a.uploadedAt)
-      )[0];
-      const mRes = await fetch(latest.url);
-      const manifest = await mRes.json();
-      return res.status(200).json({
-        exists: true,
-        backupId: manifest.backupId,
-        date: manifest.createdAt || latest.uploadedAt,
-        size: manifest.size || 0,
-        scope: manifest.scope || "all",
-        keys: manifest.keys || [],
-      });
-    }
-
-    /* ─── LIST — قائمة كل النسخ الموجودة ─── */
-    if (action === "list") {
-      const manifestsList = await list({ prefix: PFX_MANIFEST });
-      const manifests = manifestsList.blobs || [];
-      const items = [];
-      for (const blob of manifests) {
-        try {
-          const r = await fetch(blob.url);
-          const m = await r.json();
-          items.push({
-            backupId: m.backupId,
-            date: m.createdAt || blob.uploadedAt,
-            size: m.size || 0,
-            scope: m.scope || "all",
-            keys: m.keys || [],
-          });
-        } catch (e) {}
-      }
-      items.sort((a, b) => new Date(b.date) - new Date(a.date));
-      return res.status(200).json({ success: true, backups: items });
-    }
-
-    /* ─── DELETE — حذف نسخة محددة ─── */
-    if (action === "delete" && (req.method === "POST" || req.method === "DELETE")) {
-      const { backupId } = req.body || {};
-      if (!backupId) return res.status(400).json({ error: "backupId مطلوب" });
-
-      const manifestsList = await list({ prefix: PFX_MANIFEST });
-      const manifest = (manifestsList.blobs || []).find((b) =>
-        b.pathname.includes(backupId)
-      );
-      if (manifest) await del(manifest.url).catch(() => {});
-
-      const backupsList = await list({ prefix: PFX_BACKUP });
-      const backup = (backupsList.blobs || []).find((b) =>
-        b.pathname.includes(backupId)
-      );
-      if (backup) await del(backup.url).catch(() => {});
-
-      return res.status(200).json({ success: true });
-    }
-
-    /* ─── RESTORE — استعادة كل البيانات إلى KV ─── */
-    if (action === "restore" && req.method === "POST") {
-      const { backupId, mode } = req.body || {};
-      // mode: 'replace' (الافتراضي) | 'merge'
-      if (!backupId) return res.status(400).json({ error: "backupId مطلوب" });
-
-      const manifestsList = await list({ prefix: PFX_MANIFEST });
-      const target = (manifestsList.blobs || []).find((b) =>
-        b.pathname.includes(backupId)
-      );
-      if (!target) return res.status(404).json({ error: "النسخة غير موجودة" });
-
-      const mRes = await fetch(target.url);
-      const manifest = await mRes.json();
-      const dRes = await fetch(manifest.url);
-      const data = await dRes.json();
-
-      // استدعاء KV من خلال data.js
-      const { kv } = await import("@vercel/kv");
-      let restoredCount = 0;
-      const errors = [];
-
-      for (const key of Object.keys(data)) {
-        try {
-          await kv.set(key, data[key]);
-          restoredCount++;
-        } catch (e) {
-          errors.push({ key, error: e.message });
+      // Keep only last N
+      if (manifests.length > KEEP_MAX) {
+        var removed = manifests.splice(KEEP_MAX);
+        for (var rm of removed) {
+          if (USE_R2 && rm.r2Key) r2Del(rm.r2Key).catch(function(){});
         }
       }
+      await saveManifests(manifests);
 
-      return res.status(200).json({
-        success: true,
-        restoredCount,
-        totalKeys: Object.keys(data).length,
-        errors,
+      return res.json({ success: true, backupId, size: allData.length });
+    }
+
+    /* ═══ REGISTER (legacy compat) ═══ */
+    if (action === 'register' && req.method === 'POST') {
+      var { backupId, url, size, scope, keys } = req.body || {};
+      if (!backupId) return res.json({ error: 'backupId required' });
+      var manifests = await getManifests();
+      manifests.unshift({ backupId, url: url || '', size: size || 0, scope: scope || 'all', keys: keys || [], createdAt: new Date().toISOString() });
+      if (manifests.length > KEEP_MAX) manifests.splice(KEEP_MAX);
+      await saveManifests(manifests);
+      return res.json({ success: true });
+    }
+
+    /* ═══ LIST ═══ */
+    if (action === 'list') {
+      var manifests = await getManifests();
+      return res.json({ backups: manifests });
+    }
+
+    /* ═══ INFO ═══ */
+    if (action === 'info') {
+      var manifests = await getManifests();
+      return res.json({
+        exists: manifests.length > 0,
+        count: manifests.length,
+        latest: manifests[0] || null,
+        storage: 'cloudflare-r2',
+        r2Configured: USE_R2,
       });
     }
 
-    return res.status(400).json({ error: "Invalid action" });
-  } catch (e) {
-    console.error("Backup error:", e);
-    return res.status(500).json({ error: e.message });
+    /* ═══ LOAD ═══ */
+    if (action === 'load') {
+      var id = req.query.id;
+      var manifests = await getManifests();
+      var m = id ? manifests.find(function(x){ return x.backupId === id; }) : manifests[0];
+      if (!m) return res.json({ success: false, error: 'لا توجد نسخة' });
+
+      // Try to load from R2
+      var data = null;
+      if (USE_R2 && m.r2Key) {
+        var raw = await r2Get(m.r2Key);
+        if (raw) try { data = JSON.parse(raw); } catch {}
+      }
+      // Fallback: try URL directly (for old blob-based backups)
+      if (!data && m.url) {
+        try {
+          var r = await fetch(m.url);
+          if (r.ok) data = await r.json();
+        } catch {}
+      }
+      if (!data) return res.json({ success: false, error: 'فشل قراءة النسخة' });
+      return res.json({ success: true, backupId: m.backupId, data: data });
+    }
+
+    /* ═══ RESTORE ═══ */
+    if (action === 'restore' && req.method === 'POST') {
+      var { backupId } = req.body || {};
+      var manifests = await getManifests();
+      var m = backupId ? manifests.find(function(x){ return x.backupId === backupId; }) : manifests[0];
+      if (!m) return res.json({ success: false, error: 'لا توجد نسخة' });
+
+      var data = null;
+      if (USE_R2 && m.r2Key) {
+        var raw = await r2Get(m.r2Key);
+        if (raw) try { data = JSON.parse(raw); } catch {}
+      }
+      if (!data && m.url) {
+        try { var r = await fetch(m.url); if (r.ok) data = await r.json(); } catch {}
+      }
+      if (!data) return res.json({ success: false, error: 'فشل قراءة بيانات النسخة' });
+
+      // Write each key to Redis
+      var restored = 0;
+      var totalKeys = Object.keys(data).length;
+      for (var key in data) {
+        try {
+          await redis('SET', PFX + key, JSON.stringify(data[key]));
+          restored++;
+        } catch {}
+      }
+      return res.json({ success: true, restoredCount: restored, totalKeys: totalKeys });
+    }
+
+    /* ═══ DELETE ═══ */
+    if (action === 'delete' && req.method === 'POST') {
+      var { backupId } = req.body || {};
+      if (!backupId) return res.json({ error: 'backupId required' });
+      var manifests = await getManifests();
+      var idx = manifests.findIndex(function(x){ return x.backupId === backupId; });
+      if (idx < 0) return res.json({ error: 'النسخة غير موجودة' });
+      var m = manifests[idx];
+      if (USE_R2 && m.r2Key) r2Del(m.r2Key).catch(function(){});
+      manifests.splice(idx, 1);
+      await saveManifests(manifests);
+      return res.json({ success: true });
+    }
+
+    return res.json({ error: 'Unknown action: ' + action });
+  } catch(e) {
+    return res.json({ error: e.message || String(e) });
   }
 }

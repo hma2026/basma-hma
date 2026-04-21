@@ -1,14 +1,20 @@
-import { put, list, del } from '@vercel/blob';
+/* ⚠️ DO NOT ADD @vercel/blob — all storage uses Upstash Redis + Cloudflare R2 only */
+/* Blob stubs: prevent crashes in legacy code paths that still reference put/list/del */
+async function put() { console.warn('[BLOB STUB] put() called — Vercel Blob disabled per directive'); return { url: '' }; }
+async function list() { console.warn('[BLOB STUB] list() called — Vercel Blob disabled per directive'); return { blobs: [], cursor: null }; }
+async function del() { console.warn('[BLOB STUB] del() called — Vercel Blob disabled per directive'); return true; }
+
 import webpush from 'web-push';
 import crypto from 'crypto';
 
 /* ═══════════════════════════════════════════════════════════════
-   STORAGE LAYER — Hybrid (Upstash Redis + Cloudflare R2 + Blob)
+   STORAGE LAYER — Upstash Redis (primary) + Cloudflare R2 (files)
+   ⚠️ DO NOT revert to Vercel Blob under any circumstances
    ═══════════════════════════════════════════════════════════════ */
 
 const SYSTEM = (process.env.STORAGE_PREFIX || 'basma').trim();
 const PFX_REDIS = SYSTEM + ':';      // basma:employees
-const PFX = SYSTEM + '_';             // basma_employees.json (Blob/backward-compat)
+const PFX = SYSTEM + '_';             // legacy blob prefix (stubs only, no actual blob writes)
 
 // Upstash Redis
 const REDIS_URL = (process.env.UPSTASH_REDIS_REST_URL || '').trim();
@@ -87,64 +93,32 @@ async function redisDel(key) {
   return true;
 }
 
-/* ────── Vercel Blob Wrappers (Fallback) ────── */
-async function blobGet(t) {
-  try {
-    const { blobs } = await list({ prefix: PFX + t + '.json' });
-    if (!blobs.length) return null;
-    blobs.sort((a, b) => new Date(b.uploadedAt) - new Date(a.uploadedAt));
-    const res = await fetch(blobs[0].url);
-    return await res.json();
-  } catch(e) { console.error('[BLOB GET] ' + t + ':', e.message); return null; }
-}
-
-async function blobSet(t, d) {
-  try {
-    await put(PFX + t + '.json', JSON.stringify(d), {
-      access: 'public', contentType: 'application/json', addRandomSuffix: false,
-    });
-    return true;
-  } catch(e) { console.error('[BLOB SET] ' + t + ':', e.message); return false; }
-}
-
-/* ────── Unified DB interface (Redis primary, Blob fallback) ────── */
+/* ────── Unified DB interface (Redis only — Blob removed per directive) ────── */
 async function dbGet(t) {
-  if (USE_REDIS) {
-    try {
-      var v = await redisGet(t);
-      if (v !== null) return v;
-      // Fallback: try blob for migration support
-      var blobVal = await blobGet(t);
-      if (blobVal !== null) {
-        // Auto-migrate to Redis
-        redisSet(t, blobVal).catch(function(){});
-        return blobVal;
-      }
-      return null;
-    } catch(e) {
-      console.error('[DB GET Redis] ' + t + ':', e.message);
-      return await blobGet(t);
-    }
+  if (!USE_REDIS) {
+    console.error('[DB] CRITICAL: Upstash Redis not configured! Set UPSTASH_REDIS_REST_URL and UPSTASH_REDIS_REST_TOKEN');
+    return null;
   }
-  return await blobGet(t);
+  try {
+    return await redisGet(t);
+  } catch(e) {
+    console.error('[DB GET] ' + t + ':', e.message);
+    return null;
+  }
 }
 
 async function dbSet(t, d) {
-  if (USE_REDIS) {
-    try {
-      await redisSet(t, d);
-      // Write to Blob as backup unless disabled
-      var disableBlobBackup = (process.env.DISABLE_BLOB_BACKUP || '').trim() === 'true';
-      if (!disableBlobBackup) {
-        blobSet(t, d).catch(function(){});
-      }
-      return true;
-    } catch(e) {
-      console.error('[DB SET Redis] ' + t + ':', e.message);
-      return await blobSet(t, d);
-    }
+  if (!USE_REDIS) {
+    console.error('[DB] CRITICAL: Upstash Redis not configured!');
+    return false;
   }
-  return await blobSet(t, d);
+  try {
+    await redisSet(t, d);
+    return true;
+  } catch(e) {
+    console.error('[DB SET] ' + t + ':', e.message);
+    return false;
+  }
 }
 
 /* ════════ v6.91 — Payroll Helpers (التشفير + الصلاحيات + الحسابات) ════════ */
@@ -5797,7 +5771,7 @@ export default async function handler(req, res) {
             test: r2Test,
           },
           blobFallback: true,
-          primary: USE_REDIS ? 'upstash-redis' : 'vercel-blob',
+          primary: USE_REDIS ? 'upstash-redis' : 'ERROR: Redis not configured',
           ts: new Date().toISOString(),
         });
       }
@@ -5811,7 +5785,7 @@ export default async function handler(req, res) {
         for (var i = 0; i < tables.length; i++) {
           var t = tables[i];
           try {
-            var data = await blobGet(t);
+            var data = null; // v7.31: Blob migration completed — all data in Redis now
             if (data !== null) {
               await redisSet(t, data);
               migrated[t] = Array.isArray(data) ? data.length : (typeof data === 'object' ? Object.keys(data).length : 1);
