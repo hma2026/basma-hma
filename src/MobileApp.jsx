@@ -11,7 +11,7 @@ import { exportEmploymentLetter, exportLeaveLetter } from "./formalPdfs";
 
 /* ═══════════ APP CONFIG (إعدادات التطبيق) ═══════════ */
 const APP_CONFIG = {
-  VER: "7.38",
+  VER: "7.39",
   NAME: "بصمة HMA",
   FULL_NAME: "نظام الحضور والانصراف الذكي",
   COMPANY: "هاني محمد عسيري للاستشارات الهندسية",
@@ -9700,6 +9700,27 @@ function TimeTrackingPanel({ request, user, readOnly, canEdit, onUpdated }) {
     return function(){ clearInterval(id); };
   }, [active]);
 
+  // v7.39 — listen for swipe-triggered timer toggle
+  useEffect(function(){
+    function onTimerToggle(e) {
+      if (!e.detail || String(e.detail.taskId) !== String(r.id)) return;
+      if (readOnly || busy) return;
+      if (e.detail.action === "start") {
+        // Only start if not already active on this task
+        if (!active || String(active.taskId) !== String(r.id)) {
+          startTimer();
+        }
+      } else if (e.detail.action === "stop") {
+        // Only stop if active on this task
+        if (active && String(active.taskId) === String(r.id)) {
+          stopTimer();
+        }
+      }
+    }
+    window.addEventListener("basma:tawasul-timer-toggle", onTimerToggle);
+    return function(){ window.removeEventListener("basma:tawasul-timer-toggle", onTimerToggle); };
+  }, [r.id, active, busy, readOnly]);
+
   var activeOnThis = active && String(active.taskId) === String(r.id);
   var activeOnOther = active && !activeOnThis;
 
@@ -10832,8 +10853,8 @@ function PartiesCarousel({ assignees, nameOf, C }) {
   );
 }
 
-/* ═══════════ SWIPE SECTION — v7.37 (proper top-level component) ═══════════ */
-function SwipeSection({ id, icon, title, badge, children, isOpen, onToggle, C, swipeRight, swipeLeft }) {
+/* ═══════════ SWIPE SECTION — v7.39 (custom onSwipe handler) ═══════════ */
+function SwipeSection({ id, icon, title, badge, children, isOpen, onToggle, C, swipeRight, swipeLeft, onSwipe }) {
   var elRef = React.useRef(null);
   var stRef = React.useRef({ sx:0, sy:0, dx:0, dir:null, active:false, vel:0, lx:0, lt:0 });
   var [revPct, setRevPct] = React.useState(0);
@@ -10873,9 +10894,16 @@ function SwipeSection({ id, icon, title, badge, children, isOpen, onToggle, C, s
       var fired = Math.abs(s.vel) > 350 || Math.abs(s.dx) > w * 0.3;
       if (fired) {
         try { if (navigator.vibrate) navigator.vibrate(8); } catch(e2) {}
+        // v7.39 — direction: "right" = swipe L→R (dx>0), "left" = swipe R→L (dx<0)
         var dir2 = (s.dx > 0 || s.vel > 350) ? "right" : "left";
-        if (dir2 === "right" && !currentIsOpen) onToggle();
-        else if (dir2 === "left" && currentIsOpen) onToggle();
+        // If custom onSwipe provided, use it (parent decides behavior)
+        if (typeof onSwipe === "function") {
+          onSwipe(dir2);
+        } else {
+          // Default: right swipe opens, left swipe closes
+          if (dir2 === "right" && !currentIsOpen) onToggle();
+          else if (dir2 === "left" && currentIsOpen) onToggle();
+        }
       }
     }
     el.addEventListener("touchstart", ts, { passive: true });
@@ -10886,7 +10914,7 @@ function SwipeSection({ id, icon, title, badge, children, isOpen, onToggle, C, s
       el.removeEventListener("touchmove", tm);
       el.removeEventListener("touchend", te);
     };
-  }, [id, isOpen, onToggle]);
+  }, [id, isOpen, onToggle, onSwipe]);
 
   var rBg = swipeRight ? (swipeRight.color || "#2ED3A5") : null;
   var lBg = swipeLeft ? (swipeLeft.color || "#64748b") : null;
@@ -11542,19 +11570,31 @@ function TawasulDetailModal({ request, user, allEmps, onClose, nameOf, onUpdated
                 </SwipeSection>
 
                 {/* ⏱ Time — swipe right=open, left=close */}
+                {/* ⏱ Time — v7.39 swipe R→L = start timer, L→R = stop timer */}
                 <SwipeSection id="time" icon="⏱" title="تتبع الوقت"
                   C={C} isOpen={!!openSections.time} onToggle={function(){ toggleSection("time"); }}
-                  swipeRight={{ icon: "▶", label: "فتح المؤقت", color: "#2ED3A5" }}
-                  swipeLeft={{ icon: "✕", label: "إغلاق", color: "#64748b" }}>
+                  onSwipe={function(direction){
+                    // Open section on swipe so user sees the result
+                    if (!openSections.time) toggleSection("time");
+                    // Emit event that TimeTrackingPanel listens to
+                    try {
+                      window.dispatchEvent(new CustomEvent("basma:tawasul-timer-toggle", {
+                        detail: { taskId: r.id, action: direction === "left" ? "start" : "stop" }
+                      }));
+                    } catch(e) {}
+                  }}
+                  swipeRight={{ icon: "⏹", label: "إيقاف العداد", color: "#ef4444" }}
+                  swipeLeft={{ icon: "▶", label: "بدء العداد", color: "#2ED3A5" }}>
                   <TimeTrackingPanel request={r} user={user} readOnly={readOnly} canEdit={canActAsAssignee || canActAsRequester || isAdmin} onUpdated={onUpdated} />
                 </SwipeSection>
 
-                {/* 📦 Delivery — swipe to open, items are clickable links */}
+                {/* 📦 Delivery — v7.39 either direction opens, items clickable */}
                 {r.deliveryMethods && r.deliveryMethods.length > 0 && (
                   <SwipeSection id="delivery" icon="📦" title="طرق التسليم" badge={String(r.deliveryMethods.length)}
                     C={C} isOpen={!!openSections.delivery} onToggle={function(){ toggleSection("delivery"); }}
-                    swipeRight={{ icon: "📦", label: "عرض التسليم", color: "#7c3aed" }}
-                    swipeLeft={{ icon: "✕", label: "إغلاق", color: "#64748b" }}>
+                    onSwipe={function(){ toggleSection("delivery"); }}
+                    swipeRight={{ icon: "📦", label: "عرض طرق التسليم", color: "#7c3aed" }}
+                    swipeLeft={{ icon: "📦", label: "عرض طرق التسليم", color: "#7c3aed" }}>
                     {r.deliveryMethods.map(function(dm, idx){
                       var dmIcon = dm.type === "email" ? "📧" : dm.type === "location" || dm.type === "address" ? "📍" : dm.type === "link" || dm.type === "url" ? "🔗" : "📦";
                       var dmColor = dm.type === "email" ? "rgba(59,130,246,0.15)" : dm.type === "location" || dm.type === "address" ? "rgba(16,185,129,0.15)" : "rgba(201,168,76,0.15)";
@@ -11576,19 +11616,29 @@ function TawasulDetailModal({ request, user, allEmps, onClose, nameOf, onUpdated
                   </SwipeSection>
                 )}
 
-                {/* 📎 Attachments — swipe right=show add, swipe left=hide add */}
+                {/* 📎 Attachments — v7.39 R→L opens with add button, L→R closes */}
                 <SwipeSection id="attachments" icon="📎" title="المرفقات" badge={((r.attachments || []).length) ? String((r.attachments || []).length) : null}
                   C={C} isOpen={!!openSections.attachments} onToggle={function(){ toggleSection("attachments"); }}
-                  swipeRight={{ icon: "📎", label: "إضافة مرفق", color: "#2ED3A5" }}
-                  swipeLeft={{ icon: "✕", label: "إغلاق", color: "#64748b" }}>
+                  onSwipe={function(direction){
+                    if (direction === "left") {
+                      // R→L: open section (add button appears inside)
+                      if (!openSections.attachments) toggleSection("attachments");
+                    } else {
+                      // L→R: close section
+                      if (openSections.attachments) toggleSection("attachments");
+                    }
+                  }}
+                  swipeRight={{ icon: "✕", label: "إغلاق", color: "#64748b" }}
+                  swipeLeft={{ icon: "📎", label: "إضافة مرفق", color: "#2ED3A5" }}>
                   <AttachmentsPanel request={r} user={user} readOnly={readOnly} canEdit={canActAsAssignee || canActAsRequester || isAdmin} onUpdated={onUpdated} />
                 </SwipeSection>
 
-                {/* 📌 Extra details — swipe to open */}
+                {/* 📌 Extra details — v7.39 either direction opens */}
                 <SwipeSection id="meta" icon="📌" title="تفاصيل إضافية"
                   C={C} isOpen={!!openSections.meta} onToggle={function(){ toggleSection("meta"); }}
+                  onSwipe={function(){ toggleSection("meta"); }}
                   swipeRight={{ icon: "ℹ", label: "عرض التفاصيل", color: "#2b5ea7" }}
-                  swipeLeft={{ icon: "✕", label: "إغلاق", color: "#64748b" }}>
+                  swipeLeft={{ icon: "ℹ", label: "عرض التفاصيل", color: "#2b5ea7" }}>
                   {[
                     { label: "من", value: requesterName + (function(){
                       var myRow2 = (r.assignees || []).find(function(a){ return String(a.id) === String(myId); });
