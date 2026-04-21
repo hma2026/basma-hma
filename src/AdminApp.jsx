@@ -4,7 +4,7 @@ import { generateAttendanceReport, generateEmployeeReport, generateMonthlySummar
 import { exportFormalWarning, exportInvestigationRecord, exportAffidavit, exportEmploymentLetter, exportSalaryLetter, exportLeaveLetter } from "./formalPdfs";
 
 const APP = "بصمة HMA";
-const VER = "7.27";
+const VER = "7.28";
 const CO = "هاني محمد عسيري للإستشارات الهندسية";
 const B = { blue: "#2B5EA7", yellow: "#FDD800", red: "#E2192C", black: "#1A1A1A", blueDk: "#1E4478", blueLt: "#EDF3FB", gold: "#D4A017" };
 
@@ -319,7 +319,7 @@ function MoreMenuPage({ setTab, badges, sideGroups }) {
   );
 }
 
-// ── Floating Back Button — v7.27 (radical fix: fixed positioning, always visible) ──
+// ── Floating Back Button — v7.28 (shows on ALL screens, not just mobile) ──
 function FloatingBackButton({ tab, onBack }) {
   // Only show on non-root tabs
   var rootTabs = ["dashboard", "hr_tickets", "leaves_hub", "more"];
@@ -329,25 +329,26 @@ function FloatingBackButton({ tab, onBack }) {
     <button
       onClick={onBack}
       aria-label="رجوع"
+      title="رجوع"
       style={{
         position: "fixed",
-        top: 12,
-        right: 12,
-        zIndex: 9999,
-        width: 48, height: 48,
-        borderRadius: 14,
-        border: "1px solid " + LN.cardBrd,
-        background: LN.card,
-        color: LN.tx,
-        fontSize: 28,
-        fontWeight: 700,
+        top: 16,
+        right: 16,
+        zIndex: 99999,
+        width: 56, height: 56,
+        borderRadius: 16,
+        border: "2px solid #3B82F6",
+        background: "#3B82F6",
+        color: "#FFFFFF",
+        fontSize: 32,
+        fontWeight: 900,
         cursor: "pointer",
         display: "flex",
         alignItems: "center",
         justifyContent: "center",
         fontFamily: "inherit",
         lineHeight: 1,
-        boxShadow: "0 4px 16px rgba(0,0,0,0.12), 0 1px 3px rgba(0,0,0,0.08)",
+        boxShadow: "0 6px 20px rgba(59,130,246,0.5), 0 2px 6px rgba(0,0,0,0.15)",
         WebkitTapHighlightColor: "transparent",
       }}
     >
@@ -1782,8 +1783,27 @@ export default function AdminApp() {
       />
     )}
 
-    {/* v7.27 — Floating Back Button (RADICAL FIX): always visible on non-root tabs, position: fixed */}
-    {isMobile && <FloatingBackButton tab={tab} onBack={goBack} />}
+    {/* v7.28 — Floating Back Button: visible on ALL devices (not just mobile) for radical fix */}
+    <FloatingBackButton tab={tab} onBack={goBack} />
+
+    {/* v7.28 — DEBUG OVERLAY: shows state for diagnosis (bottom-left, dismissible) */}
+    <div style={{
+      position: "fixed",
+      bottom: isMobile ? 70 : 8,
+      left: 8,
+      zIndex: 99998,
+      padding: "6px 10px",
+      borderRadius: 8,
+      background: "rgba(0,0,0,0.85)",
+      color: "#fff",
+      fontSize: 10,
+      fontFamily: "monospace",
+      direction: "ltr",
+      pointerEvents: "none",
+      lineHeight: 1.5,
+    }}>
+      v{VER} · mobile={String(isMobile)} · tab={tab} · w={typeof window !== "undefined" ? window.innerWidth : "?"}
+    </div>
   </div>);
 }
 
