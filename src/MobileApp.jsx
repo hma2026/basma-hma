@@ -11,7 +11,7 @@ import { exportEmploymentLetter, exportLeaveLetter } from "./formalPdfs";
 
 /* ═══════════ APP CONFIG (إعدادات التطبيق) ═══════════ */
 const APP_CONFIG = {
-  VER: "7.39",
+  VER: "7.40",
   NAME: "بصمة HMA",
   FULL_NAME: "نظام الحضور والانصراف الذكي",
   COMPANY: "هاني محمد عسيري للاستشارات الهندسية",
@@ -2976,12 +2976,11 @@ function computeYearsOfService(joinDate) {
 function ProfileHeroCard({ user }) {
   var typeMap = { office: "مكتبي", field: "ميداني", mixed: "مختلط", remote: "عن بعد" };
   var typeLabel = typeMap[user.type] || user.type || "—";
-  var initials = (user.name || "؟").trim().split(/\s+/).slice(0, 2).map(function(w){ return w.charAt(0); }).join("");
 
   return (
     <div style={{
       position: "relative",
-      padding: "20px 16px 16px",
+      padding: "16px",
       borderRadius: RADIUS.xl,
       background: "linear-gradient(135deg, rgba(201,168,76,0.08) 0%, rgba(232,213,163,0.04) 50%, rgba(201,168,76,0.06) 100%)",
       border: "1px solid " + COLORS.metallicBorder,
@@ -2993,26 +2992,10 @@ function ProfileHeroCard({ user }) {
       <div style={{ position: "absolute", bottom: -40, left: -40, width: 110, height: 110, borderRadius: "50%", background: "radial-gradient(circle, rgba(201,168,76,0.10), transparent 70%)", pointerEvents: "none" }} />
 
       <div style={{ display: "flex", flexDirection: "column", alignItems: "center", position: "relative", zIndex: 1 }}>
-        {/* Avatar with gold gradient ring */}
-        <div style={{
-          width: 96, height: 96, borderRadius: "50%",
-          padding: 3,
-          background: COLORS.goldGradient,
-          boxShadow: "0 6px 20px rgba(201,168,76,0.35), inset 0 1px 0 rgba(255,255,255,0.5)",
-          marginBottom: SPACING.md,
-        }}>
-          <div style={{
-            width: "100%", height: "100%", borderRadius: "50%",
-            background: COLORS.bg1,
-            display: "flex", alignItems: "center", justifyContent: "center",
-            border: "2px solid rgba(255,255,255,0.15)",
-          }}>
-            <span style={{ fontSize: 28, fontWeight: 900, color: COLORS.goldLight, fontFamily: TYPOGRAPHY.fontCairo, letterSpacing: 1 }}>{initials || "?"}</span>
-          </div>
-        </div>
+        {/* v7.40 — Big avatar removed per request. Name + pills only */}
 
         {/* Name */}
-        <div style={{ fontSize: 19, fontWeight: 900, color: COLORS.textPrimary, fontFamily: TYPOGRAPHY.fontCairo, textAlign: "center", marginBottom: 4, letterSpacing: 0.2 }}>
+        <div style={{ fontSize: 19, fontWeight: 900, color: COLORS.textPrimary, fontFamily: TYPOGRAPHY.fontCairo, textAlign: "center", marginBottom: 8, letterSpacing: 0.2 }}>
           {user.name || "—"}
         </div>
 
