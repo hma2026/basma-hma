@@ -11,7 +11,7 @@ import { exportEmploymentLetter, exportLeaveLetter } from "./formalPdfs";
 
 /* ═══════════ APP CONFIG (إعدادات التطبيق) ═══════════ */
 const APP_CONFIG = {
-  VER: "7.41",
+  VER: "7.42",
   NAME: "بصمة HMA",
   FULL_NAME: "نظام الحضور والانصراف الذكي",
   COMPANY: "هاني محمد عسيري للاستشارات الهندسية",
@@ -4088,13 +4088,9 @@ function AchievementsHub({ user }) {
       {/* 2. Stats */}
       <AchievementsStatsRow user={user} stats={stats} loading={statsLoading} />
 
-      {/* v7.37 — 3. Badges EXPANDED (not accordion) - all icons visible under main icon */}
-      <div style={{ background: COLORS.metallic, border: "1px solid " + COLORS.metallicBorder, borderRadius: RADIUS.xl, padding: SPACING.lg, boxShadow: SHADOWS.button }}>
-        <div style={{ ...TYPOGRAPHY.h3, color: COLORS.textPrimary, marginBottom: SPACING.md, display: "flex", alignItems: "center", gap: 6 }}>
-          <span>🏆</span> إشاراتي
-        </div>
-        <AchievementsCard user={user} />
-      </div>
+      {/* v7.42 — 3. TWO INDEPENDENT open cards: الإنجازات (summary) + إشاراتي (badges) */}
+      <AchievementsCard user={user} part="summary" />
+      <AchievementsCard user={user} part="badges" />
 
       {/* v7.37 — 4. Points log DIRECTLY below badges (not accordion) */}
       <div style={{ background: COLORS.metallic, border: "1px solid " + COLORS.metallicBorder, borderRadius: RADIUS.xl, padding: SPACING.lg, boxShadow: SHADOWS.button }}>
@@ -5191,11 +5187,10 @@ function ProfilePage({ user, branch, workType, onLogout, onTicket, myTickets, da
           })}
         </div>
 
-        {/* v7.16 — tab: profile (ملفي) — visual redesign: Hero + 3 Stats + 3 Accordions + Objects + Mixed Buttons + Banner */}
+        {/* v7.42 — tab: profile (ملفي) — ProfileHeroCard removed (duplicated top header) */}
         {tab === "profile" && (
           <>
-            {/* 1. HERO — Avatar + name + role */}
-            <ProfileHeroCard user={user} />
+            {/* v7.42 — Big hero removed: top header already shows avatar + name + role */}
 
             {/* 2. 3 STATS — سنوات الخدمة · النقاط · رصيد الإجازة */}
             <ProfileStatsRow user={user} />
@@ -15717,7 +15712,8 @@ function FieldProjectsCard({ user, gps }) {
 }
 
 /* ═══════════ POINTS LOG (سجل النقاط) ═══════════ */
-function AchievementsCard({ user }) {
+function AchievementsCard({ user, part }) {
+  // v7.42 — part: "summary" (progress+counts) or "badges" (grid). Default: both (legacy).
   var [stats, setStats] = useState({});
   var [loading, setLoading] = useState(true);
   var [showAll, setShowAll] = useState(false);
@@ -15811,6 +15807,64 @@ function AchievementsCard({ user }) {
 
   var displayList = unlocked; // v7.37 — always show all badges (no collapse)
 
+  // v7.42 — "summary" part: only progress header + bar
+  if (part === "summary") {
+    return (
+      <Card padding={SPACING.md}>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>
+          <div>
+            <div style={{ ...TYPOGRAPHY.body, fontWeight: 800, color: COLORS.textPrimary, display: "flex", alignItems: "center", gap: 6 }}>
+              🏆 الإنجازات
+            </div>
+            <div style={{ ...TYPOGRAPHY.tiny, color: COLORS.textMuted, marginTop: 2 }}>
+              <strong style={{ color: COLORS.goldLight }}>{unlockedCount}</strong>/{ACHIEVEMENTS.length} مفتوح · <strong style={{ color: COLORS.goldLight }}>{earnedPoints}</strong> نقطة مكتسبة
+            </div>
+          </div>
+          <div style={{ width: 54, height: 54, borderRadius: 27, background: "linear-gradient(135deg, " + COLORS.goldLight + ", " + COLORS.gold + ")", display: "flex", alignItems: "center", justifyContent: "center", color: "#000", fontWeight: 900, fontSize: 16 }}>
+            {Math.round((unlockedCount / ACHIEVEMENTS.length) * 100)}%
+          </div>
+        </div>
+        <div style={{ height: 6, borderRadius: 3, background: COLORS.bg1, overflow: "hidden" }}>
+          <div style={{ height: "100%", width: ((unlockedCount / ACHIEVEMENTS.length) * 100) + "%", background: "linear-gradient(90deg, " + COLORS.goldLight + ", " + COLORS.gold + ")", transition: "width 0.5s" }}></div>
+        </div>
+      </Card>
+    );
+  }
+
+  // v7.42 — "badges" part: only the grid + tip
+  if (part === "badges") {
+    return (
+      <Card padding={SPACING.md}>
+        <div style={{ ...TYPOGRAPHY.body, fontWeight: 800, color: COLORS.textPrimary, display: "flex", alignItems: "center", gap: 6, marginBottom: 12 }}>
+          🎖️ إشاراتي
+        </div>
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 8 }}>
+          {displayList.map(function(a){
+            var cat = categories[a.category] || categories.engagement;
+            return (
+              <div key={a.id} style={{ padding: 10, borderRadius: 10, background: a.unlocked ? cat.color + "22" : "rgba(100,116,139,0.15)", border: "1.5px solid " + (a.unlocked ? cat.color : "rgba(148,163,184,0.35)"), opacity: a.unlocked ? 1 : 0.85, textAlign: "center", position: "relative", boxShadow: a.unlocked ? "0 2px 8px " + cat.color + "30" : "none" }}>
+                <div style={{ fontSize: 24, marginBottom: 4, filter: a.unlocked ? "none" : "grayscale(60%) brightness(0.85)" }}>{a.icon}</div>
+                <div style={{ fontSize: 11, fontWeight: 900, color: a.unlocked ? cat.color : "#94A3B8", marginBottom: 3 }}>{a.name}</div>
+                <div style={{ fontSize: 9, color: a.unlocked ? COLORS.textSecondary : "#94A3B8", lineHeight: 1.5, fontWeight: 500 }}>{a.desc}</div>
+                <div style={{ marginTop: 6, padding: "3px 8px", borderRadius: 6, background: a.unlocked ? cat.color + "44" : "rgba(148,163,184,0.25)", color: a.unlocked ? "#fff" : "#CBD5E1", fontSize: 10, fontWeight: 800, display: "inline-block" }}>
+                  +{a.points} نقطة
+                </div>
+                {a.unlocked && <div style={{ position: "absolute", top: 4, left: 4, fontSize: 14, background: "#10B981", color: "#fff", width: 20, height: 20, borderRadius: 10, display: "flex", alignItems: "center", justifyContent: "center", fontWeight: 900 }}>✓</div>}
+                {!a.unlocked && <div style={{ position: "absolute", top: 4, left: 4, fontSize: 12, opacity: 0.7 }}>🔒</div>}
+              </div>
+            );
+          })}
+        </div>
+        {unlockedCount < ACHIEVEMENTS.length && (
+          <div style={{ marginTop: 10, padding: 10, borderRadius: 8, background: "rgba(245,158,11,0.1)", border: "1px solid rgba(245,158,11,0.3)", fontSize: 10, color: "#D97706", fontWeight: 600, textAlign: "center" }}>
+            🎯 استمر في الانضباط لفتح المزيد من الإشارات
+          </div>
+        )}
+      </Card>
+    );
+  }
+
+  // Legacy: render both together (for backward compat)
   return (
     <Card padding={SPACING.md}>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>
