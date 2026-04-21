@@ -11,7 +11,7 @@ import { exportEmploymentLetter, exportLeaveLetter } from "./formalPdfs";
 
 /* ═══════════ APP CONFIG (إعدادات التطبيق) ═══════════ */
 const APP_CONFIG = {
-  VER: "7.20",
+  VER: "7.21",
   NAME: "بصمة HMA",
   FULL_NAME: "نظام الحضور والانصراف الذكي",
   COMPANY: "هاني محمد عسيري للاستشارات الهندسية",
@@ -4580,6 +4580,445 @@ function EditRequestModal({ user, onClose }) {
   );
 }
 
+/* ═══════════════════════════════════════════════════════════════════
+ * v7.21 — LEGAL TAB VISUAL REDESIGN (الشؤون القانونية)
+ * Status banner + 3-column summary + case timeline + references + footer
+ * ═══════════════════════════════════════════════════════════════════ */
+
+function _legalCaseId(prefix, id) {
+  var s = String(id || "000");
+  var tail = s.length >= 4 ? s.slice(-4) : s.padStart(4, "0");
+  return prefix + "-" + tail.toUpperCase();
+}
+
+function _legalFmtDate(x) {
+  if (!x) return "—";
+  try {
+    var d = new Date(x);
+    if (isNaN(d.getTime())) return String(x).slice(0, 10);
+    return d.toLocaleDateString("ar-SA", { year: "numeric", month: "short", day: "numeric" });
+  } catch(e) { return "—"; }
+}
+
+/* ── LegalStatusBanner — Green (clean) or Red (alert) ── */
+function LegalStatusBanner({ activeViolationsCount, pendingInvCount, openComplaintsAgainstCount, loading }) {
+  if (loading) {
+    return (
+      <div style={{ padding: SPACING.lg, borderRadius: RADIUS.xl, background: COLORS.metallic, border: "1px solid " + COLORS.metallicBorder, textAlign: "center", color: COLORS.textMuted, fontSize: 12 }}>
+        جارٍ فحص السجل القانوني...
+      </div>
+    );
+  }
+
+  var hasIssues = (activeViolationsCount + pendingInvCount + openComplaintsAgainstCount) > 0;
+  var color = hasIssues ? COLORS.textDanger : COLORS.success;
+  var bg = hasIssues
+    ? "linear-gradient(135deg, rgba(226,25,44,0.18) 0%, rgba(255,107,107,0.10) 100%)"
+    : "linear-gradient(135deg, rgba(16,185,129,0.18) 0%, rgba(16,185,129,0.08) 100%)";
+  var emoji = hasIssues ? "⚠️" : "✅";
+  var title = hasIssues ? "تنبيه في السجل القانوني" : "سجلك نظيف";
+  var subtitle = hasIssues
+    ? "يوجد " + (activeViolationsCount > 0 ? activeViolationsCount + " مخالفة سارية" : "") + (activeViolationsCount > 0 && (pendingInvCount > 0 || openComplaintsAgainstCount > 0) ? " · " : "") + (pendingInvCount > 0 ? pendingInvCount + " تحقيق معلّق" : "") + ((pendingInvCount > 0 || activeViolationsCount > 0) && openComplaintsAgainstCount > 0 ? " · " : "") + (openComplaintsAgainstCount > 0 ? openComplaintsAgainstCount + " شكوى مفتوحة ضدك" : "")
+    : "لا توجد مخالفات أو تحقيقات أو شكاوى مفتوحة ضدك";
+
+  return (
+    <div style={{
+      position: "relative",
+      padding: "18px 20px",
+      borderRadius: RADIUS.xl,
+      background: bg,
+      border: "2px solid " + color,
+      boxShadow: "0 4px 16px " + color + "30, inset 0 1px 0 rgba(255,255,255,0.1)",
+      overflow: "hidden",
+    }}>
+      <div style={{ position: "absolute", top: -30, left: -30, width: 90, height: 90, borderRadius: "50%", background: "radial-gradient(circle, " + color + "20, transparent 70%)", pointerEvents: "none" }} />
+
+      <div style={{ position: "relative", zIndex: 1, display: "flex", alignItems: "center", gap: SPACING.md }}>
+        <div style={{
+          width: 56, height: 56,
+          borderRadius: "50%",
+          background: color + "30",
+          border: "2px solid " + color,
+          display: "flex", alignItems: "center", justifyContent: "center",
+          fontSize: 28, flexShrink: 0,
+          boxShadow: "0 0 16px " + color + "50",
+        }}>{emoji}</div>
+        <div style={{ flex: 1, minWidth: 0 }}>
+          <div style={{ fontSize: 16, fontWeight: 900, color: color, fontFamily: TYPOGRAPHY.fontCairo, marginBottom: 3 }}>{title}</div>
+          <div style={{ fontSize: 11, color: COLORS.textPrimary, fontFamily: TYPOGRAPHY.fontTajawal, lineHeight: 1.5, fontWeight: 600 }}>{subtitle}</div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/* ── LegalSummaryRow — 3 columns with counts ── */
+function LegalSummaryRow({ violationsTotal, investigationsTotal, complaintsTotal, loading }) {
+  function Cell({ icon, count, label, color }) {
+    return (
+      <div style={{ flex: 1, minWidth: 0, padding: "14px 8px", display: "flex", flexDirection: "column", alignItems: "center", textAlign: "center" }}>
+        <div style={{ fontSize: 22, marginBottom: 4, filter: "drop-shadow(0 1px 3px rgba(0,0,0,0.3))" }}>{icon}</div>
+        <div style={{ fontSize: 22, fontWeight: 900, color: color, fontFamily: TYPOGRAPHY.fontCairo, lineHeight: 1, letterSpacing: -0.5 }}>
+          {loading ? "…" : count}
+        </div>
+        <div style={{ fontSize: 10, fontWeight: 700, color: COLORS.textSecondary, marginTop: 6, fontFamily: TYPOGRAPHY.fontTajawal, lineHeight: 1.2 }}>{label}</div>
+      </div>
+    );
+  }
+
+  return (
+    <Card padding={0} style={{ overflow: "hidden" }}>
+      <div style={{ display: "flex", alignItems: "stretch" }}>
+        <Cell icon="⚖️" count={violationsTotal} label="مخالفات" color={violationsTotal > 0 ? COLORS.textDanger : COLORS.textMuted} />
+        <div style={{ width: 1, background: "linear-gradient(180deg, transparent, " + COLORS.metallicBorder + " 30%, " + COLORS.metallicBorder + " 70%, transparent)" }} />
+        <Cell icon="🔍" count={investigationsTotal} label="تحقيقات" color={investigationsTotal > 0 ? COLORS.warning : COLORS.textMuted} />
+        <div style={{ width: 1, background: "linear-gradient(180deg, transparent, " + COLORS.metallicBorder + " 30%, " + COLORS.metallicBorder + " 70%, transparent)" }} />
+        <Cell icon="📝" count={complaintsTotal} label="شكاوى" color={complaintsTotal > 0 ? COLORS.info : COLORS.textMuted} />
+      </div>
+    </Card>
+  );
+}
+
+/* ── LegalCaseTimeline — unified case history with right-edge colored border ── */
+function LegalCaseTimeline({ violations, investigations, complaints, user, onViewViolation, onViewInvestigation }) {
+  // Unify all cases into a single list
+  var cases = [];
+
+  (violations || []).forEach(function(v){
+    cases.push({
+      kind: "violation",
+      caseId: _legalCaseId("VIO", v.id),
+      title: v.title || v.violationTitle || "مخالفة",
+      description: v.description || v.violationDescription || "",
+      status: v.status || "ACTIVE",
+      ts: v.createdAt || v.date || v.ts || "",
+      color: v.status === "ACTIVE" ? COLORS.textDanger : COLORS.textMuted,
+      badge: v.status === "ACTIVE" ? "سارية" : "منتهية",
+      emoji: "⚖️",
+      rawItem: v,
+    });
+  });
+
+  (investigations || []).forEach(function(i){
+    var isWait = i.status === "WAITING_RESPONSE";
+    cases.push({
+      kind: "investigation",
+      caseId: _legalCaseId("INV", i.id),
+      title: i.title || "استمارة تحقيق",
+      description: i.description || (i.questions ? i.questions.length + " سؤال" : ""),
+      status: i.status || "UNKNOWN",
+      ts: i.createdAt || i.ts || i.deadline || "",
+      color: isWait ? COLORS.warning : (i.status === "CLOSED" ? COLORS.textMuted : COLORS.info),
+      badge: isWait ? "بانتظار ردك" : (i.status === "CLOSED" ? "مغلق" : "مفتوح"),
+      emoji: "🔍",
+      rawItem: i,
+    });
+  });
+
+  (complaints || []).forEach(function(c){
+    var meFiled = c.filedBy === user.id;
+    var isOpen = ["PENDING_HR", "UNDER_INVESTIGATION"].indexOf(c.status) !== -1;
+    var stMeta = (COMPLAINT_STATUS && COMPLAINT_STATUS[c.status]) || null;
+    cases.push({
+      kind: "complaint",
+      caseId: _legalCaseId("COMP", c.id),
+      title: c.title || "شكوى",
+      description: (meFiled ? "ضد " + (c.againstName || "—") : "من " + (c.filedByName || "—")),
+      status: c.status,
+      ts: c.createdAt || c.ts || "",
+      color: isOpen ? COLORS.info : (stMeta && stMeta.color) || COLORS.textMuted,
+      badge: (stMeta && stMeta.label) || c.status,
+      emoji: meFiled ? "📝" : "📬",
+      rawItem: c,
+    });
+  });
+
+  cases.sort(function(a, b){ return (b.ts || "").localeCompare(a.ts || ""); });
+
+  if (cases.length === 0) {
+    return (
+      <Card padding={SPACING.lg}>
+        <div style={{ textAlign: "center", padding: SPACING.md }}>
+          <div style={{ fontSize: 42, marginBottom: 8 }}>📂</div>
+          <div style={{ fontSize: 13, fontWeight: 800, color: COLORS.textPrimary, fontFamily: TYPOGRAPHY.fontCairo }}>لا يوجد سجل قضايا</div>
+          <div style={{ fontSize: 11, color: COLORS.textMuted, marginTop: 4, fontFamily: TYPOGRAPHY.fontTajawal }}>ستظهر هنا المخالفات والتحقيقات والشكاوى حال تسجيلها</div>
+        </div>
+      </Card>
+    );
+  }
+
+  return (
+    <Card padding={SPACING.md}>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: SPACING.md }}>
+        <div style={{ ...TYPOGRAPHY.h3, color: COLORS.textPrimary, fontFamily: TYPOGRAPHY.fontCairo, display: "flex", alignItems: "center", gap: 6 }}>
+          <span>📜</span> السجل التاريخي
+        </div>
+        <div style={{ fontSize: 11, fontWeight: 700, color: COLORS.textMuted, fontFamily: TYPOGRAPHY.fontTajawal }}>
+          {cases.length} قضية
+        </div>
+      </div>
+
+      <div style={{ display: "flex", flexDirection: "column", gap: SPACING.sm }}>
+        {cases.map(function(c, i){
+          return (
+            <div
+              key={c.kind + "_" + i}
+              onClick={function(){
+                if (c.kind === "violation" && onViewViolation) onViewViolation(c.rawItem);
+                else if (c.kind === "investigation" && onViewInvestigation) onViewInvestigation(c.rawItem);
+              }}
+              style={{
+                padding: "12px 14px",
+                borderRadius: RADIUS.md,
+                background: COLORS.metallic,
+                border: "1px solid " + COLORS.metallicBorder,
+                borderRight: "4px solid " + c.color,
+                cursor: (c.kind === "violation" || c.kind === "investigation") ? "pointer" : "default",
+                transition: "background .15s",
+              }}
+            >
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: SPACING.sm, marginBottom: 4 }}>
+                <div style={{ display: "flex", alignItems: "center", gap: 8, flex: 1, minWidth: 0 }}>
+                  <span style={{ fontSize: 16 }}>{c.emoji}</span>
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div style={{ display: "flex", gap: 6, alignItems: "center", flexWrap: "wrap", marginBottom: 2 }}>
+                      <span style={{ fontSize: 9, fontWeight: 900, color: c.color, padding: "2px 7px", borderRadius: 4, background: c.color + "20", border: "1px solid " + c.color + "40", fontFamily: "monospace", letterSpacing: 0.5 }}>{c.caseId}</span>
+                      <span style={{ fontSize: 9, fontWeight: 800, color: c.color, fontFamily: TYPOGRAPHY.fontTajawal }}>{c.badge}</span>
+                    </div>
+                    <div style={{ fontSize: 13, fontWeight: 800, color: COLORS.textPrimary, fontFamily: TYPOGRAPHY.fontCairo, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{c.title}</div>
+                  </div>
+                </div>
+                <div style={{ fontSize: 10, color: COLORS.textMuted, fontFamily: TYPOGRAPHY.fontTajawal, flexShrink: 0, textAlign: "left" }}>{_legalFmtDate(c.ts)}</div>
+              </div>
+              {c.description && (
+                <div style={{ fontSize: 11, color: COLORS.textSecondary, fontFamily: TYPOGRAPHY.fontTajawal, lineHeight: 1.5, paddingRight: 24, overflow: "hidden", textOverflow: "ellipsis", display: "-webkit-box", WebkitLineClamp: 2, WebkitBoxOrient: "vertical" }}>{c.description}</div>
+              )}
+            </div>
+          );
+        })}
+      </div>
+    </Card>
+  );
+}
+
+/* ── LegalReferencesCard — quick links to regulations ── */
+function LegalReferencesCard({ onOpenLaiha, onOpenPolicies }) {
+  function Ref({ emoji, title, subtitle, onClick }) {
+    return (
+      <button
+        onClick={onClick}
+        style={{
+          width: "100%",
+          padding: "12px 14px",
+          borderRadius: RADIUS.md,
+          background: "rgba(255,255,255,0.03)",
+          border: "1px solid " + COLORS.metallicBorder,
+          display: "flex", alignItems: "center", gap: SPACING.sm,
+          textAlign: "right",
+          cursor: "pointer",
+          fontFamily: TYPOGRAPHY.fontTajawal,
+          transition: "background .15s",
+        }}
+        onMouseEnter={function(e){ e.currentTarget.style.background = "rgba(201,168,76,0.08)"; }}
+        onMouseLeave={function(e){ e.currentTarget.style.background = "rgba(255,255,255,0.03)"; }}
+      >
+        <div style={{ width: 36, height: 36, borderRadius: RADIUS.md, background: "rgba(201,168,76,0.12)", border: "1px solid rgba(201,168,76,0.25)", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 18, flexShrink: 0 }}>{emoji}</div>
+        <div style={{ flex: 1, minWidth: 0 }}>
+          <div style={{ fontSize: 13, fontWeight: 800, color: COLORS.textPrimary, fontFamily: TYPOGRAPHY.fontCairo }}>{title}</div>
+          <div style={{ fontSize: 10, fontWeight: 600, color: COLORS.textMuted, marginTop: 2 }}>{subtitle}</div>
+        </div>
+        <div style={{ fontSize: 16, color: COLORS.goldLight, flexShrink: 0 }}>›</div>
+      </button>
+    );
+  }
+
+  return (
+    <Card padding={SPACING.md}>
+      <div style={{ ...TYPOGRAPHY.h3, color: COLORS.textPrimary, fontFamily: TYPOGRAPHY.fontCairo, marginBottom: SPACING.md, display: "flex", alignItems: "center", gap: 6 }}>
+        <span>📚</span> المراجع التنظيمية
+      </div>
+      <div style={{ display: "flex", flexDirection: "column", gap: SPACING.sm }}>
+        <Ref emoji="📜" title="لائحة تنظيم العمل" subtitle="البنود · الجزاءات · التدرّج في العقوبات" onClick={onOpenLaiha} />
+        <Ref emoji="📖" title="سياسات المكتب" subtitle="الحضور · الإجازات · المخالفات · الإفادات" onClick={onOpenPolicies} />
+      </div>
+    </Card>
+  );
+}
+
+/* ── LegalFooterNote — legal citation footer ── */
+function LegalFooterNote() {
+  return (
+    <div style={{
+      padding: SPACING.md,
+      borderRadius: RADIUS.md,
+      background: "linear-gradient(135deg, rgba(100,116,139,0.08), rgba(71,85,105,0.04))",
+      border: "1px dashed " + COLORS.metallicBorder,
+      textAlign: "center",
+    }}>
+      <div style={{ fontSize: 10, color: COLORS.textMuted, lineHeight: 1.7, fontFamily: TYPOGRAPHY.fontTajawal, fontStyle: "italic" }}>
+        ⚖️ يستند السجل القانوني إلى <strong style={{ color: COLORS.goldLight }}>اللائحة التنظيمية لنظام العمل السعودي</strong>
+        {LAIHA_INFO && LAIHA_INFO.approvalNumber && <span> — لائحة تنظيم العمل المعتمدة رقم <strong style={{ color: COLORS.textPrimary }}>{LAIHA_INFO.approvalNumber}</strong></span>}
+        {LAIHA_INFO && LAIHA_INFO.approvalDate && <span> بتاريخ <strong style={{ color: COLORS.textPrimary }}>{LAIHA_INFO.approvalDate}</strong></span>}
+      </div>
+    </div>
+  );
+}
+
+/* ── LegalHub — container for the whole legal tab ── */
+function LegalHub({ user }) {
+  var [loading, setLoading] = useState(true);
+  var [complaints, setComplaints] = useState([]);
+  var [investigations, setInvestigations] = useState([]);
+  var [violations, setViolations] = useState([]);
+  var [showComplaintModal, setShowComplaintModal] = useState(false);
+  var [activeInvestigation, setActiveInvestigation] = useState(null);
+  var [activeViolation, setActiveViolation] = useState(null);
+  var [showLaiha, setShowLaiha] = useState(false);
+  var [showPolicies, setShowPolicies] = useState(false);
+
+  async function loadAll() {
+    setLoading(true);
+    try {
+      var [myC, againstMe, invs, vios] = await Promise.all([
+        api("complaints", { params: { filedBy: user.id } }).catch(function(){ return []; }),
+        api("complaints", { params: { against: user.id } }).catch(function(){ return []; }),
+        api("investigations", { params: { empId: user.id } }).catch(function(){ return []; }),
+        api("violations_v2", { params: { empId: user.id } }).catch(function(){ return []; }),
+      ]);
+      var allC = [].concat(myC || [], againstMe || []);
+      var uniq = {};
+      allC.forEach(function(c){ uniq[c.id] = c; });
+      setComplaints(Object.values(uniq));
+      setInvestigations(invs || []);
+      setViolations(vios || []);
+    } catch(e) { console.error(e); }
+    setLoading(false);
+  }
+  useEffect(function(){ loadAll(); }, [user && user.id]);
+
+  var activeViolations = violations.filter(function(v){ return v.status === "ACTIVE"; });
+  var pendingInvs = investigations.filter(function(i){ return i.status === "WAITING_RESPONSE"; });
+  var openComplaintsAgainst = complaints.filter(function(c){ return c.against === user.id && ["PENDING_HR","UNDER_INVESTIGATION"].indexOf(c.status) !== -1; });
+  var totalCases = violations.length + investigations.length + complaints.length;
+
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: SPACING.md }}>
+      {/* 1. Status banner */}
+      <LegalStatusBanner
+        activeViolationsCount={activeViolations.length}
+        pendingInvCount={pendingInvs.length}
+        openComplaintsAgainstCount={openComplaintsAgainst.length}
+        loading={loading}
+      />
+
+      {/* 2. Pending investigation alert (urgent) */}
+      {pendingInvs.length > 0 && (
+        <div onClick={function(){ setActiveInvestigation(pendingInvs[0]); }} style={{
+          padding: SPACING.md,
+          borderRadius: RADIUS.md,
+          background: "linear-gradient(135deg, rgba(226,25,44,0.2), rgba(255,107,107,0.1))",
+          border: "2px solid " + COLORS.textDanger,
+          cursor: "pointer",
+          boxShadow: "0 4px 12px rgba(226,25,44,0.3)",
+          animation: "pulse 2s infinite",
+        }}>
+          <div style={{ fontSize: 13, fontWeight: 900, color: COLORS.textDanger, marginBottom: 4, fontFamily: TYPOGRAPHY.fontCairo }}>⚠️ استمارة تحقيق بانتظارك</div>
+          <div style={{ fontSize: 12, color: COLORS.textPrimary, marginBottom: 4, fontFamily: TYPOGRAPHY.fontTajawal }}>{pendingInvs[0].title}</div>
+          <div style={{ fontSize: 10, color: COLORS.textMuted, fontFamily: TYPOGRAPHY.fontTajawal }}>
+            المهلة: {_legalFmtDate(pendingInvs[0].deadline)} — اضغط للرد
+          </div>
+        </div>
+      )}
+
+      {/* 3. 3-column summary */}
+      <LegalSummaryRow
+        violationsTotal={violations.length}
+        investigationsTotal={investigations.length}
+        complaintsTotal={complaints.length}
+        loading={loading}
+      />
+
+      {/* 4. File complaint + print buttons */}
+      <div style={{ display: "flex", gap: SPACING.sm }}>
+        <div style={{ flex: 1 }}>
+          <Button variant="primary" size="md" icon="✏️" onClick={function(){ setShowComplaintModal(true); }}>
+            رفع شكوى رسمية
+          </Button>
+        </div>
+        {violations.length > 0 && (
+          <div style={{ flex: 1 }}>
+            <Button variant="secondary" size="md" icon="🖨️" onClick={function(){ exportViolationsRecord(user, violations); }}>
+              طباعة السجل
+            </Button>
+          </div>
+        )}
+      </div>
+
+      {/* 5. Case timeline */}
+      <LegalCaseTimeline
+        violations={violations}
+        investigations={investigations}
+        complaints={complaints}
+        user={user}
+        onViewViolation={setActiveViolation}
+        onViewInvestigation={setActiveInvestigation}
+      />
+
+      {/* 6. References card */}
+      <LegalReferencesCard
+        onOpenLaiha={function(){ setShowLaiha(true); }}
+        onOpenPolicies={function(){ setShowPolicies(true); }}
+      />
+
+      {/* 7. Legal footer citation */}
+      <LegalFooterNote />
+
+      {/* Modals */}
+      {showComplaintModal && <FileComplaintModal user={user} onClose={function(){ setShowComplaintModal(false); }} onSubmit={function(){ setShowComplaintModal(false); loadAll(); }} />}
+      {activeInvestigation && <RespondInvestigationModal investigation={activeInvestigation} onClose={function(){ setActiveInvestigation(null); }} onSubmit={function(){ setActiveInvestigation(null); loadAll(); }} />}
+      {activeViolation && <ViolationDetailModal violation={activeViolation} user={user} onClose={function(){ setActiveViolation(null); }} onAppeal={function(){ setActiveViolation(null); loadAll(); }} />}
+
+      {/* Laiha bottom-sheet modal */}
+      {showLaiha && (
+        <div onClick={function(){ setShowLaiha(false); }} style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.7)", zIndex: 1000, display: "flex", alignItems: "flex-end", justifyContent: "center", fontFamily: TYPOGRAPHY.fontTajawal }}>
+          <div onClick={function(e){ e.stopPropagation(); }} style={{ background: COLORS.bg1, borderRadius: "20px 20px 0 0", width: "100%", maxWidth: 430, maxHeight: "85vh", display: "flex", flexDirection: "column", border: "1px solid " + COLORS.metallicBorder, borderBottom: "none" }}>
+            <div style={{ padding: SPACING.lg, borderBottom: "1px solid " + COLORS.metallicBorder, display: "flex", alignItems: "center", gap: SPACING.sm }}>
+              <div style={{ width: 36, height: 36, borderRadius: 10, background: COLORS.goldDark + "30", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 18 }}>📜</div>
+              <div style={{ flex: 1 }}>
+                <div style={{ ...TYPOGRAPHY.h3, color: COLORS.textPrimary, fontFamily: TYPOGRAPHY.fontCairo }}>لائحة تنظيم العمل</div>
+                <div style={{ ...TYPOGRAPHY.tiny, color: COLORS.textMuted, marginTop: 2 }}>البنود والجزاءات</div>
+              </div>
+              <button onClick={function(){ setShowLaiha(false); }} style={{ background: "none", border: "none", fontSize: 22, color: COLORS.textMuted, cursor: "pointer", padding: 4 }}>✕</button>
+            </div>
+            <div style={{ flex: 1, overflowY: "auto", padding: SPACING.md }}>
+              <LaihaViewer />
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Policies bottom-sheet modal */}
+      {showPolicies && (
+        <div onClick={function(){ setShowPolicies(false); }} style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.7)", zIndex: 1000, display: "flex", alignItems: "flex-end", justifyContent: "center", fontFamily: TYPOGRAPHY.fontTajawal }}>
+          <div onClick={function(e){ e.stopPropagation(); }} style={{ background: COLORS.bg1, borderRadius: "20px 20px 0 0", width: "100%", maxWidth: 430, maxHeight: "85vh", display: "flex", flexDirection: "column", border: "1px solid " + COLORS.metallicBorder, borderBottom: "none" }}>
+            <div style={{ padding: SPACING.lg, borderBottom: "1px solid " + COLORS.metallicBorder, display: "flex", alignItems: "center", gap: SPACING.sm }}>
+              <div style={{ width: 36, height: 36, borderRadius: 10, background: COLORS.goldDark + "30", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 18 }}>📖</div>
+              <div style={{ flex: 1 }}>
+                <div style={{ ...TYPOGRAPHY.h3, color: COLORS.textPrimary, fontFamily: TYPOGRAPHY.fontCairo }}>سياسات المكتب</div>
+                <div style={{ ...TYPOGRAPHY.tiny, color: COLORS.textMuted, marginTop: 2 }}>الإجراءات والأسئلة الشائعة</div>
+              </div>
+              <button onClick={function(){ setShowPolicies(false); }} style={{ background: "none", border: "none", fontSize: 22, color: COLORS.textMuted, cursor: "pointer", padding: 4 }}>✕</button>
+            </div>
+            <div style={{ flex: 1, overflowY: "auto", padding: SPACING.md }}>
+              <PoliciesTab user={user} />
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 function ProfilePage({ user, branch, workType, onLogout, onTicket, myTickets, darkMode, toggleDark, kadwarNotifs }) {
   // v7.15 — legacy tab IDs remapped to new 5-tab structure
   // Old (v7.14): profile/time/pay/perf/tickets → New (v7.15): profile/records/achievements/pay/legal
@@ -4828,16 +5267,8 @@ function ProfilePage({ user, branch, workType, onLogout, onTicket, myTickets, da
 
         {/* v6.95 — Manager evaluations — merged inside my_evals hub below */}
 
-        {/* v7.15 — tab: legal (الشؤون القانونية) — تقييماتي انتقلت لتقريري في BottomNav */}
-        {tab === "legal" && (
-          <>
-            <LegalTab user={user} />
-            <div style={{ marginTop: SPACING.lg, paddingTop: SPACING.md, borderTop: "1px dashed " + COLORS.metallicBorder }}>
-              <div style={{ ...TYPOGRAPHY.h3, color: COLORS.textPrimary, fontFamily: TYPOGRAPHY.fontCairo, marginBottom: SPACING.md, textAlign: "center" }}>📖 السياسات والأسئلة الشائعة</div>
-              <PoliciesTab user={user} />
-            </div>
-          </>
-        )}
+        {/* v7.21 — tab: legal (الشؤون القانونية) — visual redesign: status banner + summary + timeline + references + footer */}
+        {tab === "legal" && <LegalHub user={user} />}
 
         {/* v7.17 — tab: records (سجلي وطلباتي) — visual redesign with Hero + Chips + filtered content */}
         {tab === "records" && <RecordsHub user={user} onTicket={onTicket} />}
