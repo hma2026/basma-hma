@@ -4,7 +4,7 @@ import { generateAttendanceReport, generateEmployeeReport, generateMonthlySummar
 import { exportFormalWarning, exportInvestigationRecord, exportAffidavit, exportEmploymentLetter, exportSalaryLetter, exportLeaveLetter } from "./formalPdfs";
 
 const APP = "بصمة HMA";
-const VER = "7.24";
+const VER = "7.25";
 const CO = "هاني محمد عسيري للإستشارات الهندسية";
 const B = { blue: "#2B5EA7", yellow: "#FDD800", red: "#E2192C", black: "#1A1A1A", blueDk: "#1E4478", blueLt: "#EDF3FB", gold: "#D4A017" };
 
@@ -318,6 +318,80 @@ function MoreMenuPage({ setTab, badges, sideGroups }) {
   );
 }
 
+// ── Mobile Top Bar (back button + page title) — v7.25 ──
+function MobileTopBar({ tab, sideItems, onBack }) {
+  // The 4 main bottom-nav tabs are "root" — they don't show a back button
+  var rootTabs = ["dashboard", "hr_tickets", "leaves_hub", "more"];
+  var isRoot = rootTabs.indexOf(tab) !== -1;
+
+  // Find the current item meta
+  var current = sideItems.find(function(s){ return s.id === tab; });
+  var icon = current ? current.icon : "";
+  var label = current ? current.label : "";
+
+  // Custom titles for root tabs
+  if (tab === "dashboard") { icon = "📊"; label = "لوحة التحكم"; }
+  else if (tab === "hr_tickets") { icon = "📨"; label = "رسائل الموظفين"; }
+  else if (tab === "leaves_hub") { icon = "🏖️"; label = "الإجازات"; }
+  else if (tab === "more") { return null; /* MoreMenuPage has its own header */ }
+
+  return (
+    <div style={{
+      position: "sticky",
+      top: 0,
+      zIndex: 50,
+      background: LN.card,
+      borderBottom: "1px solid " + LN.cardBrd,
+      padding: "10px 12px",
+      margin: "-12px -14px 14px",
+      display: "flex",
+      alignItems: "center",
+      gap: 10,
+      minHeight: 52,
+      boxShadow: "0 1px 3px rgba(0,0,0,0.04)",
+    }}>
+      {!isRoot && (
+        <button
+          onClick={onBack}
+          aria-label="رجوع"
+          style={{
+            width: 36, height: 36,
+            borderRadius: 10,
+            border: "1px solid " + LN.cardBrd,
+            background: LN.card,
+            color: LN.tx2,
+            fontSize: 20,
+            cursor: "pointer",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            fontFamily: "inherit",
+            flexShrink: 0,
+            transition: "background .15s",
+          }}
+          onMouseEnter={function(e){ e.currentTarget.style.background = LN.hover; }}
+          onMouseLeave={function(e){ e.currentTarget.style.background = LN.card; }}
+        >
+          ›
+        </button>
+      )}
+
+      <div style={{ flex: 1, minWidth: 0, display: "flex", alignItems: "center", gap: 8 }}>
+        <span style={{ fontSize: 20, flexShrink: 0 }}>{icon}</span>
+        <div style={{
+          fontSize: 17,
+          fontWeight: 800,
+          color: LN.tx,
+          fontFamily: "inherit",
+          overflow: "hidden",
+          textOverflow: "ellipsis",
+          whiteSpace: "nowrap",
+        }}>{label}</div>
+      </div>
+    </div>
+  );
+}
+
 // ═══════ MAP PICKER ═══════
 function MapPicker({ lat, lng, radius, name, onSave, onClose, t }) {
   var mapRef = useRef(null);
@@ -566,8 +640,54 @@ export default function AdminApp() {
     return !!localStorage.getItem("basma_admin_email");
   });
   const [role, setRole] = useState("manager");
-  const [tab, setTab] = useState("dashboard");
+  const [tab, _setTabRaw] = useState("dashboard");
   const isMobile = useIsMobile(); // v7.24 — mobile detection
+
+  // v7.25 — Navigation stack for smart back button (mobile)
+  const [navStack, setNavStack] = useState([]);
+  function setTab(newTab) {
+    if (newTab === tab) return;
+    var rootTabs = ["dashboard", "hr_tickets", "leaves_hub", "more"];
+    if (rootTabs.indexOf(newTab) !== -1) {
+      // Navigating to a root tab clears the stack (fresh start)
+      setNavStack([]);
+    } else {
+      // Push current tab onto stack before navigating to a sub-screen
+      setNavStack(function(prev){ return prev.concat([tab]); });
+    }
+    _setTabRaw(newTab);
+  }
+  function goBack() {
+    setNavStack(function(prev){
+      if (prev.length === 0) {
+        // Fallback: go to "more" if current is non-root, otherwise dashboard
+        var rootTabs = ["dashboard", "hr_tickets", "leaves_hub", "more"];
+        _setTabRaw(rootTabs.indexOf(tab) === -1 ? "more" : "dashboard");
+        return [];
+      }
+      var newStack = prev.slice();
+      var prevTab = newStack.pop();
+      _setTabRaw(prevTab);
+      return newStack;
+    });
+  }
+
+  // v7.25 — Android hardware back button support (mobile only)
+  useEffect(function(){
+    if (!isMobile) return;
+    var rootTabs = ["dashboard", "hr_tickets", "leaves_hub", "more"];
+    function onPopState(e){
+      if (rootTabs.indexOf(tab) === -1) {
+        e.preventDefault && e.preventDefault();
+        goBack();
+        // Re-push to keep history consistent
+        try { window.history.pushState({ adminTab: tab }, ""); } catch(err){}
+      }
+    }
+    try { window.history.pushState({ adminTab: tab }, ""); } catch(err){}
+    window.addEventListener("popstate", onPopState);
+    return function(){ window.removeEventListener("popstate", onPopState); };
+  }, [isMobile, tab]);
   const [loading, setLoading] = useState(true);
   const [leaves, setLeaves] = useState(LEAVE_INIT);
   const [search, setSearch] = useState("");
@@ -925,6 +1045,11 @@ export default function AdminApp() {
         <SlidePage tabKey="more">
           <MoreMenuPage setTab={setTab} badges={badgeCounts} sideGroups={sideGroups} />
         </SlidePage>
+      )}
+
+      {/* v7.25 — Mobile Top Bar with smart back button (for non-root tabs) */}
+      {isMobile && tab !== "more" && (
+        <MobileTopBar tab={tab} sideItems={sideItems} onBack={goBack} />
       )}
 
       {/* ═══ DASHBOARD ═══ */}
