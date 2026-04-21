@@ -11,7 +11,7 @@ import { exportEmploymentLetter, exportLeaveLetter } from "./formalPdfs";
 
 /* ═══════════ APP CONFIG (إعدادات التطبيق) ═══════════ */
 const APP_CONFIG = {
-  VER: "7.40",
+  VER: "7.41",
   NAME: "بصمة HMA",
   FULL_NAME: "نظام الحضور والانصراف الذكي",
   COMPANY: "هاني محمد عسيري للاستشارات الهندسية",
@@ -3351,21 +3351,20 @@ function RecordsHero({ user, onTicket, onRequestLeave }) {
     if (!user || !user.id) return;
     async function loadCounts() {
       try {
-        var [leaves, perms, preAbs, bal, contracts, violations] = await Promise.all([
+        var [leaves, perms, preAbs, bal, contracts] = await Promise.all([
           fetch("/api/data?action=leaves").then(function(r){ return r.json(); }).then(function(d){ return (Array.isArray(d) ? d : []).filter(function(x){ return x.empId === user.id; }); }).catch(function(){ return []; }),
           fetch("/api/data?action=permissions&empId=" + encodeURIComponent(user.id)).then(function(r){ return r.json(); }).catch(function(){ return []; }),
           fetch("/api/data?action=pre_absence").then(function(r){ return r.json(); }).then(function(d){ return (Array.isArray(d) ? d : []).filter(function(x){ return x.empId === user.id; }); }).catch(function(){ return []; }),
           fetch("/api/data?action=leave-balance&empId=" + encodeURIComponent(user.id)).then(function(r){ return r.json(); }).catch(function(){ return null; }),
           fetch("/api/data?action=emp_records&empId=" + encodeURIComponent(user.id) + "&type=contract").then(function(r){ return r.json(); }).catch(function(){ return []; }),
-          fetch("/api/data?action=violations_v2&empId=" + encodeURIComponent(user.id)).then(function(r){ return r.json(); }).catch(function(){ return []; }),
         ]);
         var lvArr = Array.isArray(leaves) ? leaves : [];
         var pmArr = Array.isArray(perms) ? perms : [];
         var paArr = Array.isArray(preAbs) ? preAbs : [];
         var ctrArr = Array.isArray(contracts) ? contracts : [];
-        var vioArr = Array.isArray(violations) ? violations : [];
         var openCount = [].concat(lvArr, pmArr, paArr).filter(function(x){ return (x.status || "pending") === "pending"; }).length;
-        var totalRecords = lvArr.length + pmArr.length + paArr.length + ctrArr.length + vioArr.length;
+        // v7.41 — violations excluded from total (moved to القانونية)
+        var totalRecords = lvArr.length + pmArr.length + paArr.length + ctrArr.length;
         var balTotal = 0;
         if (bal && !bal.error) {
           balTotal = (bal.annual || 0) + (bal.sick || 0) + (bal.emergency || 0) + (bal.personal || 0);
@@ -3440,11 +3439,11 @@ function RecordsHero({ user, onTicket, onRequestLeave }) {
 
 /* ── RecordsFilterChips — 6 horizontal chips ── */
 function RecordsFilterChips({ active, onChange }) {
+  // v7.41 — violations removed (moved to القانونية)
   var chips = [
     { id: "open",       emoji: "📬", label: "مفتوحة" },
     { id: "leaves",     emoji: "🏖️", label: "إجازات" },
     { id: "contracts",  emoji: "📄", label: "عقود" },
-    { id: "violations", emoji: "⚠️", label: "مخالفات" },
     { id: "promotions", emoji: "🚀", label: "ترقيات" },
     { id: "archive",    emoji: "🗄️", label: "أرشيف" },
   ];
@@ -3629,7 +3628,7 @@ function RecordsHub({ user, onTicket }) {
         {filter === "open" && <MyRequestsTab user={user} />}
         {filter === "leaves" && <MyLeavesHub user={user} />}
         {filter === "contracts" && <EmployeeRecordTab user={user} initialSubTab="contracts" hideSubTabs={true} />}
-        {filter === "violations" && <EmployeeRecordTab user={user} initialSubTab="violations" hideSubTabs={true} />}
+        {/* v7.41 — violations removed (accessible from القانونية) */}
         {filter === "promotions" && <RecordsPromotionsView user={user} />}
         {filter === "archive" && <RecordsArchiveView user={user} />}
       </div>
@@ -14300,35 +14299,7 @@ function MyRequestsTab({ user }) {
 
   return (
     <>
-      {/* Summary cards */}
-      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: SPACING.sm, marginBottom: SPACING.md }}>
-        <Card padding={SPACING.md}>
-          <div style={{ ...TYPOGRAPHY.tiny, color: COLORS.textMuted, fontWeight: 700 }}>⏳ قيد المراجعة</div>
-          <div style={{ ...TYPOGRAPHY.h1, color: "#D97706", marginTop: 4 }}>{pendingCount}</div>
-        </Card>
-        <Card padding={SPACING.md}>
-          <div style={{ ...TYPOGRAPHY.tiny, color: COLORS.textMuted, fontWeight: 700 }}>✅ معتمدة</div>
-          <div style={{ ...TYPOGRAPHY.h1, color: "#10B981", marginTop: 4 }}>{approvedCount}</div>
-        </Card>
-      </div>
-
-      {/* Leave balance widget */}
-      {balance && (
-        <Card padding={SPACING.md}>
-          <div style={{ ...TYPOGRAPHY.caption, fontWeight: 800, color: COLORS.textPrimary, marginBottom: 8 }}>📊 رصيد الإجازات (سنة {balance.year})</div>
-          <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 6 }}>
-            {[{k:"annual",l:"سنوية",i:"🏖️",c:"#0891B2"},{k:"sick",l:"مرضية",i:"🏥",c:"#DC2626"},{k:"emergency",l:"طارئة",i:"⚡",c:"#D97706"},{k:"personal",l:"شخصية",i:"👤",c:"#7C3AED"}].map(function(b){
-              return (
-                <div key={b.k} style={{ textAlign: "center", padding: 8, borderRadius: 10, background: b.c + "15", border: "1px solid " + b.c + "40" }}>
-                  <div style={{ fontSize: 14 }}>{b.i}</div>
-                  <div style={{ fontSize: 17, fontWeight: 900, color: b.c }}>{balance[b.k] || 0}</div>
-                  <div style={{ fontSize: 8, color: COLORS.textMuted }}>{b.l}</div>
-                </div>
-              );
-            })}
-          </div>
-        </Card>
-      )}
+      {/* v7.41 — Summary cards and leave balance REMOVED (already in RecordsHero above) */}
 
       {/* v7.00 — زر "طلب إجازة" نُقل إلى تبويب "إجازاتي" (نظام الإجازات الجديد مع التسليم) */}
       <div style={{ padding: "10px 14px", marginBottom: 8, borderRadius: 10, background: "rgba(8,145,178,0.08)", border: "1px dashed rgba(8,145,178,0.3)", fontSize: 11, color: COLORS.textMuted, lineHeight: 1.7, textAlign: "center", cursor: "pointer" }}
