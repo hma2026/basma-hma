@@ -11,7 +11,7 @@ import { exportEmploymentLetter, exportLeaveLetter } from "./formalPdfs";
 
 /* ═══════════ APP CONFIG (إعدادات التطبيق) ═══════════ */
 const APP_CONFIG = {
-  VER: "7.36",
+  VER: "7.37",
   NAME: "بصمة HMA",
   FULL_NAME: "نظام الحضور والانصراف الذكي",
   COMPANY: "هاني محمد عسيري للاستشارات الهندسية",
@@ -2812,10 +2812,10 @@ function ReportPage({ user, allAtt, todayAtt, branch, isOffDay, myLeaves, allEmp
         <ViolationsCard user={user} />
         <DelegationCard user={user} />
 
-        {/* v7.15 — تقييماتي انتقلت من حسابي إلى تقريري (هنا) */}
+        {/* v7.37 — تقييماتي فقط (تقييمات فريقي منقولة إلى "فريقي") */}
         <div style={{ marginTop: SPACING.md, paddingTop: SPACING.md, borderTop: "1px dashed " + COLORS.metallicBorder }}>
           <div style={{ ...TYPOGRAPHY.h3, color: COLORS.textPrimary, fontFamily: TYPOGRAPHY.fontCairo, marginBottom: SPACING.sm, textAlign: "center" }}>⭐ تقييماتي</div>
-          <MyEvalsHub user={user} />
+          <MyEvaluationsTab user={user} />
         </div>
 
         <Button variant="primary" size="md" icon={<Icons.chart size={20} />} onClick={exportCSV}>
@@ -3440,8 +3440,9 @@ function RecordsFilterChips({ active, onChange }) {
     { id: "promotions", emoji: "🚀", label: "ترقيات" },
     { id: "archive",    emoji: "🗄️", label: "أرشيف" },
   ];
+  // v7.37 — clean underline tabs (no pills/gradients) to fix visual clutter
   return (
-    <div style={{ display: "flex", gap: 6, overflowX: "auto", paddingBottom: 4, WebkitOverflowScrolling: "touch" }}>
+    <div style={{ display: "flex", gap: 0, overflowX: "auto", WebkitOverflowScrolling: "touch", borderBottom: "1px solid " + COLORS.metallicBorder, scrollbarWidth: "none" }}>
       {chips.map(function(c){
         var isActive = active === c.id;
         return (
@@ -3450,24 +3451,24 @@ function RecordsFilterChips({ active, onChange }) {
             onClick={function(){ onChange(c.id); }}
             style={{
               flexShrink: 0,
-              padding: "8px 14px",
-              borderRadius: RADIUS.pill,
-              background: isActive ? COLORS.goldGradient : COLORS.metallic,
-              border: "1px solid " + (isActive ? COLORS.goldLight : COLORS.metallicBorder),
-              color: isActive ? COLORS.textOnGold : COLORS.textSecondary,
-              fontWeight: 800,
+              padding: "10px 14px",
+              background: "transparent",
+              border: "none",
+              borderBottom: "2px solid " + (isActive ? COLORS.goldLight : "transparent"),
+              color: isActive ? COLORS.goldLight : COLORS.textSecondary,
+              fontWeight: isActive ? 800 : 600,
               fontSize: 12,
               cursor: "pointer",
               fontFamily: TYPOGRAPHY.fontTajawal,
-              boxShadow: isActive ? SHADOWS.gold : SHADOWS.button,
               display: "flex",
               alignItems: "center",
-              gap: 6,
+              gap: 5,
               whiteSpace: "nowrap",
+              marginBottom: -1,
               transition: "all .2s",
             }}
           >
-            <span style={{ fontSize: 14 }}>{c.emoji}</span>
+            <span style={{ fontSize: 13 }}>{c.emoji}</span>
             <span>{c.label}</span>
           </button>
         );
@@ -3633,7 +3634,45 @@ function RecordsHub({ user, onTicket }) {
  * Gold Level Card + 3 Stats + Horizontal Badge Strip + Leaderboard
  * ═══════════════════════════════════════════════════════════════════ */
 
-/* ── AchievementsHeroCard — the main gold level card ── */
+/* v7.37 — COMPACT Hero banner (smaller than AchievementsHeroCard) */
+function AchievementsHeroCompact({ user }) {
+  var points = user.points || 0;
+  var badge = memberBadge(points);
+  var isTop = badge.tier === MEMBERSHIP.length - 1;
+
+  return (
+    <div style={{
+      padding: "12px 16px",
+      borderRadius: RADIUS.lg,
+      background: "linear-gradient(135deg, rgba(201,168,76,0.15) 0%, rgba(201,168,76,0.08) 100%)",
+      border: "1px solid " + COLORS.goldLight,
+      boxShadow: "0 2px 10px rgba(201,168,76,0.15)",
+      display: "flex", alignItems: "center", gap: 12,
+    }}>
+      <div style={{ fontSize: 32, flexShrink: 0 }}>{badge.icon}</div>
+      <div style={{ flex: 1, minWidth: 0 }}>
+        <div style={{ fontSize: 10, color: COLORS.textMuted, fontWeight: 700, fontFamily: TYPOGRAPHY.fontTajawal }}>المستوى الحالي</div>
+        <div style={{ fontSize: 14, fontWeight: 900, color: COLORS.goldLight, fontFamily: TYPOGRAPHY.fontCairo }}>{badge.label}</div>
+        {!isTop && badge.next && (
+          <div style={{ marginTop: 6 }}>
+            <div style={{ height: 5, borderRadius: 3, background: "rgba(0,0,0,0.25)", overflow: "hidden" }}>
+              <div style={{ height: "100%", width: badge.progress + "%", background: COLORS.goldGradient, borderRadius: 3, transition: "width .5s ease" }} />
+            </div>
+            <div style={{ fontSize: 9, color: COLORS.textMuted, marginTop: 3, fontFamily: TYPOGRAPHY.fontTajawal }}>
+              باقي <strong style={{ color: COLORS.goldLight }}>{badge.remaining}</strong> نقطة لـ {badge.nextLabel}
+            </div>
+          </div>
+        )}
+      </div>
+      <div style={{ textAlign: "center", flexShrink: 0 }}>
+        <div style={{ fontSize: 20, fontWeight: 900, color: COLORS.textPrimary, fontFamily: TYPOGRAPHY.fontCairo, letterSpacing: -0.5, lineHeight: 1 }}>{points.toLocaleString("ar-SA")}</div>
+        <div style={{ fontSize: 9, color: COLORS.textMuted, fontWeight: 700, fontFamily: TYPOGRAPHY.fontTajawal, marginTop: 2 }}>نقطة</div>
+      </div>
+    </div>
+  );
+}
+
+/* ── AchievementsHeroCard — the main gold level card (legacy, kept for backward compat) ── */
 function AchievementsHeroCard({ user }) {
   var points = user.points || 0;
   var badge = memberBadge(points);
@@ -4036,26 +4075,29 @@ function AchievementsHub({ user }) {
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: SPACING.md }}>
-      {/* 1. Hero gold level card */}
-      <AchievementsHeroCard user={user} />
+      {/* v7.37 — 1. Compact Level Banner at top (smaller than before) */}
+      <AchievementsHeroCompact user={user} />
 
-      {/* 2. 3 Stats */}
+      {/* 2. Stats */}
       <AchievementsStatsRow user={user} stats={stats} loading={statsLoading} />
 
-      {/* 3. Badges strip */}
-      <AchievementsBadgesStrip user={user} stats={stats} loading={statsLoading} />
-
-      {/* 4. Points log accordion */}
-      <ProfileAccordion emoji="📜" title="سجل النقاط" subtitle="كل نقاط اكتسبتها من الحضور والتفاعل">
-        <PointsLogCard user={user} allAtt={[]} />
-      </ProfileAccordion>
-
-      {/* 5. All badges accordion */}
-      <ProfileAccordion emoji="🏆" title="جميع الشارات" subtitle="الشارات المفتوحة والمقفلة بتفاصيلها">
+      {/* v7.37 — 3. Badges EXPANDED (not accordion) - all icons visible under main icon */}
+      <div style={{ background: COLORS.metallic, border: "1px solid " + COLORS.metallicBorder, borderRadius: RADIUS.xl, padding: SPACING.lg, boxShadow: SHADOWS.button }}>
+        <div style={{ ...TYPOGRAPHY.h3, color: COLORS.textPrimary, marginBottom: SPACING.md, display: "flex", alignItems: "center", gap: 6 }}>
+          <span>🏆</span> إشاراتي
+        </div>
         <AchievementsCard user={user} />
-      </ProfileAccordion>
+      </div>
 
-      {/* 6. Leaderboard accordion */}
+      {/* v7.37 — 4. Points log DIRECTLY below badges (not accordion) */}
+      <div style={{ background: COLORS.metallic, border: "1px solid " + COLORS.metallicBorder, borderRadius: RADIUS.xl, padding: SPACING.lg, boxShadow: SHADOWS.button }}>
+        <div style={{ ...TYPOGRAPHY.h3, color: COLORS.textPrimary, marginBottom: SPACING.md, display: "flex", alignItems: "center", gap: 6 }}>
+          <span>📜</span> سجل النقاط
+        </div>
+        <PointsLogCard user={user} allAtt={[]} />
+      </div>
+
+      {/* v7.37 — 5. Leaderboard at the VERY BOTTOM (last element) */}
       <ProfileAccordion emoji="📊" title="ترتيبي بين الزملاء" subtitle="أين موقعي بالنسبة للجميع">
         <LeaderboardView user={user} />
       </ProfileAccordion>
@@ -5001,9 +5043,9 @@ function LegalHub({ user }) {
       {activeInvestigation && <RespondInvestigationModal investigation={activeInvestigation} onClose={function(){ setActiveInvestigation(null); }} onSubmit={function(){ setActiveInvestigation(null); loadAll(); }} />}
       {activeViolation && <ViolationDetailModal violation={activeViolation} user={user} onClose={function(){ setActiveViolation(null); }} onAppeal={function(){ setActiveViolation(null); loadAll(); }} />}
 
-      {/* Laiha bottom-sheet modal */}
+      {/* Laiha bottom-sheet modal — v7.37 z-index + touchAction */}
       {showLaiha && (
-        <div onClick={function(){ setShowLaiha(false); }} style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.7)", zIndex: 1000, display: "flex", alignItems: "flex-end", justifyContent: "center", fontFamily: TYPOGRAPHY.fontTajawal }}>
+        <div onClick={function(){ setShowLaiha(false); }} style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.75)", zIndex: 9500, display: "flex", alignItems: "flex-end", justifyContent: "center", fontFamily: TYPOGRAPHY.fontTajawal, backdropFilter: "blur(4px)", WebkitBackdropFilter: "blur(4px)", touchAction: "none" }}>
           <div onClick={function(e){ e.stopPropagation(); }} style={{ background: COLORS.bg1, borderRadius: "20px 20px 0 0", width: "100%", maxWidth: 430, maxHeight: "85vh", display: "flex", flexDirection: "column", border: "1px solid " + COLORS.metallicBorder, borderBottom: "none" }}>
             <div style={{ padding: SPACING.lg, borderBottom: "1px solid " + COLORS.metallicBorder, display: "flex", alignItems: "center", gap: SPACING.sm }}>
               <div style={{ width: 36, height: 36, borderRadius: 10, background: COLORS.goldDark + "30", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 18 }}>📜</div>
@@ -5020,9 +5062,9 @@ function LegalHub({ user }) {
         </div>
       )}
 
-      {/* Policies bottom-sheet modal */}
+      {/* Policies bottom-sheet modal — v7.37 z-index fixed */}
       {showPolicies && (
-        <div onClick={function(){ setShowPolicies(false); }} style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.7)", zIndex: 1000, display: "flex", alignItems: "flex-end", justifyContent: "center", fontFamily: TYPOGRAPHY.fontTajawal }}>
+        <div onClick={function(){ setShowPolicies(false); }} style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.75)", zIndex: 9500, display: "flex", alignItems: "flex-end", justifyContent: "center", fontFamily: TYPOGRAPHY.fontTajawal, backdropFilter: "blur(4px)", WebkitBackdropFilter: "blur(4px)", touchAction: "none" }}>
           <div onClick={function(e){ e.stopPropagation(); }} style={{ background: COLORS.bg1, borderRadius: "20px 20px 0 0", width: "100%", maxWidth: 430, maxHeight: "85vh", display: "flex", flexDirection: "column", border: "1px solid " + COLORS.metallicBorder, borderBottom: "none" }}>
             <div style={{ padding: SPACING.lg, borderBottom: "1px solid " + COLORS.metallicBorder, display: "flex", alignItems: "center", gap: SPACING.sm }}>
               <div style={{ width: 36, height: 36, borderRadius: 10, background: COLORS.goldDark + "30", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 18 }}>📖</div>
@@ -10681,8 +10723,169 @@ function MultiAssigneesProgress({ request, myId, onUpdated }) {
 
 
 /* ═══════════ TAWASUL DETAIL MODAL — with Phase 2 actions (big button + secondary + comment) ═══════════ */
-function TawasulDetailModal({ request, user, allEmps, onClose, nameOf, onUpdated, onEdit, readOnly, taskList, onNavigate, isPinned, onTogglePin }) {
-  var r = request;
+/* ═══════════ PARTIES CAROUSEL — v7.37 (proper component to respect hooks rules) ═══════════ */
+function PartiesCarousel({ assignees, nameOf, C }) {
+  var [partyIdx, setPartyIdx] = React.useState(0);
+  var scrollRef = React.useRef(null);
+  var totalP = assignees.length;
+
+  function onCarouselScroll() {
+    var el = scrollRef.current; if (!el) return;
+    var cw = el.offsetWidth;
+    if (cw <= 0) return;
+    var idx = Math.round(el.scrollLeft / cw);
+    if (idx !== partyIdx && idx >= 0 && idx < totalP) {
+      setPartyIdx(idx);
+      try { if (navigator.vibrate) navigator.vibrate(6); } catch(e) {}
+    }
+  }
+
+  if (totalP < 2) return null;
+
+  function getPersonStage(a) {
+    if (a.closedAt) return 4;
+    if (a.deliveredAt) return 3;
+    if (a.acceptedAt) return 1;
+    return 0;
+  }
+  function getPersonStatusText(a) {
+    if (a.closedAt) return { text: "✅ مُقيّمة", bg: "rgba(46,211,165,0.12)", color: "#2ED3A5" };
+    if (a.deliveredAt) return { text: "⏳ بانتظار التقييم", bg: "rgba(201,168,76,0.1)", color: C.gold };
+    if (a.acceptedAt) return { text: "⚡ يعمل عليها", bg: "rgba(124,58,237,0.12)", color: "#7c3aed" };
+    return { text: "📥 لم تبدأ بعد", bg: "rgba(15,118,110,0.12)", color: "#2ED3A5" };
+  }
+  var MINI_STAGES = [
+    { icon: "📥", label: "جديد" },
+    { icon: "⚡", label: "تنفيذ" },
+    { icon: "📦", label: "تسليم" },
+    { icon: "⭐", label: "تقييم" },
+  ];
+
+  return (
+    <div style={{ margin: "8px 18px 0", position: "relative", overflow: "hidden", borderRadius: 14, border: "1px solid " + C.cardBorder }}>
+      <div ref={scrollRef} onScroll={onCarouselScroll} style={{ display: "flex", overflowX: "auto", scrollSnapType: "x mandatory", WebkitOverflowScrolling: "touch", scrollbarWidth: "none", msOverflowStyle: "none" }}>
+        {assignees.map(function(a, aIdx){
+          var pStage = getPersonStage(a);
+          var pStatus = getPersonStatusText(a);
+          var initial = (a.name || nameOf(a.id) || "?").slice(0, 2);
+          return (
+            <div key={a.id || aIdx} style={{ flex: "0 0 100%", background: C.card, padding: "12px 16px", scrollSnapAlign: "start" }}>
+              <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 10 }}>
+                <div style={{ width: 34, height: 34, borderRadius: 17, background: "linear-gradient(135deg, " + C.hdr1 + ", " + C.blue + ")", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 12, fontWeight: 900, color: C.gold, flexShrink: 0 }}>{initial}</div>
+                <div style={{ flex: 1 }}>
+                  <div style={{ fontSize: 13, fontWeight: 800, color: C.text }}>{a.name || nameOf(a.id)}</div>
+                  <div style={{ fontSize: 10, color: C.sub, fontWeight: 600 }}>{a.addedAsCollab ? "متعاون" : "مُكلّف"}</div>
+                </div>
+                <div style={{ fontSize: 10, fontWeight: 800, color: C.sub, background: C.bg, padding: "3px 8px", borderRadius: 999, border: "1px solid " + C.cardBorder }}>{(aIdx + 1) + "/" + totalP}</div>
+              </div>
+              <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+                {MINI_STAGES.map(function(ms, msIdx){
+                  var msActive = msIdx <= pStage;
+                  var msCurrent = msIdx === pStage;
+                  return (
+                    <React.Fragment key={msIdx}>
+                      <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 2, flex: "0 0 auto" }}>
+                        <div style={{ width: 24, height: 24, borderRadius: 12, background: msActive ? "#2ED3A5" : C.bg, border: "2px solid " + (msCurrent ? "#7EEDCF" : msActive ? "#2ED3A5" : C.cardBorder), display: "flex", alignItems: "center", justifyContent: "center", fontSize: 10, color: msActive ? "#fff" : C.sub }}>{ms.icon}</div>
+                        <div style={{ fontSize: 7, fontWeight: 700, color: msActive ? C.text : C.sub, textAlign: "center", maxWidth: 46 }}>{ms.label}</div>
+                      </div>
+                      {msIdx < MINI_STAGES.length - 1 && <div style={{ flex: 1, height: 2, background: msIdx < pStage ? "#2ED3A5" : C.cardBorder, margin: "0 2px", marginBottom: 14, minWidth: 3 }} />}
+                    </React.Fragment>
+                  );
+                })}
+              </div>
+              <div style={{ textAlign: "center", marginTop: 8, padding: "5px 10px", borderRadius: 999, fontSize: 9.5, fontWeight: 800, background: pStatus.bg, color: pStatus.color }}>{pStatus.text}</div>
+            </div>
+          );
+        })}
+      </div>
+      <div style={{ display: "flex", justifyContent: "center", gap: 6, padding: "6px 0", background: C.card, borderTop: "1px solid " + C.cardBorder }}>
+        {assignees.map(function(_, dIdx){
+          return <div key={dIdx} style={{ width: dIdx === partyIdx ? 16 : 6, height: 6, borderRadius: 3, background: dIdx === partyIdx ? C.gold : C.cardBorder, transition: "all 0.2s" }} />;
+        })}
+      </div>
+    </div>
+  );
+}
+
+/* ═══════════ SWIPE SECTION — v7.37 (proper top-level component) ═══════════ */
+function SwipeSection({ id, icon, title, badge, children, isOpen, onToggle, C, swipeRight, swipeLeft }) {
+  var elRef = React.useRef(null);
+  var stRef = React.useRef({ sx:0, sy:0, dx:0, dir:null, active:false, vel:0, lx:0, lt:0 });
+  var [revPct, setRevPct] = React.useState(0);
+
+  React.useEffect(function(){
+    var el = elRef.current; if (!el) return;
+    var currentIsOpen = isOpen;
+    function ts(e) {
+      var t = e.touches[0];
+      stRef.current = { sx:t.clientX, sy:t.clientY, dx:0, dir:null, active:true, vel:0, lx:t.clientX, lt:Date.now() };
+    }
+    function tm(e) {
+      var s = stRef.current; if (!s.active) return;
+      var t = e.touches[0];
+      var dx = t.clientX - s.sx, dy = t.clientY - s.sy;
+      if (!s.dir) {
+        if (Math.abs(dx) > 8 || Math.abs(dy) > 8) s.dir = Math.abs(dx) >= Math.abs(dy) ? "h" : "v";
+        else return;
+      }
+      if (s.dir !== "h") return;
+      e.preventDefault();
+      var now = Date.now(); var dt = now - s.lt;
+      if (dt > 0) s.vel = (t.clientX - s.lx) / dt * 1000;
+      s.lx = t.clientX; s.lt = now; s.dx = dx;
+      el.style.transition = "none";
+      el.style.transform = "translateX(" + dx + "px)";
+      var w = el.offsetWidth || 300;
+      setRevPct(Math.max(-1, Math.min(1, dx / (w * 0.35))));
+    }
+    function te() {
+      var s = stRef.current; s.active = false;
+      if (s.dir !== "h") { setRevPct(0); return; }
+      el.style.transition = "transform 0.5s cubic-bezier(0.22, 1, 0.36, 1)";
+      el.style.transform = "none";
+      setRevPct(0);
+      var w = el.offsetWidth || 300;
+      var fired = Math.abs(s.vel) > 350 || Math.abs(s.dx) > w * 0.3;
+      if (fired) {
+        try { if (navigator.vibrate) navigator.vibrate(8); } catch(e2) {}
+        var dir2 = (s.dx > 0 || s.vel > 350) ? "right" : "left";
+        if (dir2 === "right" && !currentIsOpen) onToggle();
+        else if (dir2 === "left" && currentIsOpen) onToggle();
+      }
+    }
+    el.addEventListener("touchstart", ts, { passive: true });
+    el.addEventListener("touchmove", tm, { passive: false });
+    el.addEventListener("touchend", te, { passive: true });
+    return function() {
+      el.removeEventListener("touchstart", ts);
+      el.removeEventListener("touchmove", tm);
+      el.removeEventListener("touchend", te);
+    };
+  }, [id, isOpen, onToggle]);
+
+  var rBg = swipeRight ? (swipeRight.color || "#2ED3A5") : null;
+  var lBg = swipeLeft ? (swipeLeft.color || "#64748b") : null;
+  var rOp = revPct > 0 ? Math.min(1, revPct) : 0;
+  var lOp = revPct < 0 ? Math.min(1, -revPct) : 0;
+
+  return (
+    <div style={{ position: "relative", marginBottom: 8, borderRadius: 14, overflow: "hidden" }}>
+      {rBg && <div style={{ position: "absolute", top: 0, right: 0, bottom: 0, width: "100%", background: rBg, display: "flex", alignItems: "center", justifyContent: "flex-start", paddingRight: 14, borderRadius: 14, opacity: rOp, transition: rOp > 0 ? "none" : "opacity 0.2s" }}><span style={{ color: "#fff", fontSize: 11, fontWeight: 800 }}>{swipeRight.icon} {swipeRight.label}</span></div>}
+      {lBg && <div style={{ position: "absolute", top: 0, left: 0, bottom: 0, width: "100%", background: lBg, display: "flex", alignItems: "center", justifyContent: "flex-end", paddingLeft: 14, borderRadius: 14, opacity: lOp, transition: lOp > 0 ? "none" : "opacity 0.2s" }}><span style={{ color: "#fff", fontSize: 11, fontWeight: 800 }}>{swipeLeft.icon} {swipeLeft.label}</span></div>}
+      <div ref={elRef} style={{ position: "relative", zIndex: 1, background: C.card, border: "1px solid " + C.cardBorder, borderRadius: 14, overflow: "hidden", willChange: "transform" }}>
+        <div onClick={onToggle} style={{ padding: "12px 14px", cursor: "pointer", display: "flex", alignItems: "center", gap: 8, userSelect: "none" }}>
+          <span style={{ fontSize: 16 }}>{icon}</span>
+          <span style={{ fontSize: 12, fontWeight: 800, flex: 1 }}>{title}</span>
+          {badge && <span style={{ padding: "2px 8px", borderRadius: 999, background: C.gold + "22", color: C.gold, fontSize: 10, fontWeight: 800 }}>{badge}</span>}
+          <span style={{ fontSize: 13, color: C.sub, transition: "transform 0.2s", transform: isOpen ? "rotate(180deg)" : "none" }}>▼</span>
+        </div>
+        {isOpen && <div style={{ padding: "12px 14px", borderTop: "1px solid " + C.cardBorder }}>{children}</div>}
+      </div>
+    </div>
+  );
+}
+
+function TawasulDetailModal({ request, user, allEmps, onClose, nameOf, onUpdated, onEdit, readOnly, taskList, onNavigate, isPinned, onTogglePin }) {  var r = request;
   var myId = user && (user.id || user.username);
   var myName = (user && (user.name || user.username)) || "";
   var m = getTawasulStatusMeta(r.status);
@@ -11285,178 +11488,17 @@ function TawasulDetailModal({ request, user, allEmps, onClose, nameOf, onUpdated
           </div>
         )}
 
-        {/* ═══ v7.32 — PARTIES CAROUSEL (no title, swipeable) ═══ */}
-        {(function(){
-          var assignees = r.assignees || [];
-          if (assignees.length < 2) return null;
-          var [partyIdx, setPartyIdx] = React.useState(0);
-          var scrollRef = React.useRef(null);
+        {/* ═══ v7.37 — PARTIES CAROUSEL (proper component, no hooks-in-IIFE bug) ═══ */}
+        <PartiesCarousel assignees={r.assignees || []} nameOf={nameOf} C={C} />
 
-          // Track current card via scroll position
-          function onCarouselScroll() {
-            var el = scrollRef.current; if (!el) return;
-            var cw = el.offsetWidth;
-            if (cw <= 0) return;
-            var idx = Math.round(el.scrollLeft / cw);
-            if (idx !== partyIdx && idx >= 0 && idx < totalP) {
-              setPartyIdx(idx);
-              try { if (navigator.vibrate) navigator.vibrate(6); } catch(e) {}
-            }
-          }
-
-          function getPersonStage(a) {
-            if (a.closedAt) return 4;
-            if (a.deliveredAt) return 3;
-            if (a.acceptedAt) return 1;
-            return 0;
-          }
-          function getPersonStatusText(a) {
-            if (a.closedAt) return { text: "✅ مُقيّمة", bg: "rgba(46,211,165,0.12)", color: "#2ED3A5" };
-            if (a.deliveredAt) return { text: "⏳ بانتظار التقييم", bg: "rgba(201,168,76,0.1)", color: C.gold };
-            if (a.acceptedAt) return { text: "⚡ يعمل عليها", bg: "rgba(124,58,237,0.12)", color: "#7c3aed" };
-            return { text: "📥 لم تبدأ بعد", bg: "rgba(15,118,110,0.12)", color: "#2ED3A5" };
-          }
-          var MINI_STAGES = [
-            { icon: "📥", label: "جديد" },
-            { icon: "⚡", label: "تنفيذ" },
-            { icon: "📦", label: "تسليم" },
-            { icon: "⭐", label: "تقييم" },
-          ];
-
-          return (
-            <div style={{ margin: "8px 18px 0", position: "relative", overflow: "hidden", borderRadius: 14, border: "1px solid " + C.cardBorder }}>
-              <div ref={scrollRef} onScroll={onCarouselScroll} style={{ display: "flex", overflowX: "auto", scrollSnapType: "x mandatory", WebkitOverflowScrolling: "touch", scrollbarWidth: "none", msOverflowStyle: "none" }}>
-                <style>{"[data-party-scroll]::-webkit-scrollbar{display:none}"}</style>
-                {assignees.map(function(a, aIdx){
-                  var pStage = getPersonStage(a);
-                  var pStatus = getPersonStatusText(a);
-                  var initial = (a.name || nameOf(a.id) || "?").slice(0, 2);
-                  return (
-                    <div key={a.id || aIdx} style={{ flex: "0 0 100%", background: C.card, padding: "12px 16px", scrollSnapAlign: "start" }}>
-                      <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 10 }}>
-                        <div style={{ width: 34, height: 34, borderRadius: 17, background: "linear-gradient(135deg, " + C.hdr1 + ", " + C.blue + ")", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 12, fontWeight: 900, color: C.gold, flexShrink: 0 }}>{initial}</div>
-                        <div style={{ flex: 1 }}>
-                          <div style={{ fontSize: 13, fontWeight: 800, color: C.text }}>{a.name || nameOf(a.id)}</div>
-                          <div style={{ fontSize: 10, color: C.sub, fontWeight: 600 }}>{a.addedAsCollab ? "متعاون" : "مُكلّف"}</div>
-                        </div>
-                        <div style={{ fontSize: 10, fontWeight: 800, color: C.sub, background: C.bg, padding: "3px 8px", borderRadius: 999, border: "1px solid " + C.cardBorder }}>{(aIdx + 1) + "/" + totalP}</div>
-                      </div>
-                      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
-                        {MINI_STAGES.map(function(ms, msIdx){
-                          var msActive = msIdx <= pStage;
-                          var msCurrent = msIdx === pStage;
-                          return (
-                            <React.Fragment key={msIdx}>
-                              <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 2, flex: "0 0 auto" }}>
-                                <div style={{ width: 24, height: 24, borderRadius: 12, background: msActive ? "#2ED3A5" : C.bg, border: "2px solid " + (msCurrent ? "#7EEDCF" : msActive ? "#2ED3A5" : C.cardBorder), display: "flex", alignItems: "center", justifyContent: "center", fontSize: 10, color: msActive ? "#fff" : C.sub }}>{ms.icon}</div>
-                                <div style={{ fontSize: 7, fontWeight: 700, color: msActive ? C.text : C.sub, textAlign: "center", maxWidth: 46 }}>{ms.label}</div>
-                              </div>
-                              {msIdx < MINI_STAGES.length - 1 && <div style={{ flex: 1, height: 2, background: msIdx < pStage ? "#2ED3A5" : C.cardBorder, margin: "0 2px", marginBottom: 14, minWidth: 3 }} />}
-                            </React.Fragment>
-                          );
-                        })}
-                      </div>
-                      <div style={{ textAlign: "center", marginTop: 8, padding: "5px 10px", borderRadius: 999, fontSize: 9.5, fontWeight: 800, background: pStatus.bg, color: pStatus.color }}>{pStatus.text}</div>
-                    </div>
-                  );
-                })}
-              </div>
-              <div style={{ display: "flex", justifyContent: "center", gap: 6, padding: "6px 0", background: C.card, borderTop: "1px solid " + C.cardBorder }}>
-                {assignees.map(function(_, dIdx){
-                  return <div key={dIdx} style={{ width: dIdx === partyIdx ? 16 : 6, height: 6, borderRadius: 3, background: dIdx === partyIdx ? C.gold : C.cardBorder, transition: "all 0.2s" }} />;
-                })}
-              </div>
-            </div>
-          );
-        })()}
-
-        {/* ═══ v7.32 — SWIPEABLE SECTIONS ═══ */}
+        {/* ═══ v7.37 — SWIPEABLE SECTIONS (using top-level SwipeSection component) ═══ */}
         <div style={{ padding: "10px 18px 0" }}>
           {(function(){
-            /* SwipeSection v7.35 — native touch (passive:false), re-attaches on open/close */
-            function SwipeSection(props) {
-              var isOpen = !!openSections[props.id];
-              var elRef = React.useRef(null);
-              var stRef = React.useRef({ sx:0, sy:0, dx:0, dir:null, active:false, vel:0, lx:0, lt:0 });
-              var [revPct, setRevPct] = React.useState(0);
-
-              // Re-attach listeners when isOpen changes so closure has correct value
-              React.useEffect(function(){
-                var el = elRef.current; if (!el) return;
-                var currentIsOpen = isOpen;
-                function ts(e) {
-                  var t = e.touches[0];
-                  stRef.current = { sx:t.clientX, sy:t.clientY, dx:0, dir:null, active:true, vel:0, lx:t.clientX, lt:Date.now() };
-                }
-                function tm(e) {
-                  var s = stRef.current; if (!s.active) return;
-                  var t = e.touches[0];
-                  var dx = t.clientX - s.sx, dy = t.clientY - s.sy;
-                  if (!s.dir) {
-                    if (Math.abs(dx) > 8 || Math.abs(dy) > 8) s.dir = Math.abs(dx) >= Math.abs(dy) ? "h" : "v";
-                    else return;
-                  }
-                  if (s.dir !== "h") return;
-                  e.preventDefault();
-                  var now = Date.now(); var dt = now - s.lt;
-                  if (dt > 0) s.vel = (t.clientX - s.lx) / dt * 1000;
-                  s.lx = t.clientX; s.lt = now; s.dx = dx;
-                  el.style.transition = "none";
-                  el.style.transform = "translateX(" + dx + "px)";
-                  var w = el.offsetWidth || 300;
-                  setRevPct(Math.max(-1, Math.min(1, dx / (w * 0.35))));
-                }
-                function te() {
-                  var s = stRef.current; s.active = false;
-                  if (s.dir !== "h") { setRevPct(0); return; }
-                  el.style.transition = "transform 0.5s cubic-bezier(0.22, 1, 0.36, 1)";
-                  el.style.transform = "none";
-                  setRevPct(0);
-                  var w = el.offsetWidth || 300;
-                  var fired = Math.abs(s.vel) > 350 || Math.abs(s.dx) > w * 0.3;
-                  if (fired) {
-                    try { if (navigator.vibrate) navigator.vibrate(8); } catch(e2) {}
-                    var dir2 = (s.dx > 0 || s.vel > 350) ? "right" : "left";
-                    if (dir2 === "right" && !currentIsOpen) toggleSection(props.id);
-                    else if (dir2 === "left" && currentIsOpen) toggleSection(props.id);
-                  }
-                }
-                el.addEventListener("touchstart", ts, { passive: true });
-                el.addEventListener("touchmove", tm, { passive: false });
-                el.addEventListener("touchend", te, { passive: true });
-                return function() {
-                  el.removeEventListener("touchstart", ts);
-                  el.removeEventListener("touchmove", tm);
-                  el.removeEventListener("touchend", te);
-                };
-              }, [props.id, isOpen]);
-
-              var rBg = props.swipeRight ? (props.swipeRight.color || "#2ED3A5") : null;
-              var lBg = props.swipeLeft ? (props.swipeLeft.color || "#64748b") : null;
-              var rOp = revPct > 0 ? Math.min(1, revPct) : 0;
-              var lOp = revPct < 0 ? Math.min(1, -revPct) : 0;
-
-              return (
-                <div style={{ position: "relative", marginBottom: 8, borderRadius: 14, overflow: "hidden" }}>
-                  {rBg && <div style={{ position: "absolute", top: 0, right: 0, bottom: 0, width: "100%", background: rBg, display: "flex", alignItems: "center", justifyContent: "flex-start", paddingRight: 14, borderRadius: 14, opacity: rOp, transition: rOp > 0 ? "none" : "opacity 0.2s" }}><span style={{ color: "#fff", fontSize: 11, fontWeight: 800 }}>{props.swipeRight.icon} {props.swipeRight.label}</span></div>}
-                  {lBg && <div style={{ position: "absolute", top: 0, left: 0, bottom: 0, width: "100%", background: lBg, display: "flex", alignItems: "center", justifyContent: "flex-end", paddingLeft: 14, borderRadius: 14, opacity: lOp, transition: lOp > 0 ? "none" : "opacity 0.2s" }}><span style={{ color: "#fff", fontSize: 11, fontWeight: 800 }}>{props.swipeLeft.icon} {props.swipeLeft.label}</span></div>}
-                  <div ref={elRef} style={{ position: "relative", zIndex: 1, background: C.card, border: "1px solid " + C.cardBorder, borderRadius: 14, overflow: "hidden", willChange: "transform" }}>
-                    <div onClick={function(){ toggleSection(props.id); }} style={{ padding: "12px 14px", cursor: "pointer", display: "flex", alignItems: "center", gap: 8, userSelect: "none" }}>
-                      <span style={{ fontSize: 16 }}>{props.icon}</span>
-                      <span style={{ fontSize: 12, fontWeight: 800, flex: 1 }}>{props.title}</span>
-                      {props.badge && <span style={{ padding: "2px 8px", borderRadius: 999, background: C.gold + "22", color: C.gold, fontSize: 10, fontWeight: 800 }}>{props.badge}</span>}
-                      <span style={{ fontSize: 13, color: C.sub, transition: "transform 0.2s", transform: isOpen ? "rotate(180deg)" : "none" }}>▼</span>
-                    </div>
-                    {isOpen && <div style={{ padding: "12px 14px", borderTop: "1px solid " + C.cardBorder }}>{props.children}</div>}
-                  </div>
-                </div>
-              );
-            }
-
             return (
               <>
                 {/* 💬 Chat — swipe right=open, left=close */}
                 <SwipeSection id="chatLog" icon="💬" title="الدردشة والسجل" badge={log.length ? String(log.length) : null}
+                  C={C} isOpen={!!openSections.chatLog} onToggle={function(){ toggleSection("chatLog"); }}
                   swipeRight={{ icon: "💬", label: "فتح الدردشة", color: "#2ED3A5" }}
                   swipeLeft={{ icon: "✕", label: "إغلاق", color: "#64748b" }}>
                   <ChatPanel request={r} user={user} allEmps={allEmps} readOnly={readOnly} onUpdated={onUpdated} nameOf={nameOf} />
@@ -11476,6 +11518,7 @@ function TawasulDetailModal({ request, user, allEmps, onClose, nameOf, onUpdated
 
                 {/* ⏱ Time — swipe right=open, left=close */}
                 <SwipeSection id="time" icon="⏱" title="تتبع الوقت"
+                  C={C} isOpen={!!openSections.time} onToggle={function(){ toggleSection("time"); }}
                   swipeRight={{ icon: "▶", label: "فتح المؤقت", color: "#2ED3A5" }}
                   swipeLeft={{ icon: "✕", label: "إغلاق", color: "#64748b" }}>
                   <TimeTrackingPanel request={r} user={user} readOnly={readOnly} canEdit={canActAsAssignee || canActAsRequester || isAdmin} onUpdated={onUpdated} />
@@ -11484,6 +11527,7 @@ function TawasulDetailModal({ request, user, allEmps, onClose, nameOf, onUpdated
                 {/* 📦 Delivery — swipe to open, items are clickable links */}
                 {r.deliveryMethods && r.deliveryMethods.length > 0 && (
                   <SwipeSection id="delivery" icon="📦" title="طرق التسليم" badge={String(r.deliveryMethods.length)}
+                    C={C} isOpen={!!openSections.delivery} onToggle={function(){ toggleSection("delivery"); }}
                     swipeRight={{ icon: "📦", label: "عرض التسليم", color: "#7c3aed" }}
                     swipeLeft={{ icon: "✕", label: "إغلاق", color: "#64748b" }}>
                     {r.deliveryMethods.map(function(dm, idx){
@@ -11509,6 +11553,7 @@ function TawasulDetailModal({ request, user, allEmps, onClose, nameOf, onUpdated
 
                 {/* 📎 Attachments — swipe right=show add, swipe left=hide add */}
                 <SwipeSection id="attachments" icon="📎" title="المرفقات" badge={((r.attachments || []).length) ? String((r.attachments || []).length) : null}
+                  C={C} isOpen={!!openSections.attachments} onToggle={function(){ toggleSection("attachments"); }}
                   swipeRight={{ icon: "📎", label: "إضافة مرفق", color: "#2ED3A5" }}
                   swipeLeft={{ icon: "✕", label: "إغلاق", color: "#64748b" }}>
                   <AttachmentsPanel request={r} user={user} readOnly={readOnly} canEdit={canActAsAssignee || canActAsRequester || isAdmin} onUpdated={onUpdated} />
@@ -11516,6 +11561,7 @@ function TawasulDetailModal({ request, user, allEmps, onClose, nameOf, onUpdated
 
                 {/* 📌 Extra details — swipe to open */}
                 <SwipeSection id="meta" icon="📌" title="تفاصيل إضافية"
+                  C={C} isOpen={!!openSections.meta} onToggle={function(){ toggleSection("meta"); }}
                   swipeRight={{ icon: "ℹ", label: "عرض التفاصيل", color: "#2b5ea7" }}
                   swipeLeft={{ icon: "✕", label: "إغلاق", color: "#64748b" }}>
                   {[
@@ -13672,16 +13718,22 @@ function MyTeamPage({ user, allEmps }) {
         </div>
       </div>
 
-      {/* Tab switcher */}
-      <div style={{ display: "flex", gap: 6, padding: 12, background: COLORS.bg1 }}>
-        {[
-          { id: "today", icon: "🔴", label: "اليوم", count: subordinates.length },
-          { id: "requests", icon: "📝", label: "الطلبات", count: pendingRequests.length },
-          { id: "stats", icon: "📊", label: "إحصائيات" },
-        ].map(function(ti){
+      {/* Tab switcher — v7.37 added "evals" tab for managers (تقييمات الفريق — منقولة من تقريري) */}
+      <div style={{ display: "flex", gap: 6, padding: 12, background: COLORS.bg1, overflowX: "auto", WebkitOverflowScrolling: "touch" }}>
+        {(function(){
+          var tabs = [
+            { id: "today", icon: "🔴", label: "اليوم", count: subordinates.length },
+            { id: "requests", icon: "📝", label: "الطلبات", count: pendingRequests.length },
+            { id: "stats", icon: "📊", label: "إحصائيات" },
+          ];
+          if (user && (user.isManager || user.isAssistant)) {
+            tabs.push({ id: "evals", icon: "⭐", label: "تقييمات الفريق" });
+          }
+          return tabs;
+        })().map(function(ti){
           var active = tab === ti.id;
           return (
-            <button key={ti.id} onClick={function(){ setTab(ti.id); }} style={{ flex: 1, padding: "10px 6px", borderRadius: 10, background: active ? "#7c3aed" : COLORS.metallic, color: active ? "#fff" : COLORS.textPrimary, border: "none", fontSize: 11, fontWeight: 800, cursor: "pointer", fontFamily: TYPOGRAPHY.fontTajawal }}>
+            <button key={ti.id} onClick={function(){ setTab(ti.id); }} style={{ flex: "1 1 auto", minWidth: 90, padding: "10px 6px", borderRadius: 10, background: active ? "#7c3aed" : COLORS.metallic, color: active ? "#fff" : COLORS.textPrimary, border: "none", fontSize: 11, fontWeight: 800, cursor: "pointer", fontFamily: TYPOGRAPHY.fontTajawal, whiteSpace: "nowrap" }}>
               {ti.icon} {ti.label}
               {ti.count !== undefined && ti.count > 0 && (
                 <span style={{ marginRight: 4, padding: "1px 6px", borderRadius: 8, background: active ? "rgba(255,255,255,0.25)" : "#7c3aed", color: "#fff", fontSize: 9 }}>{ti.count}</span>
@@ -13849,6 +13901,11 @@ function MyTeamPage({ user, allEmps }) {
               })}
             </div>
           </>
+        )}
+
+        {/* v7.37 — Team Evaluations tab (moved from تقريري) */}
+        {tab === "evals" && (user && (user.isManager || user.isAssistant)) && (
+          <ManagerEvaluationsTab user={user} />
         )}
       </div>
     </div>
@@ -15723,7 +15780,7 @@ function AchievementsCard({ user }) {
     leadership: { label: "القيادة", icon: "👔", color: "#DC2626" },
   };
 
-  var displayList = showAll ? unlocked : unlocked.slice(0, 6);
+  var displayList = unlocked; // v7.37 — always show all badges (no collapse)
 
   return (
     <Card padding={SPACING.md}>
@@ -15765,12 +15822,7 @@ function AchievementsCard({ user }) {
         })}
       </div>
 
-      {/* Show more / less */}
-      {ACHIEVEMENTS.length > 6 && (
-        <button onClick={function(){ setShowAll(!showAll); }} style={{ width: "100%", marginTop: 10, padding: "8px", borderRadius: 8, background: "transparent", color: COLORS.goldLight, border: "1px dashed " + COLORS.metallicBorder, fontSize: 11, fontWeight: 700, cursor: "pointer", fontFamily: TYPOGRAPHY.fontTajawal }}>
-          {showAll ? "↑ عرض أقل" : "↓ عرض كل الإنجازات (" + ACHIEVEMENTS.length + ")"}
-        </button>
-      )}
+      {/* v7.37 — Show all badges always, no collapse button */}
 
       {unlockedCount < ACHIEVEMENTS.length && (
         <div style={{ marginTop: 10, padding: 10, borderRadius: 8, background: "rgba(245,158,11,0.1)", border: "1px solid rgba(245,158,11,0.3)", fontSize: 10, color: "#D97706", fontWeight: 600, textAlign: "center" }}>
