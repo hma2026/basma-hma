@@ -11212,10 +11212,10 @@ function TawasulDetailModal({ request, user, allEmps, onClose, nameOf, onUpdated
                 return (
                   <React.Fragment key={st.key}>
                     <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 3, flex: "0 0 auto" }}>
-                      <div style={{ width: 30, height: 30, borderRadius: 15, background: active ? "#10b981" : C.bg, border: "2px solid " + (isCurrent ? "#34d399" : active ? "#10b981" : C.cardBorder), display: "flex", alignItems: "center", justifyContent: "center", fontSize: 12, color: active ? "#fff" : C.sub, boxShadow: isCurrent ? "0 0 10px rgba(16,185,129,0.4)" : "none" }}>{st.icon}</div>
+                      <div style={{ width: 30, height: 30, borderRadius: 15, background: active ? "#0d9488" : C.bg, border: "2px solid " + (isCurrent ? "#2dd4bf" : active ? "#0d9488" : C.cardBorder), display: "flex", alignItems: "center", justifyContent: "center", fontSize: 12, color: active ? "#fff" : C.sub, boxShadow: isCurrent ? "0 0 10px rgba(13,148,136,0.4)" : "none" }}>{st.icon}</div>
                       <div style={{ fontSize: 8, fontWeight: 700, color: active ? C.text : C.sub, textAlign: "center", maxWidth: 50 }}>{st.label}</div>
                     </div>
-                    {idx < TAWASUL_STAGES.length - 1 && <div style={{ flex: 1, height: 2, background: idx < curStage ? "#10b981" : C.cardBorder, margin: "0 2px", marginBottom: 16, minWidth: 4 }} />}
+                    {idx < TAWASUL_STAGES.length - 1 && <div style={{ flex: 1, height: 2, background: idx < curStage ? "#0d9488" : C.cardBorder, margin: "0 2px", marginBottom: 16, minWidth: 4 }} />}
                   </React.Fragment>
                 );
               })}
@@ -11265,10 +11265,10 @@ function TawasulDetailModal({ request, user, allEmps, onClose, nameOf, onUpdated
             return 0;
           }
           function getPersonStatusText(a) {
-            if (a.closedAt) return { text: "✅ مُقيّمة", bg: "rgba(16,185,129,0.12)", color: "#10b981" };
+            if (a.closedAt) return { text: "✅ مُقيّمة", bg: "rgba(13,148,136,0.12)", color: "#0d9488" };
             if (a.deliveredAt) return { text: "⏳ بانتظار التقييم", bg: "rgba(201,168,76,0.1)", color: C.gold };
             if (a.acceptedAt) return { text: "⚡ يعمل عليها", bg: "rgba(124,58,237,0.12)", color: "#7c3aed" };
-            return { text: "📥 لم تبدأ بعد", bg: "rgba(15,118,110,0.12)", color: "#10b981" };
+            return { text: "📥 لم تبدأ بعد", bg: "rgba(15,118,110,0.12)", color: "#0d9488" };
           }
           var MINI_STAGES = [
             { icon: "📥", label: "جديد" },
@@ -11303,10 +11303,10 @@ function TawasulDetailModal({ request, user, allEmps, onClose, nameOf, onUpdated
                           return (
                             <React.Fragment key={msIdx}>
                               <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 2, flex: "0 0 auto" }}>
-                                <div style={{ width: 24, height: 24, borderRadius: 12, background: msActive ? "#10b981" : C.bg, border: "2px solid " + (msCurrent ? "#34d399" : msActive ? "#10b981" : C.cardBorder), display: "flex", alignItems: "center", justifyContent: "center", fontSize: 10, color: msActive ? "#fff" : C.sub }}>{ms.icon}</div>
+                                <div style={{ width: 24, height: 24, borderRadius: 12, background: msActive ? "#0d9488" : C.bg, border: "2px solid " + (msCurrent ? "#2dd4bf" : msActive ? "#0d9488" : C.cardBorder), display: "flex", alignItems: "center", justifyContent: "center", fontSize: 10, color: msActive ? "#fff" : C.sub }}>{ms.icon}</div>
                                 <div style={{ fontSize: 7, fontWeight: 700, color: msActive ? C.text : C.sub, textAlign: "center", maxWidth: 46 }}>{ms.label}</div>
                               </div>
-                              {msIdx < MINI_STAGES.length - 1 && <div style={{ flex: 1, height: 2, background: msIdx < pStage ? "#10b981" : C.cardBorder, margin: "0 2px", marginBottom: 14, minWidth: 3 }} />}
+                              {msIdx < MINI_STAGES.length - 1 && <div style={{ flex: 1, height: 2, background: msIdx < pStage ? "#0d9488" : C.cardBorder, margin: "0 2px", marginBottom: 14, minWidth: 3 }} />}
                             </React.Fragment>
                           );
                         })}
@@ -11328,37 +11328,77 @@ function TawasulDetailModal({ request, user, allEmps, onClose, nameOf, onUpdated
         {/* ═══ v7.32 — SWIPEABLE SECTIONS ═══ */}
         <div style={{ padding: "10px 18px 0" }}>
           {(function(){
-            /* SwipeSection — swipe to reveal action, then execute */
+            /* SwipeSection v7.32b — smoother swipe, right=open/left=close, haptic */
             function SwipeSection(props) {
               var isOpen = !!openSections[props.id];
-              var touchRef = React.useRef({ sx: 0, dx: 0, swiping: false });
+              var touchRef = React.useRef({ sx: 0, sy: 0, dx: 0, swiping: false, locked: false });
               var elRef = React.useRef(null);
+              var [revealDir, setRevealDir] = React.useState(null); // "right" | "left" | null
+
+              function haptic() { try { if (navigator.vibrate) navigator.vibrate(12); } catch(e) {} }
 
               function onTS(e) {
-                touchRef.current = { sx: e.touches[0].clientX, dx: 0, swiping: false };
+                var t = e.touches[0];
+                touchRef.current = { sx: t.clientX, sy: t.clientY, dx: 0, swiping: false, locked: false };
+                setRevealDir(null);
               }
               function onTM(e) {
-                var dx = e.touches[0].clientX - touchRef.current.sx;
-                if (!touchRef.current.swiping && Math.abs(dx) > 12) touchRef.current.swiping = true;
-                if (touchRef.current.swiping) {
-                  e.preventDefault();
-                  touchRef.current.dx = dx;
-                  if (elRef.current) { elRef.current.style.transition = "none"; elRef.current.style.transform = "translateX(" + Math.max(-100, Math.min(100, dx)) + "px)"; }
+                var t = e.touches[0];
+                var dx = t.clientX - touchRef.current.sx;
+                var dy = t.clientY - touchRef.current.sy;
+                // Lock direction after 10px movement
+                if (!touchRef.current.locked && (Math.abs(dx) > 10 || Math.abs(dy) > 10)) {
+                  touchRef.current.locked = true;
+                  touchRef.current.swiping = Math.abs(dx) > Math.abs(dy);
                 }
+                if (!touchRef.current.swiping) return;
+                e.preventDefault();
+                // Damped movement (0.6x for rubber-band feel)
+                var damped = dx * 0.6;
+                var clamped = Math.max(-160, Math.min(160, damped));
+                touchRef.current.dx = dx;
+                if (elRef.current) {
+                  elRef.current.style.transition = "none";
+                  elRef.current.style.transform = "translateX(" + clamped + "px)";
+                }
+                // Show reveal background
+                if (Math.abs(clamped) > 20) setRevealDir(clamped > 0 ? "right" : "left");
+                else setRevealDir(null);
               }
               function onTE() {
-                if (elRef.current) { elRef.current.style.transition = "transform 0.25s ease"; elRef.current.style.transform = "none"; }
-                if (touchRef.current.swiping && Math.abs(touchRef.current.dx) >= 60) {
-                  var dir = touchRef.current.dx > 0 ? "right" : "left";
-                  if (props.onSwipe) props.onSwipe(dir);
+                var dx = touchRef.current.dx;
+                var wasSwiping = touchRef.current.swiping;
+                // Spring-back animation
+                if (elRef.current) {
+                  elRef.current.style.transition = "transform 0.4s cubic-bezier(0.25, 1, 0.5, 1)";
+                  elRef.current.style.transform = "none";
                 }
-                touchRef.current = { sx: 0, dx: 0, swiping: false };
+                setRevealDir(null);
+                touchRef.current = { sx: 0, sy: 0, dx: 0, swiping: false, locked: false };
+                if (!wasSwiping) return;
+                // Need > 40% of element width OR > 120px absolute
+                var elW = elRef.current ? elRef.current.offsetWidth : 300;
+                var threshold = Math.min(elW * 0.4, 120);
+                if (Math.abs(dx) >= threshold) {
+                  haptic();
+                  var dir = dx > 0 ? "right" : "left";
+                  // Right = open, Left = close (or custom onSwipe)
+                  if (props.onSwipe) {
+                    props.onSwipe(dir);
+                  } else {
+                    if (dir === "right" && !isOpen) toggleSection(props.id);
+                    else if (dir === "left" && isOpen) toggleSection(props.id);
+                  }
+                }
               }
+
+              var rightBg = props.swipeRight ? (props.swipeRight.color || "#0d9488") : null;
+              var leftBg = props.swipeLeft ? (props.swipeLeft.color || "#3b82f6") : null;
 
               return (
                 <div style={{ position: "relative", marginBottom: 8, borderRadius: 14, overflow: "hidden" }}>
-                  {props.swipeRight && <div style={{ position: "absolute", top: 0, right: 0, bottom: 0, width: "100%", background: props.swipeRight.color || "#10b981", display: "flex", alignItems: "center", justifyContent: "flex-start", paddingRight: 14, borderRadius: 14 }}><span style={{ color: "#fff", fontSize: 11, fontWeight: 800 }}>{props.swipeRight.icon} {props.swipeRight.label}</span></div>}
-                  {props.swipeLeft && <div style={{ position: "absolute", top: 0, left: 0, bottom: 0, width: "100%", background: props.swipeLeft.color || "#3b82f6", display: "flex", alignItems: "center", justifyContent: "flex-end", paddingLeft: 14, borderRadius: 14 }}><span style={{ color: "#fff", fontSize: 11, fontWeight: 800 }}>{props.swipeLeft.icon} {props.swipeLeft.label}</span></div>}
+                  {rightBg && <div style={{ position: "absolute", top: 0, right: 0, bottom: 0, width: "100%", background: rightBg, display: "flex", alignItems: "center", justifyContent: "flex-start", paddingRight: 14, borderRadius: 14, opacity: revealDir === "right" ? 1 : 0, transition: "opacity 0.15s" }}><span style={{ color: "#fff", fontSize: 11, fontWeight: 800 }}>{props.swipeRight.icon} {props.swipeRight.label}</span></div>}
+                  {leftBg && <div style={{ position: "absolute", top: 0, left: 0, bottom: 0, width: "100%", background: leftBg, display: "flex", alignItems: "center", justifyContent: "flex-end", paddingLeft: 14, borderRadius: 14, opacity: revealDir === "left" ? 1 : 0, transition: "opacity 0.15s" }}><span style={{ color: "#fff", fontSize: 11, fontWeight: 800 }}>{props.swipeLeft.icon} {props.swipeLeft.label}</span></div>}
                   <div ref={elRef} onTouchStart={onTS} onTouchMove={onTM} onTouchEnd={onTE} style={{ position: "relative", zIndex: 1, background: C.card, border: "1px solid " + C.cardBorder, borderRadius: 14, overflow: "hidden" }}>
                     <div onClick={function(){ toggleSection(props.id); }} style={{ padding: "12px 14px", cursor: "pointer", display: "flex", alignItems: "center", gap: 8, userSelect: "none" }}>
                       <span style={{ fontSize: 16 }}>{props.icon}</span>
@@ -11374,11 +11414,10 @@ function TawasulDetailModal({ request, user, allEmps, onClose, nameOf, onUpdated
 
             return (
               <>
-                {/* 💬 Chat — swipe either direction to open */}
+                {/* 💬 Chat — swipe right=open, left=close */}
                 <SwipeSection id="chatLog" icon="💬" title="الدردشة والسجل" badge={log.length ? String(log.length) : null}
-                  swipeRight={{ icon: "💬", label: "فتح الدردشة", color: "#10b981" }}
-                  swipeLeft={{ icon: "💬", label: "فتح الدردشة", color: "#3b82f6" }}
-                  onSwipe={function(){ if (!openSections.chatLog) toggleSection("chatLog"); }}>
+                  swipeRight={{ icon: "💬", label: "فتح الدردشة", color: "#0d9488" }}
+                  swipeLeft={{ icon: "✕", label: "إغلاق", color: "#64748b" }}>
                   <ChatPanel request={r} user={user} allEmps={allEmps} readOnly={readOnly} onUpdated={onUpdated} nameOf={nameOf} />
                   <div style={{ marginTop: 12, paddingTop: 12, borderTop: "1px solid " + C.cardBorder }}>
                     <div style={{ fontSize: 11, fontWeight: 800, color: C.sub, marginBottom: 12 }}>📜 سجل النشاط ({log.length})</div>
@@ -11394,22 +11433,18 @@ function TawasulDetailModal({ request, user, allEmps, onClose, nameOf, onUpdated
                   </div>
                 </SwipeSection>
 
-                {/* ⏱ Time — swipe right=start, swipe left=stop */}
+                {/* ⏱ Time — swipe right=open, left=close */}
                 <SwipeSection id="time" icon="⏱" title="تتبع الوقت"
-                  swipeRight={{ icon: "▶", label: "تشغيل المؤقت", color: "#10b981" }}
-                  swipeLeft={{ icon: "⏸", label: "إيقاف المؤقت", color: "#ef4444" }}
-                  onSwipe={function(dir){
-                    if (!openSections.time) toggleSection("time");
-                  }}>
+                  swipeRight={{ icon: "▶", label: "فتح المؤقت", color: "#0d9488" }}
+                  swipeLeft={{ icon: "✕", label: "إغلاق", color: "#64748b" }}>
                   <TimeTrackingPanel request={r} user={user} readOnly={readOnly} canEdit={canActAsAssignee || canActAsRequester || isAdmin} onUpdated={onUpdated} />
                 </SwipeSection>
 
                 {/* 📦 Delivery — swipe to open, items are clickable links */}
                 {r.deliveryMethods && r.deliveryMethods.length > 0 && (
                   <SwipeSection id="delivery" icon="📦" title="طرق التسليم" badge={String(r.deliveryMethods.length)}
-                    swipeRight={{ icon: "📦", label: "عرض طرق التسليم", color: "#7c3aed" }}
-                    swipeLeft={{ icon: "📦", label: "عرض طرق التسليم", color: "#7c3aed" }}
-                    onSwipe={function(){ if (!openSections.delivery) toggleSection("delivery"); }}>
+                    swipeRight={{ icon: "📦", label: "عرض التسليم", color: "#7c3aed" }}
+                    swipeLeft={{ icon: "✕", label: "إغلاق", color: "#64748b" }}>
                     {r.deliveryMethods.map(function(dm, idx){
                       var dmIcon = dm.type === "email" ? "📧" : dm.type === "location" || dm.type === "address" ? "📍" : dm.type === "link" || dm.type === "url" ? "🔗" : "📦";
                       var dmColor = dm.type === "email" ? "rgba(59,130,246,0.15)" : dm.type === "location" || dm.type === "address" ? "rgba(16,185,129,0.15)" : "rgba(201,168,76,0.15)";
@@ -11433,19 +11468,15 @@ function TawasulDetailModal({ request, user, allEmps, onClose, nameOf, onUpdated
 
                 {/* 📎 Attachments — swipe right=show add, swipe left=hide add */}
                 <SwipeSection id="attachments" icon="📎" title="المرفقات" badge={((r.attachments || []).length) ? String((r.attachments || []).length) : null}
-                  swipeRight={{ icon: "📎", label: "إضافة مرفق", color: "#10b981" }}
-                  swipeLeft={{ icon: "✕", label: "إغلاق", color: "#ef4444" }}
-                  onSwipe={function(dir){
-                    if (!openSections.attachments) toggleSection("attachments");
-                  }}>
+                  swipeRight={{ icon: "📎", label: "إضافة مرفق", color: "#0d9488" }}
+                  swipeLeft={{ icon: "✕", label: "إغلاق", color: "#64748b" }}>
                   <AttachmentsPanel request={r} user={user} readOnly={readOnly} canEdit={canActAsAssignee || canActAsRequester || isAdmin} onUpdated={onUpdated} />
                 </SwipeSection>
 
                 {/* 📌 Extra details — swipe to open */}
                 <SwipeSection id="meta" icon="📌" title="تفاصيل إضافية"
                   swipeRight={{ icon: "ℹ", label: "عرض التفاصيل", color: "#2b5ea7" }}
-                  swipeLeft={{ icon: "ℹ", label: "عرض التفاصيل", color: "#2b5ea7" }}
-                  onSwipe={function(){ if (!openSections.meta) toggleSection("meta"); }}>
+                  swipeLeft={{ icon: "✕", label: "إغلاق", color: "#64748b" }}>
                   {[
                     { label: "من", value: requesterName + (function(){
                       var myRow2 = (r.assignees || []).find(function(a){ return String(a.id) === String(myId); });
