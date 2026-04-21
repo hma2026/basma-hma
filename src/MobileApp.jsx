@@ -11,7 +11,7 @@ import { exportEmploymentLetter, exportLeaveLetter } from "./formalPdfs";
 
 /* ═══════════ APP CONFIG (إعدادات التطبيق) ═══════════ */
 const APP_CONFIG = {
-  VER: "7.17",
+  VER: "7.20",
   NAME: "بصمة HMA",
   FULL_NAME: "نظام الحضور والانصراف الذكي",
   COMPANY: "هاني محمد عسيري للاستشارات الهندسية",
@@ -3605,6 +3605,981 @@ function RecordsHub({ user, onTicket }) {
   );
 }
 
+/* ═══════════════════════════════════════════════════════════════════
+ * v7.18 — ACHIEVEMENTS TAB VISUAL REDESIGN (إنجازاتي)
+ * Gold Level Card + 3 Stats + Horizontal Badge Strip + Leaderboard
+ * ═══════════════════════════════════════════════════════════════════ */
+
+/* ── AchievementsHeroCard — the main gold level card ── */
+function AchievementsHeroCard({ user }) {
+  var points = user.points || 0;
+  var badge = memberBadge(points);
+  var isTop = badge.tier === MEMBERSHIP.length - 1;
+
+  return (
+    <div style={{
+      position: "relative",
+      padding: "24px 20px 20px",
+      borderRadius: RADIUS.xl,
+      background: "linear-gradient(135deg, rgba(201,168,76,0.18) 0%, rgba(232,213,163,0.08) 40%, rgba(201,168,76,0.14) 100%)",
+      border: "2px solid " + COLORS.goldLight,
+      boxShadow: "0 8px 24px rgba(201,168,76,0.25), inset 0 1px 0 rgba(255,255,255,0.35)",
+      overflow: "hidden",
+    }}>
+      {/* Decorative rays */}
+      <div style={{ position: "absolute", top: -60, right: -60, width: 160, height: 160, borderRadius: "50%", background: "radial-gradient(circle, rgba(232,213,163,0.35), transparent 70%)", pointerEvents: "none" }} />
+      <div style={{ position: "absolute", bottom: -70, left: -70, width: 180, height: 180, borderRadius: "50%", background: "radial-gradient(circle, rgba(201,168,76,0.25), transparent 70%)", pointerEvents: "none" }} />
+      <div style={{ position: "absolute", top: 20, left: 20, fontSize: 14, opacity: 0.2 }}>✨</div>
+      <div style={{ position: "absolute", bottom: 30, right: 30, fontSize: 10, opacity: 0.25 }}>⭐</div>
+
+      <div style={{ position: "relative", zIndex: 1, display: "flex", flexDirection: "column", alignItems: "center", textAlign: "center" }}>
+        {/* Level name + icon */}
+        <div style={{
+          padding: "6px 16px",
+          borderRadius: RADIUS.pill,
+          background: "rgba(0,0,0,0.15)",
+          border: "1px solid rgba(255,255,255,0.2)",
+          marginBottom: 14,
+          fontSize: 11, fontWeight: 800,
+          color: COLORS.goldLight, letterSpacing: 0.5,
+          fontFamily: TYPOGRAPHY.fontTajawal,
+        }}>
+          المستوى الحالي
+        </div>
+
+        <div style={{ fontSize: 56, marginBottom: 6, filter: "drop-shadow(0 4px 10px rgba(201,168,76,0.5))" }}>{badge.icon}</div>
+
+        <div style={{
+          fontSize: 20, fontWeight: 900,
+          color: COLORS.goldLight,
+          fontFamily: TYPOGRAPHY.fontCairo,
+          marginBottom: 12,
+          textShadow: "0 2px 8px rgba(0,0,0,0.3)",
+          letterSpacing: 0.3,
+        }}>{badge.label}</div>
+
+        {/* Points big */}
+        <div style={{ display: "flex", alignItems: "baseline", gap: 6, marginBottom: 14 }}>
+          <span style={{ fontSize: 36, fontWeight: 900, color: COLORS.textPrimary, fontFamily: TYPOGRAPHY.fontCairo, letterSpacing: -1 }}>{points.toLocaleString("ar-SA")}</span>
+          <span style={{ fontSize: 13, fontWeight: 700, color: COLORS.textSecondary, fontFamily: TYPOGRAPHY.fontTajawal }}>نقطة</span>
+        </div>
+
+        {/* Progress bar to next level */}
+        {!isTop && badge.next && (
+          <div style={{ width: "100%", maxWidth: 320 }}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 6, fontSize: 10, fontWeight: 700, color: COLORS.textSecondary, fontFamily: TYPOGRAPHY.fontTajawal }}>
+              <span>التقدم نحو <strong style={{ color: COLORS.goldLight }}>{badge.nextLabel}</strong></span>
+              <span style={{ color: COLORS.goldLight }}>{badge.progress}%</span>
+            </div>
+            <div style={{
+              position: "relative",
+              height: 10,
+              borderRadius: 5,
+              background: "rgba(0,0,0,0.25)",
+              border: "1px solid rgba(255,255,255,0.1)",
+              overflow: "hidden",
+              boxShadow: "inset 0 1px 3px rgba(0,0,0,0.3)",
+            }}>
+              <div style={{
+                height: "100%",
+                width: badge.progress + "%",
+                background: COLORS.goldGradient,
+                borderRadius: 5,
+                boxShadow: "0 0 10px rgba(232,213,163,0.6)",
+                transition: "width .5s ease",
+              }} />
+            </div>
+            <div style={{ fontSize: 10, color: COLORS.textMuted, marginTop: 6, fontFamily: TYPOGRAPHY.fontTajawal }}>
+              باقي <strong style={{ color: COLORS.goldLight, fontWeight: 900 }}>{badge.remaining}</strong> نقطة للوصول
+            </div>
+          </div>
+        )}
+        {isTop && (
+          <div style={{ padding: "8px 14px", borderRadius: RADIUS.pill, background: "rgba(201,168,76,0.2)", border: "1px solid " + COLORS.goldLight, fontSize: 11, fontWeight: 800, color: COLORS.goldLight, fontFamily: TYPOGRAPHY.fontTajawal }}>
+            👑 أعلى مستوى — أحسنت!
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+/* ── AchievementsStatsRow — 3 big stats ── */
+function AchievementsStatsRow({ user, stats, loading }) {
+  var points = user.points || 0;
+  var unlockedCount = 0;
+  if (stats && !loading) {
+    var unlocked = getUnlockedAchievements(user, stats);
+    unlockedCount = unlocked.filter(function(a){ return a.unlocked; }).length;
+  }
+  var maxStreak = (stats && stats.maxStreak) || 0;
+
+  function StatCell({ icon, value, label, accent, loading }) {
+    return (
+      <div style={{ flex: 1, minWidth: 0, padding: "14px 8px", display: "flex", flexDirection: "column", alignItems: "center", textAlign: "center" }}>
+        <div style={{ fontSize: 18, marginBottom: 4, filter: "drop-shadow(0 1px 2px rgba(0,0,0,0.3))" }}>{icon}</div>
+        <div style={{ fontSize: 22, fontWeight: 900, color: accent, fontFamily: TYPOGRAPHY.fontCairo, lineHeight: 1, letterSpacing: -0.5 }}>
+          {loading ? "…" : value}
+        </div>
+        <div style={{ fontSize: 10, fontWeight: 700, color: COLORS.textSecondary, marginTop: 6, fontFamily: TYPOGRAPHY.fontTajawal, lineHeight: 1.2 }}>{label}</div>
+      </div>
+    );
+  }
+
+  return (
+    <Card padding={0} style={{ overflow: "hidden" }}>
+      <div style={{ display: "flex", alignItems: "stretch" }}>
+        <StatCell icon="⭐" value={points.toLocaleString("ar-SA")} label="إجمالي النقاط" accent={COLORS.goldLight} loading={false} />
+        <div style={{ width: 1, background: "linear-gradient(180deg, transparent, " + COLORS.metallicBorder + " 30%, " + COLORS.metallicBorder + " 70%, transparent)" }} />
+        <StatCell icon="🏅" value={unlockedCount + "/" + ACHIEVEMENTS.length} label="شارات مفتوحة" accent={COLORS.success} loading={loading} />
+        <div style={{ width: 1, background: "linear-gradient(180deg, transparent, " + COLORS.metallicBorder + " 30%, " + COLORS.metallicBorder + " 70%, transparent)" }} />
+        <StatCell icon="🔥" value={maxStreak} label="أيام متتالية" accent={COLORS.warning} loading={loading} />
+      </div>
+    </Card>
+  );
+}
+
+/* ── AchievementsBadgesStrip — horizontal scrollable badges ── */
+function AchievementsBadgesStrip({ user, stats, loading }) {
+  if (loading) {
+    return <div style={{ padding: SPACING.md, textAlign: "center", color: COLORS.textMuted, fontSize: 12 }}>جارٍ تحميل الشارات...</div>;
+  }
+
+  var unlocked = getUnlockedAchievements(user, stats || {});
+  // Sort: unlocked first, then locked
+  unlocked.sort(function(a, b){
+    if (a.unlocked && !b.unlocked) return -1;
+    if (!a.unlocked && b.unlocked) return 1;
+    return 0;
+  });
+
+  var displayCount = Math.min(unlocked.length, 10);
+  var display = unlocked.slice(0, displayCount);
+  var unlockedTotal = unlocked.filter(function(a){ return a.unlocked; }).length;
+
+  return (
+    <Card padding={SPACING.md}>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: SPACING.md }}>
+        <div style={{ ...TYPOGRAPHY.h3, color: COLORS.textPrimary, fontFamily: TYPOGRAPHY.fontCairo, display: "flex", alignItems: "center", gap: 6 }}>
+          <span>🏅</span> شاراتي
+        </div>
+        <div style={{ fontSize: 10, fontWeight: 700, color: COLORS.textMuted, fontFamily: TYPOGRAPHY.fontTajawal }}>
+          <strong style={{ color: COLORS.goldLight }}>{unlockedTotal}</strong>/{ACHIEVEMENTS.length}
+        </div>
+      </div>
+
+      <div style={{ display: "flex", gap: 10, overflowX: "auto", WebkitOverflowScrolling: "touch", paddingBottom: 4, paddingTop: 2 }}>
+        {display.map(function(a, i){
+          var isUnlocked = a.unlocked;
+          return (
+            <div
+              key={a.id}
+              title={a.name + (isUnlocked ? " ✓" : " — مقفلة")}
+              style={{
+                flexShrink: 0,
+                width: 76,
+                display: "flex", flexDirection: "column", alignItems: "center",
+                gap: 4,
+              }}
+            >
+              <div style={{
+                width: 60, height: 60,
+                borderRadius: "50%",
+                background: isUnlocked
+                  ? "linear-gradient(135deg, rgba(201,168,76,0.25), rgba(232,213,163,0.15))"
+                  : "rgba(100,116,139,0.1)",
+                border: "2px solid " + (isUnlocked ? COLORS.goldLight : COLORS.metallicBorder),
+                display: "flex", alignItems: "center", justifyContent: "center",
+                fontSize: 28,
+                filter: isUnlocked ? "none" : "grayscale(1) opacity(0.4)",
+                boxShadow: isUnlocked ? "0 4px 12px rgba(201,168,76,0.3)" : "none",
+                transition: "all .2s",
+              }}>
+                {a.icon}
+              </div>
+              <div style={{
+                fontSize: 9, fontWeight: 800,
+                color: isUnlocked ? COLORS.textPrimary : COLORS.textMuted,
+                textAlign: "center",
+                lineHeight: 1.2,
+                fontFamily: TYPOGRAPHY.fontTajawal,
+                width: "100%",
+                overflow: "hidden",
+                textOverflow: "ellipsis",
+                whiteSpace: "nowrap",
+              }}>{a.name}</div>
+              <div style={{
+                fontSize: 8, fontWeight: 700,
+                color: isUnlocked ? COLORS.goldLight : COLORS.textMuted,
+              }}>
+                {isUnlocked ? "+" + a.points : "🔒"}
+              </div>
+            </div>
+          );
+        })}
+      </div>
+    </Card>
+  );
+}
+
+/* ── LeaderboardView — rank among colleagues ── */
+function LeaderboardView({ user }) {
+  var [loading, setLoading] = useState(true);
+  var [ranked, setRanked] = useState([]);
+  var [myRank, setMyRank] = useState(null);
+
+  useEffect(function(){
+    if (!user || !user.id) return;
+    fetch("/api/data?action=employees")
+      .then(function(r){ return r.json(); })
+      .then(function(emps){
+        var list = Array.isArray(emps) ? emps : [];
+        // Filter active + has points
+        var active = list.filter(function(e){
+          return (e.status !== "terminated" && e.status !== "resigned") && typeof e.points !== "undefined";
+        });
+        // Sort by points descending
+        active.sort(function(a, b){ return (b.points || 0) - (a.points || 0); });
+        // Find user's rank
+        var myIdx = active.findIndex(function(e){ return String(e.id) === String(user.id) || String(e.username) === String(user.username); });
+        setRanked(active);
+        setMyRank(myIdx >= 0 ? myIdx + 1 : null);
+        setLoading(false);
+      })
+      .catch(function(){ setLoading(false); });
+  }, [user && user.id]);
+
+  if (loading) {
+    return <div style={{ padding: SPACING.md, textAlign: "center", color: COLORS.textMuted, fontSize: 12 }}>جارٍ تحميل الترتيب...</div>;
+  }
+  if (ranked.length === 0) {
+    return <div style={{ padding: SPACING.md, textAlign: "center", color: COLORS.textMuted, fontSize: 12 }}>لا توجد بيانات ترتيب</div>;
+  }
+
+  var top10 = ranked.slice(0, 10);
+  var userInTop10 = myRank && myRank <= 10;
+
+  return (
+    <div>
+      {/* My rank highlight */}
+      {myRank && !userInTop10 && (
+        <div style={{
+          padding: SPACING.md,
+          borderRadius: RADIUS.md,
+          background: "linear-gradient(135deg, rgba(201,168,76,0.15), rgba(232,213,163,0.08))",
+          border: "1px solid " + COLORS.goldLight,
+          marginBottom: SPACING.md,
+          display: "flex", alignItems: "center", gap: SPACING.sm,
+        }}>
+          <div style={{
+            width: 44, height: 44, borderRadius: "50%",
+            background: COLORS.goldGradient,
+            display: "flex", alignItems: "center", justifyContent: "center",
+            fontSize: 16, fontWeight: 900, color: COLORS.textOnGold,
+            flexShrink: 0,
+          }}>{myRank}</div>
+          <div style={{ flex: 1 }}>
+            <div style={{ fontSize: 11, color: COLORS.textMuted, fontWeight: 700, fontFamily: TYPOGRAPHY.fontTajawal }}>ترتيبك الحالي</div>
+            <div style={{ fontSize: 14, color: COLORS.textPrimary, fontWeight: 900, fontFamily: TYPOGRAPHY.fontCairo }}>{user.name}</div>
+          </div>
+          <div style={{ textAlign: "left" }}>
+            <div style={{ fontSize: 18, fontWeight: 900, color: COLORS.goldLight, fontFamily: TYPOGRAPHY.fontCairo, lineHeight: 1 }}>{(user.points || 0).toLocaleString("ar-SA")}</div>
+            <div style={{ fontSize: 9, color: COLORS.textMuted, marginTop: 2 }}>نقطة</div>
+          </div>
+        </div>
+      )}
+
+      {/* Top 10 */}
+      <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+        {top10.map(function(e, i){
+          var rank = i + 1;
+          var isMe = String(e.id) === String(user.id) || String(e.username) === String(user.username);
+          var rankColor = rank === 1 ? "#FFD700" : rank === 2 ? "#C0C0C0" : rank === 3 ? "#CD7F32" : COLORS.textMuted;
+          var rankIcon = rank === 1 ? "🥇" : rank === 2 ? "🥈" : rank === 3 ? "🥉" : null;
+          return (
+            <div key={e.id || i} style={{
+              display: "flex", alignItems: "center", gap: SPACING.sm,
+              padding: "10px 12px",
+              borderRadius: RADIUS.md,
+              background: isMe ? "rgba(201,168,76,0.12)" : "rgba(255,255,255,0.03)",
+              border: "1px solid " + (isMe ? COLORS.goldLight : COLORS.metallicBorder),
+            }}>
+              <div style={{
+                width: 32, height: 32, borderRadius: "50%",
+                background: rank <= 3 ? rankColor + "25" : "rgba(255,255,255,0.05)",
+                border: "1px solid " + (rank <= 3 ? rankColor : COLORS.metallicBorder),
+                display: "flex", alignItems: "center", justifyContent: "center",
+                fontSize: rankIcon ? 16 : 12, fontWeight: 900,
+                color: rank <= 3 ? rankColor : COLORS.textSecondary,
+                flexShrink: 0,
+              }}>
+                {rankIcon || rank}
+              </div>
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <div style={{
+                  fontSize: 12, fontWeight: isMe ? 900 : 700,
+                  color: isMe ? COLORS.goldLight : COLORS.textPrimary,
+                  fontFamily: TYPOGRAPHY.fontTajawal,
+                  overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap",
+                }}>
+                  {e.name || e.username || "—"}
+                  {isMe && <span style={{ fontSize: 9, fontWeight: 800, color: COLORS.goldLight, marginInlineStart: 6, padding: "1px 6px", borderRadius: RADIUS.pill, background: "rgba(201,168,76,0.25)", border: "1px solid " + COLORS.goldLight }}>أنت</span>}
+                </div>
+                {e.role && <div style={{ fontSize: 9, color: COLORS.textMuted, marginTop: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{e.role}</div>}
+              </div>
+              <div style={{ textAlign: "left", flexShrink: 0 }}>
+                <div style={{ fontSize: 14, fontWeight: 900, color: isMe ? COLORS.goldLight : COLORS.textPrimary, fontFamily: TYPOGRAPHY.fontCairo, lineHeight: 1 }}>{(e.points || 0).toLocaleString("ar-SA")}</div>
+                <div style={{ fontSize: 8, color: COLORS.textMuted, marginTop: 2 }}>نقطة</div>
+              </div>
+            </div>
+          );
+        })}
+      </div>
+
+      {/* Total count footer */}
+      <div style={{ marginTop: SPACING.md, textAlign: "center", fontSize: 10, color: COLORS.textMuted, fontFamily: TYPOGRAPHY.fontTajawal }}>
+        إجمالي الموظفين في الترتيب: <strong style={{ color: COLORS.goldLight }}>{ranked.length}</strong>
+      </div>
+    </div>
+  );
+}
+
+/* ── AchievementsHub — container for the whole achievements tab ── */
+function AchievementsHub({ user }) {
+  var [stats, setStats] = useState(null);
+  var [statsLoading, setStatsLoading] = useState(true);
+
+  useEffect(function(){
+    if (!user || !user.id) return;
+    async function loadStats() {
+      try {
+        var [att, tl] = await Promise.all([
+          fetch("/api/data?action=attendance").then(function(r){ return r.json(); }).catch(function(){ return []; }),
+          fetch("/api/data?action=tawasul-list").then(function(r){ return r.json(); }).catch(function(){ return null; }),
+        ]);
+        var myAtt = (att || []).filter(function(a){ return a.empId === user.id; });
+        var byDate = {};
+        myAtt.forEach(function(a){
+          var dt = a.date || (a.ts && a.ts.split("T")[0]);
+          if (!dt) return;
+          if (!byDate[dt]) byDate[dt] = {};
+          byDate[dt][a.type] = a.ts;
+        });
+        var dates = Object.keys(byDate).filter(function(dt){ return byDate[dt].checkin; }).sort();
+        var totalDays = dates.length;
+        var earlyCheckins = 0;
+        dates.forEach(function(dt){
+          var cin = new Date(byDate[dt].checkin);
+          if (cin.getHours() < 8 || (cin.getHours() === 8 && cin.getMinutes() === 0)) earlyCheckins++;
+        });
+        var maxStreak = 0, curStreak = 0, prevDate = null;
+        dates.forEach(function(dt){
+          if (prevDate) {
+            var diff = (new Date(dt) - new Date(prevDate)) / (86400000);
+            if (diff <= 3) curStreak++;
+            else curStreak = 1;
+          } else curStreak = 1;
+          if (curStreak > maxStreak) maxStreak = curStreak;
+          prevDate = dt;
+        });
+        var monthAgo = new Date(); monthAgo.setDate(monthAgo.getDate() - 30);
+        var monthLates = dates.filter(function(dt){
+          if (new Date(dt) < monthAgo) return false;
+          var cin = new Date(byDate[dt].checkin);
+          return cin.getHours() >= 9 || (cin.getHours() === 8 && cin.getMinutes() > 45);
+        });
+        var monthWorkDays = dates.filter(function(dt){ return new Date(dt) >= monthAgo; }).length;
+        var myTasks = tl && tl.requests ? tl.requests.filter(function(r){ return r.requesterId === user.id; }) : [];
+        var myCompleted = tl && tl.requests ? tl.requests.filter(function(r){
+          return (r.assignees || []).some(function(a){ return String(a.id) === String(user.id); }) && (r.status === "accepted" || r.status === "done");
+        }) : [];
+        setStats({
+          totalDays: totalDays,
+          maxStreak: maxStreak,
+          earlyCheckins: earlyCheckins,
+          zeroLateMonth: monthWorkDays >= 15 && monthLates.length === 0,
+          profileComplete: !!(user.name && user.email && user.phone),
+          hasFace: !!user.hasFace,
+          pushEnabled: typeof Notification !== "undefined" && Notification.permission === "granted",
+          tasksCreated: myTasks.length,
+          tasksCompleted: myCompleted.length,
+          approvalsGiven: 0,
+        });
+      } catch(e) {}
+      setStatsLoading(false);
+    }
+    loadStats();
+  }, [user && user.id]);
+
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: SPACING.md }}>
+      {/* 1. Hero gold level card */}
+      <AchievementsHeroCard user={user} />
+
+      {/* 2. 3 Stats */}
+      <AchievementsStatsRow user={user} stats={stats} loading={statsLoading} />
+
+      {/* 3. Badges strip */}
+      <AchievementsBadgesStrip user={user} stats={stats} loading={statsLoading} />
+
+      {/* 4. Points log accordion */}
+      <ProfileAccordion emoji="📜" title="سجل النقاط" subtitle="كل نقاط اكتسبتها من الحضور والتفاعل">
+        <PointsLogCard user={user} allAtt={[]} />
+      </ProfileAccordion>
+
+      {/* 5. All badges accordion */}
+      <ProfileAccordion emoji="🏆" title="جميع الشارات" subtitle="الشارات المفتوحة والمقفلة بتفاصيلها">
+        <AchievementsCard user={user} />
+      </ProfileAccordion>
+
+      {/* 6. Leaderboard accordion */}
+      <ProfileAccordion emoji="📊" title="ترتيبي بين الزملاء" subtitle="أين موقعي بالنسبة للجميع">
+        <LeaderboardView user={user} />
+      </ProfileAccordion>
+    </div>
+  );
+}
+
+/* ═══════════════════════════════════════════════════════════════════
+ * v7.19 — PAY TAB VISUAL REDESIGN (الأجر والاستحقاقات)
+ * Navy Hero + Summary + Horizontal Bar + Transactions + Custody + Bank
+ * ═══════════════════════════════════════════════════════════════════ */
+
+var PAY_STATUS_META = {
+  approved:     { label: "✓ معتمد",        color: "#10B981", icon: "✓" },
+  sent_to_bank: { label: "🏦 أُرسل للبنك",  color: "#8B5CF6", icon: "🏦" },
+  paid:         { label: "💰 مدفوع",       color: "#059669", icon: "💰" },
+};
+
+function _payFormatNum(n) {
+  var v = Number(n || 0);
+  return v.toLocaleString("en-US");
+}
+
+function _payMonthName(period) {
+  if (!period) return "—";
+  var months = ["يناير","فبراير","مارس","أبريل","مايو","يونيو","يوليو","أغسطس","سبتمبر","أكتوبر","نوفمبر","ديسمبر"];
+  var m = String(period).match(/^(\d{4})-(\d{1,2})/);
+  if (m) return months[parseInt(m[2], 10) - 1] + " " + m[1];
+  return period;
+}
+
+/* ── SalaryHeroCard — Navy dark header with big net salary ── */
+function SalaryHeroCard({ latestSlip, loading }) {
+  if (loading) {
+    return (
+      <div style={{ padding: "32px 20px", borderRadius: RADIUS.xl, background: "linear-gradient(135deg, #0a1a36 0%, #0f2448 50%, #0a1a36 100%)", border: "1px solid rgba(201,168,76,0.3)", textAlign: "center", color: "rgba(255,255,255,0.6)", fontSize: 12 }}>
+        جارٍ تحميل بيانات الراتب...
+      </div>
+    );
+  }
+  if (!latestSlip) {
+    return (
+      <div style={{ padding: "28px 20px", borderRadius: RADIUS.xl, background: "linear-gradient(135deg, #0a1a36 0%, #0f2448 50%, #0a1a36 100%)", border: "1px solid rgba(201,168,76,0.3)", textAlign: "center" }}>
+        <div style={{ fontSize: 42, opacity: 0.4, marginBottom: 8 }}>💰</div>
+        <div style={{ fontSize: 14, color: "#fff", fontWeight: 800, fontFamily: TYPOGRAPHY.fontCairo }}>لا توجد كشوف راتب بعد</div>
+        <div style={{ fontSize: 11, color: "rgba(255,255,255,0.6)", marginTop: 4, fontFamily: TYPOGRAPHY.fontTajawal }}>ستظهر كشوف راتبك هنا عند اعتمادها</div>
+      </div>
+    );
+  }
+
+  var st = PAY_STATUS_META[latestSlip.status] || { label: latestSlip.status, color: "#fff" };
+
+  return (
+    <div style={{
+      position: "relative",
+      padding: "24px 20px 22px",
+      borderRadius: RADIUS.xl,
+      background: "linear-gradient(135deg, #0a1a36 0%, #12306a 45%, #0a1a36 100%)",
+      border: "1px solid rgba(201,168,76,0.35)",
+      boxShadow: "0 8px 24px rgba(10,26,54,0.5), inset 0 1px 0 rgba(255,255,255,0.1)",
+      overflow: "hidden",
+    }}>
+      {/* Decorative pattern */}
+      <div style={{ position: "absolute", top: -40, left: -40, width: 140, height: 140, borderRadius: "50%", background: "radial-gradient(circle, rgba(201,168,76,0.15), transparent 70%)", pointerEvents: "none" }} />
+      <div style={{ position: "absolute", bottom: -50, right: -50, width: 160, height: 160, borderRadius: "50%", background: "radial-gradient(circle, rgba(139,92,246,0.1), transparent 70%)", pointerEvents: "none" }} />
+
+      <div style={{ position: "relative", zIndex: 1 }}>
+        {/* Month & status */}
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 18 }}>
+          <div>
+            <div style={{ fontSize: 10, color: "rgba(255,255,255,0.55)", fontWeight: 700, letterSpacing: 1, fontFamily: TYPOGRAPHY.fontTajawal, textTransform: "uppercase" }}>آخر راتب</div>
+            <div style={{ fontSize: 13, color: "#fff", fontWeight: 800, marginTop: 3, fontFamily: TYPOGRAPHY.fontCairo }}>{_payMonthName(latestSlip.period)}</div>
+          </div>
+          <div style={{
+            padding: "6px 12px",
+            borderRadius: RADIUS.pill,
+            background: st.color + "25",
+            border: "1px solid " + st.color,
+            color: st.color,
+            fontSize: 10, fontWeight: 800,
+            fontFamily: TYPOGRAPHY.fontTajawal,
+            boxShadow: "0 0 12px " + st.color + "50",
+          }}>{st.label}</div>
+        </div>
+
+        {/* Big net salary */}
+        <div style={{ textAlign: "center", padding: "10px 0 14px" }}>
+          <div style={{ fontSize: 10, color: "rgba(255,255,255,0.55)", fontWeight: 700, fontFamily: TYPOGRAPHY.fontTajawal, marginBottom: 6, letterSpacing: 2 }}>الصافي</div>
+          <div style={{ display: "flex", alignItems: "baseline", justifyContent: "center", gap: 8 }}>
+            <span style={{ fontSize: 40, fontWeight: 900, color: "#fff", fontFamily: TYPOGRAPHY.fontCairo, letterSpacing: -1.5, textShadow: "0 2px 16px rgba(201,168,76,0.4)" }}>
+              {_payFormatNum(latestSlip.netSalary)}
+            </span>
+            <span style={{ fontSize: 13, fontWeight: 700, color: COLORS.goldLight, fontFamily: TYPOGRAPHY.fontTajawal }}>ريال</span>
+          </div>
+        </div>
+
+        {/* Bottom row: earnings + deductions */}
+        <div style={{ display: "flex", gap: SPACING.sm, marginTop: 6 }}>
+          <div style={{ flex: 1, padding: "10px 12px", borderRadius: RADIUS.md, background: "rgba(16,185,129,0.12)", border: "1px solid rgba(16,185,129,0.3)" }}>
+            <div style={{ fontSize: 9, color: "rgba(255,255,255,0.55)", fontWeight: 700, fontFamily: TYPOGRAPHY.fontTajawal }}>إجمالي المستحقات</div>
+            <div style={{ fontSize: 15, fontWeight: 900, color: "#10B981", fontFamily: TYPOGRAPHY.fontCairo, marginTop: 2 }}>{_payFormatNum(latestSlip.totalEarnings)}</div>
+          </div>
+          <div style={{ flex: 1, padding: "10px 12px", borderRadius: RADIUS.md, background: "rgba(239,68,68,0.12)", border: "1px solid rgba(239,68,68,0.3)" }}>
+            <div style={{ fontSize: 9, color: "rgba(255,255,255,0.55)", fontWeight: 700, fontFamily: TYPOGRAPHY.fontTajawal }}>إجمالي الخصومات</div>
+            <div style={{ fontSize: 15, fontWeight: 900, color: "#FF6B6B", fontFamily: TYPOGRAPHY.fontCairo, marginTop: 2 }}>{_payFormatNum(latestSlip.totalDeductions)}</div>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/* ── SalaryBreakdownBar — Horizontal stacked bar of allowances ── */
+function SalaryBreakdownBar({ latestSlip }) {
+  if (!latestSlip || !latestSlip.breakdown) return null;
+  var b = latestSlip.breakdown;
+
+  var components = [
+    { key: "basic",         label: "الأساسي",      value: b.basic,         color: "#3B82F6", emoji: "💼" },
+    { key: "housing",       label: "السكن",        value: b.housing,       color: "#10B981", emoji: "🏠" },
+    { key: "transport",     label: "النقل",        value: b.transport,     color: "#F59E0B", emoji: "🚗" },
+    { key: "communication", label: "الاتصالات",    value: b.communication, color: "#8B5CF6", emoji: "📱" },
+    { key: "other",         label: "بدلات أخرى",   value: b.other,         color: "#6B7280", emoji: "➕" },
+    { key: "commissions",   label: "العمولات",     value: b.commissions,   color: "#EC4899", emoji: "🏅" },
+    { key: "overtime",      label: "إضافي",        value: b.overtime,      color: "#F97316", emoji: "⏰" },
+    { key: "bonus",         label: "مكافأة",       value: b.bonus,         color: "#EAB308", emoji: "🎁" },
+    { key: "otherAdd",      label: "إضافات أخرى", value: b.otherAdd,      color: "#14B8A6", emoji: "✨" },
+  ].filter(function(x){ return x.value && x.value > 0; });
+
+  if (components.length === 0) return null;
+
+  var total = components.reduce(function(sum, c){ return sum + Number(c.value); }, 0);
+
+  return (
+    <Card padding={SPACING.md}>
+      <div style={{ ...TYPOGRAPHY.h3, color: COLORS.textPrimary, fontFamily: TYPOGRAPHY.fontCairo, marginBottom: SPACING.md, display: "flex", alignItems: "center", gap: 6 }}>
+        <span>📊</span> توزيع المستحقات
+      </div>
+
+      {/* Stacked horizontal bar */}
+      <div style={{
+        display: "flex",
+        height: 16,
+        borderRadius: RADIUS.pill,
+        overflow: "hidden",
+        border: "1px solid " + COLORS.metallicBorder,
+        boxShadow: "inset 0 1px 3px rgba(0,0,0,0.2)",
+        marginBottom: SPACING.md,
+      }}>
+        {components.map(function(c, i){
+          var pct = (Number(c.value) / total) * 100;
+          return (
+            <div
+              key={c.key}
+              title={c.label + ": " + _payFormatNum(c.value) + " (" + pct.toFixed(1) + "%)"}
+              style={{
+                width: pct + "%",
+                background: c.color,
+                borderLeft: i > 0 ? "1px solid rgba(255,255,255,0.2)" : "none",
+                transition: "width .5s",
+              }}
+            />
+          );
+        })}
+      </div>
+
+      {/* Legend rows with values */}
+      <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+        {components.map(function(c){
+          var pct = (Number(c.value) / total) * 100;
+          return (
+            <div key={c.key} style={{ display: "flex", alignItems: "center", gap: 8, padding: "4px 0" }}>
+              <div style={{ width: 10, height: 10, borderRadius: 3, background: c.color, flexShrink: 0 }} />
+              <span style={{ fontSize: 14, flexShrink: 0 }}>{c.emoji}</span>
+              <span style={{ flex: 1, fontSize: 12, fontWeight: 700, color: COLORS.textPrimary, fontFamily: TYPOGRAPHY.fontTajawal }}>{c.label}</span>
+              <span style={{ fontSize: 10, color: COLORS.textMuted, fontWeight: 700 }}>{pct.toFixed(0)}%</span>
+              <span style={{ fontSize: 12, fontWeight: 900, color: COLORS.textPrimary, fontFamily: TYPOGRAPHY.fontCairo, minWidth: 60, textAlign: "left" }}>{_payFormatNum(c.value)}</span>
+            </div>
+          );
+        })}
+      </div>
+    </Card>
+  );
+}
+
+/* ── SalaryTransactionsList — Past slips as transactions ── */
+function SalaryTransactionsList({ slips, onSelect }) {
+  if (!slips || slips.length <= 1) {
+    return null; // Only latest exists, no past to show
+  }
+  var past = slips.slice(1); // Everything except the latest (which is in Hero)
+
+  return (
+    <Card padding={SPACING.md}>
+      <div style={{ ...TYPOGRAPHY.h3, color: COLORS.textPrimary, fontFamily: TYPOGRAPHY.fontCairo, marginBottom: SPACING.md, display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+        <span style={{ display: "flex", alignItems: "center", gap: 6 }}><span>📜</span> الكشوف السابقة</span>
+        <span style={{ fontSize: 11, fontWeight: 700, color: COLORS.textMuted, fontFamily: TYPOGRAPHY.fontTajawal }}>{past.length} كشف</span>
+      </div>
+
+      <div style={{ display: "flex", flexDirection: "column", gap: 2 }}>
+        {past.map(function(s, i){
+          var st = PAY_STATUS_META[s.status] || { label: s.status, color: COLORS.textMuted, icon: "•" };
+          return (
+            <div
+              key={s.id || i}
+              onClick={function(){ onSelect && onSelect(s); }}
+              style={{
+                display: "flex", alignItems: "center", gap: SPACING.sm,
+                padding: "12px 6px",
+                borderBottom: i < past.length - 1 ? "1px solid " + COLORS.cardRowBorder : "none",
+                cursor: "pointer",
+                transition: "background .15s",
+              }}
+              onMouseEnter={function(e){ e.currentTarget.style.background = "rgba(255,255,255,0.03)"; }}
+              onMouseLeave={function(e){ e.currentTarget.style.background = "transparent"; }}
+            >
+              {/* Icon circle */}
+              <div style={{
+                width: 40, height: 40, borderRadius: RADIUS.md,
+                background: "linear-gradient(135deg, " + st.color + "25, " + st.color + "10)",
+                border: "1px solid " + st.color + "40",
+                display: "flex", alignItems: "center", justifyContent: "center",
+                fontSize: 18, flexShrink: 0,
+              }}>{st.icon}</div>
+
+              {/* Middle: month + status */}
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <div style={{ fontSize: 13, fontWeight: 800, color: COLORS.textPrimary, fontFamily: TYPOGRAPHY.fontCairo, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                  {_payMonthName(s.period)}
+                </div>
+                <div style={{ fontSize: 10, color: st.color, fontWeight: 700, marginTop: 2, fontFamily: TYPOGRAPHY.fontTajawal }}>{st.label}</div>
+              </div>
+
+              {/* Right: net amount */}
+              <div style={{ textAlign: "left", flexShrink: 0 }}>
+                <div style={{ fontSize: 14, fontWeight: 900, color: "#10B981", fontFamily: TYPOGRAPHY.fontCairo, lineHeight: 1 }}>{_payFormatNum(s.netSalary)}</div>
+                <div style={{ fontSize: 9, color: COLORS.textMuted, marginTop: 2 }}>ريال</div>
+              </div>
+
+              <div style={{ fontSize: 16, color: COLORS.textMuted, flexShrink: 0 }}>‹</div>
+            </div>
+          );
+        })}
+      </div>
+    </Card>
+  );
+}
+
+/* ── CustodyBadgesCard — small chips for active custody items ── */
+function CustodyBadgesCard({ user }) {
+  var [items, setItems] = useState([]);
+  var [loading, setLoading] = useState(true);
+  var [showAll, setShowAll] = useState(false);
+
+  useEffect(function(){
+    if (!user || !user.id) return;
+    fetch("/api/data?action=custody&empId=" + encodeURIComponent(user.id))
+      .then(function(r){ return r.json(); })
+      .then(function(d){ setItems(Array.isArray(d) ? d : []); setLoading(false); })
+      .catch(function(){ setLoading(false); });
+  }, [user && user.id]);
+
+  var typeLabels = {
+    consumable: { label: "استهلاكية", color: "#10b981", bg: "rgba(16,185,129,0.12)" },
+    asset:      { label: "دائمة",     color: COLORS.goldLight, bg: "rgba(201,168,76,0.12)" },
+    cash:       { label: "نقدية",     color: "#3B82F6", bg: "rgba(59,130,246,0.12)" },
+  };
+
+  // Only show active items
+  var active = items.filter(function(i){ return i.status === "active" || i.status === "issued"; });
+
+  if (loading) {
+    return (
+      <Card padding={SPACING.md}>
+        <div style={{ ...TYPOGRAPHY.h3, color: COLORS.textPrimary, fontFamily: TYPOGRAPHY.fontCairo, display: "flex", alignItems: "center", gap: 6 }}>
+          <span>📦</span> العُهَد
+        </div>
+        <div style={{ padding: SPACING.md, textAlign: "center", fontSize: 11, color: COLORS.textMuted }}>جارٍ التحميل...</div>
+      </Card>
+    );
+  }
+
+  var totalValue = active.reduce(function(sum, i){ return sum + (Number(i.value) || 0); }, 0);
+  var display = showAll ? active : active.slice(0, 6);
+
+  return (
+    <Card padding={SPACING.md}>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: SPACING.md }}>
+        <div style={{ ...TYPOGRAPHY.h3, color: COLORS.textPrimary, fontFamily: TYPOGRAPHY.fontCairo, display: "flex", alignItems: "center", gap: 6 }}>
+          <span>📦</span> العُهَد النشطة
+        </div>
+        <div style={{ fontSize: 10, fontWeight: 700, color: COLORS.textMuted, fontFamily: TYPOGRAPHY.fontTajawal }}>
+          <strong style={{ color: COLORS.goldLight }}>{active.length}</strong> عهدة
+          {totalValue > 0 && <span> · <strong style={{ color: COLORS.goldLight }}>{_payFormatNum(totalValue)}</strong> ر.س</span>}
+        </div>
+      </div>
+
+      {active.length === 0 ? (
+        <div style={{ padding: SPACING.md, textAlign: "center", fontSize: 11, color: COLORS.textMuted, fontStyle: "italic" }}>
+          لا توجد عُهَد نشطة
+        </div>
+      ) : (
+        <>
+          <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
+            {display.map(function(item, i){
+              var tp = typeLabels[item.type] || typeLabels.consumable;
+              return (
+                <div
+                  key={item.id || i}
+                  title={item.name + (item.value ? " — " + _payFormatNum(item.value) + " ر.س" : "")}
+                  style={{
+                    padding: "6px 10px",
+                    borderRadius: RADIUS.pill,
+                    background: tp.bg,
+                    border: "1px solid " + tp.color + "40",
+                    display: "flex", alignItems: "center", gap: 5,
+                    fontSize: 11,
+                    fontFamily: TYPOGRAPHY.fontTajawal,
+                    maxWidth: "100%",
+                  }}
+                >
+                  <span style={{ fontSize: 12 }}>{item.type === "cash" ? "💵" : item.type === "asset" ? "💻" : "📄"}</span>
+                  <span style={{ fontWeight: 800, color: COLORS.textPrimary, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", maxWidth: 140 }}>{item.name}</span>
+                  {item.value > 0 && <span style={{ fontWeight: 900, color: tp.color, fontFamily: TYPOGRAPHY.fontCairo }}>{_payFormatNum(item.value)}</span>}
+                </div>
+              );
+            })}
+          </div>
+          {active.length > 6 && !showAll && (
+            <button onClick={function(){ setShowAll(true); }} style={{ marginTop: SPACING.sm, width: "100%", padding: "8px", borderRadius: RADIUS.md, background: "transparent", border: "1px dashed " + COLORS.metallicBorder, color: COLORS.goldLight, fontSize: 11, fontWeight: 800, cursor: "pointer", fontFamily: TYPOGRAPHY.fontTajawal }}>
+              عرض {active.length - 6} عهدة أخرى ›
+            </button>
+          )}
+        </>
+      )}
+    </Card>
+  );
+}
+
+/* ── BankAccountCard — IBAN masked + edit request button ── */
+function BankAccountCard({ user, onRequestEdit }) {
+  var [reveal, setReveal] = useState(false);
+  var iban = user.iban || "—";
+  var bankName = user.bankName || "—";
+
+  function maskIban(s) {
+    if (!s || s === "—" || s.length < 8) return s;
+    var clean = String(s).replace(/\s/g, "");
+    if (clean.length <= 8) return clean;
+    // Show first 4 + last 4, mask the middle
+    var first = clean.substring(0, 4);
+    var last = clean.substring(clean.length - 4);
+    var maskLen = clean.length - 8;
+    return first + " " + "•".repeat(Math.min(maskLen, 12)) + " " + last;
+  }
+
+  async function copyIban() {
+    if (!iban || iban === "—") return;
+    try {
+      await navigator.clipboard.writeText(String(iban).replace(/\s/g, ""));
+      alert("✓ تم نسخ رقم الآيبان");
+    } catch(e) {}
+  }
+
+  return (
+    <Card padding={SPACING.md}>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: SPACING.md }}>
+        <div style={{ ...TYPOGRAPHY.h3, color: COLORS.textPrimary, fontFamily: TYPOGRAPHY.fontCairo, display: "flex", alignItems: "center", gap: 6 }}>
+          <span>🏦</span> الحساب البنكي
+        </div>
+      </div>
+
+      {/* Bank logo/name row */}
+      <div style={{
+        padding: SPACING.md,
+        borderRadius: RADIUS.md,
+        background: "linear-gradient(135deg, rgba(139,92,246,0.08), rgba(59,130,246,0.05))",
+        border: "1px solid " + COLORS.metallicBorder,
+        marginBottom: SPACING.sm,
+      }}>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 4 }}>
+          <span style={{ fontSize: 10, color: COLORS.textMuted, fontWeight: 700, fontFamily: TYPOGRAPHY.fontTajawal }}>اسم البنك</span>
+          <span style={{ fontSize: 13, fontWeight: 800, color: COLORS.textPrimary, fontFamily: TYPOGRAPHY.fontTajawal }}>{bankName}</span>
+        </div>
+      </div>
+
+      {/* IBAN row with mask/reveal */}
+      <div style={{
+        padding: SPACING.md,
+        borderRadius: RADIUS.md,
+        background: "linear-gradient(135deg, rgba(201,168,76,0.08), rgba(232,213,163,0.04))",
+        border: "1px solid rgba(201,168,76,0.25)",
+        marginBottom: SPACING.md,
+      }}>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 6 }}>
+          <span style={{ fontSize: 10, color: COLORS.textMuted, fontWeight: 700, fontFamily: TYPOGRAPHY.fontTajawal }}>رقم الآيبان (IBAN)</span>
+          <div style={{ display: "flex", gap: 6 }}>
+            <button
+              onClick={function(){ setReveal(!reveal); }}
+              style={{ padding: "3px 8px", borderRadius: RADIUS.sm, background: "transparent", border: "1px solid " + COLORS.metallicBorder, color: COLORS.goldLight, fontSize: 9, fontWeight: 800, cursor: "pointer", fontFamily: TYPOGRAPHY.fontTajawal }}
+            >
+              {reveal ? "🙈 إخفاء" : "👁️ إظهار"}
+            </button>
+            {iban !== "—" && (
+              <button
+                onClick={copyIban}
+                style={{ padding: "3px 8px", borderRadius: RADIUS.sm, background: "transparent", border: "1px solid " + COLORS.metallicBorder, color: COLORS.goldLight, fontSize: 9, fontWeight: 800, cursor: "pointer", fontFamily: TYPOGRAPHY.fontTajawal }}
+              >
+                📋 نسخ
+              </button>
+            )}
+          </div>
+        </div>
+        <div style={{
+          fontSize: 16, fontWeight: 900, color: COLORS.textPrimary,
+          fontFamily: "monospace",
+          letterSpacing: 2,
+          direction: "ltr",
+          textAlign: "left",
+          padding: "6px 0",
+        }}>
+          {reveal ? iban : maskIban(iban)}
+        </div>
+      </div>
+
+      {/* Edit request button */}
+      <Button variant="secondary" size="md" icon="✏️" onClick={onRequestEdit}>
+        طلب تعديل بيانات البنك
+      </Button>
+    </Card>
+  );
+}
+
+/* ── PayHub — container for pay tab ── */
+function PayHub({ user }) {
+  var [loading, setLoading] = useState(true);
+  var [slips, setSlips] = useState([]);
+  var [selected, setSelected] = useState(null);
+
+  useEffect(function(){
+    if (!user || !user.id) return;
+    fetch("/api/data?action=payroll-my-slips&empId=" + encodeURIComponent(user.id))
+      .then(function(r){ return r.json(); })
+      .then(function(d){
+        if (d && d.ok) setSlips(d.slips || []);
+        setLoading(false);
+      })
+      .catch(function(){ setLoading(false); });
+  }, [user && user.id]);
+
+  // If a slip is selected, show its detail full-screen
+  if (selected) {
+    return <SalarySlipDetail slip={selected} user={user} onClose={function(){ setSelected(null); }} />;
+  }
+
+  var latestSlip = slips && slips.length > 0 ? slips[0] : null;
+
+  function handleBankEditRequest() {
+    // v7.20 — Switch to profile tab and open edit modal via custom event
+    localStorage.setItem("basma_profile_tab", "profile");
+    window.dispatchEvent(new CustomEvent("basma:profile-tab-changed"));
+    setTimeout(function(){
+      window.dispatchEvent(new CustomEvent("basma:open-edit-modal"));
+    }, 300);
+  }
+
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: SPACING.md }}>
+      {/* 1. Navy Hero with big net salary */}
+      <SalaryHeroCard latestSlip={latestSlip} loading={loading} />
+
+      {/* 2. Breakdown bar */}
+      <SalaryBreakdownBar latestSlip={latestSlip} />
+
+      {/* 3. View current slip details button */}
+      {latestSlip && (
+        <Button variant="secondary" size="md" icon="📄" onClick={function(){ setSelected(latestSlip); }}>
+          عرض تفاصيل كشف آخر راتب
+        </Button>
+      )}
+
+      {/* 4. Past slips as transactions */}
+      <SalaryTransactionsList slips={slips} onSelect={setSelected} />
+
+      {/* 5. Custody badges */}
+      <CustodyBadgesCard user={user} />
+
+      {/* 6. Bank account */}
+      <BankAccountCard user={user} onRequestEdit={handleBankEditRequest} />
+
+      {/* 7. Full custody accordion (detailed view) */}
+      <ProfileAccordion emoji="🗄️" title="تفاصيل العُهَد" subtitle="كل العُهَد والفواتير والاستلام">
+        <CustodyTab user={user} />
+      </ProfileAccordion>
+    </div>
+  );
+}
+
+/* ═══════════════════════════════════════════════════════════════════
+ * v7.20 — EditRequestModal — wraps EditRequestCard in a bottom-sheet modal
+ * ═══════════════════════════════════════════════════════════════════ */
+function EditRequestModal({ user, onClose }) {
+  return (
+    <div
+      onClick={onClose}
+      style={{
+        position: "fixed", inset: 0,
+        background: "rgba(0,0,0,0.7)",
+        zIndex: 1000,
+        display: "flex", alignItems: "flex-end", justifyContent: "center",
+        fontFamily: TYPOGRAPHY.fontTajawal,
+      }}
+    >
+      <div
+        onClick={function(e){ e.stopPropagation(); }}
+        style={{
+          background: COLORS.bg1,
+          borderRadius: "20px 20px 0 0",
+          width: "100%",
+          maxWidth: 430,
+          maxHeight: "85vh",
+          display: "flex", flexDirection: "column",
+          border: "1px solid " + COLORS.metallicBorder,
+          borderBottom: "none",
+        }}
+      >
+        {/* Header */}
+        <div style={{ padding: SPACING.lg, borderBottom: "1px solid " + COLORS.metallicBorder, display: "flex", alignItems: "center", gap: SPACING.sm }}>
+          <div style={{ width: 36, height: 36, borderRadius: 10, background: COLORS.goldDark + "30", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 18 }}>
+            ✏️
+          </div>
+          <div style={{ flex: 1 }}>
+            <div style={{ ...TYPOGRAPHY.h3, color: COLORS.textPrimary, fontFamily: TYPOGRAPHY.fontCairo }}>طلبات تعديل البيانات</div>
+            <div style={{ ...TYPOGRAPHY.tiny, color: COLORS.textMuted, marginTop: 2 }}>طلب تعديل الجوال · البريد · العنوان · البنك · الآيبان</div>
+          </div>
+          <button onClick={onClose} style={{ background: "none", border: "none", fontSize: 22, color: COLORS.textMuted, cursor: "pointer", padding: 4 }}>✕</button>
+        </div>
+
+        {/* Body */}
+        <div style={{ flex: 1, overflowY: "auto", padding: SPACING.md }}>
+          <EditRequestCard user={user} />
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function ProfilePage({ user, branch, workType, onLogout, onTicket, myTickets, darkMode, toggleDark, kadwarNotifs }) {
   // v7.15 — legacy tab IDs remapped to new 5-tab structure
   // Old (v7.14): profile/time/pay/perf/tickets → New (v7.15): profile/records/achievements/pay/legal
@@ -3622,6 +4597,7 @@ function ProfilePage({ user, branch, workType, onLogout, onTicket, myTickets, da
   });
   var [kadwarFlip, setKadwarFlip] = useState(false);
   var [showAbout, setShowAbout] = useState(false);
+  var [showEditModal, setShowEditModal] = useState(false);
   var kn = kadwarNotifs || { tasks: 0, exams: 0, alerts: 0 };
   useEffect(function(){ localStorage.setItem("basma_profile_tab", tab); }, [tab]);
   useEffect(function() {
@@ -3636,6 +4612,13 @@ function ProfilePage({ user, branch, workType, onLogout, onTicket, myTickets, da
     }
     window.addEventListener("basma:profile-tab-changed", handleTabChange);
     return function() { window.removeEventListener("basma:profile-tab-changed", handleTabChange); };
+  }, []);
+
+  // v7.20 — Listen to open-edit-modal event from other tabs (e.g. PayHub's bank edit button)
+  useEffect(function() {
+    function handleOpenEditModal() { setShowEditModal(true); }
+    window.addEventListener("basma:open-edit-modal", handleOpenEditModal);
+    return function() { window.removeEventListener("basma:open-edit-modal", handleOpenEditModal); };
   }, []);
   const typeMap = { office: "مكتبي", field: "ميداني", mixed: "مختلط", remote: "عن بعد" };
   const badge = memberBadge(user.points || 0);
@@ -3765,10 +4748,6 @@ function ProfilePage({ user, branch, workType, onLogout, onTicket, myTickets, da
 
             <TicketsCard user={user} myTickets={myTickets} />
 
-            <div id="edit-request-card-anchor">
-              <EditRequestCard user={user} />
-            </div>
-
             {/* 5. MIXED BUTTONS */}
             {/* Manager panel button — hidden in desktop session */}
             {(user.isManager || user.isAssistant) && !(user && user._desktopSession) && (
@@ -3777,24 +4756,14 @@ function ProfilePage({ user, branch, workType, onLogout, onTicket, myTickets, da
               </Button>
             )}
 
-            {/* Kadwar flip button */}
-            <div className="basma-flip-container">
-              <div className={"basma-flip-inner" + (kadwarFlip ? " flipped" : "")} style={{ minHeight: 44 }}>
-                <div className="basma-flip-front">
-                  <Button variant="secondary" size="md" icon={<Icons.building size={20} />} onClick={function(){ setKadwarFlip(true); }}>
-                    الدخول إلى منصة كوادر
-                  </Button>
-                </div>
-                <div className="basma-flip-back">
-                  <div style={{ display: "flex", gap: SPACING.xs }}>
-                    <KadwarBtn icon={<Icons.edit size={18} />} label="اختبار" count={kn.exams} />
-                    <KadwarBtn icon={<Icons.user size={18} />} label="حسابي" count={kn.alerts} />
-                  </div>
-                </div>
-              </div>
-            </div>
+            {/* v7.20 — Kadwar button: single, no flip */}
+            <Button variant="secondary" size="md" icon={<Icons.building size={20} />} onClick={function(){
+              window.open("https://hma.engineer", "_blank");
+            }}>
+              الدخول إلى منصة كوادر
+            </Button>
 
-            {/* Row of 2: تذكرة دعم | تعديل بيانات */}
+            {/* v7.20 — Row of 3: تذكرة دعم | تعديل بيانات (now opens modal) + Logout row below */}
             <div style={{ display: "flex", gap: SPACING.sm }}>
               <div style={{ flex: 1 }}>
                 <Button variant="secondary" size="md" icon={<Icons.alert size={18} />} onClick={onTicket}>
@@ -3802,11 +4771,8 @@ function ProfilePage({ user, branch, workType, onLogout, onTicket, myTickets, da
                 </Button>
               </div>
               <div style={{ flex: 1 }}>
-                <Button variant="secondary" size="md" icon={<Icons.edit size={18} />} onClick={function(){
-                  var el = document.getElementById("edit-request-card-anchor");
-                  if (el) el.scrollIntoView({ behavior: "smooth", block: "center" });
-                }}>
-                  تعديل بيانات
+                <Button variant="secondary" size="md" icon={<Icons.edit size={18} />} onClick={function(){ setShowEditModal(true); }}>
+                  طلبات تعديل البيانات
                 </Button>
               </div>
             </div>
@@ -3876,28 +4842,13 @@ function ProfilePage({ user, branch, workType, onLogout, onTicket, myTickets, da
         {/* v7.17 — tab: records (سجلي وطلباتي) — visual redesign with Hero + Chips + filtered content */}
         {tab === "records" && <RecordsHub user={user} onTicket={onTicket} />}
 
-        {/* v7.15 — tab: achievements (إنجازاتي مستقل) */}
-        {tab === "achievements" && (
-          <>
-            <div style={{ ...TYPOGRAPHY.h3, color: COLORS.textPrimary, fontFamily: TYPOGRAPHY.fontCairo, marginBottom: SPACING.sm, textAlign: "center" }}>🏆 إنجازاتي</div>
-            <PointsLogCard user={user} allAtt={[]} />
-            <AchievementsCard user={user} />
-          </>
-        )}
+        {/* v7.18 — tab: achievements (إنجازاتي) — visual redesign: gold level card + stats + badges strip + leaderboard */}
+        {tab === "achievements" && <AchievementsHub user={user} />}
 
         {/* v6.95 — tab "handover_tasks" محذوف: دُمج داخل "إجازاتي" */}
 
-        {/* v7.14 — tab: pay (كان my_salary + docs مدموجين) */}
-        {tab === "pay" && (
-          <>
-            <MySalaryTab user={user} />
-            {/* العُهَد (مدموج من تبويب docs القديم) */}
-            <div style={{ marginTop: SPACING.lg, paddingTop: SPACING.md, borderTop: "1px dashed " + COLORS.metallicBorder }}>
-              <div style={{ ...TYPOGRAPHY.h3, color: COLORS.textPrimary, fontFamily: TYPOGRAPHY.fontCairo, marginBottom: SPACING.sm, textAlign: "center" }}>🗄️ العُهَد</div>
-              <Card><CustodyTab user={user} /></Card>
-            </div>
-          </>
-        )}
+        {/* v7.19 — tab: pay (الأجر والاستحقاقات) — visual redesign: navy hero + breakdown bar + transactions + custody + bank */}
+        {tab === "pay" && <PayHub user={user} />}
 
         {/* v7.16 — HMA Banner (footer) shown ONLY in profile tab */}
         {tab === "profile" && (
@@ -3919,6 +4870,7 @@ function ProfilePage({ user, branch, workType, onLogout, onTicket, myTickets, da
         )}
 
         {showAbout && <AboutAppModal onClose={function(){ setShowAbout(false); }} onTicket={onTicket} />}
+        {showEditModal && <EditRequestModal user={user} onClose={function(){ setShowEditModal(false); }} />}
       </div>
     </div>
   );
@@ -12974,9 +13926,10 @@ function LegalTab({ user }) {
       {/* MY COMPLAINTS */}
       {!loading && subTab === "mine" && (
         <div>
-          <button onClick={function(){ setShowComplaintModal(true); }} style={{ width: "100%", height: 48, borderRadius: RADIUS.lg, background: COLORS.goldGradient, border: "1px solid " + COLORS.goldLight, color: COLORS.textOnGold, fontSize: 13, fontWeight: 800, cursor: "pointer", fontFamily: TYPOGRAPHY.fontCairo, boxShadow: SHADOWS.gold, marginBottom: SPACING.md }}>
-            + رفع شكوى جديدة
-          </button>
+          <Button variant="secondary" size="md" icon="➕" onClick={function(){ setShowComplaintModal(true); }}>
+            رفع شكوى جديدة
+          </Button>
+          <div style={{ height: SPACING.md }} />
           {complaints.filter(function(c){ return c.filedBy === user.id; }).length === 0 && <div style={{ textAlign: "center", padding: SPACING.xl, color: COLORS.textMuted }}>لم ترفع أي شكوى</div>}
           {complaints.filter(function(c){ return c.filedBy === user.id; }).map(function(c) {
             var st = COMPLAINT_STATUS[c.status] || { label: c.status, color: COLORS.textMuted };
