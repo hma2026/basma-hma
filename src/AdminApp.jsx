@@ -4,7 +4,7 @@ import { generateAttendanceReport, generateEmployeeReport, generateMonthlySummar
 import { exportFormalWarning, exportInvestigationRecord, exportAffidavit, exportEmploymentLetter, exportSalaryLetter, exportLeaveLetter } from "./formalPdfs";
 
 const APP = "بصمة HMA";
-const VER = "7.29";
+const VER = "7.30";
 const CO = "هاني محمد عسيري للإستشارات الهندسية";
 const B = { blue: "#2B5EA7", yellow: "#FDD800", red: "#E2192C", black: "#1A1A1A", blueDk: "#1E4478", blueLt: "#EDF3FB", gold: "#D4A017" };
 
@@ -190,7 +190,7 @@ function SlidePage({ children, tabKey }) {
 }
 
 // ── More Menu Page (full page Instagram Settings style) ──
-function MoreMenuPage({ setTab, badges, sideGroups }) {
+function MoreMenuPage({ setTab, badges, sideGroups, onSwitchToEmployee, onLogout, onToggleTheme, darkMode, role }) {
   // Use the EXACT same sideGroups from the sidebar so we have one source of truth
   // (excludes the 4 main bottom nav items)
   var bottomNavIds = ["dashboard", "hr_tickets", "leaves_hub", "more"];
@@ -227,12 +227,51 @@ function MoreMenuPage({ setTab, badges, sideGroups }) {
 
   return (
     <div style={{ padding: "12px 14px 80px" }}>
-      <div style={{ marginBottom: 18 }}>
+      <div style={{ marginBottom: 14 }}>
         <h1 style={{ fontSize: 24, fontWeight: 800, color: LN.tx, margin: 0, marginBottom: 4, fontFamily: "inherit" }}>
           المزيد
         </h1>
         <div style={{ fontSize: 12, color: LN.txM }}>كل أقسام لوحة الإدارة</div>
       </div>
+
+      {/* v7.30 — Featured card: Switch to employee fingerprint app (PRIMARY ACTION) */}
+      <button
+        onClick={onSwitchToEmployee}
+        style={{
+          width: "100%",
+          padding: "16px 14px",
+          borderRadius: 14,
+          background: "linear-gradient(135deg, #2B5EA7, #1E4478)",
+          border: "none",
+          cursor: "pointer",
+          display: "flex",
+          alignItems: "center",
+          gap: 12,
+          textAlign: "right",
+          fontFamily: "inherit",
+          boxShadow: "0 4px 12px rgba(43,94,167,0.25)",
+          marginBottom: 18,
+        }}
+      >
+        <div style={{
+          width: 44, height: 44,
+          borderRadius: 12,
+          background: "rgba(255,255,255,0.18)",
+          display: "flex", alignItems: "center", justifyContent: "center",
+          fontSize: 24, flexShrink: 0,
+        }}>
+          📱
+        </div>
+        <div style={{ flex: 1, minWidth: 0 }}>
+          <div style={{ fontSize: 15, fontWeight: 800, color: "#FFFFFF", marginBottom: 2 }}>
+            التبديل لشاشة البصمة
+          </div>
+          <div style={{ fontSize: 11, color: "rgba(255,255,255,0.75)", fontWeight: 500 }}>
+            الذهاب لتطبيق الموظف (الحضور والانصراف)
+          </div>
+        </div>
+        <div style={{ fontSize: 20, color: "rgba(255,255,255,0.8)", flexShrink: 0 }}>›</div>
+      </button>
 
       {sideGroups.map(function(group){
         // Filter out items that are in the bottom nav
@@ -315,6 +354,125 @@ function MoreMenuPage({ setTab, badges, sideGroups }) {
           </div>
         );
       })}
+
+      {/* v7.30 — Account section at bottom (theme toggle + logout) */}
+      <div style={{ marginTop: 30, marginBottom: 10 }}>
+        <div style={{
+          fontSize: 11, fontWeight: 800,
+          color: LN.txM,
+          letterSpacing: 0.5,
+          padding: "0 4px 8px",
+          textTransform: "uppercase",
+        }}>
+          الحساب
+        </div>
+        <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+          {/* Theme toggle */}
+          <button
+            onClick={onToggleTheme}
+            style={{
+              width: "100%",
+              padding: "14px 14px",
+              borderRadius: 12,
+              background: LN.card,
+              border: "1px solid " + LN.cardBrd,
+              cursor: "pointer",
+              display: "flex",
+              alignItems: "center",
+              gap: 12,
+              textAlign: "right",
+              fontFamily: "inherit",
+            }}
+          >
+            <div style={{
+              width: 38, height: 38,
+              borderRadius: 10,
+              background: darkMode ? "#F59E0B20" : "#6366F120",
+              display: "flex", alignItems: "center", justifyContent: "center",
+              fontSize: 20, flexShrink: 0,
+            }}>
+              {darkMode ? "☀️" : "🌙"}
+            </div>
+            <div style={{ flex: 1, minWidth: 0 }}>
+              <div style={{ fontSize: 14, fontWeight: 700, color: LN.tx, marginBottom: 2 }}>
+                {darkMode ? "الوضع النهاري" : "الوضع الليلي"}
+              </div>
+              <div style={{ fontSize: 11, color: LN.txM, fontWeight: 500 }}>
+                تغيير مظهر التطبيق
+              </div>
+            </div>
+            <div style={{ fontSize: 18, color: LN.txL, flexShrink: 0 }}>›</div>
+          </button>
+
+          {/* Role info */}
+          <div style={{
+            width: "100%",
+            padding: "12px 14px",
+            borderRadius: 12,
+            background: LN.card,
+            border: "1px solid " + LN.cardBrd,
+            display: "flex",
+            alignItems: "center",
+            gap: 12,
+          }}>
+            <div style={{
+              width: 38, height: 38,
+              borderRadius: "50%",
+              background: LN.acBg,
+              display: "flex", alignItems: "center", justifyContent: "center",
+              fontSize: 18, flexShrink: 0,
+            }}>👤</div>
+            <div style={{ flex: 1, minWidth: 0 }}>
+              <div style={{ fontSize: 13, fontWeight: 700, color: LN.tx, marginBottom: 2 }}>
+                {role === "manager" ? "مدير HR" : "مساعد"}
+              </div>
+              <div style={{ fontSize: 10, color: LN.txM }}>
+                {role === "manager" ? "صلاحيات كاملة" : "عرض وتدقيق"}
+              </div>
+            </div>
+          </div>
+
+          {/* Logout */}
+          <button
+            onClick={onLogout}
+            style={{
+              width: "100%",
+              padding: "14px 14px",
+              borderRadius: 12,
+              background: "#FEF2F2",
+              border: "1px solid #FECACA",
+              cursor: "pointer",
+              display: "flex",
+              alignItems: "center",
+              gap: 12,
+              textAlign: "right",
+              fontFamily: "inherit",
+            }}
+          >
+            <div style={{
+              width: 38, height: 38,
+              borderRadius: 10,
+              background: "#FEE2E2",
+              display: "flex", alignItems: "center", justifyContent: "center",
+              fontSize: 20, flexShrink: 0,
+            }}>🚪</div>
+            <div style={{ flex: 1, minWidth: 0 }}>
+              <div style={{ fontSize: 14, fontWeight: 700, color: "#DC2626", marginBottom: 2 }}>
+                تسجيل الخروج
+              </div>
+              <div style={{ fontSize: 11, color: "#F87171", fontWeight: 500 }}>
+                الخروج من لوحة الإدارة
+              </div>
+            </div>
+            <div style={{ fontSize: 18, color: "#DC2626", flexShrink: 0 }}>›</div>
+          </button>
+        </div>
+      </div>
+
+      {/* Version footer */}
+      <div style={{ textAlign: "center", marginTop: 16, padding: "12px 0", fontSize: 10, color: LN.txL }}>
+        {APP} · v{VER}
+      </div>
     </div>
   );
 }
@@ -1095,7 +1253,25 @@ export default function AdminApp() {
       {/* v7.24 — More menu page (mobile only) */}
       {tab === "more" && isMobile && (
         <SlidePage tabKey="more">
-          <MoreMenuPage setTab={setTab} badges={badgeCounts} sideGroups={sideGroups} />
+          <MoreMenuPage
+            setTab={setTab}
+            badges={badgeCounts}
+            sideGroups={sideGroups}
+            darkMode={dk}
+            role={role}
+            onToggleTheme={toggleTheme}
+            onSwitchToEmployee={function(){
+              localStorage.setItem("basma_explicit_employee", "1");
+              localStorage.setItem("basma_last_mode", "app");
+              window.location.hash = "";
+              window.location.reload();
+            }}
+            onLogout={function(){
+              localStorage.removeItem("basma_admin_email");
+              localStorage.removeItem("basma_last_mode");
+              setLoggedIn(false);
+            }}
+          />
         </SlidePage>
       )}
 
