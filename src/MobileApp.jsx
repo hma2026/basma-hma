@@ -11,7 +11,7 @@ import { exportEmploymentLetter, exportLeaveLetter } from "./formalPdfs";
 
 /* ═══════════ APP CONFIG (إعدادات التطبيق) ═══════════ */
 const APP_CONFIG = {
-  VER: "7.37",
+  VER: "7.38",
   NAME: "بصمة HMA",
   FULL_NAME: "نظام الحضور والانصراف الذكي",
   COMPANY: "هاني محمد عسيري للاستشارات الهندسية",
@@ -1255,25 +1255,35 @@ function MobileAppInner() {
     finally { setLoading(false); }
   }
 
-  // v6.61 — Biometric login (WebAuthn)
+  // v7.38 — Biometric login (WebAuthn) — with rpId + auto-cleanup + better errors
   async function handleBiometricLogin() {
     setLoading(true);
     try {
       var lastEmpId = localStorage.getItem("basma_biometric_empId");
       if (!lastEmpId) { setLoading(false); return "لا يوجد بصمة مسجّلة على هذا الجهاز"; }
 
-      // 1. Get challenge from server
+      // 1. Get challenge from server (with current hostname as fallback rpId)
       var cRes = await fetch("/api/data?action=biometric-login-challenge", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ empId: lastEmpId }),
+        body: JSON.stringify({ empId: lastEmpId, rpId: window.location.hostname }),
       });
       var cData = await cRes.json();
-      if (!cRes.ok) { setLoading(false); return cData.error || "خطأ"; }
+      if (!cRes.ok) {
+        setLoading(false);
+        // If no biometric on server, clear local
+        if (cRes.status === 404) {
+          localStorage.removeItem("basma_biometric_empId");
+          localStorage.removeItem("basma_biometric_empName");
+          return "تم حذف البصمة من الخادم — سجّل الدخول بكلمة المرور ثم فعّل البصمة من جديد";
+        }
+        return cData.error || "خطأ في جلب التحدي";
+      }
 
-      // 2. Prompt user for biometric
+      // 2. Prompt user for biometric — v7.38 pass rpId explicitly
       var publicKey = {
         challenge: base64urlToUint8Array(cData.challenge),
+        rpId: cData.rpId || window.location.hostname,  // v7.38
         allowCredentials: (cData.allowCredentials || []).map(function(c){
           return { type: c.type, id: base64urlToUint8Array(c.id), transports: c.transports };
         }),
@@ -1299,7 +1309,16 @@ function MobileAppInner() {
         body: JSON.stringify({ empId: lastEmpId, credential: credential }),
       });
       var vData = await vRes.json();
-      if (!vRes.ok || !vData.ok) { setLoading(false); return vData.error || "فشل التحقق"; }
+      if (!vRes.ok || !vData.ok) {
+        setLoading(false);
+        // v7.38 — If credential was removed from server, clear local
+        if (vData.error && (vData.error.indexOf("غير مُسجّلة") >= 0 || vRes.status === 401)) {
+          localStorage.removeItem("basma_biometric_empId");
+          localStorage.removeItem("basma_biometric_empName");
+          return "هذه البصمة لم تعد صالحة — سجّل الدخول بكلمة المرور وفعّلها من جديد";
+        }
+        return vData.error || "فشل التحقق";
+      }
 
       setUser(vData.employee);
       localStorage.setItem("basma_user", JSON.stringify(vData.employee));
@@ -1308,6 +1327,12 @@ function MobileAppInner() {
       return null;
     } catch(e) {
       console.error("Biometric login failed:", e);
+      setLoading(false);
+      // v7.38 — Specific error messages
+      if (e.name === "NotAllowedError") return "ألغيت العملية أو انتهى الوقت — حاول مرة أخرى";
+      if (e.name === "SecurityError") return "خطأ أمني — تأكد أنك على الموقع الصحيح (b.hma.engineer)";
+      if (e.name === "InvalidStateError") return "البصمة مُسجّلة لجهاز/موقع آخر — استخدم كلمة المرور";
+      if (e.name === "NotSupportedError") return "المتصفح لا يدعم البصمة — استخدم Safari على iOS أو Chrome على Android";
       return e.message || "فشل الدخول بالبصمة";
     } finally { setLoading(false); }
   }
@@ -15878,7 +15903,7 @@ function BiometricSettingsCard({ user }) {
         body: JSON.stringify({ empId: user.id, rpId: window.location.hostname }),
       });
       var cData = await cRes.json();
-      if (!cRes.ok) { alert("خطأ: " + (cData.error || "")); setBusy(false); return; }
+      if (!cRes.ok) { alert("خطأ في الخادم: " + (cData.error || "")); setBusy(false); return; }
 
       // 2. Prompt user for biometric
       var publicKey = {
@@ -15933,8 +15958,18 @@ function BiometricSettingsCard({ user }) {
         alert("خطأ: " + (vData.error || ""));
       }
     } catch(e) {
-      if (e.name === "NotAllowedError") alert("تم إلغاء العملية");
-      else alert("فشل التسجيل: " + (e.message || e.name || ""));
+      // v7.38 — Specific error messages
+      if (e.name === "NotAllowedError") {
+        alert("تم إلغاء العملية أو انتهى الوقت");
+      } else if (e.name === "InvalidStateError") {
+        alert("هذا الجهاز مُسجّل مسبقاً");
+      } else if (e.name === "SecurityError") {
+        alert("خطأ أمني — تأكد من أنك على الموقع الصحيح (HTTPS)");
+      } else if (e.name === "NotSupportedError") {
+        alert("المتصفح لا يدعم البصمة البيومترية");
+      } else {
+        alert("فشل التسجيل: " + (e.message || e.name || ""));
+      }
     }
     setBusy(false);
   }

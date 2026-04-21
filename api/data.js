@@ -772,10 +772,11 @@ export default async function handler(req, res) {
         // Generate random challenge (32 bytes base64url)
         const crypto = await import('crypto');
         const challenge = crypto.randomBytes(32).toString('base64url');
+        const rpId = body.rpId || 'b.hma.engineer';
 
-        // Store challenge temporarily (valid 5 min)
+        // Store challenge temporarily (valid 5 min) — v7.38 with type + rpId
         const challenges = (await dbGet('biometric_challenges')) || {};
-        challenges[body.empId] = { challenge: challenge, expires: Date.now() + 5 * 60 * 1000 };
+        challenges[body.empId] = { challenge: challenge, expires: Date.now() + 5 * 60 * 1000, type: 'register', rpId: rpId };
         // Clean expired
         Object.keys(challenges).forEach(function(k){
           if (challenges[k].expires < Date.now()) delete challenges[k];
@@ -784,7 +785,7 @@ export default async function handler(req, res) {
 
         return res.json({
           challenge: challenge,
-          rp: { name: 'بصمة HMA', id: body.rpId || 'b.hma.engineer' },
+          rp: { name: 'بصمة HMA', id: rpId },
           user: {
             id: Buffer.from(String(body.empId)).toString('base64url'),
             name: emp.email || emp.username || body.empId,
@@ -809,7 +810,14 @@ export default async function handler(req, res) {
         const body = req.body || {};
         if (!body.empId || !body.credential) return res.status(400).json({ error: 'empId and credential required' });
 
-        // Simple verification: trust the browser's signature for now (production would verify attestation)
+        // v7.38 — Verify challenge exists and not expired
+        const challenges = (await dbGet('biometric_challenges')) || {};
+        const stored = challenges[body.empId];
+        if (!stored || stored.type !== 'register' || stored.expires < Date.now()) {
+          return res.status(400).json({ error: 'انتهت صلاحية التحدي — حاول مرة أخرى' });
+        }
+        const storedRpId = stored.rpId || 'b.hma.engineer';
+
         const credentials = (await dbGet('biometric_credentials')) || {};
         if (!credentials[body.empId]) credentials[body.empId] = [];
 
@@ -817,6 +825,9 @@ export default async function handler(req, res) {
         const credId = body.credential.id;
         const existing = credentials[body.empId].find(function(c){ return c.credentialId === credId; });
         if (existing) {
+          // Clean challenge even on duplicate
+          delete challenges[body.empId];
+          await dbSet('biometric_challenges', challenges);
           return res.json({ ok: true, message: 'already registered', device: existing });
         }
 
@@ -826,11 +837,16 @@ export default async function handler(req, res) {
           deviceName: body.deviceName || 'جهاز غير مسمى',
           userAgent: body.userAgent || '',
           platform: body.platform || '',
+          rpId: storedRpId,  // v7.38 — store rpId so login uses the same one
           registeredAt: new Date().toISOString(),
           lastUsed: null,
         };
         credentials[body.empId].push(device);
         await dbSet('biometric_credentials', credentials);
+
+        // Delete used challenge
+        delete challenges[body.empId];
+        await dbSet('biometric_challenges', challenges);
 
         return res.json({ ok: true, device: device });
       }
@@ -848,12 +864,16 @@ export default async function handler(req, res) {
         const crypto = await import('crypto');
         const challenge = crypto.randomBytes(32).toString('base64url');
 
+        // v7.38 — Use rpId from first credential (all should match)
+        const rpId = userCreds[0].rpId || body.rpId || 'b.hma.engineer';
+
         const challenges = (await dbGet('biometric_challenges')) || {};
         challenges[body.empId] = { challenge: challenge, expires: Date.now() + 5 * 60 * 1000, type: 'login' };
         await dbSet('biometric_challenges', challenges);
 
         return res.json({
           challenge: challenge,
+          rpId: rpId,  // v7.38 — client will use this
           allowCredentials: userCreds.map(function(c){
             return { type: 'public-key', id: c.credentialId, transports: ['internal'] };
           }),
