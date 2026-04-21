@@ -4,7 +4,7 @@ import { generateAttendanceReport, generateEmployeeReport, generateMonthlySummar
 import { exportFormalWarning, exportInvestigationRecord, exportAffidavit, exportEmploymentLetter, exportSalaryLetter, exportLeaveLetter } from "./formalPdfs";
 
 const APP = "بصمة HMA";
-const VER = "7.28";
+const VER = "7.29";
 const CO = "هاني محمد عسيري للإستشارات الهندسية";
 const B = { blue: "#2B5EA7", yellow: "#FDD800", red: "#E2192C", black: "#1A1A1A", blueDk: "#1E4478", blueLt: "#EDF3FB", gold: "#D4A017" };
 
@@ -358,7 +358,7 @@ function FloatingBackButton({ tab, onBack }) {
 }
 
 // ── Mobile Top Bar (back button + page title) — v7.25/7.26 ──
-function MobileTopBar({ tab, sideItems, onBack }) {
+function MobileTopBar({ tab, sideItems, onBack, selEmp }) {
   // The 4 main bottom-nav tabs are "root" — they don't show a back button
   var rootTabs = ["dashboard", "hr_tickets", "leaves_hub", "more"];
   var isRoot = rootTabs.indexOf(tab) !== -1;
@@ -373,6 +373,12 @@ function MobileTopBar({ tab, sideItems, onBack }) {
   else if (tab === "hr_tickets") { icon = "📨"; label = "رسائل الموظفين"; }
   else if (tab === "leaves_hub") { icon = "🏖️"; label = "الإجازات"; }
   else if (tab === "more") { return null; /* MoreMenuPage has its own header */ }
+
+  // v7.29 — if viewing an employee profile, show their name
+  if (tab === "employees" && selEmp) {
+    icon = "👤";
+    label = selEmp.name || "ملف الموظف";
+  }
 
   // v7.26 — always render even for root tabs, but hide back button when root
   return (
@@ -699,6 +705,11 @@ export default function AdminApp() {
     _setTabRaw(newTab);
   }
   function goBack() {
+    // v7.29 — if viewing an employee profile, close it first (don't leave "employees" tab)
+    if (tab === "employees" && selEmp) {
+      setSelEmp(null);
+      return;
+    }
     setNavStack(function(prev){
       if (prev.length === 0) {
         // Fallback: go to "more" if current is non-root, otherwise dashboard
@@ -1090,7 +1101,7 @@ export default function AdminApp() {
 
       {/* v7.25 — Mobile Top Bar with smart back button (for non-root tabs) */}
       {isMobile && tab !== "more" && (
-        <MobileTopBar tab={tab} sideItems={sideItems} onBack={goBack} />
+        <MobileTopBar tab={tab} sideItems={sideItems} onBack={goBack} selEmp={selEmp} />
       )}
 
       {/* ═══ DASHBOARD ═══ */}
@@ -1162,32 +1173,77 @@ export default function AdminApp() {
 
       {/* ═══ EMPLOYEES ═══ */}
       {tab === "employees" && !selEmp && <>
-        {/* Kadwar source banner */}
-        <div style={{ background: B.blue + "12", border: "1px solid " + B.blue + "40", borderRadius: 10, padding: "10px 14px", marginBottom: 12, display: "flex", justifyContent: "space-between", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
-          <div style={{ fontSize: 11, color: t.tx, lineHeight: 1.5 }}>
-            <span style={{ fontWeight: 800, color: B.blue }}>🔗 المصدر: كوادر</span> — الموظفون يُدارون في <a href="https://hma.engineer" target="_blank" style={{ color: B.blue, fontWeight: 700 }}>hma.engineer</a>. لإضافة/حذف/تعديل، استخدم كوادر.
+        {/* Kadwar source banner — compact on mobile */}
+        <div style={{ background: B.blue + "12", border: "1px solid " + B.blue + "40", borderRadius: 10, padding: isMobile ? "8px 10px" : "10px 14px", marginBottom: 12, display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+          <div style={{ fontSize: isMobile ? 10 : 11, color: t.tx, lineHeight: 1.5, flex: 1, minWidth: 0 }}>
+            {isMobile ? (
+              <span><span style={{ fontWeight: 800, color: B.blue }}>🔗 كوادر:</span> <a href="https://hma.engineer" target="_blank" style={{ color: B.blue, fontWeight: 700 }}>hma.engineer</a></span>
+            ) : (
+              <span><span style={{ fontWeight: 800, color: B.blue }}>🔗 المصدر: كوادر</span> — الموظفون يُدارون في <a href="https://hma.engineer" target="_blank" style={{ color: B.blue, fontWeight: 700 }}>hma.engineer</a>. لإضافة/حذف/تعديل، استخدم كوادر.</span>
+            )}
           </div>
           <KadwarSyncButton t={t} B={B} />
         </div>
-        <div style={{ display: "flex", gap: 10, marginBottom: 14, flexWrap: "wrap" }}>
-          <input value={search} onChange={e => setSearch(e.target.value)} placeholder="🔍 بحث باسم أو رقم هوية..." style={{ flex: 1, minWidth: 200, padding: "10px 14px", borderRadius: 10, border: "1px solid " + t.sep, fontSize: 13, outline: "none", background: t.card, color: t.tx }} />
-          <select value={brFilter} onChange={e => setBrFilter(e.target.value)} style={{ padding: "10px 14px", borderRadius: 10, border: "1px solid " + t.sep, fontSize: 12, background: "#fff", color: "#000", fontWeight: 600, cursor: "pointer" }}><option value="all" style={{background:"#fff",color:"#000"}}>كل الفروع</option>{BRANCHES.map(b => <option key={b.id} value={b.name} style={{background:"#fff",color:"#000"}}>{b.name}</option>)}</select>
+        <div style={{ display: "flex", gap: 8, marginBottom: 14, flexWrap: "wrap" }}>
+          <input value={search} onChange={e => setSearch(e.target.value)} placeholder="🔍 بحث..." style={{ flex: 1, minWidth: isMobile ? 120 : 200, padding: "10px 14px", borderRadius: 10, border: "1px solid " + t.sep, fontSize: 13, outline: "none", background: t.card, color: t.tx }} />
+          {!isMobile && <select value={brFilter} onChange={e => setBrFilter(e.target.value)} style={{ padding: "10px 14px", borderRadius: 10, border: "1px solid " + t.sep, fontSize: 12, background: "#fff", color: "#000", fontWeight: 600, cursor: "pointer" }}><option value="all" style={{background:"#fff",color:"#000"}}>كل الفروع</option>{BRANCHES.map(b => <option key={b.id} value={b.name} style={{background:"#fff",color:"#000"}}>{b.name}</option>)}</select>}
           <select value={statusFilter || "all"} onChange={e => setStatusFilter(e.target.value)} style={{ padding: "10px 14px", borderRadius: 10, border: "1px solid " + t.sep, fontSize: 12, background: "#fff", color: "#000", fontWeight: 600, cursor: "pointer" }}>
             <option value="all" style={{background:"#fff",color:"#000"}}>كل الحالات</option>
             <option value="حاضر" style={{background:"#fff",color:"#000"}}>✅ حاضر</option>
             <option value="متأخر" style={{background:"#fff",color:"#000"}}>⏰ متأخر</option>
             <option value="غائب" style={{background:"#fff",color:"#000"}}>❌ غائب</option>
           </select>
-          <select value={accountFilter || "all"} onChange={e => setAccountFilter(e.target.value)} style={{ padding: "10px 14px", borderRadius: 10, border: "1px solid " + t.sep, fontSize: 12, background: "#fff", color: "#000", fontWeight: 600, cursor: "pointer" }}>
+          {!isMobile && <select value={accountFilter || "all"} onChange={e => setAccountFilter(e.target.value)} style={{ padding: "10px 14px", borderRadius: 10, border: "1px solid " + t.sep, fontSize: 12, background: "#fff", color: "#000", fontWeight: 600, cursor: "pointer" }}>
             <option value="all" style={{background:"#fff",color:"#000"}}>كل الحسابات</option>
             <option value="active" style={{background:"#fff",color:"#000"}}>✓ نشط</option>
             <option value="inactive" style={{background:"#fff",color:"#000"}}>⚠ بدون حساب</option>
-          </select>
+          </select>}
           <button onClick={function(){ setSearch(""); setBrFilter("all"); setStatusFilter("all"); setAccountFilter("all"); }} style={{ padding: "10px 14px", borderRadius: 10, border: "1px solid " + t.sep, fontSize: 12, background: t.card, color: t.tx, fontWeight: 600, cursor: "pointer" }}>🔄</button>
         </div>
         <div style={{ fontSize: 11, color: t.txM, marginBottom: 10 }}>
           عدد النتائج: <strong style={{ color: B.blue }}>{filteredEmps.length}</strong> من <strong>{safeEmps.length}</strong>
         </div>
+
+        {/* v7.29 — Mobile: card list instead of wide table */}
+        {isMobile ? (
+          <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+            {filteredEmps.map(function(e){
+              var sc = e.status === "حاضر" ? t.ok : e.status === "متأخر" ? t.warn : t.bad;
+              var pc = e.pct >= 85 ? t.ok : e.pct >= 70 ? t.warn : t.bad;
+              return (
+                <div key={e.id} onClick={function(){ setSelEmp(e); }} style={{
+                  background: t.card,
+                  borderRadius: 12,
+                  padding: 12,
+                  border: "1px solid " + t.sep,
+                  borderRight: "3px solid " + sc,
+                  cursor: "pointer",
+                  display: "flex",
+                  alignItems: "center",
+                  gap: 10,
+                  boxShadow: "0 1px 2px rgba(0,0,0,0.03)",
+                }}>
+                  <div style={{ width: 40, height: 40, borderRadius: "50%", background: sc + "15", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 18, flexShrink: 0 }}>👤</div>
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 2 }}>
+                      <div style={{ fontSize: 13, fontWeight: 800, color: t.tx, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{e.name}</div>
+                      <span style={{ padding: "1px 6px", borderRadius: 4, fontSize: 9, fontWeight: 700, background: sc + "20", color: sc, flexShrink: 0 }}>{e.status}</span>
+                    </div>
+                    <div style={{ fontSize: 10, color: t.txM, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                      {e.role} · {e.branch}
+                    </div>
+                    <div style={{ display: "flex", gap: 10, marginTop: 4, fontSize: 10 }}>
+                      <span style={{ color: pc, fontWeight: 700 }}>📊 {e.pct}%</span>
+                      <span style={{ color: t.txM }}>🔥 {e.streak}</span>
+                      {e.violations > 0 && <span style={{ color: t.bad, fontWeight: 700 }}>⚖️ {e.violations}</span>}
+                    </div>
+                  </div>
+                  <div style={{ fontSize: 16, color: t.txM, flexShrink: 0 }}>‹</div>
+                </div>
+              );
+            })}
+          </div>
+        ) : (
         <div style={{ background: t.card, borderRadius: 14, border: "1px solid " + t.sep, overflow: "hidden" }}>
           <table style={{ width: "100%", borderCollapse: "collapse" }}><thead><tr style={{ background: t.bg }}>{["الموظف", "الفرع", "الحالة", "الالتزام", "السلسلة", "المستوى", "المخالفات", "البصمات"].map((h, i) => <th key={i} style={{ padding: "10px 12px", fontSize: 10, fontWeight: 700, color: t.txM, textAlign: "right", borderBottom: "1px solid " + t.sep }}>{h}</th>)}</tr></thead>
           <tbody>{filteredEmps.map(e => { const sc = e.status === "حاضر" ? t.ok : e.status === "متأخر" ? t.warn : t.bad; const pc = e.pct >= 85 ? t.ok : e.pct >= 70 ? t.warn : t.bad; return (<tr key={e.id} onClick={() => setSelEmp(e)} style={{ cursor: "pointer" }} onMouseEnter={ev => ev.currentTarget.style.background = t.bg} onMouseLeave={ev => ev.currentTarget.style.background = "transparent"}>
@@ -1201,10 +1257,12 @@ export default function AdminApp() {
             <td style={td}><div style={{ display: "flex", gap: 2 }}>{e.checks.map((c, i) => <div key={i} style={{ width: 16, height: 16, borderRadius: 3, background: c ? t.okLt : t.badLt, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 8 }}>{c ? "✓" : "✕"}</div>)}</div></td>
           </tr>); })}</tbody></table>
         </div>
+        )}
       </>}
       {tab === "employees" && selEmp && <>
-        <button onClick={() => setSelEmp(null)} style={{ background: "none", border: "none", fontSize: 13, color: B.blue, fontWeight: 700, cursor: "pointer", marginBottom: 14 }}>→ رجوع للقائمة</button>
-        <div style={{ display: "grid", gridTemplateColumns: "1fr 2fr", gap: 16 }}>
+        {/* v7.29 — hide old "رجوع للقائمة" button on mobile (MobileTopBar handles back) */}
+        {!isMobile && <button onClick={() => setSelEmp(null)} style={{ background: "none", border: "none", fontSize: 13, color: B.blue, fontWeight: 700, cursor: "pointer", marginBottom: 14 }}>→ رجوع للقائمة</button>}
+        <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr" : "1fr 2fr", gap: 16 }}>
           <div style={{ background: t.card, borderRadius: 14, padding: "20px", border: "1px solid " + t.sep, textAlign: "center" }}>
             <div style={{ width: 64, height: 64, borderRadius: "50%", background: `${((selEmp.status||"—") === "حاضر" ? t.ok : (selEmp.status||"—") === "متأخر" ? t.warn : t.bad)}12`, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 32, margin: "0 auto 10px", border: `3px solid ${(selEmp.status||"—") === "حاضر" ? t.ok : (selEmp.status||"—") === "متأخر" ? t.warn : t.bad}` }}>👤</div>
             <div style={{ fontSize: 16, fontWeight: 800 }}>{selEmp.name}</div>
@@ -1783,27 +1841,7 @@ export default function AdminApp() {
       />
     )}
 
-    {/* v7.28 — Floating Back Button: visible on ALL devices (not just mobile) for radical fix */}
-    <FloatingBackButton tab={tab} onBack={goBack} />
-
-    {/* v7.28 — DEBUG OVERLAY: shows state for diagnosis (bottom-left, dismissible) */}
-    <div style={{
-      position: "fixed",
-      bottom: isMobile ? 70 : 8,
-      left: 8,
-      zIndex: 99998,
-      padding: "6px 10px",
-      borderRadius: 8,
-      background: "rgba(0,0,0,0.85)",
-      color: "#fff",
-      fontSize: 10,
-      fontFamily: "monospace",
-      direction: "ltr",
-      pointerEvents: "none",
-      lineHeight: 1.5,
-    }}>
-      v{VER} · mobile={String(isMobile)} · tab={tab} · w={typeof window !== "undefined" ? window.innerWidth : "?"}
-    </div>
+    {/* v7.29 — removed debug overlay and floating back button (MobileTopBar is sufficient) */}
   </div>);
 }
 
