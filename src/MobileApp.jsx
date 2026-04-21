@@ -11,7 +11,7 @@ import { exportEmploymentLetter, exportLeaveLetter } from "./formalPdfs";
 
 /* ═══════════ APP CONFIG (إعدادات التطبيق) ═══════════ */
 const APP_CONFIG = {
-  VER: "7.44",
+  VER: "7.45",
   NAME: "بصمة HMA",
   FULL_NAME: "نظام الحضور والانصراف الذكي",
   COMPANY: "هاني محمد عسيري للاستشارات الهندسية",
@@ -3539,10 +3539,11 @@ function RecordsPromotionsView({ user }) {
 }
 
 /* ── RecordsHub — container combining Hero + Chips + filtered content ── */
-function RecordsHub({ user, onTicket }) {
+function RecordsHub({ user, onTicket, myTickets }) {
   // v7.43 — Open Layout: all sections visible as vertical stacks (no horizontal filter bar)
   // Refs for smooth-scroll-to-section when action buttons clicked
   var leavesRef = React.useRef(null);
+  var ticketsRef = React.useRef(null);
 
   function handleRequestLeave() {
     // Scroll to leaves section
@@ -3571,17 +3572,29 @@ function RecordsHub({ user, onTicket }) {
         </ProfileAccordion>
       </div>
 
-      {/* v7.43 — Section 3: عقودي (accordion) */}
+      {/* v7.45 — Section 3: طلبات الدعم الفني (accordion) */}
+      <div ref={ticketsRef}>
+        <ProfileAccordion emoji="🎫" title="طلبات الدعم الفني" subtitle="رسائلي مع الموارد البشرية" badge={(myTickets || []).length > 0 ? String((myTickets || []).length) : null}>
+          <TicketsCard user={user} myTickets={myTickets} />
+        </ProfileAccordion>
+      </div>
+
+      {/* v7.45 — Section 4: طلبات تعديل البيانات (accordion) */}
+      <ProfileAccordion emoji="✏️" title="طلبات تعديل البيانات" subtitle="طلبات تعديل الحقول المعتمدة">
+        <EditRequestCard user={user} />
+      </ProfileAccordion>
+
+      {/* v7.43 — Section 5: عقودي (accordion) */}
       <ProfileAccordion emoji="📄" title="عقودي" subtitle="العقود والتجديدات">
         <EmployeeRecordTab user={user} initialSubTab="contracts" hideSubTabs={true} />
       </ProfileAccordion>
 
-      {/* v7.43 — Section 4: الترقيات (accordion) */}
+      {/* v7.43 — Section 6: الترقيات (accordion) */}
       <ProfileAccordion emoji="🚀" title="الترقيات" subtitle="سجل الترقيات والتدرج الوظيفي">
         <RecordsPromotionsView user={user} />
       </ProfileAccordion>
 
-      {/* v7.43 — Section 5: الأرشيف (accordion, default closed) */}
+      {/* v7.43 — Section 7: الأرشيف (accordion, default closed) */}
       <ProfileAccordion emoji="🗄️" title="الأرشيف" subtitle="الطلبات المغلقة والمنتهية">
         <RecordsArchiveView user={user} />
       </ProfileAccordion>
@@ -5109,7 +5122,7 @@ function ProfilePage({ user, branch, workType, onLogout, onTicket, myTickets, da
               </Card>
             )}
 
-            <TicketsCard user={user} myTickets={myTickets} />
+            {/* v7.45 — TicketsCard نُقلت إلى سجلي وطلباتي */}
 
             {/* 5. MIXED BUTTONS */}
             {/* Manager panel button — hidden in desktop session */}
@@ -5132,19 +5145,7 @@ function ProfilePage({ user, branch, workType, onLogout, onTicket, myTickets, da
               الدخول إلى منصة كوادر
             </Button>
 
-            {/* v7.44 — Row of 2: طلب دعم فني | طلبات تعديل البيانات */}
-            <div style={{ display: "flex", gap: SPACING.sm }}>
-              <div style={{ flex: 1 }}>
-                <Button variant="secondary" size="md" icon={<Icons.alert size={18} />} onClick={onTicket}>
-                  طلب دعم فني
-                </Button>
-              </div>
-              <div style={{ flex: 1 }}>
-                <Button variant="secondary" size="md" icon={<Icons.edit size={18} />} onClick={function(){ setShowEditModal(true); }}>
-                  طلبات تعديل البيانات
-                </Button>
-              </div>
-            </div>
+            {/* v7.45 — زري "طلب دعم فني" و"طلبات تعديل البيانات" حُذفا (نُقلا إلى سجلي وطلباتي كأقسام) */}
 
             {/* v7.35 — Logout moved below HelpGuide */}
 
@@ -5203,7 +5204,7 @@ function ProfilePage({ user, branch, workType, onLogout, onTicket, myTickets, da
         {tab === "legal" && <LegalHub user={user} />}
 
         {/* v7.17 — tab: records (سجلي وطلباتي) — visual redesign with Hero + Chips + filtered content */}
-        {tab === "records" && <RecordsHub user={user} onTicket={onTicket} />}
+        {tab === "records" && <RecordsHub user={user} onTicket={onTicket} myTickets={myTickets} />}
 
         {/* v7.18 — tab: achievements (إنجازاتي) — visual redesign: gold level card + stats + badges strip + leaderboard */}
         {tab === "achievements" && <AchievementsHub user={user} />}
@@ -5317,16 +5318,7 @@ function AboutAppModal({ onClose, onTicket }) {
             </div>
           </div>
 
-          {/* Support */}
-          <div style={{ padding: 14, borderRadius: 12, background: "rgba(16,185,129,0.08)", border: "1px solid rgba(16,185,129,0.25)", marginBottom: 10 }}>
-            <div style={{ fontSize: 13, fontWeight: 800, color: "#10B981", marginBottom: 8, display: "flex", alignItems: "center", gap: 6 }}>📞 الدعم الفني</div>
-            <div style={{ fontSize: 11, color: COLORS.textSecondary, lineHeight: 1.9, marginBottom: 10 }}>
-              إذا واجهت أي مشكلة، يمكنك تقديم طلب دعم فني وسيتواصل معك الفريق.
-            </div>
-            <button onClick={function(){ onClose(); if (onTicket) onTicket(); }} style={{ width: "100%", padding: "10px 14px", borderRadius: 10, background: "#10B981", color: "#fff", border: "none", fontSize: 12, fontWeight: 800, cursor: "pointer", fontFamily: TYPOGRAPHY.fontTajawal }}>
-              📧 طلب دعم فني جديد
-            </button>
-          </div>
+          {/* v7.45 — Support block removed (ticket creation now only from سجلي وطلباتي Hero button) */}
 
           {/* Credits */}
           <div style={{ padding: 12, borderRadius: 10, background: "rgba(255,255,255,0.04)", border: "1px dashed " + COLORS.metallicBorder, textAlign: "center" }}>
@@ -12754,7 +12746,14 @@ function TicketsCard({ user, myTickets }) {
     return new Date(tk.lastReadByEmp) < new Date(lastMsg.ts);
   }
 
-  if (!tickets || tickets.length === 0) return null;
+  // v7.45 — show empty state in accordion instead of returning null
+  if (!tickets || tickets.length === 0) {
+    return (
+      <div style={{ padding: 16, textAlign: "center", color: COLORS.textMuted, fontSize: 11 }}>
+        📭 لا توجد طلبات دعم فني بعد
+      </div>
+    );
+  }
 
   // Sort: unread first, then by updated
   var sorted = tickets.slice().sort(function(a,b){
@@ -12767,8 +12766,8 @@ function TicketsCard({ user, myTickets }) {
   return (
     <>
       <Card>
-        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: SPACING.sm }}>
-          <div style={{ ...TYPOGRAPHY.h3, color: COLORS.textPrimary }}>🎫 طلبات الدعم الفني</div>
+        {/* v7.45 — title removed (accordion shows "🎫 طلبات الدعم الفني") */}
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "flex-end", marginBottom: SPACING.sm }}>
           <span style={{ fontSize: 10, color: COLORS.textMuted, fontWeight: 600 }}>{tickets.length} رسالة</span>
         </div>
         {sorted.slice(0, 6).map(function(tk, i){
@@ -14167,10 +14166,7 @@ function MyRequestsTab({ user }) {
         <button onClick={function(){ setShowPerm(true); }} style={{ padding: "10px 4px", borderRadius: 10, background: "rgba(124,58,237,0.15)", border: "1px solid rgba(124,58,237,0.4)", color: "#7C3AED", fontWeight: 800, fontSize: 11, cursor: "pointer", fontFamily: TYPOGRAPHY.fontTajawal }}>⏱ استئذان</button>
         <button onClick={function(){ setShowPreAbs(true); }} style={{ padding: "10px 4px", borderRadius: 10, background: "rgba(217,119,6,0.15)", border: "1px solid rgba(217,119,6,0.4)", color: "#D97706", fontWeight: 800, fontSize: 11, cursor: "pointer", fontFamily: TYPOGRAPHY.fontTajawal }}>🏥 إفادة غياب</button>
       </div>
-      {/* v6.64 — الإفادات تُصدر من لوحة الإدارة (شؤون الموظفين) */}
-      <div style={{ padding: "10px 14px", marginBottom: SPACING.md, borderRadius: 10, background: "rgba(201,168,76,0.08)", border: "1px dashed rgba(201,168,76,0.3)", fontSize: 10, color: COLORS.textMuted, lineHeight: 1.7, textAlign: "center" }}>
-        📄 لطلب <strong style={{ color: COLORS.goldLight }}>إفادة تعريف بالعمل</strong> أو أي إفادة رسمية — تواصل مع الموارد البشرية عبر طلب دعم فني
-      </div>
+      {/* v7.45 — بانر "الإفادات عبر طلب دعم فني" حُذف (قسم طلبات الدعم الفني موجود في سجلي) */}
 
       {/* Filter tabs */}
       <div style={{ display: "flex", gap: 4, background: COLORS.metallic, borderRadius: 10, padding: 4, marginBottom: SPACING.md }}>
