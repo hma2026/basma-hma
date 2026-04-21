@@ -11056,17 +11056,17 @@ function TawasulDetailModal({ request, user, allEmps, onClose, nameOf, onUpdated
 
   return (
     <div onClick={onClose} style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.6)", zIndex: 1000, display: "flex", alignItems: "flex-end", justifyContent: "center", fontFamily: "'Tajawal',sans-serif" }}>
-      <div onClick={function(e){ e.stopPropagation(); }} onTouchStart={onNavTS} onTouchMove={onNavTM} onTouchEnd={onNavTE} ref={modalRef} style={{ background: C.bg, borderRadius: "20px 20px 0 0", maxWidth: 430, width: "100%", maxHeight: "94vh", overflowY: "auto", direction: "rtl", color: C.text, paddingBottom: 20 }}>
-        {/* Drag handle + v7.33 task counter */}
-        <div style={{ display: "flex", justifyContent: "center", alignItems: "center", padding: "10px 0 4px", gap: 8 }}>
+      <div onClick={function(e){ e.stopPropagation(); }} ref={modalRef} style={{ background: C.bg, borderRadius: "20px 20px 0 0", maxWidth: 430, width: "100%", maxHeight: "94vh", overflowY: "auto", direction: "rtl", color: C.text, paddingBottom: 20 }}>
+        {/* Drag handle + v7.33 task counter — SWIPE HERE to navigate tasks */}
+        <div onTouchStart={onNavTS} onTouchMove={onNavTM} onTouchEnd={onNavTE} style={{ display: "flex", justifyContent: "center", alignItems: "center", padding: "10px 0 4px", gap: 8, userSelect: "none", touchAction: "pan-y" }}>
           {hasPrev && <span style={{ fontSize: 10, color: C.sub, fontWeight: 700 }}>→</span>}
           <div style={{ width: 40, height: 4, borderRadius: 2, background: C.cardBorder }} />
           {taskList && taskList.length > 1 && <span style={{ fontSize: 9, color: C.sub, fontWeight: 700 }}>{(curTaskIdx + 1) + "/" + taskList.length}</span>}
           {hasNext && <span style={{ fontSize: 10, color: C.sub, fontWeight: 700 }}>←</span>}
         </div>
 
-        {/* ═══ v7.32 — SECTION 1: Title + Close ═══ */}
-        <div style={{ padding: "8px 18px 0", display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 12 }}>
+        {/* ═══ v7.32 — SECTION 1: Title + Close + Pin ═══ */}
+        <div onTouchStart={onNavTS} onTouchMove={onNavTM} onTouchEnd={onNavTE} style={{ padding: "8px 18px 0", display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 12, userSelect: "none" }}>
           <div style={{ flex: 1, minWidth: 0 }}>
             {readOnly && (
               <div style={{ marginBottom: 8, padding: "5px 10px", background: "rgba(124,58,237,0.12)", border: "1px solid rgba(124,58,237,0.3)", borderRadius: 999, display: "inline-flex", alignItems: "center", gap: 5, fontSize: 10, color: "#7c3aed", fontWeight: 800 }}>
@@ -11273,10 +11273,10 @@ function TawasulDetailModal({ request, user, allEmps, onClose, nameOf, onUpdated
                 return (
                   <React.Fragment key={st.key}>
                     <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 3, flex: "0 0 auto" }}>
-                      <div style={{ width: 30, height: 30, borderRadius: 15, background: active ? "#0d9488" : C.bg, border: "2px solid " + (isCurrent ? "#2dd4bf" : active ? "#0d9488" : C.cardBorder), display: "flex", alignItems: "center", justifyContent: "center", fontSize: 12, color: active ? "#fff" : C.sub, boxShadow: isCurrent ? "0 0 10px rgba(13,148,136,0.4)" : "none" }}>{st.icon}</div>
+                      <div style={{ width: 30, height: 30, borderRadius: 15, background: active ? "#2ED3A5" : C.bg, border: "2px solid " + (isCurrent ? "#7EEDCF" : active ? "#2ED3A5" : C.cardBorder), display: "flex", alignItems: "center", justifyContent: "center", fontSize: 12, color: active ? "#fff" : C.sub, boxShadow: isCurrent ? "0 0 10px rgba(46,211,165,0.4)" : "none" }}>{st.icon}</div>
                       <div style={{ fontSize: 8, fontWeight: 700, color: active ? C.text : C.sub, textAlign: "center", maxWidth: 50 }}>{st.label}</div>
                     </div>
-                    {idx < TAWASUL_STAGES.length - 1 && <div style={{ flex: 1, height: 2, background: idx < curStage ? "#0d9488" : C.cardBorder, margin: "0 2px", marginBottom: 16, minWidth: 4 }} />}
+                    {idx < TAWASUL_STAGES.length - 1 && <div style={{ flex: 1, height: 2, background: idx < curStage ? "#2ED3A5" : C.cardBorder, margin: "0 2px", marginBottom: 16, minWidth: 4 }} />}
                   </React.Fragment>
                 );
               })}
@@ -11289,34 +11289,57 @@ function TawasulDetailModal({ request, user, allEmps, onClose, nameOf, onUpdated
           var assignees = r.assignees || [];
           if (assignees.length < 2) return null;
           var [partyIdx, setPartyIdx] = React.useState(0);
-          var partyTouchRef = React.useRef({ sx: 0, dx: 0, dragging: false });
+          var partyTouchRef = React.useRef({ sx: 0, sy: 0, dx: 0, dragging: false, locked: false, startTime: 0 });
           var partyTrackRef = React.useRef(null);
           var totalP = assignees.length;
 
           function goParty(i) {
             var idx2 = ((i % totalP) + totalP) % totalP;
             setPartyIdx(idx2);
+            try { if (navigator.vibrate) navigator.vibrate(8); } catch(e) {}
           }
 
           function onPTouchStart(e) {
-            partyTouchRef.current = { sx: e.touches[0].clientX, dx: 0, dragging: true };
+            var t = e.touches[0];
+            partyTouchRef.current = { sx: t.clientX, sy: t.clientY, dx: 0, dragging: false, locked: false, startTime: Date.now() };
             if (partyTrackRef.current) partyTrackRef.current.style.transition = "none";
           }
           function onPTouchMove(e) {
+            var t = e.touches[0];
+            var dx = t.clientX - partyTouchRef.current.sx;
+            var dy = t.clientY - partyTouchRef.current.sy;
+            // Lock direction after 8px
+            if (!partyTouchRef.current.locked && (Math.abs(dx) > 8 || Math.abs(dy) > 8)) {
+              partyTouchRef.current.locked = true;
+              partyTouchRef.current.dragging = Math.abs(dx) > Math.abs(dy);
+            }
             if (!partyTouchRef.current.dragging) return;
-            partyTouchRef.current.dx = e.touches[0].clientX - partyTouchRef.current.sx;
+            e.preventDefault();
+            // Rubber-band at edges
+            var atEdge = (partyIdx === 0 && dx > 0) || (partyIdx === totalP - 1 && dx < 0);
+            var dampedDx = atEdge ? dx * 0.25 : dx * 0.85;
+            partyTouchRef.current.dx = dx;
             if (partyTrackRef.current) {
-              var w = partyTrackRef.current.offsetWidth / totalP;
-              partyTrackRef.current.style.transform = "translateX(" + (partyIdx * w + partyTouchRef.current.dx) + "px)";
+              var cardW = partyTrackRef.current.offsetWidth;
+              partyTrackRef.current.style.transform = "translateX(" + (partyIdx * cardW + dampedDx) + "px)";
             }
           }
           function onPTouchEnd() {
-            if (!partyTouchRef.current.dragging) return;
-            partyTouchRef.current.dragging = false;
-            if (partyTrackRef.current) partyTrackRef.current.style.transition = "transform 0.35s cubic-bezier(.4,0,.2,1)";
-            if (partyTouchRef.current.dx > 50) goParty(partyIdx - 1);
-            else if (partyTouchRef.current.dx < -50) goParty(partyIdx + 1);
-            partyTouchRef.current.dx = 0;
+            if (!partyTouchRef.current.dragging) {
+              partyTouchRef.current = { sx: 0, sy: 0, dx: 0, dragging: false, locked: false, startTime: 0 };
+              return;
+            }
+            var dx = partyTouchRef.current.dx;
+            var elapsed = Date.now() - partyTouchRef.current.startTime;
+            var velocity = Math.abs(dx) / Math.max(elapsed, 1) * 1000;
+            partyTouchRef.current = { sx: 0, sy: 0, dx: 0, dragging: false, locked: false, startTime: 0 };
+            // iPhone-style: fast flick (velocity > 600) or drag > 30% of card
+            if (partyTrackRef.current) partyTrackRef.current.style.transition = "transform 0.45s cubic-bezier(0.25, 1, 0.35, 1)";
+            var cardW = partyTrackRef.current ? partyTrackRef.current.offsetWidth : 300;
+            var threshold = velocity > 600 ? cardW * 0.15 : cardW * 0.3;
+            if (dx > threshold && partyIdx > 0) goParty(partyIdx - 1);
+            else if (dx < -threshold && partyIdx < totalP - 1) goParty(partyIdx + 1);
+            else setPartyIdx(partyIdx); // spring back
           }
 
           function getPersonStage(a) {
@@ -11326,10 +11349,10 @@ function TawasulDetailModal({ request, user, allEmps, onClose, nameOf, onUpdated
             return 0;
           }
           function getPersonStatusText(a) {
-            if (a.closedAt) return { text: "✅ مُقيّمة", bg: "rgba(13,148,136,0.12)", color: "#0d9488" };
+            if (a.closedAt) return { text: "✅ مُقيّمة", bg: "rgba(46,211,165,0.12)", color: "#2ED3A5" };
             if (a.deliveredAt) return { text: "⏳ بانتظار التقييم", bg: "rgba(201,168,76,0.1)", color: C.gold };
             if (a.acceptedAt) return { text: "⚡ يعمل عليها", bg: "rgba(124,58,237,0.12)", color: "#7c3aed" };
-            return { text: "📥 لم تبدأ بعد", bg: "rgba(15,118,110,0.12)", color: "#0d9488" };
+            return { text: "📥 لم تبدأ بعد", bg: "rgba(15,118,110,0.12)", color: "#2ED3A5" };
           }
           var MINI_STAGES = [
             { icon: "📥", label: "جديد" },
@@ -11340,9 +11363,7 @@ function TawasulDetailModal({ request, user, allEmps, onClose, nameOf, onUpdated
 
           return (
             <div style={{ margin: "8px 18px 0", position: "relative", overflow: "hidden", borderRadius: 14, border: "1px solid " + C.cardBorder }}>
-              {totalP > 1 && <button onClick={function(){ goParty(partyIdx - 1); }} style={{ position: "absolute", top: "50%", transform: "translateY(-50%)", right: 6, zIndex: 2, background: "rgba(14,29,53,0.9)", border: "1px solid " + C.cardBorder, color: C.gold, width: 26, height: 26, borderRadius: 13, display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer", fontSize: 11, fontWeight: 900 }}>→</button>}
-              {totalP > 1 && <button onClick={function(){ goParty(partyIdx + 1); }} style={{ position: "absolute", top: "50%", transform: "translateY(-50%)", left: 6, zIndex: 2, background: "rgba(14,29,53,0.9)", border: "1px solid " + C.cardBorder, color: C.gold, width: 26, height: 26, borderRadius: 13, display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer", fontSize: 11, fontWeight: 900 }}>←</button>}
-              <div ref={partyTrackRef} onTouchStart={onPTouchStart} onTouchMove={onPTouchMove} onTouchEnd={onPTouchEnd} style={{ display: "flex", transition: "transform 0.35s cubic-bezier(.4,0,.2,1)", transform: "translateX(" + (partyIdx * 100) + "%)", touchAction: "pan-y" }}>
+              <div ref={partyTrackRef} onTouchStart={onPTouchStart} onTouchMove={onPTouchMove} onTouchEnd={onPTouchEnd} style={{ display: "flex", transition: "transform 0.45s cubic-bezier(0.25, 1, 0.35, 1)", transform: "translateX(" + (partyIdx * 100) + "%)", touchAction: "pan-y" }}>
                 {assignees.map(function(a, aIdx){
                   var pStage = getPersonStage(a);
                   var pStatus = getPersonStatusText(a);
@@ -11364,10 +11385,10 @@ function TawasulDetailModal({ request, user, allEmps, onClose, nameOf, onUpdated
                           return (
                             <React.Fragment key={msIdx}>
                               <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 2, flex: "0 0 auto" }}>
-                                <div style={{ width: 24, height: 24, borderRadius: 12, background: msActive ? "#0d9488" : C.bg, border: "2px solid " + (msCurrent ? "#2dd4bf" : msActive ? "#0d9488" : C.cardBorder), display: "flex", alignItems: "center", justifyContent: "center", fontSize: 10, color: msActive ? "#fff" : C.sub }}>{ms.icon}</div>
+                                <div style={{ width: 24, height: 24, borderRadius: 12, background: msActive ? "#2ED3A5" : C.bg, border: "2px solid " + (msCurrent ? "#7EEDCF" : msActive ? "#2ED3A5" : C.cardBorder), display: "flex", alignItems: "center", justifyContent: "center", fontSize: 10, color: msActive ? "#fff" : C.sub }}>{ms.icon}</div>
                                 <div style={{ fontSize: 7, fontWeight: 700, color: msActive ? C.text : C.sub, textAlign: "center", maxWidth: 46 }}>{ms.label}</div>
                               </div>
-                              {msIdx < MINI_STAGES.length - 1 && <div style={{ flex: 1, height: 2, background: msIdx < pStage ? "#0d9488" : C.cardBorder, margin: "0 2px", marginBottom: 14, minWidth: 3 }} />}
+                              {msIdx < MINI_STAGES.length - 1 && <div style={{ flex: 1, height: 2, background: msIdx < pStage ? "#2ED3A5" : C.cardBorder, margin: "0 2px", marginBottom: 14, minWidth: 3 }} />}
                             </React.Fragment>
                           );
                         })}
@@ -11453,7 +11474,7 @@ function TawasulDetailModal({ request, user, allEmps, onClose, nameOf, onUpdated
                 }
               }
 
-              var rightBg = props.swipeRight ? (props.swipeRight.color || "#0d9488") : null;
+              var rightBg = props.swipeRight ? (props.swipeRight.color || "#2ED3A5") : null;
               var leftBg = props.swipeLeft ? (props.swipeLeft.color || "#3b82f6") : null;
 
               return (
@@ -11477,7 +11498,7 @@ function TawasulDetailModal({ request, user, allEmps, onClose, nameOf, onUpdated
               <>
                 {/* 💬 Chat — swipe right=open, left=close */}
                 <SwipeSection id="chatLog" icon="💬" title="الدردشة والسجل" badge={log.length ? String(log.length) : null}
-                  swipeRight={{ icon: "💬", label: "فتح الدردشة", color: "#0d9488" }}
+                  swipeRight={{ icon: "💬", label: "فتح الدردشة", color: "#2ED3A5" }}
                   swipeLeft={{ icon: "✕", label: "إغلاق", color: "#64748b" }}>
                   <ChatPanel request={r} user={user} allEmps={allEmps} readOnly={readOnly} onUpdated={onUpdated} nameOf={nameOf} />
                   <div style={{ marginTop: 12, paddingTop: 12, borderTop: "1px solid " + C.cardBorder }}>
@@ -11496,7 +11517,7 @@ function TawasulDetailModal({ request, user, allEmps, onClose, nameOf, onUpdated
 
                 {/* ⏱ Time — swipe right=open, left=close */}
                 <SwipeSection id="time" icon="⏱" title="تتبع الوقت"
-                  swipeRight={{ icon: "▶", label: "فتح المؤقت", color: "#0d9488" }}
+                  swipeRight={{ icon: "▶", label: "فتح المؤقت", color: "#2ED3A5" }}
                   swipeLeft={{ icon: "✕", label: "إغلاق", color: "#64748b" }}>
                   <TimeTrackingPanel request={r} user={user} readOnly={readOnly} canEdit={canActAsAssignee || canActAsRequester || isAdmin} onUpdated={onUpdated} />
                 </SwipeSection>
@@ -11529,7 +11550,7 @@ function TawasulDetailModal({ request, user, allEmps, onClose, nameOf, onUpdated
 
                 {/* 📎 Attachments — swipe right=show add, swipe left=hide add */}
                 <SwipeSection id="attachments" icon="📎" title="المرفقات" badge={((r.attachments || []).length) ? String((r.attachments || []).length) : null}
-                  swipeRight={{ icon: "📎", label: "إضافة مرفق", color: "#0d9488" }}
+                  swipeRight={{ icon: "📎", label: "إضافة مرفق", color: "#2ED3A5" }}
                   swipeLeft={{ icon: "✕", label: "إغلاق", color: "#64748b" }}>
                   <AttachmentsPanel request={r} user={user} readOnly={readOnly} canEdit={canActAsAssignee || canActAsRequester || isAdmin} onUpdated={onUpdated} />
                 </SwipeSection>
