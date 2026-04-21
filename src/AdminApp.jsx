@@ -4,7 +4,7 @@ import { generateAttendanceReport, generateEmployeeReport, generateMonthlySummar
 import { exportFormalWarning, exportInvestigationRecord, exportAffidavit, exportEmploymentLetter, exportSalaryLetter, exportLeaveLetter } from "./formalPdfs";
 
 const APP = "بصمة HMA";
-const VER = "7.23";
+const VER = "7.24";
 const CO = "هاني محمد عسيري للإستشارات الهندسية";
 const B = { blue: "#2B5EA7", yellow: "#FDD800", red: "#E2192C", black: "#1A1A1A", blueDk: "#1E4478", blueLt: "#EDF3FB", gold: "#D4A017" };
 
@@ -41,6 +41,282 @@ function Logo({ s = 36 }) {
 }
 function Stripe() { return <div style={{ display: "flex", height: 4 }}><div style={{ flex: 1, background: B.blue }}/><div style={{ flex: 1, background: B.yellow }}/><div style={{ flex: 1, background: B.red }}/></div>; }
 function Toggle({ on, onClick, t }) { var p = t || LT; return <button onClick={onClick} style={{ width: 40, height: 22, borderRadius: 11, border: "none", cursor: "pointer", background: on ? p.ok : "#D1D5DB", position: "relative", transition: "all .3s" }}><div style={{ width: 16, height: 16, borderRadius: "50%", background: p.card, position: "absolute", top: 3, transition: "all .3s", ...(on ? { left: 21 } : { left: 3 }), boxShadow: "0 1px 3px rgba(0,0,0,.15)" }} /></button>; }
+
+/* ═══════════════════════════════════════════════════════════════════
+ * v7.24 — ADMIN PANEL FOUNDATION
+ * Linear/Notion light theme + Mobile detection + Bottom Nav + Slide transitions
+ * ═══════════════════════════════════════════════════════════════════ */
+
+// ── Linear/Notion light theme tokens ──
+const LN = {
+  bg: "#FAFAFA",
+  card: "#FFFFFF",
+  cardBrd: "#E5E7EB",
+  cardSh: "0 1px 2px rgba(0,0,0,0.04), 0 1px 3px rgba(0,0,0,0.06)",
+  tx: "#111827",
+  tx2: "#374151",
+  txM: "#6B7280",
+  txL: "#9CA3AF",
+  sep: "#F3F4F6",
+  ac: "#3B82F6",
+  acBg: "#EFF6FF",
+  acBrd: "#BFDBFE",
+  ok: "#10B981",
+  okLt: "#D1FAE5",
+  warn: "#F59E0B",
+  warnLt: "#FEF3C7",
+  bad: "#EF4444",
+  badLt: "#FEE2E2",
+  hover: "#F9FAFB",
+  inp: "#FFFFFF",
+  inpBrd: "#D1D5DB",
+  // Section colors (for colored card borders in More menu)
+  hr: "#3B82F6",       // blue
+  ops: "#10B981",      // green
+  comm: "#8B5CF6",     // purple
+  config: "#6B7280",   // gray
+};
+
+// ── Mobile detection hook ──
+function useIsMobile() {
+  var [isMobile, setIsMobile] = useState(function(){
+    return typeof window !== "undefined" && window.innerWidth < 768;
+  });
+  useEffect(function(){
+    function onResize(){ setIsMobile(window.innerWidth < 768); }
+    window.addEventListener("resize", onResize);
+    return function(){ window.removeEventListener("resize", onResize); };
+  }, []);
+  return isMobile;
+}
+
+// ── Bottom Nav for mobile (Material style: icon-only, active expands with label) ──
+function AdminBottomNav({ tab, setTab, badges }) {
+  badges = badges || {};
+  var items = [
+    { id: "more",        icon: "☰",  label: "المزيد",         badge: badges.more || 0 },
+    { id: "leaves_hub",  icon: "🏖️", label: "الإجازات",       badge: badges.leaves || 0 },
+    { id: "hr_tickets",  icon: "📨", label: "رسائل الموظفين", badge: badges.tickets || 0 },
+    { id: "dashboard",   icon: "📊", label: "الرئيسية",        badge: 0 },
+  ];
+
+  return (
+    <div style={{
+      position: "fixed",
+      bottom: 0, left: 0, right: 0,
+      height: 64,
+      background: LN.card,
+      borderTop: "1px solid " + LN.cardBrd,
+      display: "flex",
+      alignItems: "center",
+      justifyContent: "space-around",
+      padding: "0 8px",
+      zIndex: 100,
+      paddingBottom: "env(safe-area-inset-bottom, 0)",
+      boxShadow: "0 -2px 8px rgba(0,0,0,0.04)",
+    }}>
+      {items.map(function(it){
+        var active = tab === it.id;
+        return (
+          <button
+            key={it.id}
+            onClick={function(){ setTab(it.id); }}
+            style={{
+              flex: active ? "1 1 auto" : "0 0 auto",
+              minWidth: active ? 100 : 48,
+              height: 44,
+              padding: active ? "0 14px" : 0,
+              borderRadius: 12,
+              border: "none",
+              background: active ? LN.acBg : "transparent",
+              color: active ? LN.ac : LN.txM,
+              cursor: "pointer",
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              gap: 6,
+              fontFamily: "inherit",
+              transition: "all .25s cubic-bezier(.4,0,.2,1)",
+              position: "relative",
+            }}
+          >
+            <span style={{ fontSize: 20 }}>{it.icon}</span>
+            {active && (
+              <span style={{
+                fontSize: 12,
+                fontWeight: 700,
+                color: LN.ac,
+                whiteSpace: "nowrap",
+              }}>{it.label}</span>
+            )}
+            {it.badge > 0 && (
+              <div style={{
+                position: "absolute",
+                top: 4,
+                right: active ? 8 : 4,
+                minWidth: 16, height: 16,
+                borderRadius: 8,
+                background: LN.bad,
+                color: "#fff",
+                fontSize: 9,
+                fontWeight: 800,
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                padding: "0 4px",
+              }}>{it.badge > 99 ? "99+" : it.badge}</div>
+            )}
+          </button>
+        );
+      })}
+    </div>
+  );
+}
+
+// ── Slide page wrapper (iOS-style transitions) ──
+function SlidePage({ children, tabKey }) {
+  return (
+    <div
+      key={tabKey}
+      style={{
+        animation: "adminSlideIn .3s cubic-bezier(.4,0,.2,1)",
+        minHeight: "100%",
+      }}
+    >
+      {children}
+    </div>
+  );
+}
+
+// ── More Menu Page (full page Instagram Settings style) ──
+function MoreMenuPage({ setTab, badges, sideGroups }) {
+  // Use the EXACT same sideGroups from the sidebar so we have one source of truth
+  // (excludes the 4 main bottom nav items)
+  var bottomNavIds = ["dashboard", "hr_tickets", "leaves_hub", "more"];
+
+  // Map group id → color
+  var groupColors = {
+    main: LN.ac,
+    hr: LN.hr,
+    ops: LN.ops,
+    comm: LN.comm,
+    config: LN.config,
+  };
+
+  // Map item id → short description (Arabic)
+  var itemDescriptions = {
+    employees: "إدارة بيانات الموظفين",
+    org_hierarchy: "هيكل الإدارات والمدراء المباشرون",
+    payroll: "الرواتب الشهرية والكشوف",
+    salary_changes: "اعتماد تعديلات الرواتب",
+    letters: "الإفادات الرسمية",
+    surveys: "استطلاعات الموظفين",
+    evaluations_hr: "تقييم أداء الموظفين",
+    admin_requests: "الطلبات المختلفة",
+    discipline_hub: "المخالفات والشكاوى والتظلمات",
+    termination: "إنهاء الخدمة",
+    tawasul: "إدارة المهام والمتابعة",
+    attendance_hub: "متابعة الحضور والانصراف",
+    custody_hub: "العُهَد والأصول",
+    reports: "تقارير PDF",
+    content_hub: "تعاميم وبنرات ومناسبات وأسئلة",
+    settings_hub: "الإعدادات العامة",
+    kadwar_sync: "ربط مع منصة كوادر",
+  };
+
+  return (
+    <div style={{ padding: "12px 14px 80px" }}>
+      <div style={{ marginBottom: 18 }}>
+        <h1 style={{ fontSize: 24, fontWeight: 800, color: LN.tx, margin: 0, marginBottom: 4, fontFamily: "inherit" }}>
+          المزيد
+        </h1>
+        <div style={{ fontSize: 12, color: LN.txM }}>كل أقسام لوحة الإدارة</div>
+      </div>
+
+      {sideGroups.map(function(group){
+        // Filter out items that are in the bottom nav
+        var items = group.items.filter(function(it){ return bottomNavIds.indexOf(it.id) === -1; });
+        if (items.length === 0) return null;
+        var groupColor = groupColors[group.id] || LN.ac;
+
+        return (
+          <div key={group.id} style={{ marginBottom: 22 }}>
+            <div style={{
+              fontSize: 11, fontWeight: 800,
+              color: LN.txM,
+              letterSpacing: 0.5,
+              padding: "0 4px 8px",
+              textTransform: "uppercase",
+            }}>
+              {group.label}
+            </div>
+
+            <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+              {items.map(function(item){
+                var hasBadge = item.badge && item.badge > 0;
+                return (
+                  <button
+                    key={item.id}
+                    onClick={function(){ setTab(item.id); }}
+                    style={{
+                      width: "100%",
+                      padding: "14px 14px",
+                      borderRadius: 12,
+                      background: LN.card,
+                      border: "1px solid " + LN.cardBrd,
+                      borderRight: "3px solid " + groupColor,
+                      cursor: "pointer",
+                      display: "flex",
+                      alignItems: "center",
+                      gap: 12,
+                      textAlign: "right",
+                      fontFamily: "inherit",
+                      boxShadow: LN.cardSh,
+                      transition: "all .15s",
+                    }}
+                    onMouseEnter={function(e){ e.currentTarget.style.background = LN.hover; }}
+                    onMouseLeave={function(e){ e.currentTarget.style.background = LN.card; }}
+                  >
+                    <div style={{
+                      width: 38, height: 38,
+                      borderRadius: 10,
+                      background: groupColor + "15",
+                      display: "flex", alignItems: "center", justifyContent: "center",
+                      fontSize: 20, flexShrink: 0,
+                    }}>
+                      {item.icon}
+                    </div>
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <div style={{ fontSize: 14, fontWeight: 700, color: LN.tx, marginBottom: 2 }}>
+                        {item.label}
+                      </div>
+                      <div style={{ fontSize: 11, color: LN.txM, fontWeight: 500 }}>
+                        {itemDescriptions[item.id] || ""}
+                      </div>
+                    </div>
+                    {hasBadge && (
+                      <div style={{
+                        minWidth: 22, height: 22,
+                        borderRadius: 11,
+                        background: LN.bad,
+                        color: "#fff",
+                        fontSize: 10, fontWeight: 800,
+                        display: "flex", alignItems: "center", justifyContent: "center",
+                        padding: "0 6px",
+                        flexShrink: 0,
+                      }}>{item.badge}</div>
+                    )}
+                    <div style={{ fontSize: 18, color: LN.txL, flexShrink: 0 }}>›</div>
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
 
 // ═══════ MAP PICKER ═══════
 function MapPicker({ lat, lng, radius, name, onSave, onClose, t }) {
@@ -291,6 +567,7 @@ export default function AdminApp() {
   });
   const [role, setRole] = useState("manager");
   const [tab, setTab] = useState("dashboard");
+  const isMobile = useIsMobile(); // v7.24 — mobile detection
   const [loading, setLoading] = useState(true);
   const [leaves, setLeaves] = useState(LEAVE_INIT);
   const [search, setSearch] = useState("");
@@ -561,9 +838,18 @@ export default function AdminApp() {
   const sideItems = sideGroups.reduce(function(acc, g){ return acc.concat(g.items); }, []);
 
   return (<div style={{ direction: "rtl", fontFamily: Fn, display: "flex", minHeight: "100vh", background: t.bg }}>
-    <style>{`button:active{transform:scale(.97)!important} ::-webkit-scrollbar{width:6px} ::-webkit-scrollbar-thumb{background:#CBD5E1;border-radius:3px}`}</style>
+    <style>{`
+      button:active{transform:scale(.97)!important}
+      ::-webkit-scrollbar{width:6px}
+      ::-webkit-scrollbar-thumb{background:#CBD5E1;border-radius:3px}
+      @keyframes adminSlideIn {
+        from { transform: translateX(20px); opacity: 0; }
+        to   { transform: translateX(0);    opacity: 1; }
+      }
+    `}</style>
 
-    {/* Sidebar */}
+    {/* Sidebar — hidden on mobile (replaced by Bottom Nav) */}
+    {!isMobile && (
     <div style={{ width: 220, background: t.card, borderLeft: "1px solid " + t.sep, display: "flex", flexDirection: "column", padding: "16px 0", flexShrink: 0 }}>
       <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "0 16px", marginBottom: 6 }}><Logo s={30} /><div><div style={{ fontSize: 14, fontWeight: 800, color: B.blue }}>{APP}</div><div style={{ fontSize: 8, color: t.txM }}>لوحة الإدارة</div></div></div>
       <Stripe />
@@ -620,15 +906,26 @@ export default function AdminApp() {
         <button onClick={() => { setLoggedIn(false); }} style={{ width: "100%", marginTop: 8, padding: "6px", borderRadius: 6, background: t.badLt, border: "none", color: t.bad, fontSize: 10, fontWeight: 700, cursor: "pointer" }}>خروج</button>
       </div>
     </div>
+    )}
+    {/* End sidebar conditional */}
 
     {/* Main */}
-    <div style={{ flex: 1, padding: "20px 24px", overflowY: "auto" }}>
-      {/* Top header: last sync + admin settings quick access */}
-      <AdminTopBar t={t} B={B} onOpenSettings={function(){ setTab("settings"); setSettingsTab("admin-account"); }} />
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16 }}>
-        <div><div style={{ fontSize: 20, fontWeight: 800, color: t.tx }}>{sideItems.find(s => s.id === tab)?.icon} {sideItems.find(s => s.id === tab)?.label}</div><div style={{ fontSize: 11, color: t.txM }}>الأحد، 6 أبريل 2026</div></div>
-        {role === "assistant" && <div style={{ padding: "5px 12px", borderRadius: 8, background: t.warnLt, fontSize: 11, fontWeight: 700, color: t.warn }}>⚠️ وضع المساعد</div>}
-      </div>
+    <div style={{ flex: 1, padding: isMobile ? "12px 14px 80px" : "20px 24px", overflowY: "auto", background: isMobile ? LN.bg : t.bg }}>
+      {/* v7.24 — top header hidden on mobile (we use bottom nav + page titles) */}
+      {!isMobile && <AdminTopBar t={t} B={B} onOpenSettings={function(){ setTab("settings"); setSettingsTab("admin-account"); }} />}
+      {!isMobile && (
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16 }}>
+          <div><div style={{ fontSize: 20, fontWeight: 800, color: t.tx }}>{sideItems.find(s => s.id === tab)?.icon} {sideItems.find(s => s.id === tab)?.label}</div><div style={{ fontSize: 11, color: t.txM }}>الأحد، 6 أبريل 2026</div></div>
+          {role === "assistant" && <div style={{ padding: "5px 12px", borderRadius: 8, background: t.warnLt, fontSize: 11, fontWeight: 700, color: t.warn }}>⚠️ وضع المساعد</div>}
+        </div>
+      )}
+
+      {/* v7.24 — More menu page (mobile only) */}
+      {tab === "more" && isMobile && (
+        <SlidePage tabKey="more">
+          <MoreMenuPage setTab={setTab} badges={badgeCounts} sideGroups={sideGroups} />
+        </SlidePage>
+      )}
 
       {/* ═══ DASHBOARD ═══ */}
       {tab === "dashboard" && <>
@@ -1306,6 +1603,19 @@ export default function AdminApp() {
 
       {tab === "admin_profile" && <AdminProfile t={t} B={B} onLogout={function(){ localStorage.removeItem("basma_admin_email"); localStorage.removeItem("basma_last_mode"); setLoggedIn(false); }} />}
     </div>
+
+    {/* v7.24 — Mobile Bottom Nav (only visible on mobile) */}
+    {isMobile && (
+      <AdminBottomNav
+        tab={tab}
+        setTab={setTab}
+        badges={{
+          leaves: pending || 0,
+          tickets: 0,
+          more: ((badgeCounts.complaints || 0) + (badgeCounts.investigations || 0) + (badgeCounts.violations || 0) + (badgeCounts.appeals || 0)),
+        }}
+      />
+    )}
   </div>);
 }
 
