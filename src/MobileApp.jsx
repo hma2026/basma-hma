@@ -11371,25 +11371,27 @@ function TawasulDetailModal({ request, user, allEmps, onClose, nameOf, onUpdated
         {/* ═══ v7.32 — SWIPEABLE SECTIONS ═══ */}
         <div style={{ padding: "10px 18px 0" }}>
           {(function(){
-            /* SwipeSection v7.34 — native touch events (passive:false for real preventDefault) */
+            /* SwipeSection v7.35 — native touch (passive:false), re-attaches on open/close */
             function SwipeSection(props) {
               var isOpen = !!openSections[props.id];
               var elRef = React.useRef(null);
-              var stateRef = React.useRef({ sx:0, sy:0, dx:0, dir:null, active:false, vel:0, lx:0, lt:0 });
+              var stRef = React.useRef({ sx:0, sy:0, dx:0, dir:null, active:false, vel:0, lx:0, lt:0 });
               var [revPct, setRevPct] = React.useState(0);
 
+              // Re-attach listeners when isOpen changes so closure has correct value
               React.useEffect(function(){
                 var el = elRef.current; if (!el) return;
+                var currentIsOpen = isOpen;
                 function ts(e) {
                   var t = e.touches[0];
-                  stateRef.current = { sx:t.clientX, sy:t.clientY, dx:0, dir:null, active:true, vel:0, lx:t.clientX, lt:Date.now() };
+                  stRef.current = { sx:t.clientX, sy:t.clientY, dx:0, dir:null, active:true, vel:0, lx:t.clientX, lt:Date.now() };
                 }
                 function tm(e) {
-                  var s = stateRef.current; if (!s.active) return;
+                  var s = stRef.current; if (!s.active) return;
                   var t = e.touches[0];
                   var dx = t.clientX - s.sx, dy = t.clientY - s.sy;
                   if (!s.dir) {
-                    if (Math.abs(dx) > 6 || Math.abs(dy) > 6) s.dir = Math.abs(dx) >= Math.abs(dy) ? "h" : "v";
+                    if (Math.abs(dx) > 8 || Math.abs(dy) > 8) s.dir = Math.abs(dx) >= Math.abs(dy) ? "h" : "v";
                     else return;
                   }
                   if (s.dir !== "h") return;
@@ -11403,23 +11405,18 @@ function TawasulDetailModal({ request, user, allEmps, onClose, nameOf, onUpdated
                   setRevPct(Math.max(-1, Math.min(1, dx / (w * 0.35))));
                 }
                 function te() {
-                  var s = stateRef.current; s.active = false;
+                  var s = stRef.current; s.active = false;
                   if (s.dir !== "h") { setRevPct(0); return; }
                   el.style.transition = "transform 0.5s cubic-bezier(0.22, 1, 0.36, 1)";
                   el.style.transform = "none";
                   setRevPct(0);
-                  var dx2 = s.dx; var vel2 = s.vel;
                   var w = el.offsetWidth || 300;
-                  var fired = Math.abs(vel2) > 350 || Math.abs(dx2) > w * 0.3;
+                  var fired = Math.abs(s.vel) > 350 || Math.abs(s.dx) > w * 0.3;
                   if (fired) {
                     try { if (navigator.vibrate) navigator.vibrate(8); } catch(e2) {}
-                    var dir2 = (dx2 > 0 || vel2 > 350) ? "right" : "left";
-                    if (props.onSwipeRef && props.onSwipeRef.current) { props.onSwipeRef.current(dir2); }
-                    else {
-                      var open = openSectionsRef.current ? !!openSectionsRef.current[props.id] : isOpen;
-                      if (dir2 === "right" && !open) toggleSection(props.id);
-                      else if (dir2 === "left" && open) toggleSection(props.id);
-                    }
+                    var dir2 = (s.dx > 0 || s.vel > 350) ? "right" : "left";
+                    if (dir2 === "right" && !currentIsOpen) toggleSection(props.id);
+                    else if (dir2 === "left" && currentIsOpen) toggleSection(props.id);
                   }
                 }
                 el.addEventListener("touchstart", ts, { passive: true });
@@ -11430,7 +11427,7 @@ function TawasulDetailModal({ request, user, allEmps, onClose, nameOf, onUpdated
                   el.removeEventListener("touchmove", tm);
                   el.removeEventListener("touchend", te);
                 };
-              }, [props.id]);
+              }, [props.id, isOpen]);
 
               var rBg = props.swipeRight ? (props.swipeRight.color || "#2ED3A5") : null;
               var lBg = props.swipeLeft ? (props.swipeLeft.color || "#64748b") : null;
@@ -11453,10 +11450,6 @@ function TawasulDetailModal({ request, user, allEmps, onClose, nameOf, onUpdated
                 </div>
               );
             }
-
-            // Ref for openSections so native event handlers can read current value
-            var openSectionsRef = React.useRef(openSections);
-            openSectionsRef.current = openSections;
 
             return (
               <>
