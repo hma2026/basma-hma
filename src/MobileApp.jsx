@@ -11,7 +11,7 @@ import { exportEmploymentLetter, exportLeaveLetter } from "./formalPdfs";
 
 /* ═══════════ APP CONFIG (إعدادات التطبيق) ═══════════ */
 const APP_CONFIG = {
-  VER: "7.32",
+  VER: "7.33",
   NAME: "بصمة HMA",
   FULL_NAME: "نظام الحضور والانصراف الذكي",
   COMPANY: "هاني محمد عسيري للاستشارات الهندسية",
@@ -8249,6 +8249,18 @@ function TawasulPage({ user, allEmps }) {
   });
   var [showSaveSearch, setShowSaveSearch] = useState(false);
   var [selectedReq, setSelectedReq] = useState(null);
+  // v7.33 — Pinned tasks (persist in localStorage)
+  var [pinnedTasks, setPinnedTasks] = useState(function(){
+    try { return JSON.parse(localStorage.getItem("basma_pinned_tasks") || "[]"); } catch(e) { return []; }
+  });
+  function togglePin(taskId) {
+    setPinnedTasks(function(prev){
+      var next = prev.indexOf(taskId) >= 0 ? prev.filter(function(id){ return id !== taskId; }) : [taskId].concat(prev);
+      try { localStorage.setItem("basma_pinned_tasks", JSON.stringify(next)); } catch(e) {}
+      return next;
+    });
+  }
+  function isTaskPinned(taskId) { return pinnedTasks.indexOf(taskId) >= 0; }
   var [refreshing, setRefreshing] = useState(false);
   var [showFilters, setShowFilters] = useState(false);
   var [showCreate, setShowCreate] = useState(false);
@@ -8599,6 +8611,10 @@ function TawasulPage({ user, allEmps }) {
     }
     return true;
   }).sort(function(a,b){
+    // v7.33 — Pinned tasks float to top
+    var aPinned = pinnedTasks.indexOf(a.id) >= 0 ? 1 : 0;
+    var bPinned = pinnedTasks.indexOf(b.id) >= 0 ? 1 : 0;
+    if (aPinned !== bPinned) return bPinned - aPinned;
     var aEsc = a.escalation === "red" ? 2 : a.escalation === "yellow" ? 1 : 0;
     var bEsc = b.escalation === "red" ? 2 : b.escalation === "yellow" ? 1 : 0;
     if (aEsc !== bEsc) return bEsc - aEsc;
@@ -9031,7 +9047,7 @@ function TawasulPage({ user, allEmps }) {
         </>)}
       </div>
 
-      {selectedReq && <TawasulDetailModal request={selectedReq} user={user} allEmps={allEmps} onClose={function(){ setSelectedReq(null); }} nameOf={nameOf} onUpdated={function(){ setSelectedReq(null); loadData(true); }} onEdit={function(r){ setSelectedReq(null); setEditingReq(r); }} readOnly={tab && tab.indexOf("dept_") === 0} />}
+      {selectedReq && <TawasulDetailModal request={selectedReq} user={user} allEmps={allEmps} onClose={function(){ setSelectedReq(null); }} nameOf={nameOf} onUpdated={function(){ setSelectedReq(null); loadData(true); }} onEdit={function(r){ setSelectedReq(null); setEditingReq(r); }} readOnly={tab && tab.indexOf("dept_") === 0} taskList={filtered} onNavigate={function(r){ setSelectedReq(r); }} isPinned={isTaskPinned(selectedReq.id)} onTogglePin={function(){ togglePin(selectedReq.id); }} />}
 
       {showCreate && <TawasulCreateModal user={user} allEmps={allEmps} categories={categories} projects={projects} onClose={function(){ setShowCreate(false); }} onSaved={function(){ setShowCreate(false); loadData(true); }} />}
 
@@ -10664,7 +10680,7 @@ function MultiAssigneesProgress({ request, myId, onUpdated }) {
 
 
 /* ═══════════ TAWASUL DETAIL MODAL — with Phase 2 actions (big button + secondary + comment) ═══════════ */
-function TawasulDetailModal({ request, user, allEmps, onClose, nameOf, onUpdated, onEdit, readOnly }) {
+function TawasulDetailModal({ request, user, allEmps, onClose, nameOf, onUpdated, onEdit, readOnly, taskList, onNavigate, isPinned, onTogglePin }) {
   var r = request;
   var myId = user && (user.id || user.username);
   var myName = (user && (user.name || user.username)) || "";
@@ -10999,11 +11015,55 @@ function TawasulDetailModal({ request, user, allEmps, onClose, nameOf, onUpdated
   var descTooLong = r.description && r.description.length > DESC_CHAR_LIMIT;
   var descToShow = (descTooLong && !showFullDesc) ? r.description.slice(0, DESC_CHAR_LIMIT).trim() + "…" : r.description;
 
+  // v7.33 — Task carousel navigation
+  var navTouchRef = React.useRef({ sx: 0, sy: 0, dx: 0, swiping: false, locked: false });
+  var modalRef = React.useRef(null);
+  var curTaskIdx = (taskList || []).findIndex(function(t){ return t.id === r.id; });
+  var hasPrev = taskList && curTaskIdx > 0;
+  var hasNext = taskList && curTaskIdx < (taskList || []).length - 1;
+
+  function goTask(dir) {
+    if (!taskList || !onNavigate) return;
+    var nextIdx = curTaskIdx + dir;
+    if (nextIdx < 0 || nextIdx >= taskList.length) return;
+    try { if (navigator.vibrate) navigator.vibrate(10); } catch(e) {}
+    onNavigate(taskList[nextIdx]);
+  }
+  function onNavTS(e) {
+    navTouchRef.current = { sx: e.touches[0].clientX, sy: e.touches[0].clientY, dx: 0, swiping: false, locked: false };
+  }
+  function onNavTM(e) {
+    var t = e.touches[0];
+    var dx = t.clientX - navTouchRef.current.sx;
+    var dy = t.clientY - navTouchRef.current.sy;
+    if (!navTouchRef.current.locked && (Math.abs(dx) > 15 || Math.abs(dy) > 15)) {
+      navTouchRef.current.locked = true;
+      navTouchRef.current.swiping = Math.abs(dx) > Math.abs(dy) * 1.5;
+    }
+    if (navTouchRef.current.swiping) {
+      navTouchRef.current.dx = dx;
+    }
+  }
+  function onNavTE() {
+    if (!navTouchRef.current.swiping) return;
+    var dx = navTouchRef.current.dx;
+    navTouchRef.current = { sx: 0, sy: 0, dx: 0, swiping: false, locked: false };
+    if (Math.abs(dx) >= 100) {
+      if (dx > 0 && hasPrev) goTask(-1);
+      else if (dx < 0 && hasNext) goTask(1);
+    }
+  }
+
   return (
     <div onClick={onClose} style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.6)", zIndex: 1000, display: "flex", alignItems: "flex-end", justifyContent: "center", fontFamily: "'Tajawal',sans-serif" }}>
-      <div onClick={function(e){ e.stopPropagation(); }} style={{ background: C.bg, borderRadius: "20px 20px 0 0", maxWidth: 430, width: "100%", maxHeight: "94vh", overflowY: "auto", direction: "rtl", color: C.text, paddingBottom: 20 }}>
-        {/* Drag handle */}
-        <div style={{ display: "flex", justifyContent: "center", padding: "10px 0 4px" }}><div style={{ width: 40, height: 4, borderRadius: 2, background: C.cardBorder }} /></div>
+      <div onClick={function(e){ e.stopPropagation(); }} onTouchStart={onNavTS} onTouchMove={onNavTM} onTouchEnd={onNavTE} ref={modalRef} style={{ background: C.bg, borderRadius: "20px 20px 0 0", maxWidth: 430, width: "100%", maxHeight: "94vh", overflowY: "auto", direction: "rtl", color: C.text, paddingBottom: 20 }}>
+        {/* Drag handle + v7.33 task counter */}
+        <div style={{ display: "flex", justifyContent: "center", alignItems: "center", padding: "10px 0 4px", gap: 8 }}>
+          {hasPrev && <span style={{ fontSize: 10, color: C.sub, fontWeight: 700 }}>→</span>}
+          <div style={{ width: 40, height: 4, borderRadius: 2, background: C.cardBorder }} />
+          {taskList && taskList.length > 1 && <span style={{ fontSize: 9, color: C.sub, fontWeight: 700 }}>{(curTaskIdx + 1) + "/" + taskList.length}</span>}
+          {hasNext && <span style={{ fontSize: 10, color: C.sub, fontWeight: 700 }}>←</span>}
+        </div>
 
         {/* ═══ v7.32 — SECTION 1: Title + Close ═══ */}
         <div style={{ padding: "8px 18px 0", display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 12 }}>
@@ -11017,6 +11077,7 @@ function TawasulDetailModal({ request, user, allEmps, onClose, nameOf, onUpdated
             <div style={{ fontSize: 19, fontWeight: 900, color: C.text, lineHeight: 1.35, fontFamily: "'Cairo',sans-serif" }}>{r.title || "(بدون عنوان)"}</div>
           </div>
           <button onClick={onClose} style={{ background: C.card, border: "1px solid " + C.cardBorder, fontSize: 18, color: C.sub, cursor: "pointer", padding: "0 10px", lineHeight: "30px", borderRadius: 10, flexShrink: 0, marginTop: 2 }}>×</button>
+          {onTogglePin && <button onClick={onTogglePin} style={{ background: isPinned ? (C.gold + "22") : C.card, border: "1px solid " + (isPinned ? C.gold + "55" : C.cardBorder), fontSize: 14, color: isPinned ? C.gold : C.sub, cursor: "pointer", padding: "0 10px", lineHeight: "30px", borderRadius: 10, flexShrink: 0, marginTop: 2 }} title={isPinned ? "إلغاء التثبيت" : "تثبيت المهمة"}>📌</button>}
         </div>
 
         {/* ═══ v7.32 — SECTION 2: Compressed Meta — Two Lines ═══ */}
