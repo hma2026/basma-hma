@@ -11,7 +11,7 @@ import { exportEmploymentLetter, exportLeaveLetter } from "./formalPdfs";
 
 /* ═══════════ APP CONFIG (إعدادات التطبيق) ═══════════ */
 const APP_CONFIG = {
-  VER: "7.33",
+  VER: "7.34",
   NAME: "بصمة HMA",
   FULL_NAME: "نظام الحضور والانصراف الذكي",
   COMPANY: "هاني محمد عسيري للاستشارات الهندسية",
@@ -11289,57 +11289,60 @@ function TawasulDetailModal({ request, user, allEmps, onClose, nameOf, onUpdated
           var assignees = r.assignees || [];
           if (assignees.length < 2) return null;
           var [partyIdx, setPartyIdx] = React.useState(0);
-          var partyTouchRef = React.useRef({ sx: 0, sy: 0, dx: 0, dragging: false, locked: false, startTime: 0 });
-          var partyTrackRef = React.useRef(null);
+          var pRef = React.useRef({ sx:0, sy:0, dx:0, active:false, dir:null, vel:0, lastX:0, lastT:0, animId:0 });
+          var pTrack = React.useRef(null);
           var totalP = assignees.length;
 
-          function goParty(i) {
-            var idx2 = ((i % totalP) + totalP) % totalP;
-            setPartyIdx(idx2);
-            try { if (navigator.vibrate) navigator.vibrate(8); } catch(e) {}
-          }
-
-          function onPTouchStart(e) {
-            var t = e.touches[0];
-            partyTouchRef.current = { sx: t.clientX, sy: t.clientY, dx: 0, dragging: false, locked: false, startTime: Date.now() };
-            if (partyTrackRef.current) partyTrackRef.current.style.transition = "none";
-          }
-          function onPTouchMove(e) {
-            var t = e.touches[0];
-            var dx = t.clientX - partyTouchRef.current.sx;
-            var dy = t.clientY - partyTouchRef.current.sy;
-            // Lock direction after 8px
-            if (!partyTouchRef.current.locked && (Math.abs(dx) > 8 || Math.abs(dy) > 8)) {
-              partyTouchRef.current.locked = true;
-              partyTouchRef.current.dragging = Math.abs(dx) > Math.abs(dy);
+          function pSnap(idx) {
+            var i = Math.max(0, Math.min(totalP - 1, idx));
+            setPartyIdx(i);
+            if (pTrack.current) {
+              pTrack.current.style.transition = "transform 0.5s cubic-bezier(0.22, 1, 0.36, 1)";
+              pTrack.current.style.transform = "translateX(" + (i * 100) + "%)";
             }
-            if (!partyTouchRef.current.dragging) return;
-            e.preventDefault();
-            // Rubber-band at edges
+            try { if (navigator.vibrate) navigator.vibrate(6); } catch(e) {}
+          }
+          function pSetRaw(px) {
+            if (pTrack.current) {
+              pTrack.current.style.transition = "none";
+              pTrack.current.style.transform = "translateX(" + px + "px)";
+            }
+          }
+          function pTS(e) {
+            if (pRef.current.animId) { cancelAnimationFrame(pRef.current.animId); pRef.current.animId = 0; }
+            var t = e.touches[0];
+            pRef.current = { sx:t.clientX, sy:t.clientY, dx:0, active:true, dir:null, vel:0, lastX:t.clientX, lastT:Date.now(), animId:0 };
+          }
+          function pTM(e) {
+            var p = pRef.current; if (!p.active) return;
+            var t = e.touches[0];
+            var dx = t.clientX - p.sx, dy = t.clientY - p.sy;
+            if (!p.dir) {
+              if (Math.abs(dx) > 6 || Math.abs(dy) > 6) p.dir = Math.abs(dx) >= Math.abs(dy) ? "h" : "v";
+              else return;
+            }
+            if (p.dir !== "h") return;
+            e.preventDefault(); e.stopPropagation();
+            var now = Date.now(); var dt = now - p.lastT;
+            if (dt > 0) p.vel = (t.clientX - p.lastX) / dt * 1000;
+            p.lastX = t.clientX; p.lastT = now; p.dx = dx;
+            var cw = pTrack.current ? pTrack.current.parentElement.offsetWidth : 300;
+            var base = partyIdx * cw;
             var atEdge = (partyIdx === 0 && dx > 0) || (partyIdx === totalP - 1 && dx < 0);
-            var dampedDx = atEdge ? dx * 0.25 : dx * 0.85;
-            partyTouchRef.current.dx = dx;
-            if (partyTrackRef.current) {
-              var cardW = partyTrackRef.current.offsetWidth;
-              partyTrackRef.current.style.transform = "translateX(" + (partyIdx * cardW + dampedDx) + "px)";
-            }
+            var offset = atEdge ? dx * 0.2 : dx;
+            pSetRaw(base + offset);
           }
-          function onPTouchEnd() {
-            if (!partyTouchRef.current.dragging) {
-              partyTouchRef.current = { sx: 0, sy: 0, dx: 0, dragging: false, locked: false, startTime: 0 };
-              return;
+          function pTE() {
+            var p = pRef.current; p.active = false;
+            if (p.dir !== "h") return;
+            var dx = p.dx; var vel = p.vel;
+            var cw = pTrack.current ? pTrack.current.parentElement.offsetWidth : 300;
+            var target = partyIdx;
+            if (Math.abs(vel) > 400 || Math.abs(dx) > cw * 0.25) {
+              if (dx > 0 || vel > 400) target = partyIdx - 1;
+              else target = partyIdx + 1;
             }
-            var dx = partyTouchRef.current.dx;
-            var elapsed = Date.now() - partyTouchRef.current.startTime;
-            var velocity = Math.abs(dx) / Math.max(elapsed, 1) * 1000;
-            partyTouchRef.current = { sx: 0, sy: 0, dx: 0, dragging: false, locked: false, startTime: 0 };
-            // iPhone-style: fast flick (velocity > 600) or drag > 30% of card
-            if (partyTrackRef.current) partyTrackRef.current.style.transition = "transform 0.45s cubic-bezier(0.25, 1, 0.35, 1)";
-            var cardW = partyTrackRef.current ? partyTrackRef.current.offsetWidth : 300;
-            var threshold = velocity > 600 ? cardW * 0.15 : cardW * 0.3;
-            if (dx > threshold && partyIdx > 0) goParty(partyIdx - 1);
-            else if (dx < -threshold && partyIdx < totalP - 1) goParty(partyIdx + 1);
-            else setPartyIdx(partyIdx); // spring back
+            pSnap(target);
           }
 
           function getPersonStage(a) {
@@ -11363,7 +11366,7 @@ function TawasulDetailModal({ request, user, allEmps, onClose, nameOf, onUpdated
 
           return (
             <div style={{ margin: "8px 18px 0", position: "relative", overflow: "hidden", borderRadius: 14, border: "1px solid " + C.cardBorder }}>
-              <div ref={partyTrackRef} onTouchStart={onPTouchStart} onTouchMove={onPTouchMove} onTouchEnd={onPTouchEnd} style={{ display: "flex", transition: "transform 0.45s cubic-bezier(0.25, 1, 0.35, 1)", transform: "translateX(" + (partyIdx * 100) + "%)", touchAction: "pan-y" }}>
+              <div ref={pTrack} onTouchStart={pTS} onTouchMove={pTM} onTouchEnd={pTE} style={{ display: "flex", transition: "transform 0.5s cubic-bezier(0.22, 1, 0.36, 1)", transform: "translateX(" + (partyIdx * 100) + "%)", willChange: "transform" }}>
                 {assignees.map(function(a, aIdx){
                   var pStage = getPersonStage(a);
                   var pStatus = getPersonStatusText(a);
@@ -11410,78 +11413,71 @@ function TawasulDetailModal({ request, user, allEmps, onClose, nameOf, onUpdated
         {/* ═══ v7.32 — SWIPEABLE SECTIONS ═══ */}
         <div style={{ padding: "10px 18px 0" }}>
           {(function(){
-            /* SwipeSection v7.32b — smoother swipe, right=open/left=close, haptic */
+            /* SwipeSection v7.34 — iOS-quality swipe physics */
             function SwipeSection(props) {
               var isOpen = !!openSections[props.id];
-              var touchRef = React.useRef({ sx: 0, sy: 0, dx: 0, swiping: false, locked: false });
+              var sRef = React.useRef({ sx:0, sy:0, dx:0, dir:null, active:false, vel:0, lastX:0, lastT:0 });
               var elRef = React.useRef(null);
-              var [revealDir, setRevealDir] = React.useState(null); // "right" | "left" | null
+              var [revPct, setRevPct] = React.useState(0); // -1..0..1 reveal progress
 
-              function haptic() { try { if (navigator.vibrate) navigator.vibrate(12); } catch(e) {} }
-
-              function onTS(e) {
+              function sTS(e) {
                 var t = e.touches[0];
-                touchRef.current = { sx: t.clientX, sy: t.clientY, dx: 0, swiping: false, locked: false };
-                setRevealDir(null);
+                sRef.current = { sx:t.clientX, sy:t.clientY, dx:0, dir:null, active:true, vel:0, lastX:t.clientX, lastT:Date.now() };
               }
-              function onTM(e) {
+              function sTM(e) {
+                var s = sRef.current; if (!s.active) return;
                 var t = e.touches[0];
-                var dx = t.clientX - touchRef.current.sx;
-                var dy = t.clientY - touchRef.current.sy;
-                // Lock direction after 10px movement
-                if (!touchRef.current.locked && (Math.abs(dx) > 10 || Math.abs(dy) > 10)) {
-                  touchRef.current.locked = true;
-                  touchRef.current.swiping = Math.abs(dx) > Math.abs(dy);
+                var dx = t.clientX - s.sx, dy = t.clientY - s.sy;
+                if (!s.dir) {
+                  if (Math.abs(dx) > 6 || Math.abs(dy) > 6) s.dir = Math.abs(dx) >= Math.abs(dy) ? "h" : "v";
+                  else return;
                 }
-                if (!touchRef.current.swiping) return;
-                e.preventDefault();
-                // Damped movement (0.6x for rubber-band feel)
-                var damped = dx * 0.6;
-                var clamped = Math.max(-160, Math.min(160, damped));
-                touchRef.current.dx = dx;
+                if (s.dir !== "h") return;
+                e.preventDefault(); e.stopPropagation();
+                var now = Date.now(); var dt = now - s.lastT;
+                if (dt > 0) s.vel = (t.clientX - s.lastX) / dt * 1000;
+                s.lastX = t.clientX; s.lastT = now; s.dx = dx;
                 if (elRef.current) {
                   elRef.current.style.transition = "none";
-                  elRef.current.style.transform = "translateX(" + clamped + "px)";
+                  elRef.current.style.transform = "translateX(" + dx + "px)";
+                  elRef.current.style.willChange = "transform";
                 }
-                // Show reveal background
-                if (Math.abs(clamped) > 20) setRevealDir(clamped > 0 ? "right" : "left");
-                else setRevealDir(null);
-              }
-              function onTE() {
-                var dx = touchRef.current.dx;
-                var wasSwiping = touchRef.current.swiping;
-                // Spring-back animation
-                if (elRef.current) {
-                  elRef.current.style.transition = "transform 0.4s cubic-bezier(0.25, 1, 0.5, 1)";
-                  elRef.current.style.transform = "none";
-                }
-                setRevealDir(null);
-                touchRef.current = { sx: 0, sy: 0, dx: 0, swiping: false, locked: false };
-                if (!wasSwiping) return;
-                // Need > 40% of element width OR > 120px absolute
                 var elW = elRef.current ? elRef.current.offsetWidth : 300;
-                var threshold = Math.min(elW * 0.4, 120);
-                if (Math.abs(dx) >= threshold) {
-                  haptic();
-                  var dir = dx > 0 ? "right" : "left";
-                  // Right = open, Left = close (or custom onSwipe)
-                  if (props.onSwipe) {
-                    props.onSwipe(dir);
-                  } else {
+                setRevPct(Math.max(-1, Math.min(1, dx / (elW * 0.4))));
+              }
+              function sTE() {
+                var s = sRef.current; s.active = false;
+                if (s.dir !== "h") { setRevPct(0); return; }
+                var dx = s.dx; var vel = s.vel;
+                if (elRef.current) {
+                  elRef.current.style.transition = "transform 0.5s cubic-bezier(0.22, 1, 0.36, 1)";
+                  elRef.current.style.transform = "none";
+                  elRef.current.style.willChange = "auto";
+                }
+                setRevPct(0);
+                var elW = elRef.current ? elRef.current.offsetWidth : 300;
+                var triggered = Math.abs(vel) > 400 || Math.abs(dx) > elW * 0.35;
+                if (triggered) {
+                  try { if (navigator.vibrate) navigator.vibrate(8); } catch(e2) {}
+                  var dir = (dx > 0 || vel > 400) ? "right" : "left";
+                  if (props.onSwipe) { props.onSwipe(dir); }
+                  else {
                     if (dir === "right" && !isOpen) toggleSection(props.id);
                     else if (dir === "left" && isOpen) toggleSection(props.id);
                   }
                 }
               }
 
-              var rightBg = props.swipeRight ? (props.swipeRight.color || "#2ED3A5") : null;
-              var leftBg = props.swipeLeft ? (props.swipeLeft.color || "#3b82f6") : null;
+              var rBg = props.swipeRight ? (props.swipeRight.color || "#2ED3A5") : null;
+              var lBg = props.swipeLeft ? (props.swipeLeft.color || "#64748b") : null;
+              var rOp = revPct > 0 ? Math.min(1, revPct) : 0;
+              var lOp = revPct < 0 ? Math.min(1, -revPct) : 0;
 
               return (
                 <div style={{ position: "relative", marginBottom: 8, borderRadius: 14, overflow: "hidden" }}>
-                  {rightBg && <div style={{ position: "absolute", top: 0, right: 0, bottom: 0, width: "100%", background: rightBg, display: "flex", alignItems: "center", justifyContent: "flex-start", paddingRight: 14, borderRadius: 14, opacity: revealDir === "right" ? 1 : 0, transition: "opacity 0.15s" }}><span style={{ color: "#fff", fontSize: 11, fontWeight: 800 }}>{props.swipeRight.icon} {props.swipeRight.label}</span></div>}
-                  {leftBg && <div style={{ position: "absolute", top: 0, left: 0, bottom: 0, width: "100%", background: leftBg, display: "flex", alignItems: "center", justifyContent: "flex-end", paddingLeft: 14, borderRadius: 14, opacity: revealDir === "left" ? 1 : 0, transition: "opacity 0.15s" }}><span style={{ color: "#fff", fontSize: 11, fontWeight: 800 }}>{props.swipeLeft.icon} {props.swipeLeft.label}</span></div>}
-                  <div ref={elRef} onTouchStart={onTS} onTouchMove={onTM} onTouchEnd={onTE} style={{ position: "relative", zIndex: 1, background: C.card, border: "1px solid " + C.cardBorder, borderRadius: 14, overflow: "hidden" }}>
+                  {rBg && <div style={{ position: "absolute", top: 0, right: 0, bottom: 0, width: "100%", background: rBg, display: "flex", alignItems: "center", justifyContent: "flex-start", paddingRight: 14, borderRadius: 14, opacity: rOp, transition: rOp > 0 ? "none" : "opacity 0.2s" }}><span style={{ color: "#fff", fontSize: 11, fontWeight: 800 }}>{props.swipeRight.icon} {props.swipeRight.label}</span></div>}
+                  {lBg && <div style={{ position: "absolute", top: 0, left: 0, bottom: 0, width: "100%", background: lBg, display: "flex", alignItems: "center", justifyContent: "flex-end", paddingLeft: 14, borderRadius: 14, opacity: lOp, transition: lOp > 0 ? "none" : "opacity 0.2s" }}><span style={{ color: "#fff", fontSize: 11, fontWeight: 800 }}>{props.swipeLeft.icon} {props.swipeLeft.label}</span></div>}
+                  <div ref={elRef} onTouchStart={sTS} onTouchMove={sTM} onTouchEnd={sTE} style={{ position: "relative", zIndex: 1, background: C.card, border: "1px solid " + C.cardBorder, borderRadius: 14, overflow: "hidden", willChange: "auto" }}>
                     <div onClick={function(){ toggleSection(props.id); }} style={{ padding: "12px 14px", cursor: "pointer", display: "flex", alignItems: "center", gap: 8, userSelect: "none" }}>
                       <span style={{ fontSize: 16 }}>{props.icon}</span>
                       <span style={{ fontSize: 12, fontWeight: 800, flex: 1 }}>{props.title}</span>
