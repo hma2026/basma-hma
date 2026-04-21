@@ -11,7 +11,7 @@ import { exportEmploymentLetter, exportLeaveLetter } from "./formalPdfs";
 
 /* ═══════════ APP CONFIG (إعدادات التطبيق) ═══════════ */
 const APP_CONFIG = {
-  VER: "7.35",
+  VER: "7.36",
   NAME: "بصمة HMA",
   FULL_NAME: "نظام الحضور والانصراف الذكي",
   COMPANY: "هاني محمد عسيري للاستشارات الهندسية",
@@ -519,10 +519,9 @@ function queueGpsOffline(record) {
 }
 
 /* ── Call Notification System (4 أوقات متفق عليها) ── */
-// اتصال 1: بداية الدوام بالضبط
-// اتصال 2: بعد 10 دقائق لو ما حضر (فقط لو في النطاق)
-// اتصال 3: قبل الاستراحة بـ 2-7 دقائق (عشوائي لكل موظف)
-// اتصال 4: بعد انتهاء الاستراحة بـ 2-7 دقائق (عشوائي)
+// v7.36 — Call rules:
+// اتصال 1: في أول 30 دقيقة من الدوام لو ما حضر (توقيت عشوائي لكل موظف)
+// اتصال 2: في أول 15 دقيقة بعد انتهاء الاستراحة لو ما سجل عودة (عشوائي)
 // لا اتصال عند الانصراف — فقط الدائرة
 // لا اتصال لو الموظف في إجازة
 const CALL_RETRY_DELAY = 10; // دقائق
@@ -928,12 +927,12 @@ function MobileAppInner() {
     var breakSMin = branch.breakS ? timeToMin(branch.breakS) : startMin + 240;
     var breakEMin = branch.breakE ? timeToMin(branch.breakE) : breakSMin + 30;
 
-    // Generate stable random offset per session (0-4 minutes)
+    // v7.36 — Generate stable random offset: checkin within first 30 min, break within first 15 min
     if (!window.__basmaCallOffsets) {
       var seed = parseInt(String(user.id).replace(/\D/g, '').slice(-4) || '0', 10);
       window.__basmaCallOffsets = {
-        checkin: (seed * 7) % 5,       // 0-4 min after start
-        breakEnd: (seed * 11) % 5,     // 0-4 min after break end
+        checkin: (seed * 7) % 30,       // 0-29 min after shift start (first 30 min)
+        breakEnd: (seed * 11) % 15,     // 0-14 min after break end (first 15 min)
       };
     }
     var offsets = window.__basmaCallOffsets;
@@ -950,7 +949,7 @@ function MobileAppInner() {
       }
     }
 
-    // 2. اتصال تذكير: إذا لم يبصم خلال 5 دقائق من بداية الدوام (بتوقيت عشوائي)
+    // 2. اتصال تذكير: في أول 30 دقيقة من الدوام (v7.36)
     var checkinCallAt = startMin + offsets.checkin;
     if (mins === checkinCallAt && !hasCheckin && !shown.checkinCall) {
       shown.checkinCall = true;
@@ -958,7 +957,7 @@ function MobileAppInner() {
       setFakeCall({ type: "checkin", label: "تسجيل الحضور" });
     }
 
-    // 3. اتصال تذكير: إذا انتهت الاستراحة ولم يسجل عودة (بتوقيت عشوائي)
+    // 3. اتصال تذكير: في أول 15 دقيقة بعد انتهاء الاستراحة (v7.36)
     var breakEndCallAt = breakEMin + offsets.breakEnd;
     if (mins === breakEndCallAt && hasBreakS && !hasBreakE && !shown.breakCall) {
       shown.breakCall = true;
@@ -2285,8 +2284,11 @@ function HomePage({ user, branch, workType, now, todayAtt, allAtt, gps, gpsDist,
   var [showAnswerToast, setShowAnswerToast] = useState(false);
   var challengeDoneToday = localStorage.getItem("basma_challenge_" + todayStr()) === "1";
   var hasCheckedIn = (todayAtt || []).some(function(r){ return r.type === "checkin"; });
-  // v6.78 — Only hide challenge when: no question, already checked in, already done, already answered, or user dismissed it
-  var showChallenge = !!challengeQ && !hasCheckedIn && !challengeDoneToday && challengeAnswer === null && !challengeDismissed;
+  // v7.36 — Challenge visible only 1 hour to 15 min before shift start
+  var nowMinC = new Date().getHours() * 60 + new Date().getMinutes();
+  var shiftStartMinC = branch ? timeToMin(branch.start) : 480;
+  var challengeWindowOpen = nowMinC >= (shiftStartMinC - 60) && nowMinC <= (shiftStartMinC - 15);
+  var showChallenge = !!challengeQ && !hasCheckedIn && !challengeDoneToday && challengeAnswer === null && !challengeDismissed && challengeWindowOpen;
 
   function answerChallenge(idx) {
     if (challengeAnswer !== null) return;
