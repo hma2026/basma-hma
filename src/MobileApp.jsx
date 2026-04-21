@@ -11,7 +11,7 @@ import { exportEmploymentLetter, exportLeaveLetter } from "./formalPdfs";
 
 /* ═══════════ APP CONFIG (إعدادات التطبيق) ═══════════ */
 const APP_CONFIG = {
-  VER: "7.26",
+  VER: "7.27",
   NAME: "بصمة HMA",
   FULL_NAME: "نظام الحضور والانصراف الذكي",
   COMPANY: "هاني محمد عسيري للاستشارات الهندسية",
@@ -5211,7 +5211,13 @@ function ProfilePage({ user, branch, workType, onLogout, onTicket, myTickets, da
             {/* 5. MIXED BUTTONS */}
             {/* Manager panel button — hidden in desktop session */}
             {(user.isManager || user.isAssistant) && !(user && user._desktopSession) && (
-              <Button variant="primary" size="md" icon={<Icons.building size={20} />} onClick={function(){ window.location.hash = "admin"; }}>
+              <Button variant="primary" size="md" icon={<Icons.building size={20} />} onClick={function(){
+                // v7.27 — explicit mode switch + reload to ensure clean admin state
+                localStorage.setItem("basma_last_mode", "admin");
+                localStorage.removeItem("basma_explicit_employee");
+                window.location.hash = "admin";
+                setTimeout(function(){ window.location.reload(); }, 50);
+              }}>
                 لوحة الإدارة
               </Button>
             )}
