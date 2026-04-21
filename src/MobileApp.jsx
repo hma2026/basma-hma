@@ -11,7 +11,7 @@ import { exportEmploymentLetter, exportLeaveLetter } from "./formalPdfs";
 
 /* ═══════════ APP CONFIG (إعدادات التطبيق) ═══════════ */
 const APP_CONFIG = {
-  VER: "7.21",
+  VER: "7.23",
   NAME: "بصمة HMA",
   FULL_NAME: "نظام الحضور والانصراف الذكي",
   COMPANY: "هاني محمد عسيري للاستشارات الهندسية",
@@ -1463,7 +1463,7 @@ function MobileAppInner() {
       {!online && <OfflineBanner />}
 
       <div key={page} style={{ flex: 1, display: "flex", flexDirection: "column", animation: "pageIn .3s ease" }}>
-        {page === "home" && <HomePage user={user} branch={branch} workType={workType} now={now} todayAtt={todayAtt} allAtt={allAtt} gps={gps} gpsDist={gpsDist} streak={streak} loading={loading} refreshing={refreshing} dayState={getDayState()} checkpoints={getCheckpoints()} isOffDay={isOffDay()} pendingCount={myLeaves.filter(function(l){ return l.status === "pending"; }).length + myTickets.filter(function(t){ return t.status === "pending"; }).length} teamToday={teamToday} pwaPrompt={pwaPrompt} onPwaInstall={async function(){ if(pwaPrompt){pwaPrompt.prompt();await pwaPrompt.userChoice;setPwaPrompt(null);} }} onCheckin={requestCheckin} onChallenge={function(pts) { var u = { ...user, points: (user.points||0)+pts }; setUser(u); localStorage.setItem("basma_user", JSON.stringify(u)); showToast("🎉 +" + pts + " نقطة!"); }} onLeave={function(){ setPage("profile"); setTimeout(function(){ localStorage.setItem("basma_profile_tab", "time"); window.dispatchEvent(new CustomEvent("basma:profile-tab-changed")); }, 50); }} onRefresh={refresh} onPreAbsence={function(){ setPreAbsModal(true); }} onManualAtt={function(){ setManualAttModal(true); }} onPermission={function(){ setPermModal(true); }} kadwarNotifs={kadwarNotifs} darkMode={darkMode} announcements={announcements} banners={banners} fieldProjects={fieldProjects} onShowAnnouncements={function(){ setShowAnnModal(true); }} />}
+        {page === "home" && <HomePage user={user} branch={branch} workType={workType} now={now} todayAtt={todayAtt} allAtt={allAtt} gps={gps} gpsDist={gpsDist} streak={streak} loading={loading} refreshing={refreshing} dayState={getDayState()} checkpoints={getCheckpoints()} isOffDay={isOffDay()} pendingCount={myLeaves.filter(function(l){ return l.status === "pending"; }).length + myTickets.filter(function(t){ return t.status === "pending"; }).length} teamToday={teamToday} pwaPrompt={pwaPrompt} onPwaInstall={async function(){ if(pwaPrompt){pwaPrompt.prompt();await pwaPrompt.userChoice;setPwaPrompt(null);} }} onCheckin={requestCheckin} onChallenge={function(pts) { var u = { ...user, points: (user.points||0)+pts }; setUser(u); localStorage.setItem("basma_user", JSON.stringify(u)); showToast("🎉 +" + pts + " نقطة!"); }} onLeave={function(){ setPage("profile"); setTimeout(function(){ localStorage.setItem("basma_profile_tab", "records"); window.dispatchEvent(new CustomEvent("basma:profile-tab-changed")); localStorage.setItem("basma_records_filter", "leaves"); }, 50); }} onRefresh={refresh} onPreAbsence={function(){ setPreAbsModal(true); }} onManualAtt={function(){ setManualAttModal(true); }} onPermission={function(){ setPermModal(true); }} kadwarNotifs={kadwarNotifs} darkMode={darkMode} announcements={announcements} banners={banners} fieldProjects={fieldProjects} onShowAnnouncements={function(){ setShowAnnModal(true); }} />}
         {page === "report" && <ReportPage user={user} allAtt={allAtt} todayAtt={todayAtt} branch={branch} isOffDay={isOffDay()} myLeaves={myLeaves} allEmps={allEmps} />}
         {page === "benefits" && <BenefitsPage user={user} />}
         {page === "tawasul" && <TawasulPage user={user} allEmps={allEmps} />}
@@ -2281,6 +2281,8 @@ function HomePage({ user, branch, workType, now, todayAtt, allAtt, gps, gpsDist,
   var [challengeDismissed, setChallengeDismissed] = useState(function() {
     return localStorage.getItem("basma_challenge_dismissed_" + todayStr()) === "1";
   });
+  // v7.23 — toast for fresh answer (auto-hides after 3s, NOT persisted)
+  var [showAnswerToast, setShowAnswerToast] = useState(false);
   var challengeDoneToday = localStorage.getItem("basma_challenge_" + todayStr()) === "1";
   var hasCheckedIn = (todayAtt || []).some(function(r){ return r.type === "checkin"; });
   // v6.78 — Only hide challenge when: no question, already checked in, already done, already answered, or user dismissed it
@@ -2290,6 +2292,8 @@ function HomePage({ user, branch, workType, now, todayAtt, allAtt, gps, gpsDist,
     if (challengeAnswer !== null) return;
     var correct = idx === challengeQ.correct;
     setChallengeAnswer(correct);
+    setShowAnswerToast(true);  // v7.23 — show celebratory toast
+    setTimeout(function(){ setShowAnswerToast(false); }, 3000);  // v7.23 — auto-hide after 3s
     localStorage.setItem("basma_challenge_" + todayStr(), "1");
     localStorage.setItem("basma_challenge_ans_" + todayStr(), correct ? "true" : "false");
     if (correct) {
@@ -2319,15 +2323,20 @@ function HomePage({ user, branch, workType, now, todayAtt, allAtt, gps, gpsDist,
   var nowMin = now.getHours() * 60 + now.getMinutes();
 
   let btnText, btnAction, btnLabel;
-  if (dayState === "before") { btnText = "☀️ سجّل حضورك"; btnAction = "checkin"; btnLabel = "تسجيل الحضور"; }
-  else if (dayState === "during") {
-    if (!checkpoints.checkin) { btnText = "☀️ سجّل حضورك"; btnAction = "checkin"; btnLabel = "تسجيل الحضور"; }
-    else if (!checkpoints.breakStart) { btnText = "☕ بداية الاستراحة"; btnAction = "break_start"; btnLabel = "بداية الاستراحة"; }
+  // v7.22 — fix: button must ALWAYS appear if no checkin today, even if after work hours (late checkin allowed)
+  if (!checkpoints.checkin) {
+    // No checkin yet today — always show checkin button regardless of dayState
+    btnText = dayState === "before" ? "☀️ سجّل حضورك" : dayState === "after" ? "⏰ سجّل حضورك (متأخر)" : "☀️ سجّل حضورك";
+    btnAction = "checkin";
+    btnLabel = "تسجيل الحضور";
+  } else if (dayState === "during") {
+    if (!checkpoints.breakStart) { btnText = "☕ بداية الاستراحة"; btnAction = "break_start"; btnLabel = "بداية الاستراحة"; }
     else if (!checkpoints.breakEnd) { btnText = "🔄 عودة من الاستراحة"; btnAction = "break_end"; btnLabel = "العودة من الاستراحة"; }
     else if (!checkpoints.checkout) { btnText = "🌙 تسجيل انصراف"; btnAction = "checkout"; btnLabel = "تسجيل الانصراف"; }
     else { btnText = "✓ اكتمل الدوام"; btnAction = null; }
   } else {
-    if (!checkpoints.checkout && checkpoints.checkin) { btnText = "🌙 تسجيل انصراف"; btnAction = "checkout"; btnLabel = "تسجيل الانصراف"; }
+    // dayState === "after" — has checkin
+    if (!checkpoints.checkout) { btnText = "🌙 تسجيل انصراف"; btnAction = "checkout"; btnLabel = "تسجيل الانصراف"; }
     else { btnText = "✓ اكتمل الدوام"; btnAction = null; }
   }
 
@@ -2389,11 +2398,22 @@ function HomePage({ user, branch, workType, now, todayAtt, allAtt, gps, gpsDist,
 
       {/* Clock centered */}
       <div style={{ flex: 1, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", padding: "0 8px", overflow: "visible" }}>
-        {challengeAnswer !== null && !hasCheckedIn && (
-          <div style={{ textAlign: "center", marginBottom: 16 }}>
-            <div style={{ fontSize: 42 }}>{challengeAnswer ? "🎉" : "😅"}</div>
-            <div style={{ fontSize: 14, fontWeight: 800, color: "#fff", marginTop: 6 }}>{challengeAnswer ? MASCOT.correct : MASCOT.wrong}</div>
-            {challengeAnswer && <div style={{ fontSize: 12, color: C.gold, marginTop: 4 }}>{"+" + POINTS.challenge_correct + " نقطة"}</div>}
+        {/* v7.23 — small auto-hiding pill (only on fresh answer, NOT after page refresh) */}
+        {showAnswerToast && challengeAnswer !== null && (
+          <div style={{
+            display: "inline-flex", alignItems: "center", gap: 6,
+            padding: "6px 14px",
+            borderRadius: RADIUS.pill,
+            background: challengeAnswer ? "rgba(16,185,129,0.18)" : "rgba(239,68,68,0.15)",
+            border: "1px solid " + (challengeAnswer ? "rgba(16,185,129,0.4)" : "rgba(239,68,68,0.4)"),
+            marginBottom: 12,
+            animation: "pageIn .25s ease",
+          }}>
+            <span style={{ fontSize: 14 }}>{challengeAnswer ? "🎉" : "😅"}</span>
+            <span style={{ fontSize: 11, fontWeight: 800, color: challengeAnswer ? "#10B981" : "#EF4444", fontFamily: TYPOGRAPHY.fontTajawal }}>
+              {challengeAnswer ? "إجابة صحيحة" : "إجابة خاطئة"}
+            </span>
+            {challengeAnswer && <span style={{ fontSize: 10, fontWeight: 800, color: COLORS.goldLight }}>{"+" + POINTS.challenge_correct}</span>}
           </div>
         )}
           <div style={{ width: "100%", maxWidth: SIZE, aspectRatio: "1 / 1", position: "relative", padding: "10px" }}>
@@ -2490,8 +2510,9 @@ function HomePage({ user, branch, workType, now, todayAtt, allAtt, gps, gpsDist,
         </div>
 
         {/* PRIMARY — سجّل حضورك (gold, reduced height) */}
-        {!showChallenge && challengeAnswer === null && btnAction && (
-          <Button variant="primary" size="md" icon={<Icons.sun size={20} />} onClick={function(){ if(!loading) onCheckin(btnAction, btnLabel); }} disabled={loading}>
+        {/* v7.23 — show button always (only hidden during active challenge), even after answering */}
+        {!showChallenge && (
+          <Button variant="primary" size="md" icon={<Icons.sun size={20} />} onClick={function(){ if(!loading && btnAction) onCheckin(btnAction, btnLabel); }} disabled={loading || !btnAction}>
             {loading ? "جارٍ التسجيل..." : btnText}
           </Button>
         )}
@@ -14032,7 +14053,7 @@ function MyRequestsTab({ user }) {
 
       {/* v7.00 — زر "طلب إجازة" نُقل إلى تبويب "إجازاتي" (نظام الإجازات الجديد مع التسليم) */}
       <div style={{ padding: "10px 14px", marginBottom: 8, borderRadius: 10, background: "rgba(8,145,178,0.08)", border: "1px dashed rgba(8,145,178,0.3)", fontSize: 11, color: COLORS.textMuted, lineHeight: 1.7, textAlign: "center", cursor: "pointer" }}
-        onClick={function(){ localStorage.setItem("basma_profile_tab", "time"); window.dispatchEvent(new CustomEvent("basma:profile-tab-changed")); }}>
+        onClick={function(){ localStorage.setItem("basma_profile_tab", "records"); localStorage.setItem("basma_records_filter", "leaves"); window.dispatchEvent(new CustomEvent("basma:profile-tab-changed")); }}>
         🏖️ <strong style={{ color: "#0891B2" }}>لطلب إجازة</strong> — انتقل إلى تبويب <strong style={{ color: COLORS.textPrimary }}>«إجازاتي»</strong> (يدعم تسليم المهام)
       </div>
 
