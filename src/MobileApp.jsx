@@ -11,7 +11,7 @@ import { exportEmploymentLetter, exportLeaveLetter } from "./formalPdfs";
 
 /* ═══════════ APP CONFIG (إعدادات التطبيق) ═══════════ */
 const APP_CONFIG = {
-  VER: "7.31",
+  VER: "7.32",
   NAME: "بصمة HMA",
   FULL_NAME: "نظام الحضور والانصراف الذكي",
   COMPANY: "هاني محمد عسيري للاستشارات الهندسية",
@@ -11002,153 +11002,100 @@ function TawasulDetailModal({ request, user, allEmps, onClose, nameOf, onUpdated
   return (
     <div onClick={onClose} style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.6)", zIndex: 1000, display: "flex", alignItems: "flex-end", justifyContent: "center", fontFamily: "'Tajawal',sans-serif" }}>
       <div onClick={function(e){ e.stopPropagation(); }} style={{ background: C.bg, borderRadius: "20px 20px 0 0", maxWidth: 430, width: "100%", maxHeight: "94vh", overflowY: "auto", direction: "rtl", color: C.text, paddingBottom: 20 }}>
-        <div style={{ display: "flex", justifyContent: "center", padding: "10px 0 4px", position: "sticky", top: 0, background: C.bg, zIndex: 2 }}><div style={{ width: 40, height: 4, borderRadius: 2, background: C.cardBorder }} /></div>
+        {/* Drag handle */}
+        <div style={{ display: "flex", justifyContent: "center", padding: "10px 0 4px" }}><div style={{ width: 40, height: 4, borderRadius: 2, background: C.cardBorder }} /></div>
 
-        {/* v7.08 — GRADIENT HEADER (Basma theme colors) */}
-        <div style={{
-          background: "linear-gradient(135deg, " + C.hdr1 + " 0%, " + C.hdr2 + " 60%, " + C.hdr3 + " 100%)",
-          padding: "14px 18px 18px",
-          color: "#fff",
-          position: "sticky",
-          top: 0,
-          zIndex: 2,
-        }}>
-          {readOnly && (
-            <div style={{ marginBottom: 10, padding: "6px 10px", background: "rgba(124,58,237,0.25)", border: "1px solid rgba(255,255,255,0.3)", borderRadius: 999, display: "inline-flex", alignItems: "center", gap: 6, fontSize: 10, color: "#fff", fontWeight: 800 }}>
-              <span style={{ fontSize: 13 }}>👁</span>
-              <span>مهمة أحد موظفيك — وضع عرض فقط</span>
-            </div>
-          )}
-
-          {/* Top row: serial + status + urgency + close */}
-          <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 10, flexWrap: "wrap" }}>
-            {r.serial && <div style={{ fontSize: 13, fontWeight: 900, color: C.gold, fontFamily: "monospace" }}>#{r.serial}</div>}
-            <div style={{ display: "inline-flex", alignItems: "center", gap: 5, padding: "4px 12px", borderRadius: 999, background: C.gold, color: "#1e2f3a", fontSize: 11, fontWeight: 900 }}><span>{m.icon}</span><span>{m.label}</span></div>
-            {isUrgent && <div style={{ padding: "4px 10px", borderRadius: 999, background: "#ef4444", color: "#fff", fontSize: 10, fontWeight: 800 }}>🔴 عاجل</div>}
-            {escColor && <div style={{ padding: "4px 10px", borderRadius: 999, background: escColor, color: "#fff", fontSize: 10, fontWeight: 800 }}>{r.escalation === "red" ? "🔴 أحمر" : "🟡 أصفر"}</div>}
-            <div style={{ flex: 1 }} />
-            <button onClick={onClose} style={{ background: "rgba(255,255,255,0.15)", border: "1px solid rgba(255,255,255,0.25)", fontSize: 18, color: "#fff", cursor: "pointer", padding: "0 10px", lineHeight: "26px", borderRadius: 8 }}>×</button>
-          </div>
-
-          {/* Category/Dept/Project line */}
-          {(r.category || r.department || r.projectName) && (
-            <div style={{ fontSize: 10, color: "rgba(255,255,255,0.7)", marginBottom: 6, fontWeight: 600 }}>
-              {r.category && <span>🏷 {r.category}</span>}{r.department && <span>{r.category ? " • " : ""}🏢 {r.department}</span>}{r.projectName && <span>{(r.category || r.department) ? " • " : ""}🏗️ {r.projectName}</span>}
-            </div>
-          )}
-
-          {/* Title */}
-          <div style={{ fontSize: 18, fontWeight: 900, color: "#fff", lineHeight: 1.35, fontFamily: "'Cairo',sans-serif", marginBottom: deadlineText ? 4 : 0 }}>{r.title || "(بدون عنوان)"}</div>
-
-          {deadlineText && <div style={{ fontSize: 11, fontWeight: 700, color: (r.deadline && new Date(r.deadline) < new Date()) ? "#fecaca" : C.gold, marginBottom: 8 }}>{deadlineText}</div>}
-
-          {/* v7.08 — DESCRIPTION INSIDE header (translucent box) */}
-          {r.description && (
-            <div style={{
-              marginTop: 12,
-              background: "rgba(255,255,255,0.12)",
-              border: "1px solid rgba(255,255,255,0.18)",
-              borderRadius: 14,
-              padding: "12px 14px",
-              color: "#fff",
-            }}>
-              <div style={{ fontSize: 11, fontWeight: 900, color: C.gold, marginBottom: 6, display: "flex", alignItems: "center", gap: 6 }}>
-                <span style={{ fontSize: 14 }}>📝</span>
-                <span>وصف المهمة</span>
+        {/* ═══ v7.32 — SECTION 1: Title + Close ═══ */}
+        <div style={{ padding: "8px 18px 0", display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 12 }}>
+          <div style={{ flex: 1, minWidth: 0 }}>
+            {readOnly && (
+              <div style={{ marginBottom: 8, padding: "5px 10px", background: "rgba(124,58,237,0.12)", border: "1px solid rgba(124,58,237,0.3)", borderRadius: 999, display: "inline-flex", alignItems: "center", gap: 5, fontSize: 10, color: "#7c3aed", fontWeight: 800 }}>
+                <span style={{ fontSize: 12 }}>👁</span>
+                <span>وضع عرض فقط</span>
               </div>
-              <div style={{ fontSize: 13, color: "rgba(255,255,255,0.95)", lineHeight: 1.7, whiteSpace: "pre-wrap", fontWeight: 500 }}>{descToShow}</div>
-              {descTooLong && (
-                <button onClick={function(){ setShowFullDesc(function(s){ return !s; }); }} style={{
-                  marginTop: 8, padding: "4px 12px", background: "rgba(255,255,255,0.18)",
-                  border: "1px solid rgba(255,255,255,0.3)", borderRadius: 999,
-                  color: "#fff", fontSize: 10, fontWeight: 800, cursor: "pointer",
-                  fontFamily: "inherit",
-                }}>
-                  {showFullDesc ? "◀ عرض أقل" : "عرض المزيد ▶"}
-                </button>
-              )}
-            </div>
-          )}
+            )}
+            <div style={{ fontSize: 19, fontWeight: 900, color: C.text, lineHeight: 1.35, fontFamily: "'Cairo',sans-serif" }}>{r.title || "(بدون عنوان)"}</div>
+          </div>
+          <button onClick={onClose} style={{ background: C.card, border: "1px solid " + C.cardBorder, fontSize: 18, color: C.sub, cursor: "pointer", padding: "0 10px", lineHeight: "30px", borderRadius: 10, flexShrink: 0, marginTop: 2 }}>×</button>
+        </div>
 
-          {/* v7.08 — Toolbar (Basma theme pills) */}
-          <div style={{ display: "flex", gap: 8, marginTop: 12, flexWrap: "wrap" }}>
-            {canEvaluate && (
-              <button onClick={function(){ setShowEval(true); }} style={{
-                padding: "8px 16px", borderRadius: 999,
-                background: C.gold, color: "#1e2f3a", border: "none",
-                fontSize: 12, fontWeight: 800, cursor: "pointer",
-                fontFamily: "inherit", boxShadow: "0 2px 6px rgba(0,0,0,0.15)",
-              }}>⭐ تقييم</button>
-            )}
-            {canDelete && (
-              <button onClick={doDelete} disabled={busy} style={{
-                padding: "8px 14px", borderRadius: 999,
-                background: "transparent", color: "#fecaca", border: "1px solid rgba(254,202,202,0.5)",
-                fontSize: 12, fontWeight: 700, cursor: busy ? "wait" : "pointer", fontFamily: "inherit",
-              }}>🗑 حذف</button>
-            )}
-            <button onClick={function(){ exportTawasulPDF(r, nameOf); }} style={{
-              padding: "8px 14px", borderRadius: 999,
-              background: "transparent", color: "#fff", border: "1px solid rgba(255,255,255,0.4)",
-              fontSize: 12, fontWeight: 700, cursor: "pointer", fontFamily: "inherit",
-            }}>🖨 PDF</button>
-            <button onClick={function(){ anySectionOpen ? collapseAllSections() : expandAllSections(); }} style={{
-              padding: "8px 14px", borderRadius: 999,
-              background: "transparent", color: "#fff", border: "1px solid rgba(255,255,255,0.4)",
-              fontSize: 12, fontWeight: 700, cursor: "pointer", fontFamily: "inherit",
-            }}>{anySectionOpen ? "🔼 طي الكل" : "🔍 توسيع الكل"}</button>
+        {/* ═══ v7.32 — SECTION 2: Compressed Meta Line ═══ */}
+        <div style={{ padding: "10px 18px 0", overflowX: "auto", WebkitOverflowScrolling: "touch" }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 6, whiteSpace: "nowrap", fontSize: 11, fontWeight: 700, flexWrap: "nowrap" }}>
+            {r.serial && <span style={{ color: C.gold, fontFamily: "monospace", fontWeight: 900, fontSize: 12 }}>#{r.serial}</span>}
+            {r.serial && <span style={{ color: C.sub, opacity: 0.5 }}>·</span>}
+            <span style={{ display: "inline-flex", alignItems: "center", gap: 4, padding: "3px 10px", borderRadius: 999, background: C.gold + "22", color: C.gold, fontSize: 10, fontWeight: 800 }}><span>{m.icon}</span><span>{m.label}</span></span>
+            {isUrgent && <span style={{ padding: "3px 8px", borderRadius: 999, background: "rgba(239,68,68,0.15)", color: "#ef4444", fontSize: 10, fontWeight: 800 }}>🔴 عاجل</span>}
+            {escColor && <span style={{ padding: "3px 8px", borderRadius: 999, background: escColor + "22", color: escColor, fontSize: 10, fontWeight: 800 }}>{r.escalation === "red" ? "🔴 أحمر" : "🟡 أصفر"}</span>}
+            {r.category && <><span style={{ color: C.sub, opacity: 0.5 }}>·</span><span style={{ color: C.sub }}>🏷 {r.category}</span></>}
+            {r.department && <><span style={{ color: C.sub, opacity: 0.5 }}>·</span><span style={{ color: C.sub }}>🏢 {r.department}</span></>}
+            {r.projectName && <><span style={{ color: C.sub, opacity: 0.5 }}>·</span><span style={{ color: C.sub }}>🏗️ {r.projectName}</span></>}
+            {deadlineText && <><span style={{ color: C.sub, opacity: 0.5 }}>·</span><span style={{ color: (r.deadline && new Date(r.deadline) < new Date()) ? "#ef4444" : C.gold }}>{deadlineText}</span></>}
           </div>
         </div>
 
-        <div style={{ padding: 16 }}>
+        {/* ═══ v7.32 — SECTION 3: Description Box ═══ */}
+        {r.description && (
+          <div style={{ margin: "12px 18px 0", background: C.card, border: "1px solid " + C.cardBorder, borderRadius: 14, padding: "12px 14px" }}>
+            <div style={{ fontSize: 11, fontWeight: 800, color: C.sub, marginBottom: 6, display: "flex", alignItems: "center", gap: 6 }}>
+              <span style={{ fontSize: 14 }}>📝</span>
+              <span>وصف المهمة</span>
+            </div>
+            <div style={{ fontSize: 13, color: C.text, lineHeight: 1.7, whiteSpace: "pre-wrap", fontWeight: 500 }}>{descToShow}</div>
+            {descTooLong && (
+              <button onClick={function(){ setShowFullDesc(function(s){ return !s; }); }} style={{
+                marginTop: 8, padding: "4px 12px", background: C.bg,
+                border: "1px solid " + C.cardBorder, borderRadius: 999,
+                color: C.sub, fontSize: 10, fontWeight: 800, cursor: "pointer",
+                fontFamily: "inherit",
+              }}>
+                {showFullDesc ? "◀ عرض أقل" : "عرض المزيد ▶"}
+              </button>
+            )}
+          </div>
+        )}
 
-          {/* BIG BUTTON — full width when actionable (action needed) */}
+        {/* ═══ v7.32 — SECTION: Big Action Button ═══ */}
+        <div style={{ padding: "12px 18px 0" }}>
           {bigBtn && canPressBig && (
             <button onClick={applyBigAction} disabled={busy} style={{
               width: "100%",
-              padding: "24px 20px",
-              borderRadius: 20,
+              padding: "20px 20px",
+              borderRadius: 16,
               background: busy ? C.cardBorder : "linear-gradient(135deg, " + bigBtn.color + ", " + bigBtn.color + "dd)",
               color: "#fff",
               border: "none",
               cursor: busy ? "default" : "pointer",
               fontFamily: "'Cairo',sans-serif",
-              marginBottom: 14,
-              boxShadow: busy ? "none" : "0 8px 24px " + bigBtn.color + "55, 0 2px 6px rgba(0,0,0,0.15)",
+              marginBottom: 0,
+              boxShadow: busy ? "none" : "0 6px 20px " + bigBtn.color + "55",
               position: "relative",
               overflow: "hidden",
-              animation: busy ? "none" : "tawasulPulse 2s ease-in-out infinite",
             }}>
-              <style>{"@keyframes tawasulPulse{0%,100%{box-shadow:0 8px 24px " + bigBtn.color + "55,0 2px 6px rgba(0,0,0,0.15)}50%{box-shadow:0 10px 32px " + bigBtn.color + "99,0 2px 6px rgba(0,0,0,0.2)}}"}</style>
-              <div style={{ fontSize: 26, fontWeight: 900, letterSpacing: 0.5, marginBottom: 6 }}>
+              <div style={{ fontSize: 22, fontWeight: 900, letterSpacing: 0.5, marginBottom: 4 }}>
                 {busy ? "⏳ جارِ الحفظ..." : bigBtn.label}
               </div>
-              <div style={{ fontSize: 13, fontWeight: 500, opacity: 0.92 }}>
+              <div style={{ fontSize: 12, fontWeight: 500, opacity: 0.92 }}>
                 {bigBtn.sub}
               </div>
-              {!busy && <div style={{ position: "absolute", top: "50%", left: 20, transform: "translateY(-50%)", fontSize: 24, opacity: 0.3 }}>→</div>}
+              {!busy && <div style={{ position: "absolute", top: "50%", left: 20, transform: "translateY(-50%)", fontSize: 22, opacity: 0.3 }}>→</div>}
             </button>
           )}
 
-          {/* v7.08 — Simple partial-delivered alert (multi progress moved to accordion) */}
+          {/* Partial-delivered alert (multi-assignee) */}
           {(function(){
             var iAmRequester = String(r.requesterId) === String(myId);
             var hasAnyDelivered = (r.assignees || []).some(function(a){ return !!a.deliveredAt && !a.closedAt; });
             var total = (r.assignees || []).length;
             var delivered = (r.assignees || []).filter(function(a){ return !!a.deliveredAt && !a.closedAt; }).length;
             if (!iAmRequester || !hasAnyDelivered || r.status === "evaluated") return null;
-            if (total < 2) return null; // single assignee uses normal flow
+            if (total < 2) return null;
             return (
               <div onClick={function(){ setOpenSections(function(p){ var n = Object.assign({}, p); n.parties = true; return n; }); }} style={{
                 background: "linear-gradient(135deg, rgba(245,158,11,0.12), rgba(245,158,11,0.04))",
                 border: "1px solid rgba(245,158,11,0.35)",
-                borderRadius: 14,
-                padding: "10px 14px",
-                marginBottom: 12,
-                cursor: "pointer",
-                display: "flex",
-                alignItems: "center",
-                gap: 10,
+                borderRadius: 14, padding: "10px 14px", marginTop: 10, cursor: "pointer",
+                display: "flex", alignItems: "center", gap: 10,
               }}>
                 <span style={{ fontSize: 18 }}>⏳</span>
                 <div style={{ flex: 1 }}>
@@ -11158,154 +11105,279 @@ function TawasulDetailModal({ request, user, allEmps, onClose, nameOf, onUpdated
               </div>
             );
           })()}
+        </div>
 
-          {/* Action buttons — uniform grid (all same size) */}
-          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(80px, 1fr))", gap: 6, marginBottom: 14 }}>
+        {/* ═══ v7.32 — SECTION 4: Action Buttons — Single Scrollable Row ═══ */}
+        <div style={{ padding: "12px 18px 0", overflowX: "auto", WebkitOverflowScrolling: "touch" }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 6, whiteSpace: "nowrap", flexWrap: "nowrap" }}>
+            {canEvaluate && (
+              <button onClick={function(){ setShowEval(true); }} style={{ padding: "8px 14px", borderRadius: 999, background: C.gold + "22", color: C.gold, border: "1px solid " + C.gold + "44", fontSize: 11, fontWeight: 800, cursor: "pointer", fontFamily: "inherit", flexShrink: 0 }}>⭐ تقييم</button>
+            )}
             {canReject && (
-              <button onClick={function(){ setShowReject(true); }} title="رفض المهمة" style={{ padding: "10px 6px", borderRadius: 10, background: "rgba(239,68,68,0.1)", color: "#ef4444", border: "1.5px solid rgba(239,68,68,0.4)", fontSize: 11, fontWeight: 700, cursor: "pointer", fontFamily: "inherit", display: "flex", flexDirection: "column", alignItems: "center", gap: 2 }}>
-                <span style={{ fontSize: 15 }}>❌</span>
-                <span>رفض</span>
-              </button>
+              <button onClick={function(){ setShowReject(true); }} style={{ padding: "8px 14px", borderRadius: 999, background: "rgba(239,68,68,0.1)", color: "#ef4444", border: "1px solid rgba(239,68,68,0.3)", fontSize: 11, fontWeight: 800, cursor: "pointer", fontFamily: "inherit", flexShrink: 0 }}>❌ رفض</button>
             )}
             {canReturn && (
-              <button onClick={function(){ setShowReturn(true); }} title="إرجاع للاستكمال" style={{ padding: "10px 6px", borderRadius: 10, background: "rgba(245,158,11,0.1)", color: "#f59e0b", border: "1.5px solid rgba(245,158,11,0.4)", fontSize: 11, fontWeight: 700, cursor: "pointer", fontFamily: "inherit", display: "flex", flexDirection: "column", alignItems: "center", gap: 2 }}>
-                <span style={{ fontSize: 15 }}>📋</span>
-                <span>إرجاع</span>
-              </button>
+              <button onClick={function(){ setShowReturn(true); }} style={{ padding: "8px 14px", borderRadius: 999, background: "rgba(245,158,11,0.1)", color: "#f59e0b", border: "1px solid rgba(245,158,11,0.3)", fontSize: 11, fontWeight: 800, cursor: "pointer", fontFamily: "inherit", flexShrink: 0 }}>📋 إرجاع</button>
             )}
             {canEscalate && (
-              <button onClick={function(){ setShowEscalate(true); }} title="تصعيد — متاح بعد رفض مرتين أو إرجاع" style={{ padding: "10px 6px", borderRadius: 10, background: "rgba(251,191,36,0.15)", color: "#fbbf24", border: "1.5px solid rgba(251,191,36,0.4)", fontSize: 11, fontWeight: 700, cursor: "pointer", fontFamily: "inherit", display: "flex", flexDirection: "column", alignItems: "center", gap: 2 }}>
-                <span style={{ fontSize: 15 }}>⬆️</span>
-                <span>تصعيد</span>
-              </button>
+              <button onClick={function(){ setShowEscalate(true); }} style={{ padding: "8px 14px", borderRadius: 999, background: "rgba(251,191,36,0.1)", color: "#fbbf24", border: "1px solid rgba(251,191,36,0.3)", fontSize: 11, fontWeight: 800, cursor: "pointer", fontFamily: "inherit", flexShrink: 0 }}>⬆️ تصعيد</button>
             )}
             {canRequestCollab && (
-              <button onClick={function(){ setShowCollab(true); }} title="طلب إضافة متعاون" style={{ padding: "10px 6px", borderRadius: 10, background: "rgba(59,130,246,0.12)", color: "#3b82f6", border: "1.5px solid rgba(59,130,246,0.4)", fontSize: 11, fontWeight: 700, cursor: "pointer", fontFamily: "inherit", display: "flex", flexDirection: "column", alignItems: "center", gap: 2 }}>
-                <span style={{ fontSize: 15 }}>👥</span>
-                <span>متعاون</span>
-              </button>
-            )}
-            {canEvaluate && (
-              <button onClick={function(){ setShowEval(true); }} title="تقييم" style={{ display: "none" }}>⭐</button>
+              <button onClick={function(){ setShowCollab(true); }} style={{ padding: "8px 14px", borderRadius: 999, background: "rgba(59,130,246,0.1)", color: "#3b82f6", border: "1px solid rgba(59,130,246,0.3)", fontSize: 11, fontWeight: 800, cursor: "pointer", fontFamily: "inherit", flexShrink: 0 }}>👥 متعاون</button>
             )}
             {canHR && (
-              <button onClick={function(){ setShowHR(true); }} title="إجراء HR" style={{ padding: "10px 6px", borderRadius: 10, background: "rgba(124,58,237,0.15)", color: "#7c3aed", border: "1.5px solid rgba(124,58,237,0.4)", fontSize: 11, fontWeight: 700, cursor: "pointer", fontFamily: "inherit", display: "flex", flexDirection: "column", alignItems: "center", gap: 2 }}>
-                <span style={{ fontSize: 15 }}>👔</span>
-                <span>HR</span>
-              </button>
-            )}
-            {canCancel && (
-              <button onClick={doCancel} disabled={busy} title="إلغاء" style={{ padding: "10px 6px", borderRadius: 10, background: C.card, color: C.text, border: "1.5px solid " + C.cardBorder, fontSize: 11, fontWeight: 700, cursor: "pointer", fontFamily: "inherit", display: "flex", flexDirection: "column", alignItems: "center", gap: 2 }}>
-                <span style={{ fontSize: 15 }}>🚫</span>
-                <span>إلغاء</span>
-              </button>
+              <button onClick={function(){ setShowHR(true); }} style={{ padding: "8px 14px", borderRadius: 999, background: "rgba(124,58,237,0.1)", color: "#7c3aed", border: "1px solid rgba(124,58,237,0.3)", fontSize: 11, fontWeight: 800, cursor: "pointer", fontFamily: "inherit", flexShrink: 0 }}>👔 HR</button>
             )}
             {canEdit && (
-              <button onClick={function(){ onEdit(r); }} title="تعديل" style={{ padding: "10px 6px", borderRadius: 10, background: C.hdr2, color: "#fff", border: "none", fontSize: 11, fontWeight: 700, cursor: "pointer", fontFamily: "inherit", display: "flex", flexDirection: "column", alignItems: "center", gap: 2 }}>
-                <span style={{ fontSize: 15 }}>✎</span>
-                <span>تعديل</span>
-              </button>
+              <button onClick={function(){ onEdit(r); }} style={{ padding: "8px 14px", borderRadius: 999, background: C.card, color: C.text, border: "1px solid " + C.cardBorder, fontSize: 11, fontWeight: 800, cursor: "pointer", fontFamily: "inherit", flexShrink: 0 }}>✎ تعديل</button>
             )}
-            {/* v7.08 — حذف و PDF انتقلوا للـ toolbar في الـ header */}
+            {canDelete && (
+              <button onClick={doDelete} disabled={busy} style={{ padding: "8px 14px", borderRadius: 999, background: "rgba(239,68,68,0.08)", color: "#ef4444", border: "1px solid rgba(239,68,68,0.25)", fontSize: 11, fontWeight: 800, cursor: busy ? "wait" : "pointer", fontFamily: "inherit", flexShrink: 0 }}>🗑 حذف</button>
+            )}
+            <button onClick={function(){ exportTawasulPDF(r, nameOf); }} style={{ padding: "8px 14px", borderRadius: 999, background: C.card, color: C.text, border: "1px solid " + C.cardBorder, fontSize: 11, fontWeight: 800, cursor: "pointer", fontFamily: "inherit", flexShrink: 0 }}>🖨 PDF</button>
+            <button onClick={function(){ anySectionOpen ? collapseAllSections() : expandAllSections(); }} style={{ padding: "8px 14px", borderRadius: 999, background: C.card, color: C.text, border: "1px solid " + C.cardBorder, fontSize: 11, fontWeight: 800, cursor: "pointer", fontFamily: "inherit", flexShrink: 0 }}>{anySectionOpen ? "🔼 طي الكل" : "🔍 توسيع الكل"}</button>
+            {canCancel && (
+              <button onClick={doCancel} disabled={busy} style={{ padding: "8px 14px", borderRadius: 999, background: C.card, color: C.sub, border: "1px solid " + C.cardBorder, fontSize: 11, fontWeight: 800, cursor: "pointer", fontFamily: "inherit", flexShrink: 0 }}>🚫 إلغاء</button>
+            )}
           </div>
+        </div>
 
-          {/* Hint when escalation is gated */}
-          {!r.escalation && !escalationAllowedByRule && (canActAsAssignee || canActAsRequester) && !["closed","cancelled","evaluated","draft"].includes(r.status) && (
-            <div style={{ padding: "8px 12px", borderRadius: 10, background: "rgba(148,163,184,0.1)", border: "1px dashed " + C.cardBorder, fontSize: 10, color: C.sub, marginBottom: 10, textAlign: "center" }}>
-              ⬆️ التصعيد متاح بعد رفض المهمة مرتين أو إرجاعها للاستكمال (رفض: {rejectedCount}، إرجاع: {returnCount})
+        {/* Escalation gating hint */}
+        {!r.escalation && !escalationAllowedByRule && (canActAsAssignee || canActAsRequester) && !["closed","cancelled","evaluated","draft"].includes(r.status) && (
+          <div style={{ margin: "8px 18px 0", padding: "6px 12px", borderRadius: 10, background: "rgba(148,163,184,0.08)", border: "1px dashed " + C.cardBorder, fontSize: 10, color: C.sub, textAlign: "center" }}>
+            ⬆️ التصعيد متاح بعد رفض المهمة مرتين أو إرجاعها للاستكمال (رفض: {rejectedCount}، إرجاع: {returnCount})
+          </div>
+        )}
+
+        {/* Resend / Transfer after rejection */}
+        {(canResendRejected || canTransferRejected) && (
+          <div style={{ margin: "10px 18px 0", background: "rgba(239,68,68,0.06)", border: "1.5px solid rgba(239,68,68,0.3)", borderRadius: 14, padding: 14 }}>
+            <div style={{ fontSize: 13, fontWeight: 800, color: "#ef4444", marginBottom: 4, display: "flex", alignItems: "center", gap: 6 }}>❌ المهمة مرفوضة</div>
+            <div style={{ fontSize: 11, color: C.sub, marginBottom: 10 }}>لم تُحذف — يمكنك إعادة إرسالها لنفس المهندس أو تحويلها لمهندس آخر</div>
+            <div style={{ display: "flex", gap: 8 }}>
+              {canResendRejected && (
+                <button onClick={function(){ setShowResent(true); }} style={{ flex: 1, padding: "10px 8px", borderRadius: 10, background: "#0f766e", color: "#fff", border: "none", fontSize: 12, fontWeight: 800, cursor: "pointer", fontFamily: "inherit" }}>🔄 إعادة إرسال</button>
+              )}
+              {canTransferRejected && (
+                <button onClick={function(){ setShowTransfer(true); }} style={{ flex: 1, padding: "10px 8px", borderRadius: 10, background: "#7c3aed", color: "#fff", border: "none", fontSize: 12, fontWeight: 800, cursor: "pointer", fontFamily: "inherit" }}>↪️ تحويل لمهندس آخر</button>
+              )}
             </div>
-          )}
+          </div>
+        )}
 
-          {/* Resend / Transfer actions after rejection (requester only) */}
-          {(canResendRejected || canTransferRejected) && (
-            <div style={{ background: "rgba(239,68,68,0.06)", border: "1.5px solid rgba(239,68,68,0.3)", borderRadius: 14, padding: 14, marginBottom: 12 }}>
-              <div style={{ fontSize: 13, fontWeight: 800, color: "#ef4444", marginBottom: 4, display: "flex", alignItems: "center", gap: 6 }}>❌ المهمة مرفوضة</div>
-              <div style={{ fontSize: 11, color: C.sub, marginBottom: 10 }}>لم تُحذف — يمكنك إعادة إرسالها لنفس المهندس أو تحويلها لمهندس آخر</div>
-              <div style={{ display: "flex", gap: 8 }}>
-                {canResendRejected && (
-                  <button onClick={function(){ setShowResent(true); }} style={{ flex: 1, padding: "10px 8px", borderRadius: 10, background: "#0f766e", color: "#fff", border: "none", fontSize: 12, fontWeight: 800, cursor: "pointer", fontFamily: "inherit" }}>🔄 إعادة إرسال</button>
-                )}
-                {canTransferRejected && (
-                  <button onClick={function(){ setShowTransfer(true); }} style={{ flex: 1, padding: "10px 8px", borderRadius: 10, background: "#7c3aed", color: "#fff", border: "none", fontSize: 12, fontWeight: 800, cursor: "pointer", fontFamily: "inherit" }}>↪️ تحويل لمهندس آخر</button>
-                )}
-              </div>
-            </div>
-          )}
-
-          {/* Pending collaborator requests (requester approves) */}
-          {hasPendingCollabForMe && (
-            <div style={{ background: "rgba(59,130,246,0.08)", border: "1.5px solid rgba(59,130,246,0.35)", borderRadius: 14, padding: 14, marginBottom: 12 }}>
-              <div style={{ fontSize: 13, fontWeight: 800, color: "#3b82f6", marginBottom: 8 }}>👥 طلب إضافة متعاون ({pendingCollabs.length})</div>
-              {pendingCollabs.map(function(pc){
-                return (
-                  <div key={pc.id} style={{ padding: 10, borderRadius: 10, background: C.card, border: "1px solid " + C.cardBorder, marginBottom: 6 }}>
-                    <div style={{ fontSize: 12, fontWeight: 700, color: C.text, marginBottom: 2 }}>إضافة: {pc.empName}</div>
-                    <div style={{ fontSize: 10, color: C.sub, marginBottom: 4 }}>طلب من: {pc.requestedByName}</div>
-                    {pc.reason && <div style={{ fontSize: 11, color: C.text, marginBottom: 8, padding: "6px 8px", background: C.bg, borderRadius: 6 }}>{pc.reason}</div>}
-                    <div style={{ display: "flex", gap: 6 }}>
-                      <button onClick={function(){ doCollabDecision(pc, true); }} disabled={busy} style={{ flex: 1, padding: "6px 8px", borderRadius: 8, background: "#10b981", color: "#fff", border: "none", fontSize: 11, fontWeight: 800, cursor: "pointer", fontFamily: "inherit" }}>✅ قبول</button>
-                      <button onClick={function(){ doCollabDecision(pc, false); }} disabled={busy} style={{ flex: 1, padding: "6px 8px", borderRadius: 8, background: "#ef4444", color: "#fff", border: "none", fontSize: 11, fontWeight: 800, cursor: "pointer", fontFamily: "inherit" }}>❌ رفض</button>
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
-          )}
-
-          {/* v6.80 — sender role banner for recipient */}
-          {(function(){
-            var myRow = (r.assignees || []).find(function(a){ return String(a.id) === String(myId); });
-            if (!myRow || !myRow.senderRole || myRow.senderRole === "other") return null;
-            var label = myRow.senderRole === "manager1" ? "📥 هذه المهمة مُسنَدة إليك من مديرك الإداري" : "📥 هذه المهمة مُسنَدة إليك من مديرك الفني";
-            var color = myRow.senderRole === "manager1" ? "#0F766E" : "#3B82F6";
-            return (
-              <div style={{ padding: "10px 14px", borderRadius: 10, background: color + "15", border: "1px solid " + color + "40", color: color, fontSize: 12, fontWeight: 800, marginBottom: 12, textAlign: "center" }}>
-                {label}
-              </div>
-            );
-          })()}
-
-          {/* v7.08 — ACCORDIONS (individual collapsible sections) */}
-          {(function(){
-            // Accordion helper component style
-            function Accordion(props) {
-              var isOpen = !!openSections[props.id];
+        {/* Pending collaborator requests */}
+        {hasPendingCollabForMe && (
+          <div style={{ margin: "10px 18px 0", background: "rgba(59,130,246,0.08)", border: "1.5px solid rgba(59,130,246,0.35)", borderRadius: 14, padding: 14 }}>
+            <div style={{ fontSize: 13, fontWeight: 800, color: "#3b82f6", marginBottom: 8 }}>👥 طلب إضافة متعاون ({pendingCollabs.length})</div>
+            {pendingCollabs.map(function(pc){
               return (
-                <div style={{ background: C.card, borderRadius: 12, border: "1px solid " + C.cardBorder, marginBottom: 10, overflow: "hidden" }}>
-                  <div onClick={function(){ toggleSection(props.id); }} style={{
-                    padding: "12px 14px", cursor: "pointer",
-                    display: "flex", justifyContent: "space-between", alignItems: "center",
-                    userSelect: "none", background: isOpen ? C.bg : "transparent",
-                    transition: "background 0.15s",
-                  }}>
-                    <div style={{ fontSize: 12, fontWeight: 800, color: C.text, display: "flex", alignItems: "center", gap: 8 }}>
-                      <span style={{ fontSize: 15 }}>{props.icon}</span>
-                      <span>{props.title}</span>
-                      {props.badge && <span style={{ padding: "2px 8px", borderRadius: 999, background: C.gold + "22", color: C.gold, fontSize: 10, fontWeight: 800 }}>{props.badge}</span>}
-                    </div>
-                    <span style={{ fontSize: 14, color: C.sub, transition: "transform 0.2s", transform: isOpen ? "rotate(180deg)" : "none" }}>▼</span>
+                <div key={pc.id} style={{ padding: 10, borderRadius: 10, background: C.card, border: "1px solid " + C.cardBorder, marginBottom: 6 }}>
+                  <div style={{ fontSize: 12, fontWeight: 700, color: C.text, marginBottom: 2 }}>إضافة: {pc.empName}</div>
+                  <div style={{ fontSize: 10, color: C.sub, marginBottom: 4 }}>طلب من: {pc.requestedByName}</div>
+                  {pc.reason && <div style={{ fontSize: 11, color: C.text, marginBottom: 8, padding: "6px 8px", background: C.bg, borderRadius: 6 }}>{pc.reason}</div>}
+                  <div style={{ display: "flex", gap: 6 }}>
+                    <button onClick={function(){ doCollabDecision(pc, true); }} disabled={busy} style={{ flex: 1, padding: "6px 8px", borderRadius: 8, background: "#10b981", color: "#fff", border: "none", fontSize: 11, fontWeight: 800, cursor: "pointer", fontFamily: "inherit" }}>✅ قبول</button>
+                    <button onClick={function(){ doCollabDecision(pc, false); }} disabled={busy} style={{ flex: 1, padding: "6px 8px", borderRadius: 8, background: "#ef4444", color: "#fff", border: "none", fontSize: 11, fontWeight: 800, cursor: "pointer", fontFamily: "inherit" }}>❌ رفض</button>
                   </div>
-                  {isOpen && (
-                    <div style={{ padding: "12px 14px", borderTop: "1px solid " + C.cardBorder }}>
-                      {props.children}
-                    </div>
+                </div>
+              );
+            })}
+          </div>
+        )}
+
+        {/* Sender role banner */}
+        {(function(){
+          var myRow = (r.assignees || []).find(function(a){ return String(a.id) === String(myId); });
+          if (!myRow || !myRow.senderRole || myRow.senderRole === "other") return null;
+          var label = myRow.senderRole === "manager1" ? "📥 هذه المهمة مُسنَدة إليك من مديرك الإداري" : "📥 هذه المهمة مُسنَدة إليك من مديرك الفني";
+          var color = myRow.senderRole === "manager1" ? "#0F766E" : "#3B82F6";
+          return (
+            <div style={{ margin: "10px 18px 0", padding: "10px 14px", borderRadius: 10, background: color + "15", border: "1px solid " + color + "40", color: color, fontSize: 12, fontWeight: 800, textAlign: "center" }}>
+              {label}
+            </div>
+          );
+        })()}
+
+        {/* ═══ v7.32 — SECTION 5: Swipeable Accordions ═══ */}
+        <div style={{ padding: "14px 18px 0" }}>
+          {(function(){
+            /* ── SwipeAccordion: accordion with swipe-to-reveal actions + summary icons ── */
+            function SwipeAccordion(props) {
+              var isOpen = !!openSections[props.id];
+              var touchRef = React.useRef({ startX: 0, startY: 0, dx: 0, swiping: false });
+              var rowRef = React.useRef(null);
+              var [swipeOffset, setSwipeOffset] = React.useState(0);
+              var SWIPE_THRESHOLD = 70;
+
+              function onTouchStart(e) {
+                if (isOpen) return;
+                var t = e.touches[0];
+                touchRef.current = { startX: t.clientX, startY: t.clientY, dx: 0, swiping: false };
+              }
+              function onTouchMove(e) {
+                if (isOpen) return;
+                var t = e.touches[0];
+                var dx = t.clientX - touchRef.current.startX;
+                var dy = t.clientY - touchRef.current.startY;
+                if (!touchRef.current.swiping && Math.abs(dx) > 10 && Math.abs(dx) > Math.abs(dy)) {
+                  touchRef.current.swiping = true;
+                }
+                if (touchRef.current.swiping) {
+                  e.preventDefault();
+                  touchRef.current.dx = dx;
+                  setSwipeOffset(dx);
+                }
+              }
+              function onTouchEnd() {
+                if (!touchRef.current.swiping) { setSwipeOffset(0); return; }
+                var dx = touchRef.current.dx;
+                if (Math.abs(dx) >= SWIPE_THRESHOLD && props.swipeActions) {
+                  if (dx > 0 && props.swipeActions.right) {
+                    props.swipeActions.right.action();
+                  } else if (dx < 0 && props.swipeActions.left) {
+                    props.swipeActions.left.action();
+                  }
+                }
+                touchRef.current.swiping = false;
+                setSwipeOffset(0);
+              }
+
+              var clampedOffset = Math.max(-120, Math.min(120, swipeOffset));
+              var showRightAction = clampedOffset > 30 && props.swipeActions && props.swipeActions.right;
+              var showLeftAction = clampedOffset < -30 && props.swipeActions && props.swipeActions.left;
+
+              return (
+                <div style={{ position: "relative", marginBottom: 8, borderRadius: 14, overflow: "hidden" }}>
+                  {/* Swipe reveal backgrounds */}
+                  {props.swipeActions && !isOpen && (
+                    <>
+                      {/* Right swipe background (green) */}
+                      <div style={{
+                        position: "absolute", top: 0, right: 0, bottom: 0, width: "100%",
+                        background: showRightAction ? (props.swipeActions.right ? props.swipeActions.right.color || "#10b981" : "transparent") : "transparent",
+                        display: "flex", alignItems: "center", justifyContent: "flex-start", paddingRight: 16,
+                        borderRadius: 14, transition: "background 0.15s",
+                      }}>
+                        {showRightAction && props.swipeActions.right && (
+                          <span style={{ color: "#fff", fontSize: 11, fontWeight: 800 }}>{props.swipeActions.right.icon} {props.swipeActions.right.label}</span>
+                        )}
+                      </div>
+                      {/* Left swipe background (blue) */}
+                      <div style={{
+                        position: "absolute", top: 0, left: 0, bottom: 0, width: "100%",
+                        background: showLeftAction ? (props.swipeActions.left ? props.swipeActions.left.color || "#3b82f6" : "transparent") : "transparent",
+                        display: "flex", alignItems: "center", justifyContent: "flex-end", paddingLeft: 16,
+                        borderRadius: 14, transition: "background 0.15s",
+                      }}>
+                        {showLeftAction && props.swipeActions.left && (
+                          <span style={{ color: "#fff", fontSize: 11, fontWeight: 800 }}>{props.swipeActions.left.icon} {props.swipeActions.left.label}</span>
+                        )}
+                      </div>
+                    </>
                   )}
+
+                  {/* Main accordion */}
+                  <div
+                    ref={rowRef}
+                    onTouchStart={onTouchStart}
+                    onTouchMove={onTouchMove}
+                    onTouchEnd={onTouchEnd}
+                    style={{
+                      position: "relative",
+                      background: C.card,
+                      border: "1px solid " + C.cardBorder,
+                      borderRadius: 14,
+                      overflow: "hidden",
+                      transform: (!isOpen && touchRef.current.swiping) ? "translateX(" + clampedOffset + "px)" : "none",
+                      transition: touchRef.current.swiping ? "none" : "transform 0.25s ease",
+                      zIndex: 1,
+                    }}
+                  >
+                    <div onClick={function(){ toggleSection(props.id); }} style={{
+                      padding: "12px 14px", cursor: "pointer",
+                      display: "flex", justifyContent: "space-between", alignItems: "center",
+                      userSelect: "none",
+                    }}>
+                      <div style={{ display: "flex", alignItems: "center", gap: 8, flex: 1, minWidth: 0 }}>
+                        <span style={{ fontSize: 16 }}>{props.icon}</span>
+                        <span style={{ fontSize: 12, fontWeight: 800, color: C.text }}>{props.title}</span>
+                        {props.badge && <span style={{ padding: "2px 8px", borderRadius: 999, background: C.gold + "22", color: C.gold, fontSize: 10, fontWeight: 800 }}>{props.badge}</span>}
+                      </div>
+                      <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                        {/* Summary icons when collapsed */}
+                        {!isOpen && props.summaryIcons && (
+                          <div style={{ display: "flex", gap: 4, marginLeft: 4 }}>
+                            {props.summaryIcons.map(function(si, idx){
+                              return <span key={idx} title={si.tip || ""} style={{ fontSize: 12, opacity: 0.7 }}>{si.icon}</span>;
+                            })}
+                          </div>
+                        )}
+                        <span style={{ fontSize: 13, color: C.sub, transition: "transform 0.2s", transform: isOpen ? "rotate(180deg)" : "none", flexShrink: 0 }}>▼</span>
+                      </div>
+                    </div>
+                    {isOpen && (
+                      <div style={{ padding: "12px 14px", borderTop: "1px solid " + C.cardBorder }}>
+                        {props.children}
+                      </div>
+                    )}
+                  </div>
                 </div>
               );
             }
 
+            /* ── Build summary icons for each section ── */
+            var pipelineSummary = [];
+            if (curStage >= 0) pipelineSummary.push({ icon: TAWASUL_STAGES[Math.min(curStage, TAWASUL_STAGES.length - 1)].icon, tip: TAWASUL_STAGES[Math.min(curStage, TAWASUL_STAGES.length - 1)].label });
+            pipelineSummary.push({ icon: "📊", tip: (curStage + 1) + "/" + TAWASUL_STAGES.length });
+
+            var chatSummary = [];
+            if (log.length > 0) chatSummary.push({ icon: "💬", tip: log.length + " رسالة" });
+            if ((r.evaluations || []).length > 0) chatSummary.push({ icon: "⭐", tip: "تقييمات" });
+
+            var deliverySummary = [];
+            if (r.deliveryMethods && r.deliveryMethods.length > 0) deliverySummary.push({ icon: "📦", tip: r.deliveryMethods.length + " طريقة" });
+
+            var timeSummary = [{ icon: "⏱", tip: "تتبع الوقت" }];
+
+            var attachSummary = [];
+            var attCount = (r.attachments || []).length;
+            if (attCount > 0) attachSummary.push({ icon: "📎", tip: attCount + " مرفق" });
+            attachSummary.push({ icon: "📁", tip: "مرفقات" });
+
+            /* ── Swipe action generators ── */
+            var chatSwipe = {
+              right: !readOnly && !["closed","cancelled"].includes(r.status) ? { icon: "💬", label: "رد سريع", color: "#10b981", action: function(){ setOpenSections(function(p){ var n = Object.assign({}, p); n.chatLog = true; return n; }); } } : null,
+              left: { icon: "📖", label: "علّم كمقروء", color: "#3b82f6", action: function(){ /* mark as read visual feedback */ } },
+            };
+            var attachSwipe = {
+              right: !readOnly ? { icon: "📎", label: "إضافة مرفق", color: "#10b981", action: function(){ setOpenSections(function(p){ var n = Object.assign({}, p); n.attachments = true; return n; }); } } : null,
+              left: attCount > 0 ? { icon: "📥", label: "تنزيل الكل", color: "#7c3aed", action: function(){ setOpenSections(function(p){ var n = Object.assign({}, p); n.attachments = true; return n; }); } } : null,
+            };
+            var pipelineSwipe = {
+              right: canPressBig ? { icon: "✅", label: "المرحلة التالية", color: "#10b981", action: applyBigAction } : null,
+              left: null,
+            };
+            var deliverySwipe = {
+              right: null,
+              left: null,
+            };
+            var timeSwipe = {
+              right: null,
+              left: null,
+            };
+
             return (
               <>
-                {/* v7.08 — Parties accordion (MultiAssigneesProgress) — only if 2+ assignees */}
+                {/* Parties (only if 2+ assignees) */}
                 {(r.assignees || []).length >= 2 && (
-                  <Accordion id="parties" icon="👥" title="تقدم الأطراف (كل طرف مستقل)" badge={String((r.assignees || []).length)}>
+                  <SwipeAccordion id="parties" icon="👥" title={"تقدم الأطراف (" + (r.assignees || []).length + ")"} badge={String((r.assignees || []).length)} summaryIcons={[{ icon: "👥", tip: "أطراف" }]}>
                     <MultiAssigneesProgress request={r} myId={myId} onUpdated={onUpdated} />
-                  </Accordion>
+                  </SwipeAccordion>
                 )}
 
-                {/* v7.08 — Pipeline accordion (مراحل المهمة) */}
+                {/* 1. 🎯 مراحل المهمة (Pipeline) — first per spec */}
                 {!["cancelled","rejected"].includes(r.status) && (
-                  <Accordion id="pipeline" icon="📈" title="مراحل المهمة">
+                  <SwipeAccordion id="pipeline" icon="🎯" title="مراحل المهمة" summaryIcons={pipelineSummary} swipeActions={pipelineSwipe}>
                     <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
                       {TAWASUL_STAGES.map(function(st, idx){
                         var active = idx <= curStage;
@@ -11320,16 +11392,52 @@ function TawasulDetailModal({ request, user, allEmps, onClose, nameOf, onUpdated
                         );
                       })}
                     </div>
-                  </Accordion>
+                  </SwipeAccordion>
                 )}
 
-                {/* Meta accordion */}
-                <Accordion id="meta" icon="📌" title="تفاصيل إضافية (من/إلى/تاريخ)">
+                {/* 2. 💬 الدردشة والسجل والتعليقات */}
+                <SwipeAccordion id="chatLog" icon="💬" title="الدردشة والسجل والتعليقات" badge={log.length ? String(log.length) : null} summaryIcons={chatSummary} swipeActions={chatSwipe}>
+                  <ChatPanel request={r} user={user} allEmps={allEmps} readOnly={readOnly} onUpdated={onUpdated} nameOf={nameOf} />
+                  <div style={{ marginTop: 12, paddingTop: 12, borderTop: "1px solid " + C.cardBorder }}>
+                    <div style={{ fontSize: 11, fontWeight: 800, color: C.sub, marginBottom: 12 }}>📜 سجل النشاط ({log.length})</div>
+                    {log.length === 0 ? <div style={{ fontSize: 11, color: C.sub, textAlign: "center", padding: 10 }}>لا يوجد سجل بعد</div> : log.map(function(entry, idx){
+                      return <div key={idx} style={{ display: "flex", gap: 8, padding: "8px 0", fontSize: 11, alignItems: "flex-start", borderBottom: idx < log.length - 1 ? "1px solid " + C.cardBorder : "none" }}><div style={{ width: 6, height: 6, borderRadius: 3, background: C.gold, marginTop: 7, flexShrink: 0 }} /><div style={{ flex: 1, minWidth: 0 }}><div style={{ color: C.text, fontWeight: 600, lineHeight: 1.5, wordBreak: "break-word" }}>{entry.text || entry.action || "تحديث"}</div><div style={{ fontSize: 10, color: C.sub, marginTop: 2 }}>{entry.by || nameOf(entry.userId)} • {tawasulTimeAgo(entry.at)}</div></div></div>;
+                    })}
+                    {!readOnly && !["closed","cancelled"].includes(r.status) && (isRequester || isAssignee || isAdmin) && (
+                      <div style={{ marginTop: 10, display: "flex", gap: 6 }}>
+                        <input type="text" value={commentText} onChange={function(e){ setCommentText(e.target.value); }} placeholder="أضف تعليقاً..." onKeyDown={function(e){ if(e.key === "Enter") sendComment(); }} style={{ flex: 1, padding: "10px 12px", borderRadius: 10, border: "1px solid " + C.cardBorder, background: C.bg, color: C.text, fontSize: 12, fontFamily: "inherit", outline: "none" }} />
+                        <button onClick={sendComment} disabled={busy || !commentText.trim()} style={{ padding: "10px 14px", borderRadius: 10, background: commentText.trim() ? C.gold : C.cardBorder, color: "#fff", border: "none", fontSize: 12, fontWeight: 700, cursor: commentText.trim() ? "pointer" : "default", fontFamily: "inherit" }}>📤</button>
+                      </div>
+                    )}
+                  </div>
+                </SwipeAccordion>
+
+                {/* 3. 📦 طرق التسليم */}
+                {r.deliveryMethods && r.deliveryMethods.length > 0 && (
+                  <SwipeAccordion id="delivery" icon="📦" title="طرق التسليم" badge={String(r.deliveryMethods.length)} summaryIcons={deliverySummary} swipeActions={deliverySwipe}>
+                    {r.deliveryMethods.map(function(dm, idx){
+                      return <div key={idx} style={{ padding: "8px 10px", borderRadius: 8, background: C.bg, marginBottom: 6, fontSize: 12 }}><div style={{ fontWeight: 700, color: C.text, marginBottom: 2 }}>{dm.label || dm.type}</div>{dm.value && <div style={{ fontSize: 11, color: C.sub, wordBreak: "break-all" }}>{dm.value}</div>}</div>;
+                    })}
+                  </SwipeAccordion>
+                )}
+
+                {/* 4. ⏱ تتبع الوقت */}
+                <SwipeAccordion id="time" icon="⏱" title="تتبع الوقت" summaryIcons={timeSummary} swipeActions={timeSwipe}>
+                  <TimeTrackingPanel request={r} user={user} readOnly={readOnly} canEdit={canActAsAssignee || canActAsRequester || isAdmin} onUpdated={onUpdated} />
+                </SwipeAccordion>
+
+                {/* 5. 📎 المرفقات */}
+                <SwipeAccordion id="attachments" icon="📎" title="المرفقات" badge={attCount ? String(attCount) : null} summaryIcons={attachSummary} swipeActions={attachSwipe}>
+                  <AttachmentsPanel request={r} user={user} readOnly={readOnly} canEdit={canActAsAssignee || canActAsRequester || isAdmin} onUpdated={onUpdated} />
+                </SwipeAccordion>
+
+                {/* Meta details (extra) */}
+                <SwipeAccordion id="meta" icon="📌" title="تفاصيل إضافية" summaryIcons={[{ icon: "ℹ️", tip: "معلومات" }]}>
                   {[
                     { label: "من", value: requesterName + (function(){
-                      var myRow = (r.assignees || []).find(function(a){ return String(a.id) === String(myId); });
-                      if (!myRow || !myRow.senderRole || myRow.senderRole === "other") return "";
-                      return myRow.senderRole === "manager1" ? " (مديري الإداري)" : " (مديري الفني)";
+                      var myRow2 = (r.assignees || []).find(function(a){ return String(a.id) === String(myId); });
+                      if (!myRow2 || !myRow2.senderRole || myRow2.senderRole === "other") return "";
+                      return myRow2.senderRole === "manager1" ? " (مديري الإداري)" : " (مديري الفني)";
                     })(), icon: "👤" },
                     { label: "إلى", value: (r.assignees || []).map(function(a){ return a.name || nameOf(a.id); }).join("، ") || "—", icon: "📬" },
                     r.assignMode ? { label: "نمط التكليف", value: r.assignMode === "coordinator" ? "مسؤول ينسّق" : "كل طرف مستقل", icon: "🎯" } : null,
@@ -11343,75 +11451,48 @@ function TawasulDetailModal({ request, user, allEmps, onClose, nameOf, onUpdated
                   ].filter(Boolean).map(function(row, idx, arr){
                     return <div key={idx} style={{ display: "flex", justifyContent: "space-between", padding: "8px 0", borderBottom: idx < arr.length - 1 ? "1px solid " + C.cardBorder : "none", fontSize: 12, gap: 8 }}><div style={{ color: C.sub, fontWeight: 600, flexShrink: 0 }}><span style={{ marginLeft: 5 }}>{row.icon}</span>{row.label}</div><div style={{ color: C.text, fontWeight: 700, textAlign: "left", flex: 1, minWidth: 0, wordBreak: "break-word" }}>{row.value}</div></div>;
                   })}
-                </Accordion>
-
-                {/* Delivery methods accordion */}
-                {r.deliveryMethods && r.deliveryMethods.length > 0 && (
-                  <Accordion id="delivery" icon="📦" title="طرق التسليم" badge={String(r.deliveryMethods.length)}>
-                    {r.deliveryMethods.map(function(dm, idx){
-                      return <div key={idx} style={{ padding: "8px 10px", borderRadius: 8, background: C.bg, marginBottom: 6, fontSize: 12 }}><div style={{ fontWeight: 700, color: C.text, marginBottom: 2 }}>{dm.label || dm.type}</div>{dm.value && <div style={{ fontSize: 11, color: C.sub, wordBreak: "break-all" }}>{dm.value}</div>}</div>;
-                    })}
-                  </Accordion>
-                )}
-
-                {/* Time tracking accordion */}
-                <Accordion id="time" icon="⏱️" title="تتبع الوقت">
-                  <TimeTrackingPanel request={r} user={user} readOnly={readOnly} canEdit={canActAsAssignee || canActAsRequester || isAdmin} onUpdated={onUpdated} />
-                </Accordion>
-
-                {/* Attachments accordion */}
-                <Accordion id="attachments" icon="📎" title="المرفقات" badge={((r.attachments || []).length) ? String((r.attachments || []).length) : null}>
-                  <AttachmentsPanel request={r} user={user} readOnly={readOnly} canEdit={canActAsAssignee || canActAsRequester || isAdmin} onUpdated={onUpdated} />
-                </Accordion>
-
-                {/* Chat + Log + Comments accordion (merged as in mockup) */}
-                <Accordion id="chatLog" icon="💬" title="الدردشة والسجل والتعليقات" badge={log.length ? String(log.length) : null}>
-                  <ChatPanel request={r} user={user} allEmps={allEmps} readOnly={readOnly} onUpdated={onUpdated} nameOf={nameOf} />
-
-                  {/* Activity log */}
-                  <div style={{ marginTop: 12, paddingTop: 12, borderTop: "1px solid " + C.cardBorder }}>
-                    <div style={{ fontSize: 11, fontWeight: 800, color: C.sub, marginBottom: 12 }}>📜 سجل النشاط ({log.length})</div>
-                    {log.length === 0 ? <div style={{ fontSize: 11, color: C.sub, textAlign: "center", padding: 10 }}>لا يوجد سجل بعد</div> : log.map(function(entry, idx){
-                      return <div key={idx} style={{ display: "flex", gap: 8, padding: "8px 0", fontSize: 11, alignItems: "flex-start", borderBottom: idx < log.length - 1 ? "1px solid " + C.cardBorder : "none" }}><div style={{ width: 6, height: 6, borderRadius: 3, background: C.gold, marginTop: 7, flexShrink: 0 }} /><div style={{ flex: 1, minWidth: 0 }}><div style={{ color: C.text, fontWeight: 600, lineHeight: 1.5, wordBreak: "break-word" }}>{entry.text || entry.action || "تحديث"}</div><div style={{ fontSize: 10, color: C.sub, marginTop: 2 }}>{entry.by || nameOf(entry.userId)} • {tawasulTimeAgo(entry.at)}</div></div></div>;
-                    })}
-
-                    {/* Comment input */}
-                    {!readOnly && !["closed","cancelled"].includes(r.status) && (isRequester || isAssignee || isAdmin) && (
-                      <div style={{ marginTop: 10, display: "flex", gap: 6 }}>
-                        <input type="text" value={commentText} onChange={function(e){ setCommentText(e.target.value); }} placeholder="أضف تعليقاً..." onKeyDown={function(e){ if(e.key === "Enter") sendComment(); }} style={{ flex: 1, padding: "10px 12px", borderRadius: 10, border: "1px solid " + C.cardBorder, background: C.bg, color: C.text, fontSize: 12, fontFamily: "inherit", outline: "none" }} />
-                        <button onClick={sendComment} disabled={busy || !commentText.trim()} style={{ padding: "10px 14px", borderRadius: 10, background: commentText.trim() ? C.hdr2 : C.cardBorder, color: "#fff", border: "none", fontSize: 12, fontWeight: 700, cursor: commentText.trim() ? "pointer" : "default", fontFamily: "inherit" }}>📤</button>
-                      </div>
-                    )}
-                  </div>
-                </Accordion>
+                </SwipeAccordion>
               </>
             );
           })()}
 
+          {/* Evaluations summary */}
           {evals.length > 0 && (
-            <div style={{ background: C.card, borderRadius: 12, padding: 14, border: "1px solid " + C.cardBorder, marginBottom: 12 }}>
+            <div style={{ background: C.card, borderRadius: 14, padding: 14, border: "1px solid " + C.cardBorder, marginBottom: 8 }}>
               <div style={{ fontSize: 11, fontWeight: 800, color: C.sub, marginBottom: 8, display: "flex", alignItems: "center", justifyContent: "space-between" }}><span>⭐ التقييمات ({evals.length})</span>{r.finalScore !== undefined && r.finalScore !== null && <span style={{ fontSize: 13, color: C.gold, fontWeight: 900 }}>{r.finalScore}/100</span>}</div>
               {evals.map(function(ev, idx){ return <div key={idx} style={{ padding: "8px 10px", borderRadius: 8, background: C.bg, marginBottom: 6, fontSize: 12 }}><div style={{ display: "flex", justifyContent: "space-between", marginBottom: 4 }}><span style={{ fontWeight: 700, color: C.text }}>{ev.byName || nameOf(ev.by)}</span><span style={{ color: C.gold, fontWeight: 800 }}>{ev.avgScore || "-"}/100</span></div></div>; })}
             </div>
           )}
 
+          {/* Rejection/Return reason */}
           {(r.rejectionReason || r.returnReason) && (
-            <div style={{ background: "rgba(239,68,68,0.08)", borderRadius: 12, padding: 14, border: "1px solid rgba(239,68,68,0.3)", marginBottom: 12 }}>
+            <div style={{ background: "rgba(239,68,68,0.08)", borderRadius: 14, padding: 14, border: "1px solid rgba(239,68,68,0.3)", marginBottom: 8 }}>
               <div style={{ fontSize: 11, fontWeight: 800, color: "#ef4444", marginBottom: 6 }}>{r.rejectionReason ? "❌ سبب الرفض" : "↩️ سبب الإرجاع"}</div>
               <div style={{ fontSize: 12, color: C.text, lineHeight: 1.6 }}>{r.rejectionReason || r.returnReason}</div>
             </div>
           )}
 
-          {/* v7.08 — Bottom "expand all" pill */}
-          <button onClick={function(){ anySectionOpen ? collapseAllSections() : expandAllSections(); }} style={{
-            width: "100%", marginTop: 8, padding: "14px 16px",
-            borderRadius: 999, background: C.card, color: C.text,
-            border: "1px solid " + C.cardBorder, fontSize: 13, fontWeight: 800,
-            cursor: "pointer", fontFamily: "inherit",
-          }}>
-            {anySectionOpen ? "🔼 طي كل الأقسام" : "🔲 توسيع كل الأقسام دفعة واحدة"}
-          </button>
+          {/* ═══ v7.32 — SECTION 8: Quick Actions ═══ */}
+          {!readOnly && !["closed","cancelled","evaluated"].includes(r.status) && (
+            <div style={{ marginTop: 6, padding: "10px 0" }}>
+              <div style={{ fontSize: 10, fontWeight: 800, color: C.sub, marginBottom: 8, textTransform: "uppercase", letterSpacing: 0.5 }}>إجراءات سريعة</div>
+              <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
+                {canEscalate && <button onClick={function(){ setShowEscalate(true); }} style={{ padding: "6px 12px", borderRadius: 999, background: "rgba(251,191,36,0.08)", color: "#fbbf24", border: "1px solid rgba(251,191,36,0.25)", fontSize: 10, fontWeight: 700, cursor: "pointer", fontFamily: "inherit" }}>⬆️ تصعيد</button>}
+                {canTransferRejected && <button onClick={function(){ setShowTransfer(true); }} style={{ padding: "6px 12px", borderRadius: 999, background: "rgba(124,58,237,0.08)", color: "#7c3aed", border: "1px solid rgba(124,58,237,0.25)", fontSize: 10, fontWeight: 700, cursor: "pointer", fontFamily: "inherit" }}>↪️ إعادة تكليف</button>}
+                {canRequestCollab && <button onClick={function(){ setShowCollab(true); }} style={{ padding: "6px 12px", borderRadius: 999, background: "rgba(59,130,246,0.08)", color: "#3b82f6", border: "1px solid rgba(59,130,246,0.25)", fontSize: 10, fontWeight: 700, cursor: "pointer", fontFamily: "inherit" }}>🤝 طلب مساعدة</button>}
+                {canCancel && <button onClick={doCancel} disabled={busy} style={{ padding: "6px 12px", borderRadius: 999, background: "rgba(148,163,184,0.08)", color: C.sub, border: "1px solid " + C.cardBorder, fontSize: 10, fontWeight: 700, cursor: "pointer", fontFamily: "inherit" }}>🔇 كتم</button>}
+                <button onClick={function(){
+                  try {
+                    var shareText = (r.serial ? "#" + r.serial + " — " : "") + (r.title || "") + "\n" + (r.description || "").slice(0, 100);
+                    if (navigator.share) { navigator.share({ title: r.title || "مهمة", text: shareText }); }
+                    else { navigator.clipboard.writeText(shareText); alert("تم النسخ ✅"); }
+                  } catch(e) {}
+                }} style={{ padding: "6px 12px", borderRadius: 999, background: "rgba(59,130,246,0.08)", color: "#3b82f6", border: "1px solid rgba(59,130,246,0.25)", fontSize: 10, fontWeight: 700, cursor: "pointer", fontFamily: "inherit" }}>📤 مشاركة</button>
+              </div>
+            </div>
+          )}
         </div>
+
 
         {showReject && <TawasulReasonModal title="❌ رفض المهمة" reasons={TAWASUL_REJECT_REASONS} requireLegal={true} confirmColor="#ef4444" confirmLabel="تأكيد الرفض" onConfirm={doReject} onClose={function(){ setShowReject(false); }} />}
         {showReturn && <TawasulReasonModal title="📋 إرجاع للاستكمال" reasons={TAWASUL_RETURN_REASONS} requireLegal={false} confirmColor="#f59e0b" confirmLabel="تأكيد الإرجاع" onConfirm={doReturn} onClose={function(){ setShowReturn(false); }} />}
