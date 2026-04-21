@@ -11,7 +11,7 @@ import { exportEmploymentLetter, exportLeaveLetter } from "./formalPdfs";
 
 /* ═══════════ APP CONFIG (إعدادات التطبيق) ═══════════ */
 const APP_CONFIG = {
-  VER: "7.42",
+  VER: "7.43",
   NAME: "بصمة HMA",
   FULL_NAME: "نظام الحضور والانصراف الذكي",
   COMPANY: "هاني محمد عسيري للاستشارات الهندسية",
@@ -3604,34 +3604,51 @@ function RecordsPromotionsView({ user }) {
 
 /* ── RecordsHub — container combining Hero + Chips + filtered content ── */
 function RecordsHub({ user, onTicket }) {
-  var [filter, setFilter] = useState(function(){
-    return localStorage.getItem("basma_records_filter") || "open";
-  });
-
-  useEffect(function(){ localStorage.setItem("basma_records_filter", filter); }, [filter]);
+  // v7.43 — Open Layout: all sections visible as vertical stacks (no horizontal filter bar)
+  // Refs for smooth-scroll-to-section when action buttons clicked
+  var leavesRef = React.useRef(null);
 
   function handleRequestLeave() {
-    // Switch to "إجازات" filter which shows MyLeavesHub (has the leave request form)
-    setFilter("leaves");
+    // Scroll to leaves section
+    setTimeout(function(){
+      if (leavesRef.current) leavesRef.current.scrollIntoView({ behavior: "smooth", block: "start" });
+    }, 50);
   }
 
   return (
-    <div style={{ display: "flex", flexDirection: "column", gap: SPACING.md }}>
+    <div style={{ display: "flex", flexDirection: "column", gap: SPACING.lg }}>
       {/* 1. Hero: 3 stats + 2 quick actions */}
       <RecordsHero user={user} onTicket={onTicket} onRequestLeave={handleRequestLeave} />
 
-      {/* 2. Filter chips */}
-      <RecordsFilterChips active={filter} onChange={setFilter} />
-
-      {/* 3. Content by filter */}
-      <div>
-        {filter === "open" && <MyRequestsTab user={user} />}
-        {filter === "leaves" && <MyLeavesHub user={user} />}
-        {filter === "contracts" && <EmployeeRecordTab user={user} initialSubTab="contracts" hideSubTabs={true} />}
-        {/* v7.41 — violations removed (accessible from القانونية) */}
-        {filter === "promotions" && <RecordsPromotionsView user={user} />}
-        {filter === "archive" && <RecordsArchiveView user={user} />}
+      {/* v7.43 — Section 1: الطلبات المفتوحة (always visible, no accordion) */}
+      <div style={{ background: COLORS.metallic, border: "1px solid " + COLORS.metallicBorder, borderRadius: RADIUS.xl, padding: SPACING.lg, boxShadow: SHADOWS.button }}>
+        <div style={{ ...TYPOGRAPHY.h3, color: COLORS.textPrimary, marginBottom: SPACING.md, display: "flex", alignItems: "center", gap: 6, fontFamily: TYPOGRAPHY.fontCairo }}>
+          <span>📬</span> الطلبات المفتوحة
+        </div>
+        <MyRequestsTab user={user} />
       </div>
+
+      {/* v7.43 — Section 2: إجازاتي (accordion, default open) */}
+      <div ref={leavesRef}>
+        <ProfileAccordion emoji="🏖️" title="إجازاتي" subtitle="الطلبات · التسليم · الرصيد" defaultOpen={true}>
+          <MyLeavesHub user={user} />
+        </ProfileAccordion>
+      </div>
+
+      {/* v7.43 — Section 3: عقودي (accordion) */}
+      <ProfileAccordion emoji="📄" title="عقودي" subtitle="العقود والتجديدات">
+        <EmployeeRecordTab user={user} initialSubTab="contracts" hideSubTabs={true} />
+      </ProfileAccordion>
+
+      {/* v7.43 — Section 4: الترقيات (accordion) */}
+      <ProfileAccordion emoji="🚀" title="الترقيات" subtitle="سجل الترقيات والتدرج الوظيفي">
+        <RecordsPromotionsView user={user} />
+      </ProfileAccordion>
+
+      {/* v7.43 — Section 5: الأرشيف (accordion, default closed) */}
+      <ProfileAccordion emoji="🗄️" title="الأرشيف" subtitle="الطلبات المغلقة والمنتهية">
+        <RecordsArchiveView user={user} />
+      </ProfileAccordion>
     </div>
   );
 }
