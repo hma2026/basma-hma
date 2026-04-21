@@ -11,7 +11,7 @@ import { exportEmploymentLetter, exportLeaveLetter } from "./formalPdfs";
 
 /* ═══════════ APP CONFIG (إعدادات التطبيق) ═══════════ */
 const APP_CONFIG = {
-  VER: "7.43",
+  VER: "7.44",
   NAME: "بصمة HMA",
   FULL_NAME: "نظام الحضور والانصراف الذكي",
   COMPANY: "هاني محمد عسيري للاستشارات الهندسية",
@@ -2972,70 +2972,6 @@ function computeYearsOfService(joinDate) {
   } catch(e) { return { years: 0, display: "—" }; }
 }
 
-/* ── ProfileHeroCard — Avatar with gold ring + name + role ── */
-function ProfileHeroCard({ user }) {
-  var typeMap = { office: "مكتبي", field: "ميداني", mixed: "مختلط", remote: "عن بعد" };
-  var typeLabel = typeMap[user.type] || user.type || "—";
-
-  return (
-    <div style={{
-      position: "relative",
-      padding: "16px",
-      borderRadius: RADIUS.xl,
-      background: "linear-gradient(135deg, rgba(201,168,76,0.08) 0%, rgba(232,213,163,0.04) 50%, rgba(201,168,76,0.06) 100%)",
-      border: "1px solid " + COLORS.metallicBorder,
-      boxShadow: SHADOWS.button,
-      overflow: "hidden",
-    }}>
-      {/* decorative gold corner */}
-      <div style={{ position: "absolute", top: -30, right: -30, width: 90, height: 90, borderRadius: "50%", background: "radial-gradient(circle, rgba(201,168,76,0.18), transparent 70%)", pointerEvents: "none" }} />
-      <div style={{ position: "absolute", bottom: -40, left: -40, width: 110, height: 110, borderRadius: "50%", background: "radial-gradient(circle, rgba(201,168,76,0.10), transparent 70%)", pointerEvents: "none" }} />
-
-      <div style={{ display: "flex", flexDirection: "column", alignItems: "center", position: "relative", zIndex: 1 }}>
-        {/* v7.40 — Big avatar removed per request. Name + pills only */}
-
-        {/* Name */}
-        <div style={{ fontSize: 19, fontWeight: 900, color: COLORS.textPrimary, fontFamily: TYPOGRAPHY.fontCairo, textAlign: "center", marginBottom: 8, letterSpacing: 0.2 }}>
-          {user.name || "—"}
-        </div>
-
-        {/* Role + ID pill */}
-        <div style={{ display: "flex", gap: 6, alignItems: "center", flexWrap: "wrap", justifyContent: "center" }}>
-          <span style={{
-            padding: "4px 12px",
-            borderRadius: RADIUS.pill,
-            background: "rgba(201,168,76,0.12)",
-            border: "1px solid rgba(201,168,76,0.25)",
-            fontSize: 11, fontWeight: 700, color: COLORS.goldLight,
-            fontFamily: TYPOGRAPHY.fontTajawal,
-          }}>
-            {user.role || "—"}
-          </span>
-          <span style={{
-            padding: "4px 10px",
-            borderRadius: RADIUS.pill,
-            background: "rgba(255,255,255,0.05)",
-            border: "1px solid " + COLORS.metallicBorder,
-            fontSize: 10, fontWeight: 700, color: COLORS.textMuted,
-            fontFamily: TYPOGRAPHY.fontTajawal,
-          }}>
-            #{user.id}
-          </span>
-          <span style={{
-            padding: "4px 10px",
-            borderRadius: RADIUS.pill,
-            background: "rgba(255,255,255,0.05)",
-            border: "1px solid " + COLORS.metallicBorder,
-            fontSize: 10, fontWeight: 700, color: COLORS.textSecondary,
-            fontFamily: TYPOGRAPHY.fontTajawal,
-          }}>
-            {typeLabel}
-          </span>
-        </div>
-      </div>
-    </div>
-  );
-}
 
 /* ── ProfileStatsRow — 3 Big Stats (years / points / leave balance) ── */
 function ProfileStatsRow({ user }) {
@@ -3429,7 +3365,7 @@ function RecordsHero({ user, onTicket, onRequestLeave }) {
         </div>
         <div style={{ flex: 1 }}>
           <Button variant="secondary" size="md" icon="🎫" onClick={onTicket}>
-            فتح تذكرة دعم
+            فتح طلب دعم فني
           </Button>
         </div>
       </div>
@@ -3696,99 +3632,6 @@ function AchievementsHeroCompact({ user }) {
   );
 }
 
-/* ── AchievementsHeroCard — the main gold level card (legacy, kept for backward compat) ── */
-function AchievementsHeroCard({ user }) {
-  var points = user.points || 0;
-  var badge = memberBadge(points);
-  var isTop = badge.tier === MEMBERSHIP.length - 1;
-
-  return (
-    <div style={{
-      position: "relative",
-      padding: "24px 20px 20px",
-      borderRadius: RADIUS.xl,
-      background: "linear-gradient(135deg, rgba(201,168,76,0.18) 0%, rgba(232,213,163,0.08) 40%, rgba(201,168,76,0.14) 100%)",
-      border: "2px solid " + COLORS.goldLight,
-      boxShadow: "0 8px 24px rgba(201,168,76,0.25), inset 0 1px 0 rgba(255,255,255,0.35)",
-      overflow: "hidden",
-    }}>
-      {/* Decorative rays */}
-      <div style={{ position: "absolute", top: -60, right: -60, width: 160, height: 160, borderRadius: "50%", background: "radial-gradient(circle, rgba(232,213,163,0.35), transparent 70%)", pointerEvents: "none" }} />
-      <div style={{ position: "absolute", bottom: -70, left: -70, width: 180, height: 180, borderRadius: "50%", background: "radial-gradient(circle, rgba(201,168,76,0.25), transparent 70%)", pointerEvents: "none" }} />
-      <div style={{ position: "absolute", top: 20, left: 20, fontSize: 14, opacity: 0.2 }}>✨</div>
-      <div style={{ position: "absolute", bottom: 30, right: 30, fontSize: 10, opacity: 0.25 }}>⭐</div>
-
-      <div style={{ position: "relative", zIndex: 1, display: "flex", flexDirection: "column", alignItems: "center", textAlign: "center" }}>
-        {/* Level name + icon */}
-        <div style={{
-          padding: "6px 16px",
-          borderRadius: RADIUS.pill,
-          background: "rgba(0,0,0,0.15)",
-          border: "1px solid rgba(255,255,255,0.2)",
-          marginBottom: 14,
-          fontSize: 11, fontWeight: 800,
-          color: COLORS.goldLight, letterSpacing: 0.5,
-          fontFamily: TYPOGRAPHY.fontTajawal,
-        }}>
-          المستوى الحالي
-        </div>
-
-        <div style={{ fontSize: 56, marginBottom: 6, filter: "drop-shadow(0 4px 10px rgba(201,168,76,0.5))" }}>{badge.icon}</div>
-
-        <div style={{
-          fontSize: 20, fontWeight: 900,
-          color: COLORS.goldLight,
-          fontFamily: TYPOGRAPHY.fontCairo,
-          marginBottom: 12,
-          textShadow: "0 2px 8px rgba(0,0,0,0.3)",
-          letterSpacing: 0.3,
-        }}>{badge.label}</div>
-
-        {/* Points big */}
-        <div style={{ display: "flex", alignItems: "baseline", gap: 6, marginBottom: 14 }}>
-          <span style={{ fontSize: 36, fontWeight: 900, color: COLORS.textPrimary, fontFamily: TYPOGRAPHY.fontCairo, letterSpacing: -1 }}>{points.toLocaleString("ar-SA")}</span>
-          <span style={{ fontSize: 13, fontWeight: 700, color: COLORS.textSecondary, fontFamily: TYPOGRAPHY.fontTajawal }}>نقطة</span>
-        </div>
-
-        {/* Progress bar to next level */}
-        {!isTop && badge.next && (
-          <div style={{ width: "100%", maxWidth: 320 }}>
-            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 6, fontSize: 10, fontWeight: 700, color: COLORS.textSecondary, fontFamily: TYPOGRAPHY.fontTajawal }}>
-              <span>التقدم نحو <strong style={{ color: COLORS.goldLight }}>{badge.nextLabel}</strong></span>
-              <span style={{ color: COLORS.goldLight }}>{badge.progress}%</span>
-            </div>
-            <div style={{
-              position: "relative",
-              height: 10,
-              borderRadius: 5,
-              background: "rgba(0,0,0,0.25)",
-              border: "1px solid rgba(255,255,255,0.1)",
-              overflow: "hidden",
-              boxShadow: "inset 0 1px 3px rgba(0,0,0,0.3)",
-            }}>
-              <div style={{
-                height: "100%",
-                width: badge.progress + "%",
-                background: COLORS.goldGradient,
-                borderRadius: 5,
-                boxShadow: "0 0 10px rgba(232,213,163,0.6)",
-                transition: "width .5s ease",
-              }} />
-            </div>
-            <div style={{ fontSize: 10, color: COLORS.textMuted, marginTop: 6, fontFamily: TYPOGRAPHY.fontTajawal }}>
-              باقي <strong style={{ color: COLORS.goldLight, fontWeight: 900 }}>{badge.remaining}</strong> نقطة للوصول
-            </div>
-          </div>
-        )}
-        {isTop && (
-          <div style={{ padding: "8px 14px", borderRadius: RADIUS.pill, background: "rgba(201,168,76,0.2)", border: "1px solid " + COLORS.goldLight, fontSize: 11, fontWeight: 800, color: COLORS.goldLight, fontFamily: TYPOGRAPHY.fontTajawal }}>
-            👑 أعلى مستوى — أحسنت!
-          </div>
-        )}
-      </div>
-    </div>
-  );
-}
 
 /* ── AchievementsStatsRow — 3 big stats ── */
 function AchievementsStatsRow({ user, stats, loading }) {
@@ -5289,11 +5132,11 @@ function ProfilePage({ user, branch, workType, onLogout, onTicket, myTickets, da
               الدخول إلى منصة كوادر
             </Button>
 
-            {/* v7.20 — Row of 3: تذكرة دعم | تعديل بيانات (now opens modal) + Logout row below */}
+            {/* v7.44 — Row of 2: طلب دعم فني | طلبات تعديل البيانات */}
             <div style={{ display: "flex", gap: SPACING.sm }}>
               <div style={{ flex: 1 }}>
                 <Button variant="secondary" size="md" icon={<Icons.alert size={18} />} onClick={onTicket}>
-                  تذكرة دعم
+                  طلب دعم فني
                 </Button>
               </div>
               <div style={{ flex: 1 }}>
@@ -5478,10 +5321,10 @@ function AboutAppModal({ onClose, onTicket }) {
           <div style={{ padding: 14, borderRadius: 12, background: "rgba(16,185,129,0.08)", border: "1px solid rgba(16,185,129,0.25)", marginBottom: 10 }}>
             <div style={{ fontSize: 13, fontWeight: 800, color: "#10B981", marginBottom: 8, display: "flex", alignItems: "center", gap: 6 }}>📞 الدعم الفني</div>
             <div style={{ fontSize: 11, color: COLORS.textSecondary, lineHeight: 1.9, marginBottom: 10 }}>
-              إذا واجهت أي مشكلة، يمكنك تقديم تذكرة دعم وسيتواصل معك الفريق.
+              إذا واجهت أي مشكلة، يمكنك تقديم طلب دعم فني وسيتواصل معك الفريق.
             </div>
             <button onClick={function(){ onClose(); if (onTicket) onTicket(); }} style={{ width: "100%", padding: "10px 14px", borderRadius: 10, background: "#10B981", color: "#fff", border: "none", fontSize: 12, fontWeight: 800, cursor: "pointer", fontFamily: TYPOGRAPHY.fontTajawal }}>
-              📧 تذكرة دعم جديدة
+              📧 طلب دعم فني جديد
             </button>
           </div>
 
@@ -12925,7 +12768,7 @@ function TicketsCard({ user, myTickets }) {
     <>
       <Card>
         <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: SPACING.sm }}>
-          <div style={{ ...TYPOGRAPHY.h3, color: COLORS.textPrimary }}>📨 رسائلي مع الموارد البشرية</div>
+          <div style={{ ...TYPOGRAPHY.h3, color: COLORS.textPrimary }}>🎫 طلبات الدعم الفني</div>
           <span style={{ fontSize: 10, color: COLORS.textMuted, fontWeight: 600 }}>{tickets.length} رسالة</span>
         </div>
         {sorted.slice(0, 6).map(function(tk, i){
@@ -13042,7 +12885,7 @@ function TicketModal({ user, onClose, onSubmit }) {
   return (
     <div style={S.overlay} onClick={onClose}>
       <div className="basma-slideup" style={{ ...S.modal, maxWidth: 380, background: C.card }} onClick={function(e){ e.stopPropagation(); }}>
-        <div style={{ fontSize: 16, fontWeight: 800, fontFamily: "'Cairo',sans-serif", textAlign: "center", marginBottom: 16, color: C.text }}>🎫 تذكرة دعم</div>
+        <div style={{ fontSize: 16, fontWeight: 800, fontFamily: "'Cairo',sans-serif", textAlign: "center", marginBottom: 16, color: C.text }}>🎫 طلب دعم فني جديد</div>
 
         <div style={{ display: "flex", gap: 6, marginBottom: 14 }}>
           {[{id:"low",label:"منخفض",c:C.green},{id:"normal",label:"عادي",c:C.blue},{id:"high",label:"عاجل",c:C.red}].map(function(p) {
@@ -14326,7 +14169,7 @@ function MyRequestsTab({ user }) {
       </div>
       {/* v6.64 — الإفادات تُصدر من لوحة الإدارة (شؤون الموظفين) */}
       <div style={{ padding: "10px 14px", marginBottom: SPACING.md, borderRadius: 10, background: "rgba(201,168,76,0.08)", border: "1px dashed rgba(201,168,76,0.3)", fontSize: 10, color: COLORS.textMuted, lineHeight: 1.7, textAlign: "center" }}>
-        📄 لطلب <strong style={{ color: COLORS.goldLight }}>إفادة تعريف بالعمل</strong> أو أي إفادة رسمية — تواصل مع الموارد البشرية عبر تذكرة دعم
+        📄 لطلب <strong style={{ color: COLORS.goldLight }}>إفادة تعريف بالعمل</strong> أو أي إفادة رسمية — تواصل مع الموارد البشرية عبر طلب دعم فني
       </div>
 
       {/* Filter tabs */}
@@ -16862,7 +16705,7 @@ function MyProfileCard({ user }) {
         <div style={{ fontWeight: 700, marginBottom: 5, color: levelColor }}>💡 ينقص من ملفك:</div>
         <div style={{ display: "flex", flexWrap: "wrap", gap: 4 }}>
           {completeness.missing.slice(0, 6).map(function(m, i){
-            return <span key={i} style={{ padding: "2px 8px", background: "#fff", borderRadius: 10, fontSize: 10, color: COLORS.textMuted, border: "1px solid " + COLORS.cardBorder }}>{m.label}</span>;
+            return <span key={i} style={{ padding: "2px 8px", background: COLORS.cardBg, borderRadius: 10, fontSize: 10, color: COLORS.textMuted, border: "1px solid " + COLORS.cardBorder }}>{m.label}</span>;
           })}
           {missingCount > 6 && <span style={{ padding: "2px 8px", fontSize: 10, color: COLORS.textMuted, fontWeight: 700 }}>+ {missingCount - 6}</span>}
         </div>
@@ -16881,7 +16724,7 @@ function MyProfileCard({ user }) {
     </div>}
 
     {/* Tabs — horizontal scroll on mobile */}
-    <div style={{ display: "flex", overflowX: "auto", borderBottom: "1px solid " + COLORS.cardBorder, background: "#fff" }}>
+    <div style={{ display: "flex", overflowX: "auto", borderBottom: "1px solid " + COLORS.cardBorder, background: COLORS.cardBg }}>
       {[
         { id: "personal", icon: "👤", label: "شخصية" },
         { id: "employment", icon: "💼", label: "وظيفية" },
@@ -17215,7 +17058,8 @@ function EmpReadField({ value, type }) {
 }
 
 function EmpEditField({ field, value, onChange }) {
-  var common = { width: "100%", padding: "10px 12px", borderRadius: 12, border: "1px solid " + COLORS.cardBorder, fontFamily: TYPOGRAPHY.fontTajawal, fontSize: 12, background: "#fff", boxSizing: "border-box" };
+  // v7.44 — theme-aware (dark mode compatible)
+  var common = { width: "100%", padding: "10px 12px", borderRadius: 12, border: "1px solid " + COLORS.cardBorder, fontFamily: TYPOGRAPHY.fontTajawal, fontSize: 12, background: COLORS.cardBg, color: COLORS.textPrimary, boxSizing: "border-box" };
   if (field.type === "name4") {
     var v = value || {};
     return <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 6 }}>
@@ -17287,14 +17131,14 @@ function MyDependentsView({ user, dependents, onSave }) {
         }
         return <div key={i} style={{ padding: 10, background: COLORS.bgSecondary, borderRadius: 14, border: "1px solid " + COLORS.cardBorder }}>
           <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 6, marginBottom: 6 }}>
-            <input placeholder="الاسم" value={d.name || ""} onChange={function(e){ setList(function(prev){ var n = [...prev]; n[i] = { ...n[i], name: e.target.value }; return n; }); }} style={{ padding: "8px 10px", borderRadius: 10, border: "1px solid " + COLORS.cardBorder, fontFamily: TYPOGRAPHY.fontTajawal, fontSize: 11, background: "#fff" }} />
-            <select value={d.relationship || ""} onChange={function(e){ setList(function(prev){ var n = [...prev]; n[i] = { ...n[i], relationship: e.target.value }; return n; }); }} style={{ padding: "8px 10px", borderRadius: 10, border: "1px solid " + COLORS.cardBorder, fontFamily: TYPOGRAPHY.fontTajawal, fontSize: 11, background: "#fff" }}>
+            <input placeholder="الاسم" value={d.name || ""} onChange={function(e){ setList(function(prev){ var n = [...prev]; n[i] = { ...n[i], name: e.target.value }; return n; }); }} style={{ padding: "8px 10px", borderRadius: 10, border: "1px solid " + COLORS.cardBorder, fontFamily: TYPOGRAPHY.fontTajawal, fontSize: 11, background: COLORS.cardBg, color: COLORS.textPrimary }} />
+            <select value={d.relationship || ""} onChange={function(e){ setList(function(prev){ var n = [...prev]; n[i] = { ...n[i], relationship: e.target.value }; return n; }); }} style={{ padding: "8px 10px", borderRadius: 10, border: "1px solid " + COLORS.cardBorder, fontFamily: TYPOGRAPHY.fontTajawal, fontSize: 11, background: COLORS.cardBg, color: COLORS.textPrimary }}>
               <option value="">-- صلة القرابة --</option>
               <option>زوجة</option><option>زوج</option><option>ابن</option><option>ابنة</option><option>والد</option><option>والدة</option><option>أخ</option><option>أخت</option>
             </select>
           </div>
           <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
-            <input type="date" value={d.dob || ""} onChange={function(e){ setList(function(prev){ var n = [...prev]; n[i] = { ...n[i], dob: e.target.value }; return n; }); }} style={{ flex: 1, padding: "8px 10px", borderRadius: 10, border: "1px solid " + COLORS.cardBorder, fontFamily: TYPOGRAPHY.fontTajawal, fontSize: 11, background: "#fff" }} />
+            <input type="date" value={d.dob || ""} onChange={function(e){ setList(function(prev){ var n = [...prev]; n[i] = { ...n[i], dob: e.target.value }; return n; }); }} style={{ flex: 1, padding: "8px 10px", borderRadius: 10, border: "1px solid " + COLORS.cardBorder, fontFamily: TYPOGRAPHY.fontTajawal, fontSize: 11, background: COLORS.cardBg, color: COLORS.textPrimary }} />
             <label style={{ fontSize: 11, display: "flex", alignItems: "center", gap: 4, color: COLORS.textPrimary, fontWeight: 600 }}>
               <input type="checkbox" checked={!!d.hasInsurance} onChange={function(e){ setList(function(prev){ var n = [...prev]; n[i] = { ...n[i], hasInsurance: e.target.checked }; return n; }); }} />
               تأمين
@@ -17921,12 +17765,12 @@ function MyEvaluationDetail({ evaluation, user, onClose }) {
               <div style={{ flex: 1, fontSize: 12, fontWeight: 700, color: COLORS.textPrimary }}>
                 {c.label || c.id}
               </div>
-              {c.weight != null && <div style={{ padding: "2px 8px", background: "#fff", borderRadius: 8, fontSize: 10, fontWeight: 800, color: COLORS.primary }}>
+              {c.weight != null && <div style={{ padding: "2px 8px", background: COLORS.cardBg, borderRadius: 8, fontSize: 10, fontWeight: 800, color: COLORS.goldLight, border: "1px solid " + COLORS.cardBorder }}>
                 {c.weight}%
               </div>}
             </div>
             <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-              <div style={{ flex: 1, height: 8, background: "#fff", borderRadius: 4, overflow: "hidden" }}>
+              <div style={{ flex: 1, height: 8, background: COLORS.bg1, borderRadius: 4, overflow: "hidden" }}>
                 <div style={{ height: "100%", width: (pct || 0) + "%", background: color, transition: "width 0.3s" }}></div>
               </div>
               <div style={{ fontSize: 13, fontWeight: 800, color: color, minWidth: 40, textAlign: "left" }}>
@@ -18016,13 +17860,11 @@ function LeaveRequestsTab({ user }) {
   };
 
   return <div>
-    <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: SPACING.md }}>
-      <div style={{ ...TYPOGRAPHY.h2, color: COLORS.textPrimary, fontFamily: TYPOGRAPHY.fontCairo }}>
-        🏖️ طلبات إجازاتي
-      </div>
+    {/* v7.44 — title removed (accordion already shows "🏖️ إجازاتي") */}
+    <div style={{ display: "flex", alignItems: "center", justifyContent: "flex-end", marginBottom: SPACING.md }}>
       <button onClick={function(){setView("new");}} style={{
-        padding: "8px 14px", background: COLORS.primary, color: "#fff",
-        border: "none", borderRadius: 12, fontSize: 12, fontWeight: 700,
+        padding: "8px 14px", background: COLORS.goldLight, color: "#000",
+        border: "none", borderRadius: 12, fontSize: 12, fontWeight: 800,
         cursor: "pointer", fontFamily: TYPOGRAPHY.fontTajawal
       }}>+ طلب جديد</button>
     </div>
