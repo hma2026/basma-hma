@@ -11019,24 +11019,29 @@ function TawasulDetailModal({ request, user, allEmps, onClose, nameOf, onUpdated
           <button onClick={onClose} style={{ background: C.card, border: "1px solid " + C.cardBorder, fontSize: 18, color: C.sub, cursor: "pointer", padding: "0 10px", lineHeight: "30px", borderRadius: 10, flexShrink: 0, marginTop: 2 }}>×</button>
         </div>
 
-        {/* ═══ v7.32 — SECTION 2: Compressed Meta Line ═══ */}
-        <div style={{ padding: "10px 18px 0", overflowX: "auto", WebkitOverflowScrolling: "touch" }}>
-          <div style={{ display: "flex", alignItems: "center", gap: 6, whiteSpace: "nowrap", fontSize: 11, fontWeight: 700, flexWrap: "nowrap" }}>
+        {/* ═══ v7.32 — SECTION 2: Compressed Meta — Two Lines ═══ */}
+        <div style={{ padding: "10px 18px 0" }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 5, fontSize: 10.5, fontWeight: 700, marginBottom: 4, flexWrap: "nowrap" }}>
             {r.serial && <span style={{ color: C.gold, fontFamily: "monospace", fontWeight: 900, fontSize: 12 }}>#{r.serial}</span>}
             {r.serial && <span style={{ color: C.sub, opacity: 0.5 }}>·</span>}
-            <span style={{ display: "inline-flex", alignItems: "center", gap: 4, padding: "3px 10px", borderRadius: 999, background: C.gold + "22", color: C.gold, fontSize: 10, fontWeight: 800 }}><span>{m.icon}</span><span>{m.label}</span></span>
-            {isUrgent && <span style={{ padding: "3px 8px", borderRadius: 999, background: "rgba(239,68,68,0.15)", color: "#ef4444", fontSize: 10, fontWeight: 800 }}>🔴 عاجل</span>}
-            {escColor && <span style={{ padding: "3px 8px", borderRadius: 999, background: escColor + "22", color: escColor, fontSize: 10, fontWeight: 800 }}>{r.escalation === "red" ? "🔴 أحمر" : "🟡 أصفر"}</span>}
-            {r.category && <><span style={{ color: C.sub, opacity: 0.5 }}>·</span><span style={{ color: C.sub }}>🏷 {r.category}</span></>}
-            {r.department && <><span style={{ color: C.sub, opacity: 0.5 }}>·</span><span style={{ color: C.sub }}>🏢 {r.department}</span></>}
-            {r.projectName && <><span style={{ color: C.sub, opacity: 0.5 }}>·</span><span style={{ color: C.sub }}>🏗️ {r.projectName}</span></>}
+            <span style={{ display: "inline-flex", alignItems: "center", gap: 3, padding: "3px 10px", borderRadius: 999, background: C.gold + "22", color: C.gold, fontSize: 10, fontWeight: 800 }}><span>{m.icon}</span><span>{m.label}</span></span>
+            {isUrgent && <><span style={{ color: C.sub, opacity: 0.5 }}>·</span><span style={{ padding: "3px 8px", borderRadius: 999, background: "rgba(239,68,68,0.15)", color: "#ef4444", fontSize: 10, fontWeight: 800 }}>🔴 عاجل</span></>}
+            {escColor && <><span style={{ color: C.sub, opacity: 0.5 }}>·</span><span style={{ padding: "3px 8px", borderRadius: 999, background: escColor + "22", color: escColor, fontSize: 10, fontWeight: 800 }}>{r.escalation === "red" ? "🔴 أحمر" : "🟡 أصفر"}</span></>}
+          </div>
+          <div style={{ display: "flex", alignItems: "center", gap: 5, fontSize: 10.5, fontWeight: 700, flexWrap: "nowrap" }}>
+            {r.category && <span style={{ color: C.sub }}>🏷 {r.category}</span>}
+            {r.category && r.department && <span style={{ color: C.sub, opacity: 0.5 }}>·</span>}
+            {r.department && <span style={{ color: C.sub }}>🏢 {r.department}</span>}
+            {(r.category || r.department) && r.projectName && <span style={{ color: C.sub, opacity: 0.5 }}>·</span>}
+            {r.projectName && <span style={{ color: C.sub }}>🏗️ {r.projectName}</span>}
             {deadlineText && <><span style={{ color: C.sub, opacity: 0.5 }}>·</span><span style={{ color: (r.deadline && new Date(r.deadline) < new Date()) ? "#ef4444" : C.gold }}>{deadlineText}</span></>}
           </div>
         </div>
 
-        {/* ═══ v7.32 — SECTION 3: Description Box ═══ */}
+        {/* ═══ v7.32 — SECTION 3: Description Box with gold side border ═══ */}
         {r.description && (
-          <div style={{ margin: "12px 18px 0", background: C.card, border: "1px solid " + C.cardBorder, borderRadius: 14, padding: "12px 14px" }}>
+          <div style={{ margin: "12px 18px 0", background: C.card, border: "1.5px solid " + C.cardBorder, borderRadius: 14, padding: "12px 14px", position: "relative" }}>
+            <div style={{ position: "absolute", top: 0, right: 0, bottom: 0, width: 4, background: "linear-gradient(180deg, " + C.gold + ", " + C.goldDark + ")", borderRadius: "14px 0 0 14px" }} />
             <div style={{ fontSize: 11, fontWeight: 800, color: C.sub, marginBottom: 6, display: "flex", alignItems: "center", gap: 6 }}>
               <span style={{ fontSize: 14 }}>📝</span>
               <span>وصف المهمة</span>
@@ -11046,8 +11051,7 @@ function TawasulDetailModal({ request, user, allEmps, onClose, nameOf, onUpdated
               <button onClick={function(){ setShowFullDesc(function(s){ return !s; }); }} style={{
                 marginTop: 8, padding: "4px 12px", background: C.bg,
                 border: "1px solid " + C.cardBorder, borderRadius: 999,
-                color: C.sub, fontSize: 10, fontWeight: 800, cursor: "pointer",
-                fontFamily: "inherit",
+                color: C.sub, fontSize: 10, fontWeight: 800, cursor: "pointer", fontFamily: "inherit",
               }}>
                 {showFullDesc ? "◀ عرض أقل" : "عرض المزيد ▶"}
               </button>
@@ -11055,117 +11059,121 @@ function TawasulDetailModal({ request, user, allEmps, onClose, nameOf, onUpdated
           </div>
         )}
 
-        {/* ═══ v7.32 — SECTION: Big Action Button ═══ */}
-        <div style={{ padding: "12px 18px 0" }}>
-          {bigBtn && canPressBig && (
+        {/* ═══ v7.32 — SECTION 4: Action Buttons — Vertical (icon top, label bottom) ═══ */}
+        <div style={{ padding: "12px 18px 0", display: "flex", justifyContent: "center" }}>
+          <div style={{ display: "flex", gap: 4, flexWrap: "nowrap" }}>
+            {canEvaluate && (
+              <button onClick={function(){ setShowEval(true); }} style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 2, padding: "8px 6px", borderRadius: 12, background: C.gold + "1f", color: C.gold, border: "1px solid " + C.gold + "44", cursor: "pointer", fontFamily: "inherit", minWidth: 46 }}>
+                <span style={{ fontSize: 16, lineHeight: 1 }}>⭐</span>
+                <span style={{ fontSize: 8.5, fontWeight: 800 }}>تقييم</span>
+              </button>
+            )}
+            {canReject && (
+              <button onClick={function(){ setShowReject(true); }} style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 2, padding: "8px 6px", borderRadius: 12, background: "rgba(239,68,68,0.08)", color: "#ef4444", border: "1px solid rgba(239,68,68,0.25)", cursor: "pointer", fontFamily: "inherit", minWidth: 46 }}>
+                <span style={{ fontSize: 16, lineHeight: 1 }}>❌</span>
+                <span style={{ fontSize: 8.5, fontWeight: 800 }}>رفض</span>
+              </button>
+            )}
+            {canReturn && (
+              <button onClick={function(){ setShowReturn(true); }} style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 2, padding: "8px 6px", borderRadius: 12, background: "rgba(245,158,11,0.08)", color: "#f59e0b", border: "1px solid rgba(245,158,11,0.25)", cursor: "pointer", fontFamily: "inherit", minWidth: 46 }}>
+                <span style={{ fontSize: 16, lineHeight: 1 }}>📋</span>
+                <span style={{ fontSize: 8.5, fontWeight: 800 }}>إرجاع</span>
+              </button>
+            )}
+            {canRequestCollab && (
+              <button onClick={function(){ setShowCollab(true); }} style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 2, padding: "8px 6px", borderRadius: 12, background: "rgba(59,130,246,0.08)", color: "#3b82f6", border: "1px solid rgba(59,130,246,0.25)", cursor: "pointer", fontFamily: "inherit", minWidth: 46 }}>
+                <span style={{ fontSize: 16, lineHeight: 1 }}>👥</span>
+                <span style={{ fontSize: 8.5, fontWeight: 800 }}>متعاون</span>
+              </button>
+            )}
+            {canHR && (
+              <button onClick={function(){ setShowHR(true); }} style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 2, padding: "8px 6px", borderRadius: 12, background: "rgba(124,58,237,0.08)", color: "#7c3aed", border: "1px solid rgba(124,58,237,0.25)", cursor: "pointer", fontFamily: "inherit", minWidth: 46 }}>
+                <span style={{ fontSize: 16, lineHeight: 1 }}>👔</span>
+                <span style={{ fontSize: 8.5, fontWeight: 800 }}>HR</span>
+              </button>
+            )}
+            {canEdit && (
+              <button onClick={function(){ onEdit(r); }} style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 2, padding: "8px 6px", borderRadius: 12, background: C.card, color: C.text, border: "1px solid " + C.cardBorder, cursor: "pointer", fontFamily: "inherit", minWidth: 46 }}>
+                <span style={{ fontSize: 16, lineHeight: 1 }}>✎</span>
+                <span style={{ fontSize: 8.5, fontWeight: 800 }}>تعديل</span>
+              </button>
+            )}
+            {canDelete && (
+              <button onClick={doDelete} disabled={busy} style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 2, padding: "8px 6px", borderRadius: 12, background: "rgba(239,68,68,0.08)", color: "#ef4444", border: "1px solid rgba(239,68,68,0.25)", cursor: busy ? "wait" : "pointer", fontFamily: "inherit", minWidth: 46 }}>
+                <span style={{ fontSize: 16, lineHeight: 1 }}>🗑</span>
+                <span style={{ fontSize: 8.5, fontWeight: 800 }}>حذف</span>
+              </button>
+            )}
+            <button onClick={function(){ exportTawasulPDF(r, nameOf); }} style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 2, padding: "8px 6px", borderRadius: 12, background: C.card, color: C.text, border: "1px solid " + C.cardBorder, cursor: "pointer", fontFamily: "inherit", minWidth: 46 }}>
+              <span style={{ fontSize: 16, lineHeight: 1 }}>🖨</span>
+              <span style={{ fontSize: 8.5, fontWeight: 800 }}>PDF</span>
+            </button>
+            <button onClick={function(){ anySectionOpen ? collapseAllSections() : expandAllSections(); }} style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 2, padding: "8px 6px", borderRadius: 12, background: C.card, color: C.text, border: "1px solid " + C.cardBorder, cursor: "pointer", fontFamily: "inherit", minWidth: 46 }}>
+              <span style={{ fontSize: 16, lineHeight: 1 }}>{anySectionOpen ? "🔼" : "🔍"}</span>
+              <span style={{ fontSize: 8.5, fontWeight: 800 }}>{anySectionOpen ? "طي" : "توسيع"}</span>
+            </button>
+          </div>
+        </div>
+
+        {/* ═══ v7.32 — Big Action Button ═══ */}
+        {bigBtn && canPressBig && (
+          <div style={{ padding: "12px 18px 0" }}>
             <button onClick={applyBigAction} disabled={busy} style={{
-              width: "100%",
-              padding: "20px 20px",
-              borderRadius: 16,
+              width: "100%", padding: "20px 20px", borderRadius: 16,
               background: busy ? C.cardBorder : "linear-gradient(135deg, " + bigBtn.color + ", " + bigBtn.color + "dd)",
-              color: "#fff",
-              border: "none",
-              cursor: busy ? "default" : "pointer",
+              color: "#fff", border: "none", cursor: busy ? "default" : "pointer",
               fontFamily: "'Cairo',sans-serif",
-              marginBottom: 0,
               boxShadow: busy ? "none" : "0 6px 20px " + bigBtn.color + "55",
-              position: "relative",
-              overflow: "hidden",
+              position: "relative", overflow: "hidden",
             }}>
               <div style={{ fontSize: 22, fontWeight: 900, letterSpacing: 0.5, marginBottom: 4 }}>
                 {busy ? "⏳ جارِ الحفظ..." : bigBtn.label}
               </div>
-              <div style={{ fontSize: 12, fontWeight: 500, opacity: 0.92 }}>
-                {bigBtn.sub}
-              </div>
+              <div style={{ fontSize: 12, fontWeight: 500, opacity: 0.92 }}>{bigBtn.sub}</div>
               {!busy && <div style={{ position: "absolute", top: "50%", left: 20, transform: "translateY(-50%)", fontSize: 22, opacity: 0.3 }}>→</div>}
             </button>
-          )}
-
-          {/* Partial-delivered alert (multi-assignee) */}
-          {(function(){
-            var iAmRequester = String(r.requesterId) === String(myId);
-            var hasAnyDelivered = (r.assignees || []).some(function(a){ return !!a.deliveredAt && !a.closedAt; });
-            var total = (r.assignees || []).length;
-            var delivered = (r.assignees || []).filter(function(a){ return !!a.deliveredAt && !a.closedAt; }).length;
-            if (!iAmRequester || !hasAnyDelivered || r.status === "evaluated") return null;
-            if (total < 2) return null;
-            return (
-              <div onClick={function(){ setOpenSections(function(p){ var n = Object.assign({}, p); n.parties = true; return n; }); }} style={{
-                background: "linear-gradient(135deg, rgba(245,158,11,0.12), rgba(245,158,11,0.04))",
-                border: "1px solid rgba(245,158,11,0.35)",
-                borderRadius: 14, padding: "10px 14px", marginTop: 10, cursor: "pointer",
-                display: "flex", alignItems: "center", gap: 10,
-              }}>
-                <span style={{ fontSize: 18 }}>⏳</span>
-                <div style={{ flex: 1 }}>
-                  <div style={{ fontSize: 12, fontWeight: 900, color: "#92400e" }}>بانتظار التقييم</div>
-                  <div style={{ fontSize: 10, color: "#78350f", fontWeight: 600 }}>{delivered} من {total} سلّم — اضغط لعرض تقدم الأطراف ↓</div>
-                </div>
-              </div>
-            );
-          })()}
-        </div>
-
-        {/* ═══ v7.32 — SECTION 4: Action Buttons — Single Scrollable Row ═══ */}
-        <div style={{ padding: "12px 18px 0", overflowX: "auto", WebkitOverflowScrolling: "touch" }}>
-          <div style={{ display: "flex", alignItems: "center", gap: 6, whiteSpace: "nowrap", flexWrap: "nowrap" }}>
-            {canEvaluate && (
-              <button onClick={function(){ setShowEval(true); }} style={{ padding: "8px 14px", borderRadius: 999, background: C.gold + "22", color: C.gold, border: "1px solid " + C.gold + "44", fontSize: 11, fontWeight: 800, cursor: "pointer", fontFamily: "inherit", flexShrink: 0 }}>⭐ تقييم</button>
-            )}
-            {canReject && (
-              <button onClick={function(){ setShowReject(true); }} style={{ padding: "8px 14px", borderRadius: 999, background: "rgba(239,68,68,0.1)", color: "#ef4444", border: "1px solid rgba(239,68,68,0.3)", fontSize: 11, fontWeight: 800, cursor: "pointer", fontFamily: "inherit", flexShrink: 0 }}>❌ رفض</button>
-            )}
-            {canReturn && (
-              <button onClick={function(){ setShowReturn(true); }} style={{ padding: "8px 14px", borderRadius: 999, background: "rgba(245,158,11,0.1)", color: "#f59e0b", border: "1px solid rgba(245,158,11,0.3)", fontSize: 11, fontWeight: 800, cursor: "pointer", fontFamily: "inherit", flexShrink: 0 }}>📋 إرجاع</button>
-            )}
-            {canEscalate && (
-              <button onClick={function(){ setShowEscalate(true); }} style={{ padding: "8px 14px", borderRadius: 999, background: "rgba(251,191,36,0.1)", color: "#fbbf24", border: "1px solid rgba(251,191,36,0.3)", fontSize: 11, fontWeight: 800, cursor: "pointer", fontFamily: "inherit", flexShrink: 0 }}>⬆️ تصعيد</button>
-            )}
-            {canRequestCollab && (
-              <button onClick={function(){ setShowCollab(true); }} style={{ padding: "8px 14px", borderRadius: 999, background: "rgba(59,130,246,0.1)", color: "#3b82f6", border: "1px solid rgba(59,130,246,0.3)", fontSize: 11, fontWeight: 800, cursor: "pointer", fontFamily: "inherit", flexShrink: 0 }}>👥 متعاون</button>
-            )}
-            {canHR && (
-              <button onClick={function(){ setShowHR(true); }} style={{ padding: "8px 14px", borderRadius: 999, background: "rgba(124,58,237,0.1)", color: "#7c3aed", border: "1px solid rgba(124,58,237,0.3)", fontSize: 11, fontWeight: 800, cursor: "pointer", fontFamily: "inherit", flexShrink: 0 }}>👔 HR</button>
-            )}
-            {canEdit && (
-              <button onClick={function(){ onEdit(r); }} style={{ padding: "8px 14px", borderRadius: 999, background: C.card, color: C.text, border: "1px solid " + C.cardBorder, fontSize: 11, fontWeight: 800, cursor: "pointer", fontFamily: "inherit", flexShrink: 0 }}>✎ تعديل</button>
-            )}
-            {canDelete && (
-              <button onClick={doDelete} disabled={busy} style={{ padding: "8px 14px", borderRadius: 999, background: "rgba(239,68,68,0.08)", color: "#ef4444", border: "1px solid rgba(239,68,68,0.25)", fontSize: 11, fontWeight: 800, cursor: busy ? "wait" : "pointer", fontFamily: "inherit", flexShrink: 0 }}>🗑 حذف</button>
-            )}
-            <button onClick={function(){ exportTawasulPDF(r, nameOf); }} style={{ padding: "8px 14px", borderRadius: 999, background: C.card, color: C.text, border: "1px solid " + C.cardBorder, fontSize: 11, fontWeight: 800, cursor: "pointer", fontFamily: "inherit", flexShrink: 0 }}>🖨 PDF</button>
-            <button onClick={function(){ anySectionOpen ? collapseAllSections() : expandAllSections(); }} style={{ padding: "8px 14px", borderRadius: 999, background: C.card, color: C.text, border: "1px solid " + C.cardBorder, fontSize: 11, fontWeight: 800, cursor: "pointer", fontFamily: "inherit", flexShrink: 0 }}>{anySectionOpen ? "🔼 طي الكل" : "🔍 توسيع الكل"}</button>
-            {canCancel && (
-              <button onClick={doCancel} disabled={busy} style={{ padding: "8px 14px", borderRadius: 999, background: C.card, color: C.sub, border: "1px solid " + C.cardBorder, fontSize: 11, fontWeight: 800, cursor: "pointer", fontFamily: "inherit", flexShrink: 0 }}>🚫 إلغاء</button>
-            )}
           </div>
-        </div>
+        )}
+
+        {/* Partial-delivered alert */}
+        {(function(){
+          var iAmRequester = String(r.requesterId) === String(myId);
+          var hasAnyDelivered = (r.assignees || []).some(function(a){ return !!a.deliveredAt && !a.closedAt; });
+          var total = (r.assignees || []).length;
+          var delivered = (r.assignees || []).filter(function(a){ return !!a.deliveredAt && !a.closedAt; }).length;
+          if (!iAmRequester || !hasAnyDelivered || r.status === "evaluated") return null;
+          if (total < 2) return null;
+          return (
+            <div style={{ margin: "10px 18px 0", background: "rgba(245,158,11,0.08)", border: "1px solid rgba(245,158,11,0.35)", borderRadius: 14, padding: "10px 14px", cursor: "pointer", display: "flex", alignItems: "center", gap: 10 }}>
+              <span style={{ fontSize: 18 }}>⏳</span>
+              <div style={{ flex: 1 }}>
+                <div style={{ fontSize: 12, fontWeight: 900, color: "#92400e" }}>بانتظار التقييم</div>
+                <div style={{ fontSize: 10, color: "#78350f", fontWeight: 600 }}>{delivered} من {total} سلّم</div>
+              </div>
+            </div>
+          );
+        })()}
 
         {/* Escalation gating hint */}
         {!r.escalation && !escalationAllowedByRule && (canActAsAssignee || canActAsRequester) && !["closed","cancelled","evaluated","draft"].includes(r.status) && (
           <div style={{ margin: "8px 18px 0", padding: "6px 12px", borderRadius: 10, background: "rgba(148,163,184,0.08)", border: "1px dashed " + C.cardBorder, fontSize: 10, color: C.sub, textAlign: "center" }}>
-            ⬆️ التصعيد متاح بعد رفض المهمة مرتين أو إرجاعها للاستكمال (رفض: {rejectedCount}، إرجاع: {returnCount})
+            ⬆️ التصعيد متاح بعد رفض المهمة مرتين أو إرجاعها (رفض: {rejectedCount}، إرجاع: {returnCount})
           </div>
         )}
 
         {/* Resend / Transfer after rejection */}
         {(canResendRejected || canTransferRejected) && (
           <div style={{ margin: "10px 18px 0", background: "rgba(239,68,68,0.06)", border: "1.5px solid rgba(239,68,68,0.3)", borderRadius: 14, padding: 14 }}>
-            <div style={{ fontSize: 13, fontWeight: 800, color: "#ef4444", marginBottom: 4, display: "flex", alignItems: "center", gap: 6 }}>❌ المهمة مرفوضة</div>
-            <div style={{ fontSize: 11, color: C.sub, marginBottom: 10 }}>لم تُحذف — يمكنك إعادة إرسالها لنفس المهندس أو تحويلها لمهندس آخر</div>
+            <div style={{ fontSize: 13, fontWeight: 800, color: "#ef4444", marginBottom: 4 }}>❌ المهمة مرفوضة</div>
+            <div style={{ fontSize: 11, color: C.sub, marginBottom: 10 }}>يمكنك إعادة إرسالها أو تحويلها لمهندس آخر</div>
             <div style={{ display: "flex", gap: 8 }}>
-              {canResendRejected && (
-                <button onClick={function(){ setShowResent(true); }} style={{ flex: 1, padding: "10px 8px", borderRadius: 10, background: "#0f766e", color: "#fff", border: "none", fontSize: 12, fontWeight: 800, cursor: "pointer", fontFamily: "inherit" }}>🔄 إعادة إرسال</button>
-              )}
-              {canTransferRejected && (
-                <button onClick={function(){ setShowTransfer(true); }} style={{ flex: 1, padding: "10px 8px", borderRadius: 10, background: "#7c3aed", color: "#fff", border: "none", fontSize: 12, fontWeight: 800, cursor: "pointer", fontFamily: "inherit" }}>↪️ تحويل لمهندس آخر</button>
-              )}
+              {canResendRejected && <button onClick={function(){ setShowResent(true); }} style={{ flex: 1, padding: "10px 8px", borderRadius: 10, background: "#0f766e", color: "#fff", border: "none", fontSize: 12, fontWeight: 800, cursor: "pointer", fontFamily: "inherit" }}>🔄 إعادة إرسال</button>}
+              {canTransferRejected && <button onClick={function(){ setShowTransfer(true); }} style={{ flex: 1, padding: "10px 8px", borderRadius: 10, background: "#7c3aed", color: "#fff", border: "none", fontSize: 12, fontWeight: 800, cursor: "pointer", fontFamily: "inherit" }}>↪️ تحويل</button>}
             </div>
           </div>
         )}
 
-        {/* Pending collaborator requests */}
+        {/* Pending collab requests */}
         {hasPendingCollabForMe && (
           <div style={{ margin: "10px 18px 0", background: "rgba(59,130,246,0.08)", border: "1.5px solid rgba(59,130,246,0.35)", borderRadius: 14, padding: 14 }}>
             <div style={{ fontSize: 13, fontWeight: 800, color: "#3b82f6", marginBottom: 8 }}>👥 طلب إضافة متعاون ({pendingCollabs.length})</div>
@@ -11189,214 +11197,188 @@ function TawasulDetailModal({ request, user, allEmps, onClose, nameOf, onUpdated
         {(function(){
           var myRow = (r.assignees || []).find(function(a){ return String(a.id) === String(myId); });
           if (!myRow || !myRow.senderRole || myRow.senderRole === "other") return null;
-          var label = myRow.senderRole === "manager1" ? "📥 هذه المهمة مُسنَدة إليك من مديرك الإداري" : "📥 هذه المهمة مُسنَدة إليك من مديرك الفني";
+          var label = myRow.senderRole === "manager1" ? "📥 مُسنَدة من مديرك الإداري" : "📥 مُسنَدة من مديرك الفني";
           var color = myRow.senderRole === "manager1" ? "#0F766E" : "#3B82F6";
+          return <div style={{ margin: "10px 18px 0", padding: "10px 14px", borderRadius: 10, background: color + "15", border: "1px solid " + color + "40", color: color, fontSize: 12, fontWeight: 800, textAlign: "center" }}>{label}</div>;
+        })()}
+
+        {/* ═══ v7.32 — PIPELINE BANNER (always open, no title, green dots) ═══ */}
+        {!["cancelled","rejected"].includes(r.status) && (
+          <div style={{ margin: "14px 18px 0", background: C.card, border: "1px solid " + C.cardBorder, borderRadius: 14, padding: "14px 12px" }}>
+            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+              {TAWASUL_STAGES.map(function(st, idx){
+                var active = idx <= curStage;
+                var isCurrent = idx === curStage;
+                return (
+                  <React.Fragment key={st.key}>
+                    <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 3, flex: "0 0 auto" }}>
+                      <div style={{ width: 30, height: 30, borderRadius: 15, background: active ? "#10b981" : C.bg, border: "2px solid " + (isCurrent ? "#34d399" : active ? "#10b981" : C.cardBorder), display: "flex", alignItems: "center", justifyContent: "center", fontSize: 12, color: active ? "#fff" : C.sub, boxShadow: isCurrent ? "0 0 10px rgba(16,185,129,0.4)" : "none" }}>{st.icon}</div>
+                      <div style={{ fontSize: 8, fontWeight: 700, color: active ? C.text : C.sub, textAlign: "center", maxWidth: 50 }}>{st.label}</div>
+                    </div>
+                    {idx < TAWASUL_STAGES.length - 1 && <div style={{ flex: 1, height: 2, background: idx < curStage ? "#10b981" : C.cardBorder, margin: "0 2px", marginBottom: 16, minWidth: 4 }} />}
+                  </React.Fragment>
+                );
+              })}
+            </div>
+          </div>
+        )}
+
+        {/* ═══ v7.32 — PARTIES CAROUSEL (no title, swipeable) ═══ */}
+        {(function(){
+          var assignees = r.assignees || [];
+          if (assignees.length < 2) return null;
+          var [partyIdx, setPartyIdx] = React.useState(0);
+          var partyTouchRef = React.useRef({ sx: 0, dx: 0, dragging: false });
+          var partyTrackRef = React.useRef(null);
+          var totalP = assignees.length;
+
+          function goParty(i) {
+            var idx2 = ((i % totalP) + totalP) % totalP;
+            setPartyIdx(idx2);
+          }
+
+          function onPTouchStart(e) {
+            partyTouchRef.current = { sx: e.touches[0].clientX, dx: 0, dragging: true };
+            if (partyTrackRef.current) partyTrackRef.current.style.transition = "none";
+          }
+          function onPTouchMove(e) {
+            if (!partyTouchRef.current.dragging) return;
+            partyTouchRef.current.dx = e.touches[0].clientX - partyTouchRef.current.sx;
+            if (partyTrackRef.current) {
+              var w = partyTrackRef.current.offsetWidth / totalP;
+              partyTrackRef.current.style.transform = "translateX(" + (partyIdx * w + partyTouchRef.current.dx) + "px)";
+            }
+          }
+          function onPTouchEnd() {
+            if (!partyTouchRef.current.dragging) return;
+            partyTouchRef.current.dragging = false;
+            if (partyTrackRef.current) partyTrackRef.current.style.transition = "transform 0.35s cubic-bezier(.4,0,.2,1)";
+            if (partyTouchRef.current.dx > 50) goParty(partyIdx - 1);
+            else if (partyTouchRef.current.dx < -50) goParty(partyIdx + 1);
+            partyTouchRef.current.dx = 0;
+          }
+
+          function getPersonStage(a) {
+            if (a.closedAt) return 4;
+            if (a.deliveredAt) return 3;
+            if (a.acceptedAt) return 1;
+            return 0;
+          }
+          function getPersonStatusText(a) {
+            if (a.closedAt) return { text: "✅ مُقيّمة", bg: "rgba(16,185,129,0.12)", color: "#10b981" };
+            if (a.deliveredAt) return { text: "⏳ بانتظار التقييم", bg: "rgba(201,168,76,0.1)", color: C.gold };
+            if (a.acceptedAt) return { text: "⚡ يعمل عليها", bg: "rgba(124,58,237,0.12)", color: "#7c3aed" };
+            return { text: "📥 لم تبدأ بعد", bg: "rgba(15,118,110,0.12)", color: "#10b981" };
+          }
+          var MINI_STAGES = [
+            { icon: "📥", label: "جديد" },
+            { icon: "⚡", label: "تنفيذ" },
+            { icon: "📦", label: "تسليم" },
+            { icon: "⭐", label: "تقييم" },
+          ];
+
           return (
-            <div style={{ margin: "10px 18px 0", padding: "10px 14px", borderRadius: 10, background: color + "15", border: "1px solid " + color + "40", color: color, fontSize: 12, fontWeight: 800, textAlign: "center" }}>
-              {label}
+            <div style={{ margin: "8px 18px 0", position: "relative", overflow: "hidden", borderRadius: 14, border: "1px solid " + C.cardBorder }}>
+              {totalP > 1 && <button onClick={function(){ goParty(partyIdx - 1); }} style={{ position: "absolute", top: "50%", transform: "translateY(-50%)", right: 6, zIndex: 2, background: "rgba(14,29,53,0.9)", border: "1px solid " + C.cardBorder, color: C.gold, width: 26, height: 26, borderRadius: 13, display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer", fontSize: 11, fontWeight: 900 }}>→</button>}
+              {totalP > 1 && <button onClick={function(){ goParty(partyIdx + 1); }} style={{ position: "absolute", top: "50%", transform: "translateY(-50%)", left: 6, zIndex: 2, background: "rgba(14,29,53,0.9)", border: "1px solid " + C.cardBorder, color: C.gold, width: 26, height: 26, borderRadius: 13, display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer", fontSize: 11, fontWeight: 900 }}>←</button>}
+              <div ref={partyTrackRef} onTouchStart={onPTouchStart} onTouchMove={onPTouchMove} onTouchEnd={onPTouchEnd} style={{ display: "flex", transition: "transform 0.35s cubic-bezier(.4,0,.2,1)", transform: "translateX(" + (partyIdx * 100) + "%)", touchAction: "pan-y" }}>
+                {assignees.map(function(a, aIdx){
+                  var pStage = getPersonStage(a);
+                  var pStatus = getPersonStatusText(a);
+                  var initial = (a.name || nameOf(a.id) || "?").slice(0, 2);
+                  return (
+                    <div key={a.id || aIdx} style={{ flex: "0 0 100%", background: C.card, padding: "12px 16px" }}>
+                      <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 10 }}>
+                        <div style={{ width: 34, height: 34, borderRadius: 17, background: "linear-gradient(135deg, " + C.hdr1 + ", " + C.blue + ")", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 12, fontWeight: 900, color: C.gold, flexShrink: 0 }}>{initial}</div>
+                        <div style={{ flex: 1 }}>
+                          <div style={{ fontSize: 13, fontWeight: 800, color: C.text }}>{a.name || nameOf(a.id)}</div>
+                          <div style={{ fontSize: 10, color: C.sub, fontWeight: 600 }}>{a.addedAsCollab ? "متعاون" : "مُكلّف"}</div>
+                        </div>
+                        <div style={{ fontSize: 10, fontWeight: 800, color: C.sub, background: C.bg, padding: "3px 8px", borderRadius: 999, border: "1px solid " + C.cardBorder }}>{(aIdx + 1) + "/" + totalP}</div>
+                      </div>
+                      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+                        {MINI_STAGES.map(function(ms, msIdx){
+                          var msActive = msIdx <= pStage;
+                          var msCurrent = msIdx === pStage;
+                          return (
+                            <React.Fragment key={msIdx}>
+                              <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 2, flex: "0 0 auto" }}>
+                                <div style={{ width: 24, height: 24, borderRadius: 12, background: msActive ? "#10b981" : C.bg, border: "2px solid " + (msCurrent ? "#34d399" : msActive ? "#10b981" : C.cardBorder), display: "flex", alignItems: "center", justifyContent: "center", fontSize: 10, color: msActive ? "#fff" : C.sub }}>{ms.icon}</div>
+                                <div style={{ fontSize: 7, fontWeight: 700, color: msActive ? C.text : C.sub, textAlign: "center", maxWidth: 46 }}>{ms.label}</div>
+                              </div>
+                              {msIdx < MINI_STAGES.length - 1 && <div style={{ flex: 1, height: 2, background: msIdx < pStage ? "#10b981" : C.cardBorder, margin: "0 2px", marginBottom: 14, minWidth: 3 }} />}
+                            </React.Fragment>
+                          );
+                        })}
+                      </div>
+                      <div style={{ textAlign: "center", marginTop: 8, padding: "5px 10px", borderRadius: 999, fontSize: 9.5, fontWeight: 800, background: pStatus.bg, color: pStatus.color }}>{pStatus.text}</div>
+                    </div>
+                  );
+                })}
+              </div>
+              <div style={{ display: "flex", justifyContent: "center", gap: 6, padding: "6px 0", background: C.card, borderTop: "1px solid " + C.cardBorder }}>
+                {assignees.map(function(_, dIdx){
+                  return <div key={dIdx} style={{ width: dIdx === partyIdx ? 16 : 6, height: 6, borderRadius: 3, background: dIdx === partyIdx ? C.gold : C.cardBorder, transition: "all 0.2s" }} />;
+                })}
+              </div>
             </div>
           );
         })()}
 
-        {/* ═══ v7.32 — SECTION 5: Swipeable Accordions ═══ */}
-        <div style={{ padding: "14px 18px 0" }}>
+        {/* ═══ v7.32 — SWIPEABLE SECTIONS ═══ */}
+        <div style={{ padding: "10px 18px 0" }}>
           {(function(){
-            /* ── SwipeAccordion: accordion with swipe-to-reveal actions + summary icons ── */
-            function SwipeAccordion(props) {
+            /* SwipeSection — swipe to reveal action, then execute */
+            function SwipeSection(props) {
               var isOpen = !!openSections[props.id];
-              var touchRef = React.useRef({ startX: 0, startY: 0, dx: 0, swiping: false });
-              var rowRef = React.useRef(null);
-              var [swipeOffset, setSwipeOffset] = React.useState(0);
-              var SWIPE_THRESHOLD = 70;
+              var touchRef = React.useRef({ sx: 0, dx: 0, swiping: false });
+              var elRef = React.useRef(null);
 
-              function onTouchStart(e) {
-                if (isOpen) return;
-                var t = e.touches[0];
-                touchRef.current = { startX: t.clientX, startY: t.clientY, dx: 0, swiping: false };
+              function onTS(e) {
+                touchRef.current = { sx: e.touches[0].clientX, dx: 0, swiping: false };
               }
-              function onTouchMove(e) {
-                if (isOpen) return;
-                var t = e.touches[0];
-                var dx = t.clientX - touchRef.current.startX;
-                var dy = t.clientY - touchRef.current.startY;
-                if (!touchRef.current.swiping && Math.abs(dx) > 10 && Math.abs(dx) > Math.abs(dy)) {
-                  touchRef.current.swiping = true;
-                }
+              function onTM(e) {
+                var dx = e.touches[0].clientX - touchRef.current.sx;
+                if (!touchRef.current.swiping && Math.abs(dx) > 12) touchRef.current.swiping = true;
                 if (touchRef.current.swiping) {
                   e.preventDefault();
                   touchRef.current.dx = dx;
-                  setSwipeOffset(dx);
+                  if (elRef.current) { elRef.current.style.transition = "none"; elRef.current.style.transform = "translateX(" + Math.max(-100, Math.min(100, dx)) + "px)"; }
                 }
               }
-              function onTouchEnd() {
-                if (!touchRef.current.swiping) { setSwipeOffset(0); return; }
-                var dx = touchRef.current.dx;
-                if (Math.abs(dx) >= SWIPE_THRESHOLD && props.swipeActions) {
-                  if (dx > 0 && props.swipeActions.right) {
-                    props.swipeActions.right.action();
-                  } else if (dx < 0 && props.swipeActions.left) {
-                    props.swipeActions.left.action();
-                  }
+              function onTE() {
+                if (elRef.current) { elRef.current.style.transition = "transform 0.25s ease"; elRef.current.style.transform = "none"; }
+                if (touchRef.current.swiping && Math.abs(touchRef.current.dx) >= 60) {
+                  var dir = touchRef.current.dx > 0 ? "right" : "left";
+                  if (props.onSwipe) props.onSwipe(dir);
                 }
-                touchRef.current.swiping = false;
-                setSwipeOffset(0);
+                touchRef.current = { sx: 0, dx: 0, swiping: false };
               }
-
-              var clampedOffset = Math.max(-120, Math.min(120, swipeOffset));
-              var showRightAction = clampedOffset > 30 && props.swipeActions && props.swipeActions.right;
-              var showLeftAction = clampedOffset < -30 && props.swipeActions && props.swipeActions.left;
 
               return (
                 <div style={{ position: "relative", marginBottom: 8, borderRadius: 14, overflow: "hidden" }}>
-                  {/* Swipe reveal backgrounds */}
-                  {props.swipeActions && !isOpen && (
-                    <>
-                      {/* Right swipe background (green) */}
-                      <div style={{
-                        position: "absolute", top: 0, right: 0, bottom: 0, width: "100%",
-                        background: showRightAction ? (props.swipeActions.right ? props.swipeActions.right.color || "#10b981" : "transparent") : "transparent",
-                        display: "flex", alignItems: "center", justifyContent: "flex-start", paddingRight: 16,
-                        borderRadius: 14, transition: "background 0.15s",
-                      }}>
-                        {showRightAction && props.swipeActions.right && (
-                          <span style={{ color: "#fff", fontSize: 11, fontWeight: 800 }}>{props.swipeActions.right.icon} {props.swipeActions.right.label}</span>
-                        )}
-                      </div>
-                      {/* Left swipe background (blue) */}
-                      <div style={{
-                        position: "absolute", top: 0, left: 0, bottom: 0, width: "100%",
-                        background: showLeftAction ? (props.swipeActions.left ? props.swipeActions.left.color || "#3b82f6" : "transparent") : "transparent",
-                        display: "flex", alignItems: "center", justifyContent: "flex-end", paddingLeft: 16,
-                        borderRadius: 14, transition: "background 0.15s",
-                      }}>
-                        {showLeftAction && props.swipeActions.left && (
-                          <span style={{ color: "#fff", fontSize: 11, fontWeight: 800 }}>{props.swipeActions.left.icon} {props.swipeActions.left.label}</span>
-                        )}
-                      </div>
-                    </>
-                  )}
-
-                  {/* Main accordion */}
-                  <div
-                    ref={rowRef}
-                    onTouchStart={onTouchStart}
-                    onTouchMove={onTouchMove}
-                    onTouchEnd={onTouchEnd}
-                    style={{
-                      position: "relative",
-                      background: C.card,
-                      border: "1px solid " + C.cardBorder,
-                      borderRadius: 14,
-                      overflow: "hidden",
-                      transform: (!isOpen && touchRef.current.swiping) ? "translateX(" + clampedOffset + "px)" : "none",
-                      transition: touchRef.current.swiping ? "none" : "transform 0.25s ease",
-                      zIndex: 1,
-                    }}
-                  >
-                    <div onClick={function(){ toggleSection(props.id); }} style={{
-                      padding: "12px 14px", cursor: "pointer",
-                      display: "flex", justifyContent: "space-between", alignItems: "center",
-                      userSelect: "none",
-                    }}>
-                      <div style={{ display: "flex", alignItems: "center", gap: 8, flex: 1, minWidth: 0 }}>
-                        <span style={{ fontSize: 16 }}>{props.icon}</span>
-                        <span style={{ fontSize: 12, fontWeight: 800, color: C.text }}>{props.title}</span>
-                        {props.badge && <span style={{ padding: "2px 8px", borderRadius: 999, background: C.gold + "22", color: C.gold, fontSize: 10, fontWeight: 800 }}>{props.badge}</span>}
-                      </div>
-                      <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
-                        {/* Summary icons when collapsed */}
-                        {!isOpen && props.summaryIcons && (
-                          <div style={{ display: "flex", gap: 4, marginLeft: 4 }}>
-                            {props.summaryIcons.map(function(si, idx){
-                              return <span key={idx} title={si.tip || ""} style={{ fontSize: 12, opacity: 0.7 }}>{si.icon}</span>;
-                            })}
-                          </div>
-                        )}
-                        <span style={{ fontSize: 13, color: C.sub, transition: "transform 0.2s", transform: isOpen ? "rotate(180deg)" : "none", flexShrink: 0 }}>▼</span>
-                      </div>
+                  {props.swipeRight && <div style={{ position: "absolute", top: 0, right: 0, bottom: 0, width: "100%", background: props.swipeRight.color || "#10b981", display: "flex", alignItems: "center", justifyContent: "flex-start", paddingRight: 14, borderRadius: 14 }}><span style={{ color: "#fff", fontSize: 11, fontWeight: 800 }}>{props.swipeRight.icon} {props.swipeRight.label}</span></div>}
+                  {props.swipeLeft && <div style={{ position: "absolute", top: 0, left: 0, bottom: 0, width: "100%", background: props.swipeLeft.color || "#3b82f6", display: "flex", alignItems: "center", justifyContent: "flex-end", paddingLeft: 14, borderRadius: 14 }}><span style={{ color: "#fff", fontSize: 11, fontWeight: 800 }}>{props.swipeLeft.icon} {props.swipeLeft.label}</span></div>}
+                  <div ref={elRef} onTouchStart={onTS} onTouchMove={onTM} onTouchEnd={onTE} style={{ position: "relative", zIndex: 1, background: C.card, border: "1px solid " + C.cardBorder, borderRadius: 14, overflow: "hidden" }}>
+                    <div onClick={function(){ toggleSection(props.id); }} style={{ padding: "12px 14px", cursor: "pointer", display: "flex", alignItems: "center", gap: 8, userSelect: "none" }}>
+                      <span style={{ fontSize: 16 }}>{props.icon}</span>
+                      <span style={{ fontSize: 12, fontWeight: 800, flex: 1 }}>{props.title}</span>
+                      {props.badge && <span style={{ padding: "2px 8px", borderRadius: 999, background: C.gold + "22", color: C.gold, fontSize: 10, fontWeight: 800 }}>{props.badge}</span>}
+                      <span style={{ fontSize: 13, color: C.sub, transition: "transform 0.2s", transform: isOpen ? "rotate(180deg)" : "none" }}>▼</span>
                     </div>
-                    {isOpen && (
-                      <div style={{ padding: "12px 14px", borderTop: "1px solid " + C.cardBorder }}>
-                        {props.children}
-                      </div>
-                    )}
+                    {isOpen && <div style={{ padding: "12px 14px", borderTop: "1px solid " + C.cardBorder }}>{props.children}</div>}
                   </div>
                 </div>
               );
             }
 
-            /* ── Build summary icons for each section ── */
-            var pipelineSummary = [];
-            if (curStage >= 0) pipelineSummary.push({ icon: TAWASUL_STAGES[Math.min(curStage, TAWASUL_STAGES.length - 1)].icon, tip: TAWASUL_STAGES[Math.min(curStage, TAWASUL_STAGES.length - 1)].label });
-            pipelineSummary.push({ icon: "📊", tip: (curStage + 1) + "/" + TAWASUL_STAGES.length });
-
-            var chatSummary = [];
-            if (log.length > 0) chatSummary.push({ icon: "💬", tip: log.length + " رسالة" });
-            if ((r.evaluations || []).length > 0) chatSummary.push({ icon: "⭐", tip: "تقييمات" });
-
-            var deliverySummary = [];
-            if (r.deliveryMethods && r.deliveryMethods.length > 0) deliverySummary.push({ icon: "📦", tip: r.deliveryMethods.length + " طريقة" });
-
-            var timeSummary = [{ icon: "⏱", tip: "تتبع الوقت" }];
-
-            var attachSummary = [];
-            var attCount = (r.attachments || []).length;
-            if (attCount > 0) attachSummary.push({ icon: "📎", tip: attCount + " مرفق" });
-            attachSummary.push({ icon: "📁", tip: "مرفقات" });
-
-            /* ── Swipe action generators ── */
-            var chatSwipe = {
-              right: !readOnly && !["closed","cancelled"].includes(r.status) ? { icon: "💬", label: "رد سريع", color: "#10b981", action: function(){ setOpenSections(function(p){ var n = Object.assign({}, p); n.chatLog = true; return n; }); } } : null,
-              left: { icon: "📖", label: "علّم كمقروء", color: "#3b82f6", action: function(){ /* mark as read visual feedback */ } },
-            };
-            var attachSwipe = {
-              right: !readOnly ? { icon: "📎", label: "إضافة مرفق", color: "#10b981", action: function(){ setOpenSections(function(p){ var n = Object.assign({}, p); n.attachments = true; return n; }); } } : null,
-              left: attCount > 0 ? { icon: "📥", label: "تنزيل الكل", color: "#7c3aed", action: function(){ setOpenSections(function(p){ var n = Object.assign({}, p); n.attachments = true; return n; }); } } : null,
-            };
-            var pipelineSwipe = {
-              right: canPressBig ? { icon: "✅", label: "المرحلة التالية", color: "#10b981", action: applyBigAction } : null,
-              left: null,
-            };
-            var deliverySwipe = {
-              right: null,
-              left: null,
-            };
-            var timeSwipe = {
-              right: null,
-              left: null,
-            };
-
             return (
               <>
-                {/* Parties (only if 2+ assignees) */}
-                {(r.assignees || []).length >= 2 && (
-                  <SwipeAccordion id="parties" icon="👥" title={"تقدم الأطراف (" + (r.assignees || []).length + ")"} badge={String((r.assignees || []).length)} summaryIcons={[{ icon: "👥", tip: "أطراف" }]}>
-                    <MultiAssigneesProgress request={r} myId={myId} onUpdated={onUpdated} />
-                  </SwipeAccordion>
-                )}
-
-                {/* 1. 🎯 مراحل المهمة (Pipeline) — first per spec */}
-                {!["cancelled","rejected"].includes(r.status) && (
-                  <SwipeAccordion id="pipeline" icon="🎯" title="مراحل المهمة" summaryIcons={pipelineSummary} swipeActions={pipelineSwipe}>
-                    <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
-                      {TAWASUL_STAGES.map(function(st, idx){
-                        var active = idx <= curStage;
-                        return (
-                          <React.Fragment key={st.key}>
-                            <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 4, flex: "0 0 auto" }}>
-                              <div style={{ width: 32, height: 32, borderRadius: 16, background: active ? C.gold : C.bg, border: "2px solid " + (active ? C.gold : C.cardBorder), display: "flex", alignItems: "center", justifyContent: "center", fontSize: 14, color: active ? "#fff" : C.sub }}>{st.icon}</div>
-                              <div style={{ fontSize: 9, fontWeight: 700, color: active ? C.text : C.sub, textAlign: "center", maxWidth: 60 }}>{st.label}</div>
-                            </div>
-                            {idx < TAWASUL_STAGES.length - 1 && <div style={{ flex: 1, height: 2, background: idx < curStage ? C.gold : C.cardBorder, margin: "0 4px", marginBottom: 18, minWidth: 8 }} />}
-                          </React.Fragment>
-                        );
-                      })}
-                    </div>
-                  </SwipeAccordion>
-                )}
-
-                {/* 2. 💬 الدردشة والسجل والتعليقات */}
-                <SwipeAccordion id="chatLog" icon="💬" title="الدردشة والسجل والتعليقات" badge={log.length ? String(log.length) : null} summaryIcons={chatSummary} swipeActions={chatSwipe}>
+                {/* 💬 Chat — swipe either direction to open */}
+                <SwipeSection id="chatLog" icon="💬" title="الدردشة والسجل" badge={log.length ? String(log.length) : null}
+                  swipeRight={{ icon: "💬", label: "فتح الدردشة", color: "#10b981" }}
+                  swipeLeft={{ icon: "💬", label: "فتح الدردشة", color: "#3b82f6" }}
+                  onSwipe={function(){ if (!openSections.chatLog) toggleSection("chatLog"); }}>
                   <ChatPanel request={r} user={user} allEmps={allEmps} readOnly={readOnly} onUpdated={onUpdated} nameOf={nameOf} />
                   <div style={{ marginTop: 12, paddingTop: 12, borderTop: "1px solid " + C.cardBorder }}>
                     <div style={{ fontSize: 11, fontWeight: 800, color: C.sub, marginBottom: 12 }}>📜 سجل النشاط ({log.length})</div>
@@ -11410,29 +11392,60 @@ function TawasulDetailModal({ request, user, allEmps, onClose, nameOf, onUpdated
                       </div>
                     )}
                   </div>
-                </SwipeAccordion>
+                </SwipeSection>
 
-                {/* 3. 📦 طرق التسليم */}
+                {/* ⏱ Time — swipe right=start, swipe left=stop */}
+                <SwipeSection id="time" icon="⏱" title="تتبع الوقت"
+                  swipeRight={{ icon: "▶", label: "تشغيل المؤقت", color: "#10b981" }}
+                  swipeLeft={{ icon: "⏸", label: "إيقاف المؤقت", color: "#ef4444" }}
+                  onSwipe={function(dir){
+                    if (!openSections.time) toggleSection("time");
+                  }}>
+                  <TimeTrackingPanel request={r} user={user} readOnly={readOnly} canEdit={canActAsAssignee || canActAsRequester || isAdmin} onUpdated={onUpdated} />
+                </SwipeSection>
+
+                {/* 📦 Delivery — swipe to open, items are clickable links */}
                 {r.deliveryMethods && r.deliveryMethods.length > 0 && (
-                  <SwipeAccordion id="delivery" icon="📦" title="طرق التسليم" badge={String(r.deliveryMethods.length)} summaryIcons={deliverySummary} swipeActions={deliverySwipe}>
+                  <SwipeSection id="delivery" icon="📦" title="طرق التسليم" badge={String(r.deliveryMethods.length)}
+                    swipeRight={{ icon: "📦", label: "عرض طرق التسليم", color: "#7c3aed" }}
+                    swipeLeft={{ icon: "📦", label: "عرض طرق التسليم", color: "#7c3aed" }}
+                    onSwipe={function(){ if (!openSections.delivery) toggleSection("delivery"); }}>
                     {r.deliveryMethods.map(function(dm, idx){
-                      return <div key={idx} style={{ padding: "8px 10px", borderRadius: 8, background: C.bg, marginBottom: 6, fontSize: 12 }}><div style={{ fontWeight: 700, color: C.text, marginBottom: 2 }}>{dm.label || dm.type}</div>{dm.value && <div style={{ fontSize: 11, color: C.sub, wordBreak: "break-all" }}>{dm.value}</div>}</div>;
+                      var dmIcon = dm.type === "email" ? "📧" : dm.type === "location" || dm.type === "address" ? "📍" : dm.type === "link" || dm.type === "url" ? "🔗" : "📦";
+                      var dmColor = dm.type === "email" ? "rgba(59,130,246,0.15)" : dm.type === "location" || dm.type === "address" ? "rgba(16,185,129,0.15)" : "rgba(201,168,76,0.15)";
+                      var href = null;
+                      if (dm.type === "email" && dm.value) href = "mailto:" + dm.value;
+                      else if ((dm.type === "location" || dm.type === "address") && dm.value) href = "https://maps.google.com/?q=" + encodeURIComponent(dm.value);
+                      else if ((dm.type === "link" || dm.type === "url") && dm.value) href = dm.value.indexOf("://") >= 0 ? dm.value : "https://" + dm.value;
+                      return (
+                        <div key={idx} onClick={function(){ if (href) window.open(href, "_blank"); }} style={{ display: "flex", alignItems: "center", gap: 10, padding: "10px 12px", borderRadius: 10, background: C.bg, border: "1px solid " + C.cardBorder, marginBottom: 6, cursor: href ? "pointer" : "default" }}>
+                          <div style={{ width: 32, height: 32, borderRadius: 10, background: dmColor, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 16, flexShrink: 0 }}>{dmIcon}</div>
+                          <div style={{ flex: 1, minWidth: 0 }}>
+                            <div style={{ fontSize: 11, fontWeight: 800, color: C.text }}>{dm.label || dm.type}</div>
+                            {dm.value && <div style={{ fontSize: 10, color: C.sub, fontWeight: 600, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{dm.value}</div>}
+                          </div>
+                          {href && <span style={{ fontSize: 14, color: C.sub, flexShrink: 0 }}>←</span>}
+                        </div>
+                      );
                     })}
-                  </SwipeAccordion>
+                  </SwipeSection>
                 )}
 
-                {/* 4. ⏱ تتبع الوقت */}
-                <SwipeAccordion id="time" icon="⏱" title="تتبع الوقت" summaryIcons={timeSummary} swipeActions={timeSwipe}>
-                  <TimeTrackingPanel request={r} user={user} readOnly={readOnly} canEdit={canActAsAssignee || canActAsRequester || isAdmin} onUpdated={onUpdated} />
-                </SwipeAccordion>
-
-                {/* 5. 📎 المرفقات */}
-                <SwipeAccordion id="attachments" icon="📎" title="المرفقات" badge={attCount ? String(attCount) : null} summaryIcons={attachSummary} swipeActions={attachSwipe}>
+                {/* 📎 Attachments — swipe right=show add, swipe left=hide add */}
+                <SwipeSection id="attachments" icon="📎" title="المرفقات" badge={((r.attachments || []).length) ? String((r.attachments || []).length) : null}
+                  swipeRight={{ icon: "📎", label: "إضافة مرفق", color: "#10b981" }}
+                  swipeLeft={{ icon: "✕", label: "إغلاق", color: "#ef4444" }}
+                  onSwipe={function(dir){
+                    if (!openSections.attachments) toggleSection("attachments");
+                  }}>
                   <AttachmentsPanel request={r} user={user} readOnly={readOnly} canEdit={canActAsAssignee || canActAsRequester || isAdmin} onUpdated={onUpdated} />
-                </SwipeAccordion>
+                </SwipeSection>
 
-                {/* Meta details (extra) */}
-                <SwipeAccordion id="meta" icon="📌" title="تفاصيل إضافية" summaryIcons={[{ icon: "ℹ️", tip: "معلومات" }]}>
+                {/* 📌 Extra details — swipe to open */}
+                <SwipeSection id="meta" icon="📌" title="تفاصيل إضافية"
+                  swipeRight={{ icon: "ℹ", label: "عرض التفاصيل", color: "#2b5ea7" }}
+                  swipeLeft={{ icon: "ℹ", label: "عرض التفاصيل", color: "#2b5ea7" }}
+                  onSwipe={function(){ if (!openSections.meta) toggleSection("meta"); }}>
                   {[
                     { label: "من", value: requesterName + (function(){
                       var myRow2 = (r.assignees || []).find(function(a){ return String(a.id) === String(myId); });
@@ -11449,14 +11462,14 @@ function TawasulDetailModal({ request, user, allEmps, onClose, nameOf, onUpdated
                     returnCount > 0 ? { label: "عدد الإرجاعات", value: String(returnCount), icon: "📋" } : null,
                     { label: "آخر تحديث", value: tawasulTimeAgo(r.updatedAt || r.createdAt), icon: "🔄" },
                   ].filter(Boolean).map(function(row, idx, arr){
-                    return <div key={idx} style={{ display: "flex", justifyContent: "space-between", padding: "8px 0", borderBottom: idx < arr.length - 1 ? "1px solid " + C.cardBorder : "none", fontSize: 12, gap: 8 }}><div style={{ color: C.sub, fontWeight: 600, flexShrink: 0 }}><span style={{ marginLeft: 5 }}>{row.icon}</span>{row.label}</div><div style={{ color: C.text, fontWeight: 700, textAlign: "left", flex: 1, minWidth: 0, wordBreak: "break-word" }}>{row.value}</div></div>;
+                    return <div key={idx} style={{ display: "flex", justifyContent: "space-between", padding: "7px 0", borderBottom: idx < arr.length - 1 ? "1px solid " + C.cardBorder : "none", fontSize: 12, gap: 8 }}><div style={{ color: C.sub, fontWeight: 600, flexShrink: 0, display: "flex", alignItems: "center", gap: 4 }}><span>{row.icon}</span>{row.label}</div><div style={{ color: C.text, fontWeight: 700, textAlign: "left", flex: 1, minWidth: 0, wordBreak: "break-word" }}>{row.value}</div></div>;
                   })}
-                </SwipeAccordion>
+                </SwipeSection>
               </>
             );
           })()}
 
-          {/* Evaluations summary */}
+          {/* Evaluations */}
           {evals.length > 0 && (
             <div style={{ background: C.card, borderRadius: 14, padding: 14, border: "1px solid " + C.cardBorder, marginBottom: 8 }}>
               <div style={{ fontSize: 11, fontWeight: 800, color: C.sub, marginBottom: 8, display: "flex", alignItems: "center", justifyContent: "space-between" }}><span>⭐ التقييمات ({evals.length})</span>{r.finalScore !== undefined && r.finalScore !== null && <span style={{ fontSize: 13, color: C.gold, fontWeight: 900 }}>{r.finalScore}/100</span>}</div>
@@ -11472,22 +11485,14 @@ function TawasulDetailModal({ request, user, allEmps, onClose, nameOf, onUpdated
             </div>
           )}
 
-          {/* ═══ v7.32 — SECTION 8: Quick Actions ═══ */}
-          {!readOnly && !["closed","cancelled","evaluated"].includes(r.status) && (
+          {/* ═══ v7.32 — Quick Actions (no كتم, no مشاركة) ═══ */}
+          {!readOnly && !["closed","cancelled","evaluated"].includes(r.status) && (canEscalate || canTransferRejected || canRequestCollab) && (
             <div style={{ marginTop: 6, padding: "10px 0" }}>
-              <div style={{ fontSize: 10, fontWeight: 800, color: C.sub, marginBottom: 8, textTransform: "uppercase", letterSpacing: 0.5 }}>إجراءات سريعة</div>
+              <div style={{ fontSize: 10, fontWeight: 800, color: C.sub, marginBottom: 8, letterSpacing: 0.5 }}>إجراءات سريعة</div>
               <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
                 {canEscalate && <button onClick={function(){ setShowEscalate(true); }} style={{ padding: "6px 12px", borderRadius: 999, background: "rgba(251,191,36,0.08)", color: "#fbbf24", border: "1px solid rgba(251,191,36,0.25)", fontSize: 10, fontWeight: 700, cursor: "pointer", fontFamily: "inherit" }}>⬆️ تصعيد</button>}
                 {canTransferRejected && <button onClick={function(){ setShowTransfer(true); }} style={{ padding: "6px 12px", borderRadius: 999, background: "rgba(124,58,237,0.08)", color: "#7c3aed", border: "1px solid rgba(124,58,237,0.25)", fontSize: 10, fontWeight: 700, cursor: "pointer", fontFamily: "inherit" }}>↪️ إعادة تكليف</button>}
                 {canRequestCollab && <button onClick={function(){ setShowCollab(true); }} style={{ padding: "6px 12px", borderRadius: 999, background: "rgba(59,130,246,0.08)", color: "#3b82f6", border: "1px solid rgba(59,130,246,0.25)", fontSize: 10, fontWeight: 700, cursor: "pointer", fontFamily: "inherit" }}>🤝 طلب مساعدة</button>}
-                {canCancel && <button onClick={doCancel} disabled={busy} style={{ padding: "6px 12px", borderRadius: 999, background: "rgba(148,163,184,0.08)", color: C.sub, border: "1px solid " + C.cardBorder, fontSize: 10, fontWeight: 700, cursor: "pointer", fontFamily: "inherit" }}>🔇 كتم</button>}
-                <button onClick={function(){
-                  try {
-                    var shareText = (r.serial ? "#" + r.serial + " — " : "") + (r.title || "") + "\n" + (r.description || "").slice(0, 100);
-                    if (navigator.share) { navigator.share({ title: r.title || "مهمة", text: shareText }); }
-                    else { navigator.clipboard.writeText(shareText); alert("تم النسخ ✅"); }
-                  } catch(e) {}
-                }} style={{ padding: "6px 12px", borderRadius: 999, background: "rgba(59,130,246,0.08)", color: "#3b82f6", border: "1px solid rgba(59,130,246,0.25)", fontSize: 10, fontWeight: 700, cursor: "pointer", fontFamily: "inherit" }}>📤 مشاركة</button>
               </div>
             </div>
           )}
