@@ -4,7 +4,7 @@ import { generateAttendanceReport, generateEmployeeReport, generateMonthlySummar
 import { exportFormalWarning, exportInvestigationRecord, exportAffidavit, exportEmploymentLetter, exportSalaryLetter, exportLeaveLetter } from "./formalPdfs";
 
 const APP = "بصمة HMA";
-const VER = "7.25";
+const VER = "7.26";
 const CO = "هاني محمد عسيري للإستشارات الهندسية";
 const B = { blue: "#2B5EA7", yellow: "#FDD800", red: "#E2192C", black: "#1A1A1A", blueDk: "#1E4478", blueLt: "#EDF3FB", gold: "#D4A017" };
 
@@ -79,11 +79,12 @@ const LN = {
 
 // ── Mobile detection hook ──
 function useIsMobile() {
+  // v7.26 — increased breakpoint from 768 to 1024 to cover iPads and large phones
   var [isMobile, setIsMobile] = useState(function(){
-    return typeof window !== "undefined" && window.innerWidth < 768;
+    return typeof window !== "undefined" && window.innerWidth < 1024;
   });
   useEffect(function(){
-    function onResize(){ setIsMobile(window.innerWidth < 768); }
+    function onResize(){ setIsMobile(window.innerWidth < 1024); }
     window.addEventListener("resize", onResize);
     return function(){ window.removeEventListener("resize", onResize); };
   }, []);
@@ -318,7 +319,7 @@ function MoreMenuPage({ setTab, badges, sideGroups }) {
   );
 }
 
-// ── Mobile Top Bar (back button + page title) — v7.25 ──
+// ── Mobile Top Bar (back button + page title) — v7.25/7.26 ──
 function MobileTopBar({ tab, sideItems, onBack }) {
   // The 4 main bottom-nav tabs are "root" — they don't show a back button
   var rootTabs = ["dashboard", "hr_tickets", "leaves_hub", "more"];
@@ -326,8 +327,8 @@ function MobileTopBar({ tab, sideItems, onBack }) {
 
   // Find the current item meta
   var current = sideItems.find(function(s){ return s.id === tab; });
-  var icon = current ? current.icon : "";
-  var label = current ? current.label : "";
+  var icon = current ? current.icon : "📄";
+  var label = current ? current.label : tab;
 
   // Custom titles for root tabs
   if (tab === "dashboard") { icon = "📊"; label = "لوحة التحكم"; }
@@ -335,11 +336,12 @@ function MobileTopBar({ tab, sideItems, onBack }) {
   else if (tab === "leaves_hub") { icon = "🏖️"; label = "الإجازات"; }
   else if (tab === "more") { return null; /* MoreMenuPage has its own header */ }
 
+  // v7.26 — always render even for root tabs, but hide back button when root
   return (
     <div style={{
       position: "sticky",
       top: 0,
-      zIndex: 50,
+      zIndex: 90,
       background: LN.card,
       borderBottom: "1px solid " + LN.cardBrd,
       padding: "10px 12px",
@@ -347,37 +349,38 @@ function MobileTopBar({ tab, sideItems, onBack }) {
       display: "flex",
       alignItems: "center",
       gap: 10,
-      minHeight: 52,
-      boxShadow: "0 1px 3px rgba(0,0,0,0.04)",
+      minHeight: 54,
+      boxShadow: "0 2px 6px rgba(0,0,0,0.06)",
     }}>
-      {!isRoot && (
+      {!isRoot ? (
         <button
           onClick={onBack}
           aria-label="رجوع"
           style={{
-            width: 36, height: 36,
+            width: 40, height: 40,
             borderRadius: 10,
             border: "1px solid " + LN.cardBrd,
             background: LN.card,
-            color: LN.tx2,
-            fontSize: 20,
+            color: LN.tx,
+            fontSize: 24,
+            fontWeight: 700,
             cursor: "pointer",
             display: "flex",
             alignItems: "center",
             justifyContent: "center",
             fontFamily: "inherit",
             flexShrink: 0,
-            transition: "background .15s",
+            lineHeight: 1,
           }}
-          onMouseEnter={function(e){ e.currentTarget.style.background = LN.hover; }}
-          onMouseLeave={function(e){ e.currentTarget.style.background = LN.card; }}
         >
           ›
         </button>
+      ) : (
+        <div style={{ width: 40, flexShrink: 0 }} />
       )}
 
       <div style={{ flex: 1, minWidth: 0, display: "flex", alignItems: "center", gap: 8 }}>
-        <span style={{ fontSize: 20, flexShrink: 0 }}>{icon}</span>
+        <span style={{ fontSize: 22, flexShrink: 0 }}>{icon}</span>
         <div style={{
           fontSize: 17,
           fontWeight: 800,
