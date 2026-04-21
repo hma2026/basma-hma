@@ -11080,22 +11080,22 @@ function TawasulDetailModal({ request, user, allEmps, onClose, nameOf, onUpdated
           {onTogglePin && <button onClick={onTogglePin} style={{ background: isPinned ? (C.gold + "22") : C.card, border: "1px solid " + (isPinned ? C.gold + "55" : C.cardBorder), fontSize: 14, color: isPinned ? C.gold : C.sub, cursor: "pointer", padding: "0 10px", lineHeight: "30px", borderRadius: 10, flexShrink: 0, marginTop: 2 }} title={isPinned ? "إلغاء التثبيت" : "تثبيت المهمة"}>📌</button>}
         </div>
 
-        {/* ═══ v7.32 — SECTION 2: Compressed Meta — Two Lines ═══ */}
+        {/* ═══ v7.34 — SECTION 2: Compressed Meta — Two Lines (scrollable) ═══ */}
         <div style={{ padding: "10px 18px 0" }}>
-          <div style={{ display: "flex", alignItems: "center", gap: 5, fontSize: 10.5, fontWeight: 700, marginBottom: 4, flexWrap: "nowrap" }}>
-            {r.serial && <span style={{ color: C.gold, fontFamily: "monospace", fontWeight: 900, fontSize: 12 }}>#{r.serial}</span>}
-            {r.serial && <span style={{ color: C.sub, opacity: 0.5 }}>·</span>}
-            <span style={{ display: "inline-flex", alignItems: "center", gap: 3, padding: "3px 10px", borderRadius: 999, background: C.gold + "22", color: C.gold, fontSize: 10, fontWeight: 800 }}><span>{m.icon}</span><span>{m.label}</span></span>
-            {isUrgent && <><span style={{ color: C.sub, opacity: 0.5 }}>·</span><span style={{ padding: "3px 8px", borderRadius: 999, background: "rgba(239,68,68,0.15)", color: "#ef4444", fontSize: 10, fontWeight: 800 }}>🔴 عاجل</span></>}
-            {escColor && <><span style={{ color: C.sub, opacity: 0.5 }}>·</span><span style={{ padding: "3px 8px", borderRadius: 999, background: escColor + "22", color: escColor, fontSize: 10, fontWeight: 800 }}>{r.escalation === "red" ? "🔴 أحمر" : "🟡 أصفر"}</span></>}
+          <div style={{ display: "flex", alignItems: "center", gap: 5, fontSize: 10.5, fontWeight: 700, marginBottom: 4, overflowX: "auto", whiteSpace: "nowrap", WebkitOverflowScrolling: "touch", scrollbarWidth: "none", msOverflowStyle: "none" }}>
+            {r.serial && <span style={{ color: C.gold, fontFamily: "monospace", fontWeight: 900, fontSize: 12, flexShrink: 0 }}>#{r.serial}</span>}
+            {r.serial && <span style={{ color: C.sub, opacity: 0.5, flexShrink: 0 }}>·</span>}
+            <span style={{ display: "inline-flex", alignItems: "center", gap: 3, padding: "3px 10px", borderRadius: 999, background: C.gold + "22", color: C.gold, fontSize: 10, fontWeight: 800, flexShrink: 0 }}><span>{m.icon}</span><span>{m.label}</span></span>
+            {isUrgent && <><span style={{ color: C.sub, opacity: 0.5, flexShrink: 0 }}>·</span><span style={{ padding: "3px 8px", borderRadius: 999, background: "rgba(239,68,68,0.15)", color: "#ef4444", fontSize: 10, fontWeight: 800, flexShrink: 0 }}>🔴 عاجل</span></>}
+            {escColor && <><span style={{ color: C.sub, opacity: 0.5, flexShrink: 0 }}>·</span><span style={{ padding: "3px 8px", borderRadius: 999, background: escColor + "22", color: escColor, fontSize: 10, fontWeight: 800, flexShrink: 0 }}>{r.escalation === "red" ? "🔴 أحمر" : "🟡 أصفر"}</span></>}
           </div>
-          <div style={{ display: "flex", alignItems: "center", gap: 5, fontSize: 10.5, fontWeight: 700, flexWrap: "nowrap" }}>
-            {r.category && <span style={{ color: C.sub }}>🏷 {r.category}</span>}
-            {r.category && r.department && <span style={{ color: C.sub, opacity: 0.5 }}>·</span>}
-            {r.department && <span style={{ color: C.sub }}>🏢 {r.department}</span>}
-            {(r.category || r.department) && r.projectName && <span style={{ color: C.sub, opacity: 0.5 }}>·</span>}
-            {r.projectName && <span style={{ color: C.sub }}>🏗️ {r.projectName}</span>}
-            {deadlineText && <><span style={{ color: C.sub, opacity: 0.5 }}>·</span><span style={{ color: (r.deadline && new Date(r.deadline) < new Date()) ? "#ef4444" : C.gold }}>{deadlineText}</span></>}
+          <div style={{ display: "flex", alignItems: "center", gap: 5, fontSize: 10.5, fontWeight: 700, overflowX: "auto", whiteSpace: "nowrap", WebkitOverflowScrolling: "touch", scrollbarWidth: "none", msOverflowStyle: "none" }}>
+            {r.category && <span style={{ color: C.sub, flexShrink: 0 }}>🏷 {r.category}</span>}
+            {r.category && r.department && <span style={{ color: C.sub, opacity: 0.5, flexShrink: 0 }}>·</span>}
+            {r.department && <span style={{ color: C.sub, flexShrink: 0 }}>🏢 {r.department}</span>}
+            {(r.category || r.department) && r.projectName && <span style={{ color: C.sub, opacity: 0.5, flexShrink: 0 }}>·</span>}
+            {r.projectName && <span style={{ color: C.sub, flexShrink: 0 }}>🏗️ {r.projectName}</span>}
+            {deadlineText && <><span style={{ color: C.sub, opacity: 0.5, flexShrink: 0 }}>·</span><span style={{ color: (r.deadline && new Date(r.deadline) < new Date()) ? "#ef4444" : C.gold, flexShrink: 0 }}>{deadlineText}</span></>}
           </div>
         </div>
 
@@ -11289,60 +11289,18 @@ function TawasulDetailModal({ request, user, allEmps, onClose, nameOf, onUpdated
           var assignees = r.assignees || [];
           if (assignees.length < 2) return null;
           var [partyIdx, setPartyIdx] = React.useState(0);
-          var pRef = React.useRef({ sx:0, sy:0, dx:0, active:false, dir:null, vel:0, lastX:0, lastT:0, animId:0 });
-          var pTrack = React.useRef(null);
-          var totalP = assignees.length;
+          var scrollRef = React.useRef(null);
 
-          function pSnap(idx) {
-            var i = Math.max(0, Math.min(totalP - 1, idx));
-            setPartyIdx(i);
-            if (pTrack.current) {
-              pTrack.current.style.transition = "transform 0.5s cubic-bezier(0.22, 1, 0.36, 1)";
-              pTrack.current.style.transform = "translateX(" + (i * 100) + "%)";
+          // Track current card via scroll position
+          function onCarouselScroll() {
+            var el = scrollRef.current; if (!el) return;
+            var cw = el.offsetWidth;
+            if (cw <= 0) return;
+            var idx = Math.round(el.scrollLeft / cw);
+            if (idx !== partyIdx && idx >= 0 && idx < totalP) {
+              setPartyIdx(idx);
+              try { if (navigator.vibrate) navigator.vibrate(6); } catch(e) {}
             }
-            try { if (navigator.vibrate) navigator.vibrate(6); } catch(e) {}
-          }
-          function pSetRaw(px) {
-            if (pTrack.current) {
-              pTrack.current.style.transition = "none";
-              pTrack.current.style.transform = "translateX(" + px + "px)";
-            }
-          }
-          function pTS(e) {
-            if (pRef.current.animId) { cancelAnimationFrame(pRef.current.animId); pRef.current.animId = 0; }
-            var t = e.touches[0];
-            pRef.current = { sx:t.clientX, sy:t.clientY, dx:0, active:true, dir:null, vel:0, lastX:t.clientX, lastT:Date.now(), animId:0 };
-          }
-          function pTM(e) {
-            var p = pRef.current; if (!p.active) return;
-            var t = e.touches[0];
-            var dx = t.clientX - p.sx, dy = t.clientY - p.sy;
-            if (!p.dir) {
-              if (Math.abs(dx) > 6 || Math.abs(dy) > 6) p.dir = Math.abs(dx) >= Math.abs(dy) ? "h" : "v";
-              else return;
-            }
-            if (p.dir !== "h") return;
-            e.preventDefault(); e.stopPropagation();
-            var now = Date.now(); var dt = now - p.lastT;
-            if (dt > 0) p.vel = (t.clientX - p.lastX) / dt * 1000;
-            p.lastX = t.clientX; p.lastT = now; p.dx = dx;
-            var cw = pTrack.current ? pTrack.current.parentElement.offsetWidth : 300;
-            var base = partyIdx * cw;
-            var atEdge = (partyIdx === 0 && dx > 0) || (partyIdx === totalP - 1 && dx < 0);
-            var offset = atEdge ? dx * 0.2 : dx;
-            pSetRaw(base + offset);
-          }
-          function pTE() {
-            var p = pRef.current; p.active = false;
-            if (p.dir !== "h") return;
-            var dx = p.dx; var vel = p.vel;
-            var cw = pTrack.current ? pTrack.current.parentElement.offsetWidth : 300;
-            var target = partyIdx;
-            if (Math.abs(vel) > 400 || Math.abs(dx) > cw * 0.25) {
-              if (dx > 0 || vel > 400) target = partyIdx - 1;
-              else target = partyIdx + 1;
-            }
-            pSnap(target);
           }
 
           function getPersonStage(a) {
@@ -11366,13 +11324,14 @@ function TawasulDetailModal({ request, user, allEmps, onClose, nameOf, onUpdated
 
           return (
             <div style={{ margin: "8px 18px 0", position: "relative", overflow: "hidden", borderRadius: 14, border: "1px solid " + C.cardBorder }}>
-              <div ref={pTrack} onTouchStart={pTS} onTouchMove={pTM} onTouchEnd={pTE} style={{ display: "flex", transition: "transform 0.5s cubic-bezier(0.22, 1, 0.36, 1)", transform: "translateX(" + (partyIdx * 100) + "%)", willChange: "transform" }}>
+              <div ref={scrollRef} onScroll={onCarouselScroll} style={{ display: "flex", overflowX: "auto", scrollSnapType: "x mandatory", WebkitOverflowScrolling: "touch", scrollbarWidth: "none", msOverflowStyle: "none" }}>
+                <style>{"[data-party-scroll]::-webkit-scrollbar{display:none}"}</style>
                 {assignees.map(function(a, aIdx){
                   var pStage = getPersonStage(a);
                   var pStatus = getPersonStatusText(a);
                   var initial = (a.name || nameOf(a.id) || "?").slice(0, 2);
                   return (
-                    <div key={a.id || aIdx} style={{ flex: "0 0 100%", background: C.card, padding: "12px 16px" }}>
+                    <div key={a.id || aIdx} style={{ flex: "0 0 100%", background: C.card, padding: "12px 16px", scrollSnapAlign: "start" }}>
                       <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 10 }}>
                         <div style={{ width: 34, height: 34, borderRadius: 17, background: "linear-gradient(135deg, " + C.hdr1 + ", " + C.blue + ")", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 12, fontWeight: 900, color: C.gold, flexShrink: 0 }}>{initial}</div>
                         <div style={{ flex: 1 }}>
@@ -11413,60 +11372,66 @@ function TawasulDetailModal({ request, user, allEmps, onClose, nameOf, onUpdated
         {/* ═══ v7.32 — SWIPEABLE SECTIONS ═══ */}
         <div style={{ padding: "10px 18px 0" }}>
           {(function(){
-            /* SwipeSection v7.34 — iOS-quality swipe physics */
+            /* SwipeSection v7.34 — native touch events (passive:false for real preventDefault) */
             function SwipeSection(props) {
               var isOpen = !!openSections[props.id];
-              var sRef = React.useRef({ sx:0, sy:0, dx:0, dir:null, active:false, vel:0, lastX:0, lastT:0 });
               var elRef = React.useRef(null);
-              var [revPct, setRevPct] = React.useState(0); // -1..0..1 reveal progress
+              var stateRef = React.useRef({ sx:0, sy:0, dx:0, dir:null, active:false, vel:0, lx:0, lt:0 });
+              var [revPct, setRevPct] = React.useState(0);
 
-              function sTS(e) {
-                var t = e.touches[0];
-                sRef.current = { sx:t.clientX, sy:t.clientY, dx:0, dir:null, active:true, vel:0, lastX:t.clientX, lastT:Date.now() };
-              }
-              function sTM(e) {
-                var s = sRef.current; if (!s.active) return;
-                var t = e.touches[0];
-                var dx = t.clientX - s.sx, dy = t.clientY - s.sy;
-                if (!s.dir) {
-                  if (Math.abs(dx) > 6 || Math.abs(dy) > 6) s.dir = Math.abs(dx) >= Math.abs(dy) ? "h" : "v";
-                  else return;
+              React.useEffect(function(){
+                var el = elRef.current; if (!el) return;
+                function ts(e) {
+                  var t = e.touches[0];
+                  stateRef.current = { sx:t.clientX, sy:t.clientY, dx:0, dir:null, active:true, vel:0, lx:t.clientX, lt:Date.now() };
                 }
-                if (s.dir !== "h") return;
-                e.preventDefault(); e.stopPropagation();
-                var now = Date.now(); var dt = now - s.lastT;
-                if (dt > 0) s.vel = (t.clientX - s.lastX) / dt * 1000;
-                s.lastX = t.clientX; s.lastT = now; s.dx = dx;
-                if (elRef.current) {
-                  elRef.current.style.transition = "none";
-                  elRef.current.style.transform = "translateX(" + dx + "px)";
-                  elRef.current.style.willChange = "transform";
+                function tm(e) {
+                  var s = stateRef.current; if (!s.active) return;
+                  var t = e.touches[0];
+                  var dx = t.clientX - s.sx, dy = t.clientY - s.sy;
+                  if (!s.dir) {
+                    if (Math.abs(dx) > 6 || Math.abs(dy) > 6) s.dir = Math.abs(dx) >= Math.abs(dy) ? "h" : "v";
+                    else return;
+                  }
+                  if (s.dir !== "h") return;
+                  e.preventDefault();
+                  var now = Date.now(); var dt = now - s.lt;
+                  if (dt > 0) s.vel = (t.clientX - s.lx) / dt * 1000;
+                  s.lx = t.clientX; s.lt = now; s.dx = dx;
+                  el.style.transition = "none";
+                  el.style.transform = "translateX(" + dx + "px)";
+                  var w = el.offsetWidth || 300;
+                  setRevPct(Math.max(-1, Math.min(1, dx / (w * 0.35))));
                 }
-                var elW = elRef.current ? elRef.current.offsetWidth : 300;
-                setRevPct(Math.max(-1, Math.min(1, dx / (elW * 0.4))));
-              }
-              function sTE() {
-                var s = sRef.current; s.active = false;
-                if (s.dir !== "h") { setRevPct(0); return; }
-                var dx = s.dx; var vel = s.vel;
-                if (elRef.current) {
-                  elRef.current.style.transition = "transform 0.5s cubic-bezier(0.22, 1, 0.36, 1)";
-                  elRef.current.style.transform = "none";
-                  elRef.current.style.willChange = "auto";
-                }
-                setRevPct(0);
-                var elW = elRef.current ? elRef.current.offsetWidth : 300;
-                var triggered = Math.abs(vel) > 400 || Math.abs(dx) > elW * 0.35;
-                if (triggered) {
-                  try { if (navigator.vibrate) navigator.vibrate(8); } catch(e2) {}
-                  var dir = (dx > 0 || vel > 400) ? "right" : "left";
-                  if (props.onSwipe) { props.onSwipe(dir); }
-                  else {
-                    if (dir === "right" && !isOpen) toggleSection(props.id);
-                    else if (dir === "left" && isOpen) toggleSection(props.id);
+                function te() {
+                  var s = stateRef.current; s.active = false;
+                  if (s.dir !== "h") { setRevPct(0); return; }
+                  el.style.transition = "transform 0.5s cubic-bezier(0.22, 1, 0.36, 1)";
+                  el.style.transform = "none";
+                  setRevPct(0);
+                  var dx2 = s.dx; var vel2 = s.vel;
+                  var w = el.offsetWidth || 300;
+                  var fired = Math.abs(vel2) > 350 || Math.abs(dx2) > w * 0.3;
+                  if (fired) {
+                    try { if (navigator.vibrate) navigator.vibrate(8); } catch(e2) {}
+                    var dir2 = (dx2 > 0 || vel2 > 350) ? "right" : "left";
+                    if (props.onSwipeRef && props.onSwipeRef.current) { props.onSwipeRef.current(dir2); }
+                    else {
+                      var open = openSectionsRef.current ? !!openSectionsRef.current[props.id] : isOpen;
+                      if (dir2 === "right" && !open) toggleSection(props.id);
+                      else if (dir2 === "left" && open) toggleSection(props.id);
+                    }
                   }
                 }
-              }
+                el.addEventListener("touchstart", ts, { passive: true });
+                el.addEventListener("touchmove", tm, { passive: false });
+                el.addEventListener("touchend", te, { passive: true });
+                return function() {
+                  el.removeEventListener("touchstart", ts);
+                  el.removeEventListener("touchmove", tm);
+                  el.removeEventListener("touchend", te);
+                };
+              }, [props.id]);
 
               var rBg = props.swipeRight ? (props.swipeRight.color || "#2ED3A5") : null;
               var lBg = props.swipeLeft ? (props.swipeLeft.color || "#64748b") : null;
@@ -11477,7 +11442,7 @@ function TawasulDetailModal({ request, user, allEmps, onClose, nameOf, onUpdated
                 <div style={{ position: "relative", marginBottom: 8, borderRadius: 14, overflow: "hidden" }}>
                   {rBg && <div style={{ position: "absolute", top: 0, right: 0, bottom: 0, width: "100%", background: rBg, display: "flex", alignItems: "center", justifyContent: "flex-start", paddingRight: 14, borderRadius: 14, opacity: rOp, transition: rOp > 0 ? "none" : "opacity 0.2s" }}><span style={{ color: "#fff", fontSize: 11, fontWeight: 800 }}>{props.swipeRight.icon} {props.swipeRight.label}</span></div>}
                   {lBg && <div style={{ position: "absolute", top: 0, left: 0, bottom: 0, width: "100%", background: lBg, display: "flex", alignItems: "center", justifyContent: "flex-end", paddingLeft: 14, borderRadius: 14, opacity: lOp, transition: lOp > 0 ? "none" : "opacity 0.2s" }}><span style={{ color: "#fff", fontSize: 11, fontWeight: 800 }}>{props.swipeLeft.icon} {props.swipeLeft.label}</span></div>}
-                  <div ref={elRef} onTouchStart={sTS} onTouchMove={sTM} onTouchEnd={sTE} style={{ position: "relative", zIndex: 1, background: C.card, border: "1px solid " + C.cardBorder, borderRadius: 14, overflow: "hidden", willChange: "auto" }}>
+                  <div ref={elRef} style={{ position: "relative", zIndex: 1, background: C.card, border: "1px solid " + C.cardBorder, borderRadius: 14, overflow: "hidden", willChange: "transform" }}>
                     <div onClick={function(){ toggleSection(props.id); }} style={{ padding: "12px 14px", cursor: "pointer", display: "flex", alignItems: "center", gap: 8, userSelect: "none" }}>
                       <span style={{ fontSize: 16 }}>{props.icon}</span>
                       <span style={{ fontSize: 12, fontWeight: 800, flex: 1 }}>{props.title}</span>
@@ -11489,6 +11454,10 @@ function TawasulDetailModal({ request, user, allEmps, onClose, nameOf, onUpdated
                 </div>
               );
             }
+
+            // Ref for openSections so native event handlers can read current value
+            var openSectionsRef = React.useRef(openSections);
+            openSectionsRef.current = openSections;
 
             return (
               <>
