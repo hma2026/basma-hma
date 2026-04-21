@@ -11,7 +11,7 @@ import { exportEmploymentLetter, exportLeaveLetter } from "./formalPdfs";
 
 /* ═══════════ APP CONFIG (إعدادات التطبيق) ═══════════ */
 const APP_CONFIG = {
-  VER: "7.34",
+  VER: "7.35",
   NAME: "بصمة HMA",
   FULL_NAME: "نظام الحضور والانصراف الذكي",
   COMPANY: "هاني محمد عسيري للاستشارات الهندسية",
@@ -5092,9 +5092,6 @@ function ProfilePage({ user, branch, workType, onLogout, onTicket, myTickets, da
   const rows = [
     ["الفرع", branch ? branch.name : "—"],
     ["نوع الدوام", workTypeText],
-    ["المسمى", user.role || "—"],
-    ["الرقم", user.id],
-    ["التصنيف", typeMap[user.type] || user.type || "—"],
     ["الالتحاق", user.joinDate || "—"],
     ["النقاط", badge.icon + " " + (user.points || 0) + " نقطة"],
   ];
@@ -5243,10 +5240,7 @@ function ProfilePage({ user, branch, workType, onLogout, onTicket, myTickets, da
               </div>
             </div>
 
-            {/* Logout */}
-            <Button variant="danger" size="md" onClick={onLogout}>
-              تسجيل خروج
-            </Button>
+            {/* v7.35 — Logout moved below HelpGuide */}
 
             {/* 6. SETTINGS — accordion */}
             <ProfileAccordion
@@ -5276,6 +5270,11 @@ function ProfilePage({ user, branch, workType, onLogout, onTicket, myTickets, da
 
             {/* 7. HELP */}
             <HelpGuideSection />
+
+            {/* v7.35 — Logout moved here (below دليل المستخدم) */}
+            <Button variant="danger" size="md" onClick={onLogout}>
+              تسجيل خروج
+            </Button>
           </>
         )}
 
