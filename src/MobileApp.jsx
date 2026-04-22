@@ -11,7 +11,7 @@ import { exportEmploymentLetter, exportLeaveLetter } from "./formalPdfs";
 
 /* ═══════════ APP CONFIG (إعدادات التطبيق) ═══════════ */
 const APP_CONFIG = {
-  VER: "7.66",
+  VER: "7.67",
   NAME: "بصمة HMA",
   FULL_NAME: "نظام الحضور والانصراف الذكي",
   COMPANY: "هاني محمد عسيري للاستشارات الهندسية",
@@ -4227,22 +4227,9 @@ function PayHub({ user, onTicket, myTickets }) {
       </ProfileAccordion>
 
       {/* v7.66 — طلباتي للموارد البشرية (نُقل من tab "الإجازات") */}
-      <ProfileAccordion emoji="📨" title="طلباتي للموارد البشرية" subtitle="دعم فني · تعديل البيانات" badge={(myTickets || []).length > 0 ? String((myTickets || []).length) : null}>
-        {/* الجزء 1: تذاكر الدعم الفني */}
-        <div style={{ marginBottom: SPACING.md }}>
-          <div style={{ ...TYPOGRAPHY.bodySm, fontWeight: 800, color: COLORS.textPrimary, marginBottom: SPACING.sm, paddingBottom: SPACING.xs, borderBottom: "1px solid " + COLORS.cardRowBorder }}>
-            🎫 الدعم الفني
-          </div>
-          <TicketsCard user={user} myTickets={myTickets} onTicket={onTicket} />
-        </div>
-
-        {/* الجزء 2: طلبات تعديل البيانات */}
-        <div>
-          <div style={{ ...TYPOGRAPHY.bodySm, fontWeight: 800, color: COLORS.textPrimary, marginBottom: SPACING.sm, paddingBottom: SPACING.xs, borderBottom: "1px solid " + COLORS.cardRowBorder }}>
-            ✏️ تعديل البيانات
-          </div>
-          <EditRequestCard user={user} />
-        </div>
+      {/* v7.67 — محتواها الآن: قوالب HR (10) + تذاكر الدعم الفني (في الأسفل) */}
+      <ProfileAccordion emoji="📨" title="طلباتي للموارد البشرية" subtitle="قوالب جاهزة · تعديل بيانات · دعم فني" badge={(myTickets || []).length > 0 ? String((myTickets || []).length) : null}>
+        <HRRequestsHub user={user} onTicket={onTicket} myTickets={myTickets} />
       </ProfileAccordion>
 
       {/* 1. Navy Hero with big net salary */}
@@ -12085,6 +12072,128 @@ function PermissionModal({ user, branch, onClose, onSubmit }) {
 /* ═══════════ LEAVE + TICKET MODALS ═══════════ */
 
 /* v7.51 — LeaveModal (116 سطر) حُذف نهائياً: dead code منذ v7.00 (نظام الإجازات الجديد في MyLeavesHub بـ leave-requests) */
+
+/* ═══════════════════════════════════════════════════════════════════
+ * v7.67 — HR REQUESTS HUB — 10 قوالب طلبات HR + تذاكر الدعم الفني
+ * القوالب تُعرض كأزرار شبكة (grid). المفعّل فعلياً:
+ *   - ✏️ تعديل بياناتي (EditRequestCard)
+ * الباقية تعرض رسالة "قريباً" عند النقر
+ * ═══════════════════════════════════════════════════════════════════ */
+function HRRequestsHub({ user, onTicket, myTickets }) {
+  var [activeTemplate, setActiveTemplate] = useState(null);   // id of template being filled
+  var [comingSoonMsg, setComingSoonMsg] = useState(null);     // "قريباً" toast for unbuilt templates
+
+  // v7.67 — 10 قوالب طلبات HR (4 منها سيرها تلقائياً، 6 مشكلات بـ "قريباً")
+  var templates = [
+    { id: "edit_data",     emoji: "✏️", label: "تعديل بياناتي",       color: "#6366F1", enabled: true,  desc: "تحديث الهاتف/العنوان/..." },
+    { id: "salary_cert",   emoji: "📄", label: "شهادة راتب",          color: "#059669", enabled: false, desc: "للبنوك والتأشيرات" },
+    { id: "experience_cert", emoji: "🪪", label: "شهادة خبرة",         color: "#0891B2", enabled: false, desc: "لأغراض التوظيف والهجرة" },
+    { id: "intro_letter",  emoji: "🏢", label: "خطاب تعريف",          color: "#7C3AED", enabled: false, desc: "تعريف بجهة العمل" },
+    { id: "promotion",     emoji: "🚀", label: "طلب ترقية",            color: "#DC2626", enabled: false, desc: "طلب ترقية وظيفية" },
+    { id: "advance",       emoji: "💵", label: "سلفة على الراتب",      color: "#EA580C", enabled: false, desc: "طلب سلفة مقدمة من الراتب" },
+    { id: "transfer",      emoji: "🏠", label: "تحويل فرع",            color: "#0284C7", enabled: false, desc: "نقل لفرع آخر" },
+    { id: "hours_adjust",  emoji: "🕐", label: "تعديل ساعات الدوام",   color: "#9333EA", enabled: false, desc: "تعديل وقت البداية/النهاية" },
+    { id: "medical_ins",   emoji: "🏥", label: "تأمين طبي",            color: "#16A34A", enabled: false, desc: "استفسار أو تعديل" },
+    { id: "other",         emoji: "❓", label: "طلب آخر",              color: "#64748B", enabled: false, desc: "نص حر لأي طلب" },
+  ];
+
+  function handleTemplateClick(t) {
+    if (t.enabled) {
+      setActiveTemplate(t.id);
+    } else {
+      setComingSoonMsg(t.label);
+      setTimeout(function(){ setComingSoonMsg(null); }, 2500);
+    }
+  }
+
+  return (
+    <div>
+      {/* القسم الرئيسي: قوالب HR (10) */}
+      <div style={{ marginBottom: SPACING.lg }}>
+        <div style={{ ...TYPOGRAPHY.bodySm, fontWeight: 800, color: COLORS.textPrimary, marginBottom: SPACING.sm, paddingBottom: SPACING.xs, borderBottom: "1px solid " + COLORS.cardRowBorder, display: "flex", alignItems: "center", gap: 6 }}>
+          <span>📋</span> قوالب طلبات الموارد البشرية
+        </div>
+        <div style={{ fontSize: 10, color: COLORS.textMuted, marginBottom: 10, lineHeight: 1.6 }}>
+          اختر نوع الطلب — سيُرسل للموارد البشرية للمراجعة والاعتماد
+        </div>
+
+        {/* Grid 2 columns */}
+        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
+          {templates.map(function(t){
+            return (
+              <button
+                key={t.id}
+                onClick={function(){ handleTemplateClick(t); }}
+                style={{
+                  padding: "12px 10px",
+                  borderRadius: 12,
+                  background: t.enabled ? COLORS.bgSecondary : "rgba(138,153,173,0.08)",
+                  border: "1px solid " + (t.enabled ? t.color + "60" : COLORS.cardBorder),
+                  color: COLORS.textPrimary,
+                  textAlign: "right",
+                  cursor: "pointer",
+                  fontFamily: TYPOGRAPHY.fontTajawal,
+                  opacity: t.enabled ? 1 : 0.65,
+                  position: "relative",
+                  transition: "all 0.15s",
+                }}
+              >
+                <div style={{ fontSize: 22, marginBottom: 6 }}>{t.emoji}</div>
+                <div style={{ fontSize: 12, fontWeight: 800, color: COLORS.textPrimary, marginBottom: 3 }}>
+                  {t.label}
+                </div>
+                <div style={{ fontSize: 9, color: COLORS.textMuted, lineHeight: 1.4 }}>
+                  {t.desc}
+                </div>
+                {!t.enabled && (
+                  <div style={{ position: "absolute", top: 6, left: 6, padding: "2px 6px", borderRadius: 6, background: "rgba(201,168,76,0.15)", border: "1px solid " + COLORS.goldLight + "40", fontSize: 8, fontWeight: 800, color: COLORS.goldLight }}>
+                    قريباً
+                  </div>
+                )}
+              </button>
+            );
+          })}
+        </div>
+
+        {/* "قريباً" toast */}
+        {comingSoonMsg && (
+          <div style={{ marginTop: 10, padding: "10px 12px", borderRadius: 10, background: COLORS.infoBg, border: "1px solid rgba(163,213,255,0.3)", fontSize: 11, color: COLORS.infoText, textAlign: "center", fontWeight: 600, fontFamily: TYPOGRAPHY.fontTajawal }}>
+            ⏳ قالب "{comingSoonMsg}" قيد التطوير — سيتوفر قريباً
+          </div>
+        )}
+
+        {/* Active template form */}
+        {activeTemplate === "edit_data" && (
+          <div style={{ marginTop: SPACING.md, padding: 12, borderRadius: 10, background: "rgba(99,102,241,0.05)", border: "1px solid rgba(99,102,241,0.3)" }}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 10 }}>
+              <div style={{ fontSize: 12, fontWeight: 800, color: COLORS.textPrimary, display: "flex", alignItems: "center", gap: 6 }}>
+                ✏️ تعديل البيانات
+              </div>
+              <button onClick={function(){ setActiveTemplate(null); }} style={{ padding: "4px 10px", borderRadius: 8, background: COLORS.bgSecondary, border: "1px solid " + COLORS.cardBorder, color: COLORS.textSecondary, fontSize: 10, fontWeight: 700, cursor: "pointer", fontFamily: TYPOGRAPHY.fontTajawal }}>
+                ✕ إغلاق
+              </button>
+            </div>
+            <EditRequestCard user={user} />
+          </div>
+        )}
+      </div>
+
+      {/* Divider */}
+      <div style={{ height: 1, background: COLORS.cardRowBorder, margin: SPACING.lg + "px 0" }} />
+
+      {/* القسم الثانوي: الدعم الفني */}
+      <div>
+        <div style={{ ...TYPOGRAPHY.bodySm, fontWeight: 800, color: COLORS.textPrimary, marginBottom: SPACING.sm, paddingBottom: SPACING.xs, borderBottom: "1px solid " + COLORS.cardRowBorder, display: "flex", alignItems: "center", gap: 6 }}>
+          <span>🎫</span> تذاكر الدعم الفني
+        </div>
+        <div style={{ fontSize: 10, color: COLORS.textMuted, marginBottom: 10, lineHeight: 1.6 }}>
+          لمشكلات التطبيق أو النظام أو الحساب الشخصي
+        </div>
+        <TicketsCard user={user} myTickets={myTickets} onTicket={onTicket} />
+      </div>
+    </div>
+  );
+}
 
 /* ═══ TICKETS CARD — عرض تذاكري مع Chat Thread (v6.81) ═══ */
 function TicketsCard({ user, myTickets, onTicket }) {
