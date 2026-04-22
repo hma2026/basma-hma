@@ -405,20 +405,45 @@ function getStatusMeta(status) {
   return STATUS_META[status] || { label: status || "—", icon: "•", color: COLORS.textMuted, bg: COLORS.metallic };
 }
 
+/* ── v7.46 — isAdminUser helper (replaces 4 identical checks) ── */
+function isAdminUser(user) {
+  return user && (user.role === "admin" || user.role === "hr_manager" || user.isAdmin || user.username === "admin");
+}
+
+/* ── v7.46 — AppIcon (replaces 4 identical img tags) ── */
+var APP_ICON = { src: "/app-icon-512.png", alt: "بصمة HMA", style: { width: "100%", height: "100%", objectFit: "cover", display: "block" } };
+
+/* ── v7.46 — Modal helpers (replaces 5 identical patterns) ── */
+var MODAL_CANCEL = { flex: 1, padding: 12, borderRadius: 14, border: "2px solid " + C.bg, background: C.card, color: C.sub, fontSize: 14, fontWeight: 700, cursor: "pointer" };
+var MODAL_BODY = { maxWidth: 380, background: C.card };
+
+/* ── v7.46 — buzz helper (replaces 12 navigator.vibrate checks) ── */
+function buzz(pattern) { try { if (navigator.vibrate) navigator.vibrate(pattern); } catch(e){} }
+
+/* ── v7.46 — Admin theme style constants ── */
+var ADMIN_CARD_STYLE = { background: C.card, borderRadius: 12, padding: 14, border: "1px solid " + C.cardBorder, marginBottom: 14 };
+var ADMIN_INPUT = { width: "100%", padding: 10, borderRadius: 10, border: "1px solid " + C.bg, fontSize: 13, fontFamily: "'Tajawal',sans-serif", background: C.card, color: C.text };
+var ADMIN_MODAL_TITLE = { fontSize: 16, fontWeight: 800, fontFamily: "'Cairo',sans-serif", textAlign: "center", color: C.text };
+var FLEX_BETWEEN = { display: "flex", justifyContent: "space-between", alignItems: "center" };
+
+/* ── v7.46 — fmtDateAr: Arabic date helper (replaces 19 inline calls) ── */
+function fmtDateAr(d) { if (!d) return "—"; try { return fmtDateAr(d); } catch(e) { return String(d); } }
+
 /* ── v7.46 — EmptyState component (replaces ~15 inline patterns) ── */
-function EmptyState({ icon, text }) {
+function EmptyState({ icon, text, sub }) {
   return (
     <div style={{ padding: SPACING.xl + "px " + SPACING.lg + "px", textAlign: "center" }}>
       {icon && <div style={{ fontSize: 28, marginBottom: SPACING.sm, opacity: 0.5 }}>{icon}</div>}
       <div style={{ ...TYPOGRAPHY.body, color: COLORS.textMuted, fontWeight: 700, fontFamily: TYPOGRAPHY.fontTajawal }}>{text}</div>
+      {sub && <div style={{ ...TYPOGRAPHY.tiny, color: COLORS.textMuted, marginTop: 4 }}>{sub}</div>}
     </div>
   );
 }
 
 /* ── v7.46 — SectionHeader (emoji + title, replaces 12+ inline headers) ── */
-function SectionHeader({ emoji, title, extra }) {
+function SectionHeader({ emoji, title, extra, noMargin }) {
   return (
-    <div style={{ ...TYPOGRAPHY.h3, color: COLORS.textPrimary, fontFamily: TYPOGRAPHY.fontCairo, marginBottom: SPACING.md, display: "flex", alignItems: "center", gap: 6 }}>
+    <div style={{ ...TYPOGRAPHY.h3, color: COLORS.textPrimary, fontFamily: TYPOGRAPHY.fontCairo, marginBottom: noMargin ? 0 : SPACING.md, display: "flex", alignItems: "center", gap: 6 }}>
       {emoji && <span>{emoji}</span>} {title}
       {extra && <div style={{ marginRight: "auto", marginLeft: 0 }}>{extra}</div>}
     </div>
@@ -1442,7 +1467,7 @@ function MobileAppInner() {
         localStorage.setItem("basma_checkin_queue", JSON.stringify(offQ));
         setTodayAtt(function(prev) { return [].concat(prev, [offlineRec]); });
         showToast("📴 تم الحفظ محلياً — سيُرفع عند عودة الاتصال");
-        if (navigator.vibrate) navigator.vibrate([100, 50, 100]);
+        buzz([100,50,100]);
         setLoading(false);
         return;
       }
@@ -1453,7 +1478,7 @@ function MobileAppInner() {
         setTodayAtt(function(prev) { return [].concat(prev, [{ id: "PENDING_" + Date.now(), empId: user.id, type: type, ts: new Date().toISOString(), _queued: true }]); });
         var offlineLabels = { checkin: "💾 سُجّل حضورك محلياً — سيُرسل عند عودة الاتصال", break_start: "💾 استراحة مسجّلة محلياً", break_end: "💾 عودة مسجّلة محلياً", checkout: "💾 انصراف مسجّل محلياً" };
         showToast(offlineLabels[type] || "💾 سُجّل محلياً");
-        if (navigator.vibrate) navigator.vibrate([100, 50, 100]);
+        buzz([100,50,100]);
         setLoading(false);
         return;
       }
@@ -1461,7 +1486,7 @@ function MobileAppInner() {
         setTodayAtt(function(prev) { return [].concat(prev, [r.record]); });
         var labels = { checkin: MASCOT.done, break_start: "بداية الاستراحة ☕", break_end: "تم تسجيل العودة 🔄", checkout: "تم تسجيل الانصراف 🌙" };
         showToast(labels[type] || "تم التسجيل ✓");
-        if (navigator.vibrate) navigator.vibrate([100, 50, 100]);
+        buzz([100,50,100]);
         if (outsideRange && badge.tier < 2) setTimeout(function(){ showToast("⚠️ تم التسجيل من خارج نطاق العمل", "warning"); }, 3200);
 
         // Bonus points — بصمة مبكرة (أول 15 ثانية من بداية الدوام)
@@ -1707,7 +1732,7 @@ function SplashScreen() {
   return (
     <div style={{ minHeight: "100vh", background: "linear-gradient(180deg,"+C.hdr1+","+C.hdr3+")", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center" }}>
       <div className="basma-pulse" style={{ width: 180, height: 180, borderRadius: "50%", overflow: "hidden", boxShadow: "0 12px 40px rgba(0,0,0,0.5)" }}>
-        <img src="/app-icon-512.png" alt="بصمة HMA" style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }} />
+        <img {...APP_ICON} />
       </div>
       <div style={{ color: "#fff", fontSize: 24, fontWeight: 900, fontFamily: "'Cairo',sans-serif", marginTop: 24 }}>بصمة HMA</div>
       <div style={{ color: "rgba(255,255,255,.5)", fontSize: 11, marginTop: 8 }}>جارِ التحميل...</div>
@@ -1724,7 +1749,7 @@ function ConsentScreen({ onAccept }) {
         {/* v6.76 — HMA clock logo */}
         <div style={{ textAlign: "center", marginBottom: SPACING.lg }}>
           <div style={{ width: 120, height: 120, borderRadius: "50%", overflow: "hidden", margin: "0 auto", boxShadow: "0 8px 28px rgba(0,0,0,0.35)" }}>
-            <img src="/app-icon-512.png" alt="بصمة HMA" style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }} />
+            <img {...APP_ICON} />
           </div>
           <div style={{ fontSize: 17, fontWeight: 900, color: COLORS.textPrimary, marginTop: 14, fontFamily: TYPOGRAPHY.fontCairo }}>بصمة HMA</div>
           <div style={{ fontSize: 10, color: COLORS.textMuted, marginTop: 3 }}>هاني محمد عسيري للاستشارات الهندسية</div>
@@ -1835,7 +1860,7 @@ function LoginScreen({ onLogin, onBiometric, loading }) {
   return (
     <div style={{ minHeight: "100vh", background: "linear-gradient(180deg,"+C.hdr1+" 0%,"+C.hdr2+" 50%,"+C.hdr3+" 100%)", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", padding: 24 }}>
       <div className="basma-fadein" style={{ width: 140, height: 140, borderRadius: "50%", overflow: "hidden", marginBottom: 20, boxShadow: "0 12px 40px rgba(0,0,0,0.45)" }}>
-        <img src="/app-icon-512.png" alt="بصمة HMA" style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }} />
+        <img {...APP_ICON} />
       </div>
       <div className="basma-fadein-d1" style={{ color: "#fff", fontSize: 26, fontWeight: 900, fontFamily: "'Cairo',sans-serif", marginBottom: 4 }}>بصمة HMA</div>
       <div className="basma-fadein-d1" style={{ color: "rgba(255,255,255,.65)", fontSize: 11, fontWeight: 500, marginBottom: 26, textAlign: "center", lineHeight: 1.6 }}>
@@ -2205,7 +2230,7 @@ function GMKPICard({ user }) {
 
   return (
     <div style={{ marginBottom: 10, background: "linear-gradient(135deg, rgba(124,58,237,0.15), rgba(91,33,182,0.08))", borderRadius: 14, padding: 14, border: "1px solid rgba(124,58,237,0.35)" }}>
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 10 }}>
+      <div style={{ ...FLEX_BETWEEN, marginBottom: 10 }}>
         <div>
           <div style={{ fontSize: 13, fontWeight: 800, color: "#c4b5fd", display: "flex", alignItems: "center", gap: 5 }}>
             👔 نظرة المدير العام
@@ -2243,7 +2268,7 @@ function GMKPICard({ user }) {
         <>
           {/* Monthly punctuality */}
           <div style={{ padding: 10, borderRadius: 10, background: "rgba(255,255,255,0.04)", marginBottom: 8, border: "1px solid rgba(255,255,255,0.08)" }}>
-            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 6 }}>
+            <div style={{ ...FLEX_BETWEEN, marginBottom: 6 }}>
               <div style={{ fontSize: 11, color: COLORS.textPrimary, fontWeight: 700 }}>📊 انضباط الشهر</div>
               <div style={{ fontSize: 15, fontWeight: 900, color: punctColor }}>{stats.monthPunctuality}%</div>
             </div>
@@ -2257,7 +2282,7 @@ function GMKPICard({ user }) {
 
           {/* Points summary */}
           <div style={{ padding: 10, borderRadius: 10, background: "rgba(255,255,255,0.04)", marginBottom: 8, border: "1px solid rgba(255,255,255,0.08)" }}>
-            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 6 }}>
+            <div style={{ ...FLEX_BETWEEN, marginBottom: 6 }}>
               <div style={{ fontSize: 11, color: COLORS.textPrimary, fontWeight: 700 }}>⭐ إجمالي نقاط الفريق</div>
               <div style={{ fontSize: 15, fontWeight: 900, color: COLORS.goldLight }}>{stats.totalPoints.toLocaleString("ar-SA")}</div>
             </div>
@@ -2737,7 +2762,7 @@ function ReportPage({ user, allAtt, todayAtt, branch, isOffDay, myLeaves, allEmp
 
         {/* ملخص اليوم */}
         <Card>
-          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: SPACING.md }}>
+          <div style={{ ...FLEX_BETWEEN, marginBottom: SPACING.md }}>
             <span style={{ ...TYPOGRAPHY.h3, color: COLORS.textPrimary }}>ملخص اليوم</span>
             <span style={{ ...TYPOGRAPHY.caption, color: COLORS.textMuted }}>{todayStr()}</span>
           </div>
@@ -2796,7 +2821,7 @@ function ReportPage({ user, allAtt, todayAtt, branch, isOffDay, myLeaves, allEmp
 
         {/* Calendar */}
         <Card>
-          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: SPACING.md }}>
+          <div style={{ ...FLEX_BETWEEN, marginBottom: SPACING.md }}>
             <span style={{ ...TYPOGRAPHY.h3, color: COLORS.textPrimary }}>التقويم</span>
             <span style={{ ...TYPOGRAPHY.caption, color: COLORS.textMuted }}>{monthName + " " + yr}</span>
           </div>
@@ -3466,11 +3491,7 @@ function RecordsArchiveView({ user }) {
   if (items.length === 0) {
     return (
       <Card padding={SPACING.lg}>
-        <div style={{ textAlign: "center", color: COLORS.textMuted, padding: 20 }}>
-          <div style={{ fontSize: 36, marginBottom: 8 }}>🗄️</div>
-          <div style={{ ...TYPOGRAPHY.body, fontWeight: 700 }}>الأرشيف فارغ</div>
-          <div style={{ ...TYPOGRAPHY.tiny, marginTop: 4 }}>ستظهر هنا السجلات المغلقة (المعتمدة أو المرفوضة أو المنتهية)</div>
-        </div>
+        <EmptyState icon="🗄️" text="الأرشيف فارغ" sub="ستظهر هنا السجلات المغلقة (المعتمدة أو المرفوضة أو المنتهية)" />
       </Card>
     );
   }
@@ -3513,11 +3534,7 @@ function RecordsPromotionsView({ user }) {
   if (promotions.length === 0) {
     return (
       <Card padding={SPACING.lg}>
-        <div style={{ textAlign: "center", color: COLORS.textMuted, padding: 20 }}>
-          <div style={{ fontSize: 36, marginBottom: 8 }}>🚀</div>
-          <div style={{ ...TYPOGRAPHY.body, fontWeight: 700 }}>لا توجد ترقيات مسجّلة</div>
-          <div style={{ ...TYPOGRAPHY.tiny, marginTop: 4 }}>ستظهر هنا ترقياتك وتدرّجك الوظيفي</div>
-        </div>
+        <EmptyState icon="🚀" text="لا توجد ترقيات مسجّلة" sub="ستظهر هنا ترقياتك وتدرّجك الوظيفي" />
       </Card>
     );
   }
@@ -3527,7 +3544,7 @@ function RecordsPromotionsView({ user }) {
       {promotions.map(function(p, i){
         return (
           <div key={p.id || i} style={{ padding: SPACING.md, borderRadius: RADIUS.md, background: "linear-gradient(135deg, rgba(201,168,76,0.08), rgba(232,213,163,0.04))", border: "1px solid rgba(201,168,76,0.3)" }}>
-            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 4 }}>
+            <div style={{ ...FLEX_BETWEEN, marginBottom: 4 }}>
               <span style={{ fontSize: 13, fontWeight: 900, color: COLORS.goldLight, fontFamily: TYPOGRAPHY.fontCairo }}>{p.title || "ترقية"}</span>
               <span style={{ fontSize: 10, color: COLORS.textMuted }}>{p.date || p.startDate || "—"}</span>
             </div>
@@ -3565,9 +3582,7 @@ function RecordsHub({ user, onTicket, myTickets }) {
 
       {/* v7.43 — Section 1: الطلبات المفتوحة (always visible, no accordion) */}
       <div style={{ background: COLORS.metallic, border: "1px solid " + COLORS.metallicBorder, borderRadius: RADIUS.xl, padding: SPACING.lg, boxShadow: SHADOWS.button }}>
-        <div style={{ ...TYPOGRAPHY.h3, color: COLORS.textPrimary, marginBottom: SPACING.md, display: "flex", alignItems: "center", gap: 6, fontFamily: TYPOGRAPHY.fontCairo }}>
-          <span>📬</span> الطلبات المفتوحة
-        </div>
+        <SectionHeader emoji="📬" title="الطلبات المفتوحة" />
         <MyRequestsTab user={user} />
       </div>
 
@@ -3695,10 +3710,8 @@ function AchievementsBadgesStrip({ user, stats, loading }) {
 
   return (
     <Card padding={SPACING.md}>
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: SPACING.md }}>
-        <div style={{ ...TYPOGRAPHY.h3, color: COLORS.textPrimary, fontFamily: TYPOGRAPHY.fontCairo, display: "flex", alignItems: "center", gap: 6 }}>
-          <span>🏅</span> شاراتي
-        </div>
+      <div style={{ ...FLEX_BETWEEN, marginBottom: SPACING.md }}>
+        <SectionHeader emoji="🏅" title="شاراتي" noMargin />
         <div style={{ fontSize: 10, fontWeight: 700, color: COLORS.textMuted, fontFamily: TYPOGRAPHY.fontTajawal }}>
           <strong style={{ color: COLORS.goldLight }}>{unlockedTotal}</strong>/{ACHIEVEMENTS.length}
         </div>
@@ -3961,9 +3974,7 @@ function AchievementsHub({ user }) {
 
       {/* v7.37 — 4. Points log DIRECTLY below badges (not accordion) */}
       <div style={{ background: COLORS.metallic, border: "1px solid " + COLORS.metallicBorder, borderRadius: RADIUS.xl, padding: SPACING.lg, boxShadow: SHADOWS.button }}>
-        <div style={{ ...TYPOGRAPHY.h3, color: COLORS.textPrimary, marginBottom: SPACING.md, display: "flex", alignItems: "center", gap: 6 }}>
-          <span>📜</span> سجل النقاط
-        </div>
+        <SectionHeader emoji="📜" title="سجل النقاط" />
         <PointsLogCard user={user} allAtt={[]} />
       </div>
 
@@ -4103,9 +4114,7 @@ function SalaryBreakdownBar({ latestSlip }) {
 
   return (
     <Card padding={SPACING.md}>
-      <div style={{ ...TYPOGRAPHY.h3, color: COLORS.textPrimary, fontFamily: TYPOGRAPHY.fontCairo, marginBottom: SPACING.md, display: "flex", alignItems: "center", gap: 6 }}>
-        <span>📊</span> توزيع المستحقات
-      </div>
+      <SectionHeader emoji="📊" title="توزيع المستحقات" />
 
       {/* Stacked horizontal bar */}
       <div style={{
@@ -4242,9 +4251,7 @@ function CustodyBadgesCard({ user }) {
   if (loading) {
     return (
       <Card padding={SPACING.md}>
-        <div style={{ ...TYPOGRAPHY.h3, color: COLORS.textPrimary, fontFamily: TYPOGRAPHY.fontCairo, display: "flex", alignItems: "center", gap: 6 }}>
-          <span>📦</span> العُهَد
-        </div>
+        <SectionHeader emoji="📦" title="العُهَد" noMargin />
         <EmptyState text="جارٍ التحميل..." />
       </Card>
     );
@@ -4255,10 +4262,8 @@ function CustodyBadgesCard({ user }) {
 
   return (
     <Card padding={SPACING.md}>
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: SPACING.md }}>
-        <div style={{ ...TYPOGRAPHY.h3, color: COLORS.textPrimary, fontFamily: TYPOGRAPHY.fontCairo, display: "flex", alignItems: "center", gap: 6 }}>
-          <span>📦</span> العُهَد النشطة
-        </div>
+      <div style={{ ...FLEX_BETWEEN, marginBottom: SPACING.md }}>
+        <SectionHeader emoji="📦" title="العُهَد النشطة" noMargin />
         <div style={{ fontSize: 10, fontWeight: 700, color: COLORS.textMuted, fontFamily: TYPOGRAPHY.fontTajawal }}>
           <strong style={{ color: COLORS.goldLight }}>{active.length}</strong> عهدة
           {totalValue > 0 && <span> · <strong style={{ color: COLORS.goldLight }}>{_payFormatNum(totalValue)}</strong> ر.س</span>}
@@ -4334,10 +4339,8 @@ function BankAccountCard({ user, onRequestEdit }) {
 
   return (
     <Card padding={SPACING.md}>
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: SPACING.md }}>
-        <div style={{ ...TYPOGRAPHY.h3, color: COLORS.textPrimary, fontFamily: TYPOGRAPHY.fontCairo, display: "flex", alignItems: "center", gap: 6 }}>
-          <span>🏦</span> الحساب البنكي
-        </div>
+      <div style={{ ...FLEX_BETWEEN, marginBottom: SPACING.md }}>
+        <SectionHeader emoji="🏦" title="الحساب البنكي" noMargin />
       </div>
 
       {/* Bank logo/name row */}
@@ -4348,7 +4351,7 @@ function BankAccountCard({ user, onRequestEdit }) {
         border: "1px solid " + COLORS.metallicBorder,
         marginBottom: SPACING.sm,
       }}>
-        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 4 }}>
+        <div style={{ ...FLEX_BETWEEN, marginBottom: 4 }}>
           <span style={{ fontSize: 10, color: COLORS.textMuted, fontWeight: 700, fontFamily: TYPOGRAPHY.fontTajawal }}>اسم البنك</span>
           <span style={{ fontSize: 13, fontWeight: 800, color: COLORS.textPrimary, fontFamily: TYPOGRAPHY.fontTajawal }}>{bankName}</span>
         </div>
@@ -4362,7 +4365,7 @@ function BankAccountCard({ user, onRequestEdit }) {
         border: "1px solid rgba(201,168,76,0.25)",
         marginBottom: SPACING.md,
       }}>
-        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 6 }}>
+        <div style={{ ...FLEX_BETWEEN, marginBottom: 6 }}>
           <span style={{ fontSize: 10, color: COLORS.textMuted, fontWeight: 700, fontFamily: TYPOGRAPHY.fontTajawal }}>رقم الآيبان (IBAN)</span>
           <div style={{ display: "flex", gap: 6 }}>
             <button
@@ -4684,10 +4687,8 @@ function LegalCaseTimeline({ violations, investigations, complaints, user, onVie
 
   return (
     <Card padding={SPACING.md}>
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: SPACING.md }}>
-        <div style={{ ...TYPOGRAPHY.h3, color: COLORS.textPrimary, fontFamily: TYPOGRAPHY.fontCairo, display: "flex", alignItems: "center", gap: 6 }}>
-          <span>📜</span> السجل التاريخي
-        </div>
+      <div style={{ ...FLEX_BETWEEN, marginBottom: SPACING.md }}>
+        <SectionHeader emoji="📜" title="السجل التاريخي" noMargin />
         <div style={{ fontSize: 11, fontWeight: 700, color: COLORS.textMuted, fontFamily: TYPOGRAPHY.fontTajawal }}>
           {cases.length} قضية
         </div>
@@ -4769,9 +4770,7 @@ function LegalReferencesCard({ onOpenLaiha, onOpenPolicies }) {
 
   return (
     <Card padding={SPACING.md}>
-      <div style={{ ...TYPOGRAPHY.h3, color: COLORS.textPrimary, fontFamily: TYPOGRAPHY.fontCairo, marginBottom: SPACING.md, display: "flex", alignItems: "center", gap: 6 }}>
-        <span>📚</span> المراجع التنظيمية
-      </div>
+      <SectionHeader emoji="📚" title="المراجع التنظيمية" />
       <div style={{ display: "flex", flexDirection: "column", gap: SPACING.sm }}>
         <Ref emoji="📜" title="لائحة تنظيم العمل" subtitle="البنود · الجزاءات · التدرّج في العقوبات" onClick={onOpenLaiha} />
         <Ref emoji="📖" title="سياسات المكتب" subtitle="الحضور · الإجازات · المخالفات · الإفادات" onClick={onOpenPolicies} />
@@ -5099,9 +5098,7 @@ function ProfilePage({ user, branch, workType, onLogout, onTicket, myTickets, da
 
             {user.sceNumber && (
               <Card>
-                <div style={{ ...TYPOGRAPHY.h3, color: COLORS.textPrimary, marginBottom: SPACING.md, display: "flex", alignItems: "center", gap: 6 }}>
-                  <span>🏛️</span> الهيئة السعودية للمهندسين
-                </div>
+                <SectionHeader emoji="🏛️" title="الهيئة السعودية للمهندسين" />
                 <div style={{ display: "flex", justifyContent: "space-between", padding: SPACING.sm + "px 0" }}>
                   <span style={{ ...TYPOGRAPHY.body, fontWeight: 700, color: COLORS.textPrimary }}>{user.sceNumber}</span>
                   <span style={{ ...TYPOGRAPHY.caption, color: COLORS.textMuted }}>رقم العضوية</span>
@@ -5253,7 +5250,7 @@ function AboutAppModal({ onClose, onTicket }) {
         <div style={{ padding: "28px 20px 20px", textAlign: "center", borderBottom: "1px solid " + COLORS.metallicBorder, position: "relative" }}>
           <button onClick={onClose} style={{ position: "absolute", top: 12, left: 12, background: "rgba(255,255,255,0.08)", border: "none", width: 32, height: 32, borderRadius: 16, fontSize: 18, color: COLORS.textPrimary, cursor: "pointer" }}>×</button>
           <div style={{ width: 120, height: 120, borderRadius: "50%", overflow: "hidden", margin: "0 auto 14px", boxShadow: "0 8px 28px rgba(0,0,0,0.45)" }}>
-            <img src="/app-icon-512.png" alt="بصمة HMA" style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }} />
+            <img {...APP_ICON} />
           </div>
           <div style={{ fontSize: 22, fontWeight: 900, color: COLORS.goldLight, fontFamily: TYPOGRAPHY.fontCairo }}>بصمة HMA</div>
           <div style={{ fontSize: 12, color: COLORS.textMuted, marginTop: 4 }}>نظام الحضور والانصراف الذكي</div>
@@ -5478,7 +5475,7 @@ function BenefitsPage({ user }) {
             {myRedemptions.slice(0, 10).map(function(r){
               return <div key={r.id} style={{ display: "flex", justifyContent: "space-between", padding: "8px 0", borderBottom: "1px solid " + COLORS.metallicBorder }}>
                 <span style={{ ...TYPOGRAPHY.caption, color: COLORS.textPrimary }}>{r.couponName}</span>
-                <span style={{ ...TYPOGRAPHY.tiny, color: COLORS.textMuted }}>{new Date(r.ts).toLocaleDateString("ar-SA")}</span>
+                <span style={{ ...TYPOGRAPHY.tiny, color: COLORS.textMuted }}>{fmtDateAr(r.ts)}</span>
               </div>;
             })}
           </Card>
@@ -6292,7 +6289,7 @@ function TawasulCreateModal({ user, allEmps, categories, projects, onClose, onSa
                 var def = TAWASUL_DELIVERY.find(function(d){ return d.id === dm.type; });
                 return (
                   <div key={idx} style={{ background: C.card, borderRadius: 12, padding: 12, border: "1px solid " + C.cardBorder, marginBottom: 8 }}>
-                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 6 }}>
+                    <div style={{ ...FLEX_BETWEEN, marginBottom: 6 }}>
                       <div style={{ fontSize: 12, fontWeight: 800, color: C.text }}>{dm.label}</div>
                       <button onClick={function(){ removeDelivery(idx); }} style={{ background: "none", border: "none", fontSize: 16, color: "#ef4444", cursor: "pointer" }}>✕</button>
                     </div>
@@ -6346,7 +6343,7 @@ function TawasulCreateModal({ user, allEmps, categories, projects, onClose, onSa
               <div style={{ background: "linear-gradient(135deg, rgba(201,168,76,0.15), rgba(201,168,76,0.05))", borderRadius: 14, padding: 14, border: "1px solid " + C.gold }}>
                 <div style={{ fontSize: 13, fontWeight: 900, color: C.gold, marginBottom: 10 }}>📋 ملخص الطلب</div>
                 <div style={{ fontSize: 11, lineHeight: 1.8, color: C.text }}>
-                  <div><strong>{form.urgency === "urgent" ? "🔴 عاجل" : "🟡 عادي"}</strong> {form.timed && form.deadline ? " · ⏰ " + new Date(form.deadline).toLocaleDateString("ar-SA") : " · 📅 غير محدد"}</div>
+                  <div><strong>{form.urgency === "urgent" ? "🔴 عاجل" : "🟡 عادي"}</strong> {form.timed && form.deadline ? " · ⏰ " + fmtDateAr(form.deadline) : " · 📅 غير محدد"}</div>
                   <div>إلى: {(form.assignees || []).map(function(a){ return a.name; }).join("، ") || "—"}</div>
                   <div>🏢 {form.department || "—"} · 🏷 {(cats.find(function(c){ return c.id === form.category; }) || {}).label || form.category || "—"}</div>
                   <div>🏗️ {form.projectName || "—"}</div>
@@ -7566,7 +7563,7 @@ function TawasulHRAssistant({ user, onClose }) {
                 ) : decisions.slice().reverse().map(function(d){
                   return (
                     <div key={d.id} style={{ padding: 10, marginBottom: 6, borderRadius: 10, background: C.card, border: "1px solid " + C.cardBorder, borderRight: "3px solid " + (d.undone ? "#94a3b8" : C.gold), opacity: d.undone ? 0.5 : 1 }}>
-                      <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 4 }}>
+                      <div style={{ ...FLEX_BETWEEN, marginBottom: 4 }}>
                         <span style={{ fontSize: 11, fontWeight: 800, color: C.text }}>{d.serial}</span>
                         <span style={{ fontSize: 9, color: C.sub }}>{new Date(d.at).toLocaleString("ar-SA")}</span>
                       </div>
@@ -7817,7 +7814,7 @@ function playUrgentNotif() {
     note(1000, 0.36, 0.12, 0.18);
     note(800,  0.48, 0.18, 0.15);
     // Vibrate if supported (mobile)
-    if (navigator.vibrate) { try { navigator.vibrate([200, 100, 200, 100, 400]); } catch(e){} }
+    buzz([200,100,200,100,400]);
   } catch(e) {}
 }
 
@@ -8157,7 +8154,7 @@ function TawasulPage({ user, allEmps }) {
   var [showHRAssistant, setShowHRAssistant] = useState(false);
   var [showDesktopPair, setShowDesktopPair] = useState(false); // v6.31
 
-  var isAdmin = user && (user.role === "admin" || user.role === "hr_manager" || user.isAdmin || user.username === "admin");
+  var isAdmin = isAdminUser(user);
   var myId = user && (user.id || user.username);
 
   async function loadData(isRefresh) {
@@ -8625,7 +8622,7 @@ function TawasulPage({ user, allEmps }) {
   return (
     <div style={{ minHeight: "100vh", background: pageBg, color: C.text, paddingBottom: 80, fontFamily: "'Tajawal',sans-serif", direction: "rtl" }}>
       <div style={{ background: "linear-gradient(135deg, " + C.hdr1 + " 0%, " + C.hdr2 + " 100%)", padding: "16px 16px 18px", color: "#fff" }}>
-        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 4 }}>
+        <div style={{ ...FLEX_BETWEEN, marginBottom: 4 }}>
           <div style={{ fontSize: 22, fontWeight: 900, fontFamily: "'Cairo',sans-serif" }}>🤝 تواصل</div>
           <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
             <button onClick={function(){ loadData(true); }} disabled={refreshing} style={{ background: "rgba(255,255,255,.15)", border: "1px solid rgba(255,255,255,.25)", borderRadius: 10, padding: "6px 10px", color: "#fff", fontSize: 11, fontWeight: 700, cursor: "pointer", fontFamily: "inherit" }}>{refreshing ? "⟳..." : "⟳"}</button>
@@ -8790,7 +8787,7 @@ function TawasulPage({ user, allEmps }) {
 
             {/* Saved searches */}
             <div style={{ borderTop: "1px dashed " + C.cardBorder, paddingTop: 10, marginTop: 4 }}>
-              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 6 }}>
+              <div style={{ ...FLEX_BETWEEN, marginBottom: 6 }}>
                 <div style={{ fontSize: 10, fontWeight: 800, color: C.gold }}>⭐ البحوث المحفوظة ({savedSearches.length})</div>
                 {activeFilters > 0 && (
                   <button onClick={saveCurrentSearch} style={{ padding: "4px 10px", borderRadius: 8, background: C.gold, color: "#fff", border: "none", fontSize: 10, fontWeight: 800, cursor: "pointer", fontFamily: "inherit" }}>💾 احفظ الحالي</button>
@@ -9169,7 +9166,7 @@ function TawasulAnalytics({ requests, myId, user, hierarchy, subordinatesSet, na
       </div>
 
       {/* Completion + On-time rates */}
-      <div style={{ background: C.card, borderRadius: 12, padding: 14, border: "1px solid " + C.cardBorder, marginBottom: 14 }}>
+      <div style={ADMIN_CARD_STYLE}>
         <div style={{ fontSize: 12, fontWeight: 700, marginBottom: 12, color: C.text }}>🎯 أدائي</div>
         <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
           <div style={{ textAlign: "center" }}>
@@ -9212,7 +9209,7 @@ function TawasulAnalytics({ requests, myId, user, hierarchy, subordinatesSet, na
 
       {/* Status distribution */}
       {Object.keys(statusDist).length > 0 && (
-        <div style={{ background: C.card, borderRadius: 12, padding: 14, border: "1px solid " + C.cardBorder, marginBottom: 14 }}>
+        <div style={ADMIN_CARD_STYLE}>
           <div style={{ fontSize: 12, fontWeight: 700, marginBottom: 12, color: C.text }}>📈 توزيع حسب الحالة</div>
           {statusOrder.filter(function(s){ return statusDist[s]; }).map(function(s){
             var meta = getTawasulStatusMeta(s);
@@ -9223,7 +9220,7 @@ function TawasulAnalytics({ requests, myId, user, hierarchy, subordinatesSet, na
 
       {/* Top projects */}
       {topProjects.length > 0 && (
-        <div style={{ background: C.card, borderRadius: 12, padding: 14, border: "1px solid " + C.cardBorder, marginBottom: 14 }}>
+        <div style={ADMIN_CARD_STYLE}>
           <div style={{ fontSize: 12, fontWeight: 700, marginBottom: 10, color: C.text }}>🏗️ أكثر المشاريع نشاطاً</div>
           {topProjects.map(function(p, i){
             var maxC = topProjects[0].count;
@@ -9234,7 +9231,7 @@ function TawasulAnalytics({ requests, myId, user, hierarchy, subordinatesSet, na
 
       {/* Top people */}
       {topPeople.length > 0 && (
-        <div style={{ background: C.card, borderRadius: 12, padding: 14, border: "1px solid " + C.cardBorder, marginBottom: 14 }}>
+        <div style={ADMIN_CARD_STYLE}>
           <div style={{ fontSize: 12, fontWeight: 700, marginBottom: 10, color: C.text }}>👥 أكثر من أتواصل معهم</div>
           {topPeople.map(function(p, i){
             var initial = (p.name || "?").charAt(0);
@@ -9257,7 +9254,7 @@ function TawasulAnalytics({ requests, myId, user, hierarchy, subordinatesSet, na
 
       {/* ═══ Time Tracking Stats (v6.29) ═══ */}
       {myTotalSec > 0 && (
-        <div style={{ background: C.card, borderRadius: 12, padding: 14, border: "1px solid " + C.cardBorder, marginBottom: 14 }}>
+        <div style={ADMIN_CARD_STYLE}>
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>
             <div style={{ fontSize: 12, fontWeight: 700, color: C.text }}>⏱ الوقت المسجّل</div>
             <div style={{ fontSize: 11, color: C.gold, fontWeight: 800 }}>{fmtDuration(myTotalSec)}</div>
@@ -9338,7 +9335,7 @@ function TawasulAnalytics({ requests, myId, user, hierarchy, subordinatesSet, na
           {/* Top subordinates by TIME — v6.29 */}
           {topDeptTimeSubs.length > 0 && (
             <div style={{ background: C.card, borderRadius: 12, padding: 14, border: "1.5px solid rgba(124,58,237,0.3)", marginBottom: 14 }}>
-              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 10 }}>
+              <div style={{ ...FLEX_BETWEEN, marginBottom: 10 }}>
                 <div style={{ fontSize: 12, fontWeight: 700, color: "#7c3aed" }}>⏱ توزيع ساعات الفريق</div>
                 <div style={{ fontSize: 11, color: "#7c3aed", fontWeight: 800 }}>{fmtDuration(deptTimeSec)}</div>
               </div>
@@ -9476,7 +9473,7 @@ function TimeTrackingPanel({ request, user, readOnly, canEdit, onUpdated }) {
   var r = request;
   var myId = user && (user.id || user.username);
   var myName = (user && (user.name || user.username)) || "";
-  var isAdmin = user && (user.role === "admin" || user.role === "hr_manager" || user.isAdmin || user.username === "admin");
+  var isAdmin = isAdminUser(user);
 
   var entries = (r.timeEntries || []).slice().sort(function(a,b){ return new Date(b.endedAt || b.startedAt || 0) - new Date(a.endedAt || a.startedAt || 0); });
   var totalSec = entries.reduce(function(sum,e){ return sum + (e.durationSec || 0); }, 0);
@@ -9614,7 +9611,7 @@ function TimeTrackingPanel({ request, user, readOnly, canEdit, onUpdated }) {
 
   return (
     <div style={{ background: C.card, borderRadius: 12, padding: 14, border: "1px solid " + C.cardBorder, marginBottom: 12 }}>
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 10 }}>
+      <div style={{ ...FLEX_BETWEEN, marginBottom: 10 }}>
         <div style={{ fontSize: 11, fontWeight: 800, color: C.sub }}>⏱ تتبع الوقت</div>
         {totalSec > 0 && <div style={{ fontSize: 11, color: C.gold, fontWeight: 800 }}>الإجمالي: {fmtDuration(totalSec)}</div>}
       </div>
@@ -9822,7 +9819,7 @@ function ChatPanel({ request, user, allEmps, readOnly, onUpdated, nameOf }) {
   var r = request;
   var myId = user && (user.id || user.username);
   var myName = (user && (user.name || user.username)) || "";
-  var isAdmin = user && (user.role === "admin" || user.role === "hr_manager" || user.isAdmin || user.username === "admin");
+  var isAdmin = isAdminUser(user);
 
   // Participants: requester + assignees (unique) — used for mention autocomplete
   var participants = React.useMemo(function(){
@@ -10602,7 +10599,7 @@ function PartiesCarousel({ assignees, nameOf, C }) {
     var idx = Math.round(el.scrollLeft / cw);
     if (idx !== partyIdx && idx >= 0 && idx < totalP) {
       setPartyIdx(idx);
-      try { if (navigator.vibrate) navigator.vibrate(6); } catch(e) {}
+      buzz(6);
     }
   }
 
@@ -10713,7 +10710,7 @@ function SwipeSection({ id, icon, title, badge, children, isOpen, onToggle, C, s
       var w = el.offsetWidth || 300;
       var fired = Math.abs(s.vel) > 350 || Math.abs(s.dx) > w * 0.3;
       if (fired) {
-        try { if (navigator.vibrate) navigator.vibrate(8); } catch(e2) {}
+        buzz(8);
         // v7.39 — direction: "right" = swipe L→R (dx>0), "left" = swipe R→L (dx<0)
         var dir2 = (s.dx > 0 || s.vel > 350) ? "right" : "left";
         // If custom onSwipe provided, use it (parent decides behavior)
@@ -10769,7 +10766,7 @@ function TawasulDetailModal({ request, user, allEmps, onClose, nameOf, onUpdated
   var evals = r.evaluations || [];
   var curStage = stageIndex(r.status);
 
-  var isAdmin = user && (user.role === "admin" || user.role === "hr_manager" || user.isAdmin || user.username === "admin");
+  var isAdmin = isAdminUser(user);
   var isRequester = String(r.requesterId) === String(myId);
   var isAssignee = (r.assignees || []).some(function(a){ return String(a.id) === String(myId); });
   // In read-only mode (department tabs), disable all acting roles
@@ -11103,7 +11100,7 @@ function TawasulDetailModal({ request, user, allEmps, onClose, nameOf, onUpdated
     if (!taskList || !onNavigate) return;
     var nextIdx = curTaskIdx + dir;
     if (nextIdx < 0 || nextIdx >= taskList.length) return;
-    try { if (navigator.vibrate) navigator.vibrate(10); } catch(e) {}
+    buzz(10);
     onNavigate(taskList[nextIdx]);
   }
   function onNavTS(e) {
@@ -11486,7 +11483,7 @@ function TawasulDetailModal({ request, user, allEmps, onClose, nameOf, onUpdated
           {evals.length > 0 && (
             <div style={{ background: C.card, borderRadius: 14, padding: 14, border: "1px solid " + C.cardBorder, marginBottom: 8 }}>
               <div style={{ fontSize: 11, fontWeight: 800, color: C.sub, marginBottom: 8, display: "flex", alignItems: "center", justifyContent: "space-between" }}><span>⭐ التقييمات ({evals.length})</span>{r.finalScore !== undefined && r.finalScore !== null && <span style={{ fontSize: 13, color: C.gold, fontWeight: 900 }}>{r.finalScore}/100</span>}</div>
-              {evals.map(function(ev, idx){ return <div key={idx} style={{ padding: "8px 10px", borderRadius: 8, background: C.bg, marginBottom: 6, fontSize: 12 }}><div style={{ display: "flex", justifyContent: "space-between", marginBottom: 4 }}><span style={{ fontWeight: 700, color: C.text }}>{ev.byName || nameOf(ev.by)}</span><span style={{ color: C.gold, fontWeight: 800 }}>{ev.avgScore || "-"}/100</span></div></div>; })}
+              {evals.map(function(ev, idx){ return <div key={idx} style={{ padding: "8px 10px", borderRadius: 8, background: C.bg, marginBottom: 6, fontSize: 12 }}><div style={{ ...FLEX_BETWEEN, marginBottom: 4 }}><span style={{ fontWeight: 700, color: C.text }}>{ev.byName || nameOf(ev.by)}</span><span style={{ color: C.gold, fontWeight: 800 }}>{ev.avgScore || "-"}/100</span></div></div>; })}
             </div>
           )}
 
@@ -11886,7 +11883,7 @@ function AnnouncementsModal({ announcements, user, onClose, onRead }) {
                         {!isRead && <span style={{ display: "inline-block", width: 8, height: 8, borderRadius: 4, background: "#3b82f6", marginLeft: 6 }}></span>}
                         {a.title}
                       </div>
-                      <div style={{ fontSize: 10, color: COLORS.textMuted, marginTop: 2 }}>{new Date(a.ts).toLocaleDateString("ar-SA")}</div>
+                      <div style={{ fontSize: 10, color: COLORS.textMuted, marginTop: 2 }}>{fmtDateAr(a.ts)}</div>
                     </div>
                     {a.priority && a.priority !== "normal" && (
                       <span style={{ padding: "2px 8px", borderRadius: 4, background: priorityBg[a.priority], color: "#fff", fontSize: 9, fontWeight: 800 }}>{priorityLabel[a.priority]}</span>
@@ -11946,7 +11943,7 @@ function ConfirmModal({ label, onConfirm, onCancel }) {
     <div style={S.overlay} onClick={onCancel}>
       <div className="basma-slideup" style={S.modal} onClick={function(e){ e.stopPropagation(); }}>
         <div style={{ fontSize: 40, textAlign: "center", marginBottom: 12 }}>📍</div>
-        <div style={{ fontSize: 16, fontWeight: 800, fontFamily: "'Cairo',sans-serif", textAlign: "center", marginBottom: 6, color: C.text }}>{"تأكيد " + label}</div>
+        <div style={{ ...ADMIN_MODAL_TITLE, marginBottom: 6 }}>{"تأكيد " + label}</div>
         <div style={{ fontSize: 12, color: C.sub, textAlign: "center", marginBottom: 20 }}>{"هل تريد " + label + " الآن؟"}</div>
         <div style={{ display: "flex", gap: 8 }}>
           <button onClick={onCancel} style={{ flex: 1, padding: 12, borderRadius: 14, border: "2px solid " + C.bg, background: C.card, color: C.sub, fontSize: 14, fontWeight: 700, cursor: "pointer", fontFamily: "'Cairo',sans-serif" }}>إلغاء</button>
@@ -12110,7 +12107,7 @@ function FaceModal({ empId, onVerified, onSkip, onCancel }) {
   return (
     <div style={S.overlay} onClick={handleClose}>
       <div className="basma-slideup" style={{ ...S.modal, maxWidth: 340 }} onClick={function(e){ e.stopPropagation(); }}>
-        <div style={{ fontSize: 16, fontWeight: 800, fontFamily: "'Cairo',sans-serif", textAlign: "center", marginBottom: 4, color: C.text }}>
+        <div style={{ ...ADMIN_MODAL_TITLE, marginBottom: 4 }}>
           {isFirst ? "📸 تسجيل الوجه" : "📸 التحقق بالوجه"}
         </div>
         {isFirst && <div style={{ fontSize: 10, color: C.orange, textAlign: "center", marginBottom: 8, fontWeight: 600 }}>أول مرة — سيتم حفظ وجهك للتحقق لاحقاً</div>}
@@ -12395,13 +12392,13 @@ function PreAbsenceModal({ allEmps, user, onClose, onSubmit }) {
 
   return (
     <div style={S.overlay} onClick={onClose}>
-      <div className="basma-slideup" style={{ ...S.modal, maxWidth: 380, background: C.card }} onClick={function(e){ e.stopPropagation(); }}>
-        <div style={{ fontSize: 16, fontWeight: 800, fontFamily: "'Cairo',sans-serif", textAlign: "center", marginBottom: 4, color: C.text }}>📋 إفادة مسبقة بالغياب</div>
+      <div className="basma-slideup" style={{ ...S.modal, ...MODAL_BODY }} onClick={function(e){ e.stopPropagation(); }}>
+        <div style={{ ...ADMIN_MODAL_TITLE, marginBottom: 4 }}>📋 إفادة مسبقة بالغياب</div>
         <div style={{ fontSize: 10, color: C.sub, textAlign: "center", marginBottom: 14 }}>{"الموظف لن يحضر غداً: " + tomorrowStr}</div>
 
         <div style={{ marginBottom: 10 }}>
           <div style={{ fontSize: 10, color: C.sub, fontWeight: 600, marginBottom: 4 }}>اختر الموظف</div>
-          <select value={empId} onChange={function(e){ setEmpId(e.target.value); }} style={{ width: "100%", padding: 10, borderRadius: 10, border: "1px solid " + C.bg, fontSize: 13, fontFamily: "'Tajawal',sans-serif", background: C.card, color: C.text }}>
+          <select value={empId} onChange={function(e){ setEmpId(e.target.value); }} style={ADMIN_INPUT}>
             <option value="">— اختر —</option>
             {managed.map(function(e) { return React.createElement("option", { key: e.id, value: e.id }, e.name + " (" + e.id + ")"); })}
           </select>
@@ -12409,7 +12406,7 @@ function PreAbsenceModal({ allEmps, user, onClose, onSubmit }) {
 
         <div style={{ marginBottom: 10 }}>
           <div style={{ fontSize: 10, color: C.sub, fontWeight: 600, marginBottom: 4 }}>السبب</div>
-          <textarea value={reason} onChange={function(e){ setReason(e.target.value); }} placeholder="سبب الغياب..." rows={2} style={{ width: "100%", padding: 10, borderRadius: 10, border: "1px solid " + C.bg, fontSize: 13, fontFamily: "'Tajawal',sans-serif", resize: "none", background: C.card, color: C.text }} />
+          <textarea value={reason} onChange={function(e){ setReason(e.target.value); }} placeholder="سبب الغياب..." rows={2} style={{ ...ADMIN_INPUT, resize: "none" }} />
         </div>
 
         <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 14, padding: "8px 0" }}>
@@ -12424,7 +12421,7 @@ function PreAbsenceModal({ allEmps, user, onClose, onSubmit }) {
         </div>
 
         <div style={{ display: "flex", gap: 8 }}>
-          <button onClick={onClose} style={{ flex: 1, padding: 12, borderRadius: 14, border: "2px solid " + C.bg, background: C.card, color: C.sub, fontSize: 14, fontWeight: 700, cursor: "pointer" }}>إلغاء</button>
+          <button onClick={onClose} style={MODAL_CANCEL}>إلغاء</button>
           <button onClick={function(){ if(empId) onSubmit({ empId: empId, date: tomorrowStr, reason: reason, asLeave: asLeave }); }} disabled={!empId} style={{ flex: 1, padding: 12, borderRadius: 14, border: "none", background: empId ? "linear-gradient(135deg,"+C.orange+","+C.orangeDark+")" : "#eee", color: empId ? "#fff" : "#aaa", fontSize: 14, fontWeight: 700, cursor: empId ? "pointer" : "default" }}>
             تأكيد الإفادة
           </button>
@@ -12447,12 +12444,12 @@ function ManualAttModal({ allEmps, user, onClose, onSubmit }) {
 
   return (
     <div style={S.overlay} onClick={onClose}>
-      <div className="basma-slideup" style={{ ...S.modal, maxWidth: 380, background: C.card }} onClick={function(e){ e.stopPropagation(); }}>
-        <div style={{ fontSize: 16, fontWeight: 800, fontFamily: "'Cairo',sans-serif", textAlign: "center", marginBottom: 14, color: C.text }}>✏️ تحضير يدوي</div>
+      <div className="basma-slideup" style={{ ...S.modal, ...MODAL_BODY }} onClick={function(e){ e.stopPropagation(); }}>
+        <div style={{ ...ADMIN_MODAL_TITLE, marginBottom: 14 }}>✏️ تحضير يدوي</div>
 
         <div style={{ marginBottom: 10 }}>
           <div style={{ fontSize: 10, color: C.sub, fontWeight: 600, marginBottom: 4 }}>الموظف</div>
-          <select value={empId} onChange={function(e){ setEmpId(e.target.value); }} style={{ width: "100%", padding: 10, borderRadius: 10, border: "1px solid " + C.bg, fontSize: 13, fontFamily: "'Tajawal',sans-serif", background: C.card, color: C.text }}>
+          <select value={empId} onChange={function(e){ setEmpId(e.target.value); }} style={ADMIN_INPUT}>
             <option value="">— اختر —</option>
             {(allEmps || []).map(function(e) { return React.createElement("option", { key: e.id, value: e.id }, e.name + " (" + e.id + ")"); })}
           </select>
@@ -12479,7 +12476,7 @@ function ManualAttModal({ allEmps, user, onClose, onSubmit }) {
         </div>
 
         <div style={{ display: "flex", gap: 8 }}>
-          <button onClick={onClose} style={{ flex: 1, padding: 12, borderRadius: 14, border: "2px solid " + C.bg, background: C.card, color: C.sub, fontSize: 14, fontWeight: 700, cursor: "pointer" }}>إلغاء</button>
+          <button onClick={onClose} style={MODAL_CANCEL}>إلغاء</button>
           <button onClick={function(){ if(empId) onSubmit({ empId: empId, type: type, date: date }); }} disabled={!empId} style={{ flex: 1, padding: 12, borderRadius: 14, border: "none", background: empId ? "linear-gradient(135deg,"+C.blue+","+C.blueBright+")" : "#eee", color: empId ? "#fff" : "#aaa", fontSize: 14, fontWeight: 700, cursor: empId ? "pointer" : "default" }}>
             تسجيل ✓
           </button>
@@ -12504,8 +12501,8 @@ function PermissionModal({ user, branch, onClose, onSubmit }) {
 
   return (
     <div style={S.overlay} onClick={onClose}>
-      <div className="basma-slideup" style={{ ...S.modal, maxWidth: 380, background: C.card }} onClick={function(e){ e.stopPropagation(); }}>
-        <div style={{ fontSize: 16, fontWeight: 800, fontFamily: "'Cairo',sans-serif", textAlign: "center", marginBottom: 14, color: C.text }}>🙋 طلب إذن</div>
+      <div className="basma-slideup" style={{ ...S.modal, ...MODAL_BODY }} onClick={function(e){ e.stopPropagation(); }}>
+        <div style={{ ...ADMIN_MODAL_TITLE, marginBottom: 14 }}>🙋 طلب إذن</div>
 
         <div style={{ display: "flex", gap: 4, marginBottom: 12 }}>
           {types.map(function(t) {
@@ -12527,7 +12524,7 @@ function PermissionModal({ user, branch, onClose, onSubmit }) {
 
         <div style={{ marginBottom: 14 }}>
           <div style={{ fontSize: 10, color: C.sub, fontWeight: 600, marginBottom: 4 }}>السبب</div>
-          <textarea value={reason} onChange={function(e){ setReason(e.target.value); }} placeholder="سبب الإذن..." rows={2} style={{ width: "100%", padding: 10, borderRadius: 10, border: "1px solid " + C.bg, fontSize: 13, fontFamily: "'Tajawal',sans-serif", resize: "none", background: C.card, color: C.text }} />
+          <textarea value={reason} onChange={function(e){ setReason(e.target.value); }} placeholder="سبب الإذن..." rows={2} style={{ ...ADMIN_INPUT, resize: "none" }} />
         </div>
 
         <div style={{ fontSize: 9, color: C.sub, marginBottom: 12, padding: 8, borderRadius: 8, background: C.blue + "08" }}>
@@ -12535,7 +12532,7 @@ function PermissionModal({ user, branch, onClose, onSubmit }) {
         </div>
 
         <div style={{ display: "flex", gap: 8 }}>
-          <button onClick={onClose} style={{ flex: 1, padding: 12, borderRadius: 14, border: "2px solid " + C.bg, background: C.card, color: C.sub, fontSize: 14, fontWeight: 700, cursor: "pointer" }}>إلغاء</button>
+          <button onClick={onClose} style={MODAL_CANCEL}>إلغاء</button>
           <button onClick={function(){ if(time && reason) onSubmit({ type: type, time: time, reason: reason }); }} disabled={!time || !reason} style={{ flex: 1, padding: 12, borderRadius: 14, border: "none", background: time && reason ? "linear-gradient(135deg,"+C.blue+","+C.blueBright+")" : "#eee", color: time && reason ? "#fff" : "#aaa", fontSize: 14, fontWeight: 700, cursor: time && reason ? "pointer" : "default" }}>
             إرسال الطلب
           </button>
@@ -12596,8 +12593,8 @@ function LeaveModal({ user, onClose, onSubmit }) {
 
   return (
     <div style={S.overlay} onClick={onClose}>
-      <div className="basma-slideup" style={{ ...S.modal, maxWidth: 380, background: C.card }} onClick={function(e){ e.stopPropagation(); }}>
-        <div style={{ fontSize: 16, fontWeight: 800, fontFamily: "'Cairo',sans-serif", textAlign: "center", marginBottom: 12, color: C.text }}>📝 طلب إجازة</div>
+      <div className="basma-slideup" style={{ ...S.modal, ...MODAL_BODY }} onClick={function(e){ e.stopPropagation(); }}>
+        <div style={{ ...ADMIN_MODAL_TITLE, marginBottom: 12 }}>📝 طلب إجازة</div>
 
         {/* v6.37 — Balance summary */}
         {balance && (
@@ -12650,11 +12647,11 @@ function LeaveModal({ user, onClose, onSubmit }) {
 
         <div style={{ marginBottom: 14 }}>
           <div style={{ fontSize: 10, color: C.sub, fontWeight: 600, marginBottom: 4 }}>السبب (اختياري)</div>
-          <textarea value={reason} onChange={function(e){ setReason(e.target.value); }} placeholder="اكتب سبب الإجازة..." rows={2} style={{ width: "100%", padding: 10, borderRadius: 10, border: "1px solid " + C.bg, fontSize: 13, fontFamily: "'Tajawal',sans-serif", resize: "none", background: C.card, color: C.text }} />
+          <textarea value={reason} onChange={function(e){ setReason(e.target.value); }} placeholder="اكتب سبب الإجازة..." rows={2} style={{ ...ADMIN_INPUT, resize: "none" }} />
         </div>
 
         <div style={{ display: "flex", gap: 8 }}>
-          <button onClick={onClose} style={{ flex: 1, padding: 12, borderRadius: 14, border: "2px solid " + C.bg, background: C.card, color: C.sub, fontSize: 14, fontWeight: 700, cursor: "pointer" }}>إلغاء</button>
+          <button onClick={onClose} style={MODAL_CANCEL}>إلغاء</button>
           <button onClick={submit} disabled={submitting} style={{ flex: 1, padding: 12, borderRadius: 14, border: "none", background: "linear-gradient(135deg,"+C.blue+","+C.blueBright+")", color: "#fff", fontSize: 14, fontWeight: 700, cursor: "pointer", opacity: submitting ? .6 : 1 }}>
             {submitting ? "جارِ الإرسال..." : "إرسال الطلب"}
           </button>
@@ -12874,8 +12871,8 @@ function TicketModal({ user, onClose, onSubmit }) {
 
   return (
     <div style={S.overlay} onClick={onClose}>
-      <div className="basma-slideup" style={{ ...S.modal, maxWidth: 380, background: C.card }} onClick={function(e){ e.stopPropagation(); }}>
-        <div style={{ fontSize: 16, fontWeight: 800, fontFamily: "'Cairo',sans-serif", textAlign: "center", marginBottom: 16, color: C.text }}>🎫 طلب دعم فني جديد</div>
+      <div className="basma-slideup" style={{ ...S.modal, ...MODAL_BODY }} onClick={function(e){ e.stopPropagation(); }}>
+        <div style={{ ...ADMIN_MODAL_TITLE, marginBottom: 16 }}>🎫 طلب دعم فني جديد</div>
 
         <div style={{ display: "flex", gap: 6, marginBottom: 14 }}>
           {[{id:"low",label:"منخفض",c:C.green},{id:"normal",label:"عادي",c:C.blue},{id:"high",label:"عاجل",c:C.red}].map(function(p) {
@@ -12897,7 +12894,7 @@ function TicketModal({ user, onClose, onSubmit }) {
         </div>
 
         <div style={{ display: "flex", gap: 8 }}>
-          <button onClick={onClose} style={{ flex: 1, padding: 12, borderRadius: 14, border: "2px solid " + C.bg, background: C.card, color: C.sub, fontSize: 14, fontWeight: 700, cursor: "pointer" }}>إلغاء</button>
+          <button onClick={onClose} style={MODAL_CANCEL}>إلغاء</button>
           <button onClick={submit} disabled={submitting || !subject || !message} style={{ flex: 1, padding: 12, borderRadius: 14, border: "none", background: "linear-gradient(135deg,"+C.orange+",#FF8021)", color: "#fff", fontSize: 14, fontWeight: 700, cursor: "pointer", opacity: (submitting || !subject || !message) ? .6 : 1 }}>
             {submitting ? "جارِ الإرسال..." : "إرسال"}
           </button>
@@ -13388,7 +13385,7 @@ function NotificationPanel({ notifications, onClose, onMarkRead, onGoToLegal }) 
               <div key={n.id} onClick={function(){ if (n.type === "violation" || n.type === "investigation") onGoToLegal(); }} style={{ display: "flex", gap: SPACING.sm, padding: SPACING.md, borderBottom: "1px solid " + COLORS.metallicBorder, cursor: "pointer", background: n.read ? "transparent" : COLORS.goldDark + "15", borderRadius: RADIUS.sm, marginBottom: 4 }}>
                 <div style={{ fontSize: 20, width: 32, textAlign: "center" }}>{typeIcons[n.type] || "📌"}</div>
                 <div style={{ flex: 1 }}>
-                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 4 }}>
+                  <div style={{ ...FLEX_BETWEEN, marginBottom: 4 }}>
                     <div style={{ ...TYPOGRAPHY.caption, fontWeight: 800, color: n.read ? COLORS.textMuted : COLORS.textPrimary }}>{n.title}</div>
                     {!n.read && <div style={{ width: 8, height: 8, borderRadius: 4, background: COLORS.textDanger }} />}
                   </div>
@@ -13700,10 +13697,7 @@ function MyTeamPage({ user, allEmps }) {
           <>
             {pendingRequests.length === 0 ? (
               <Card padding={SPACING.lg}>
-                <div style={{ textAlign: "center", color: COLORS.textMuted, padding: 20 }}>
-                  <div style={{ fontSize: 36, marginBottom: 8 }}>✓</div>
-                  <div style={{ ...TYPOGRAPHY.body, fontWeight: 700 }}>لا توجد طلبات معلّقة</div>
-                </div>
+                <EmptyState icon="✓" text="لا توجد طلبات معلّقة" />
               </Card>
             ) : (
               pendingRequests.map(function(r, idx){
@@ -13749,7 +13743,7 @@ function MyTeamPage({ user, allEmps }) {
         {tab === "stats" && (
           <>
             <Card padding={SPACING.md}>
-              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 10 }}>
+              <div style={{ ...FLEX_BETWEEN, marginBottom: 10 }}>
                 <div style={{ ...TYPOGRAPHY.caption, fontWeight: 800, color: COLORS.textPrimary }}>🤖 ملخص ذكي للأسبوع</div>
                 <button onClick={generateAISummary} disabled={aiLoading} style={{ padding: "5px 12px", borderRadius: 6, background: aiLoading ? COLORS.metallic : "#7c3aed", color: "#fff", border: "none", fontSize: 10, fontWeight: 800, cursor: aiLoading ? "default" : "pointer", fontFamily: TYPOGRAPHY.fontTajawal }}>
                   {aiLoading ? "⏳ جارِ التحليل..." : "🔄 توليد"}
@@ -13787,7 +13781,7 @@ function MyTeamPage({ user, allEmps }) {
                 var color = pct >= 90 ? "#10B981" : pct >= 75 ? "#F59E0B" : "#DC2626";
                 return (
                   <div key={emp.id} style={{ padding: 10, borderRadius: 10, background: COLORS.metallic, marginBottom: 6, border: "1px solid " + COLORS.metallicBorder }}>
-                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 6 }}>
+                    <div style={{ ...FLEX_BETWEEN, marginBottom: 6 }}>
                       <span style={{ fontSize: 12, fontWeight: 700, color: COLORS.textPrimary }}>{emp.name}</span>
                       <span style={{ fontSize: 13, fontWeight: 900, color: color }}>{pct}%</span>
                     </div>
@@ -13930,7 +13924,7 @@ function EmployeeRecordTab({ user, initialSubTab, hideSubTabs }) {
             var statusLabels = { pending: "قيد المراجعة", approved: "معتمدة", rejected: "مرفوضة" };
             return (
               <div key={l.id} style={{ background: COLORS.metallic, border: "1px solid " + COLORS.metallicBorder, borderRadius: RADIUS.md, padding: SPACING.md, marginBottom: SPACING.sm }}>
-                <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 4 }}>
+                <div style={{ ...FLEX_BETWEEN, marginBottom: 4 }}>
                   <div style={{ ...TYPOGRAPHY.caption, fontWeight: 700, color: COLORS.textPrimary }}>{typeLabels[l.type] || l.type || "إجازة"}</div>
                   <span style={{ ...TYPOGRAPHY.tiny, fontWeight: 700, color: statusColors[l.status] || COLORS.textMuted, background: (statusColors[l.status] || COLORS.textMuted) + "20", padding: "2px 8px", borderRadius: RADIUS.sm }}>{statusLabels[l.status] || l.status}</span>
                 </div>
@@ -13949,14 +13943,14 @@ function EmployeeRecordTab({ user, initialSubTab, hideSubTabs }) {
             var st = VIOLATION_STATUS[v.status] || { label: v.status, color: COLORS.textMuted };
             return (
               <div key={v.id} style={{ background: COLORS.metallic, border: "1px solid " + COLORS.metallicBorder, borderRadius: RADIUS.md, padding: SPACING.md, marginBottom: SPACING.sm }}>
-                <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 4 }}>
+                <div style={{ ...FLEX_BETWEEN, marginBottom: 4 }}>
                   <span style={{ fontSize: 9, fontWeight: 700, color: "#fff", background: COLORS.goldDark, padding: "2px 6px", borderRadius: 4 }}>{v.violationId}</span>
                   <span style={{ ...TYPOGRAPHY.tiny, fontWeight: 700, color: st.color, background: st.color + "20", padding: "2px 8px", borderRadius: RADIUS.sm }}>{st.label}</span>
                 </div>
                 <div style={{ ...TYPOGRAPHY.caption, color: COLORS.textPrimary, lineHeight: 1.5, marginTop: 4 }}>{v.description}</div>
                 <div style={{ display: "flex", justifyContent: "space-between", marginTop: 6, ...TYPOGRAPHY.tiny, color: COLORS.textMuted }}>
                   <span>المرة {v.occurrence} — {v.penaltyLabel}</span>
-                  <span>{v.createdAt ? new Date(v.createdAt).toLocaleDateString("ar-SA") : ""}</span>
+                  <span>{v.createdAt ? fmtDateAr(v.createdAt) : ""}</span>
                 </div>
               </div>
             );
@@ -14019,7 +14013,7 @@ function AddRecordModal({ type, user, onClose, onSave }) {
 function exportViolationsRecord(user, violations) {
   var rows = violations.map(function(v, i) {
     var st = v.status === "ACTIVE" ? "سارية" : v.status === "APPEALED" ? "متظلم عليها" : v.status === "CANCELLED" ? "ملغاة" : v.status;
-    return "<tr><td>" + (i+1) + "</td><td>" + (v.violationId || "") + "</td><td>" + (v.description || "").replace(/</g,"&lt;") + "</td><td>" + (v.occurrence || "") + "</td><td>" + (v.penaltyLabel || "") + "</td><td>" + st + "</td><td>" + (v.createdAt ? new Date(v.createdAt).toLocaleDateString("ar-SA") : "") + "</td></tr>";
+    return "<tr><td>" + (i+1) + "</td><td>" + (v.violationId || "") + "</td><td>" + (v.description || "").replace(/</g,"&lt;") + "</td><td>" + (v.occurrence || "") + "</td><td>" + (v.penaltyLabel || "") + "</td><td>" + st + "</td><td>" + (v.createdAt ? fmtDateAr(v.createdAt) : "") + "</td></tr>";
   }).join("");
   var html = "<!DOCTYPE html><html dir='rtl' lang='ar'><head><meta charset='utf-8'><title>سجل المخالفات — " + user.name + "</title><style>body{font-family:'Segoe UI',Tahoma,sans-serif;margin:30px;color:#1a1a1a}h1{font-size:18px;text-align:center;color:#2B5EA7}h2{font-size:14px;text-align:center;color:#666;margin-bottom:20px}.info{display:flex;justify-content:space-between;margin-bottom:16px;font-size:12px;border:1px solid #ddd;padding:12px;border-radius:8px;background:#f9f9f9}table{width:100%;border-collapse:collapse;margin-top:12px}th{background:#2B5EA7;color:#fff;padding:8px 6px;font-size:11px;text-align:right}td{padding:8px 6px;border-bottom:1px solid #eee;font-size:11px}.footer{margin-top:24px;text-align:center;font-size:10px;color:#999;border-top:1px solid #eee;padding-top:12px}.hma-hdr{text-align:center;margin-bottom:18px;padding-bottom:14px;border-bottom:3px solid #c9a84c}.hma-hdr img{width:80px;height:auto}@media print{body{margin:10px}}</style></head><body>" +
     "<div class='hma-hdr'><img src='/hma-logo.png' alt='HMA' /></div>" +
@@ -14111,8 +14105,8 @@ function MyRequestsTab({ user }) {
           <StatusBadge status={d.status} />
         </div>
         <div style={{ fontSize: 9, color: COLORS.textMuted, display: "flex", justifyContent: "space-between" }}>
-          <span>📅 قُدِّم: {d.ts ? new Date(d.ts).toLocaleDateString("ar-SA") : "—"}</span>
-          {d.decidedAt && <span>قُرِّر: {new Date(d.decidedAt).toLocaleDateString("ar-SA")}</span>}
+          <span>📅 قُدِّم: {d.ts ? fmtDateAr(d.ts) : "—"}</span>
+          {d.decidedAt && <span>قُرِّر: {fmtDateAr(d.decidedAt)}</span>}
         </div>
         {d.rejectReason && <div style={{ marginTop: 6, padding: 6, borderRadius: 6, background: "rgba(220,38,38,0.1)", color: "#DC2626", fontSize: 10, fontWeight: 600 }}>سبب الرفض: {d.rejectReason}</div>}
         {/* v6.52 — Print leave confirmation letter after approval */}
@@ -14168,11 +14162,7 @@ function MyRequestsTab({ user }) {
         <EmptyState text="جارِ التحميل..." />
       ) : filtered.length === 0 ? (
         <Card padding={SPACING.lg}>
-          <div style={{ textAlign: "center", color: COLORS.textMuted, padding: 20 }}>
-            <div style={{ fontSize: 36, marginBottom: 8 }}>📭</div>
-            <div style={{ ...TYPOGRAPHY.body, fontWeight: 700 }}>لا توجد طلبات</div>
-            <div style={{ ...TYPOGRAPHY.tiny, marginTop: 4 }}>استخدم الأزرار أعلاه لتقديم طلب جديد</div>
-          </div>
+          <EmptyState icon="📭" text="لا توجد طلبات" sub="استخدم الأزرار أعلاه لتقديم طلب جديد" />
         </Card>
       ) : (
         <div>{filtered.map(renderItem)}</div>
@@ -14418,7 +14408,7 @@ function LegalTab({ user }) {
                   <span style={{ ...TYPOGRAPHY.tiny, fontWeight: 800, color: st.color, background: st.color + "20", padding: "3px 8px", borderRadius: RADIUS.sm }}>{st.label}</span>
                 </div>
                 <div style={{ display: "flex", justifyContent: "space-between", marginTop: 8, paddingTop: 8, borderTop: "1px solid rgba(255,255,255,.08)" }}>
-                  <span style={{ ...TYPOGRAPHY.tiny, color: COLORS.textMuted }}>{new Date(v.createdAt).toLocaleDateString("ar-SA")}</span>
+                  <span style={{ ...TYPOGRAPHY.tiny, color: COLORS.textMuted }}>{fmtDateAr(v.createdAt)}</span>
                   <span style={{ ...TYPOGRAPHY.caption, fontWeight: 800, color: COLORS.textDanger }}>{v.penaltyLabel}</span>
                 </div>
                 {/* v6.92 — مؤشر التطبيق على الراتب أو الإحالة الخارجية */}
@@ -14603,7 +14593,7 @@ function FileComplaintModal({ user, onClose, onSubmit }) {
   return (
     <div onClick={onClose} style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,.8)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 1000, padding: SPACING.md }}>
       <div onClick={function(e){ e.stopPropagation(); }} style={{ background: "linear-gradient(180deg, " + COLORS.bg1 + ", " + COLORS.bg2 + ")", borderRadius: RADIUS.xl, padding: SPACING.lg, maxWidth: 500, width: "100%", maxHeight: "90vh", overflow: "auto", border: "1px solid " + COLORS.metallicBorder, boxShadow: SHADOWS.button }}>
-        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: SPACING.md }}>
+        <div style={{ ...FLEX_BETWEEN, marginBottom: SPACING.md }}>
           <div style={{ ...TYPOGRAPHY.h2, color: COLORS.goldLight }}>رفع شكوى رسمية</div>
           <button onClick={onClose} style={{ background: "none", border: "none", fontSize: 22, cursor: "pointer", color: COLORS.textMuted }}>×</button>
         </div>
@@ -14709,7 +14699,7 @@ function RespondInvestigationModal({ investigation, onClose, onSubmit }) {
   return (
     <div onClick={onClose} style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,.85)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 1000, padding: SPACING.md }}>
       <div onClick={function(e){ e.stopPropagation(); }} style={{ background: "linear-gradient(180deg, " + COLORS.bg1 + ", " + COLORS.bg2 + ")", borderRadius: RADIUS.xl, padding: SPACING.lg, maxWidth: 600, width: "100%", maxHeight: "90vh", overflow: "auto", border: "2px solid " + COLORS.textDanger, boxShadow: SHADOWS.button }}>
-        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: SPACING.md }}>
+        <div style={{ ...FLEX_BETWEEN, marginBottom: SPACING.md }}>
           <div style={{ ...TYPOGRAPHY.h2, color: COLORS.textDanger }}>🔍 استمارة تحقيق</div>
           <button onClick={onClose} style={{ background: "none", border: "none", fontSize: 22, cursor: "pointer", color: COLORS.textMuted }}>×</button>
         </div>
@@ -14797,7 +14787,7 @@ function ViolationDetailModal({ violation, user, onClose, onAppeal }) {
   return (
     <div onClick={onClose} style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,.85)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 1000, padding: SPACING.md }}>
       <div onClick={function(e){ e.stopPropagation(); }} style={{ background: "linear-gradient(180deg, " + COLORS.bg1 + ", " + COLORS.bg2 + ")", borderRadius: RADIUS.xl, padding: SPACING.lg, maxWidth: 500, width: "100%", maxHeight: "90vh", overflow: "auto", border: "1px solid " + COLORS.metallicBorder, boxShadow: SHADOWS.button }}>
-        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: SPACING.md }}>
+        <div style={{ ...FLEX_BETWEEN, marginBottom: SPACING.md }}>
           <div style={{ ...TYPOGRAPHY.h2, color: COLORS.textDanger }}>⚖️ تفاصيل المخالفة</div>
           <button onClick={onClose} style={{ background: "none", border: "none", fontSize: 22, cursor: "pointer", color: COLORS.textMuted }}>×</button>
         </div>
@@ -14898,7 +14888,7 @@ function CustodyTab({ user }) {
 
   return (
     <div>
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: SPACING.md }}>
+      <div style={{ ...FLEX_BETWEEN, marginBottom: SPACING.md }}>
         <div style={{ ...TYPOGRAPHY.h3, color: COLORS.textPrimary }}>📦 عهدي ({items.length})</div>
         <button onClick={load} style={{ padding: "4px 10px", borderRadius: 6, background: "none", border: "1px solid " + COLORS.metallicBorder, color: COLORS.textMuted, fontSize: 11, cursor: "pointer" }}>🔄</button>
       </div>
@@ -14949,7 +14939,7 @@ function CustodyTab({ user }) {
                 )}
 
                 <div style={{ ...TYPOGRAPHY.tiny, color: COLORS.textMuted, marginTop: 6 }}>
-                  📅 {new Date(item.issuedAt || item.createdAt).toLocaleDateString("ar-SA")}
+                  📅 {fmtDateAr(item.issuedAt || item.createdAt)}
                 </div>
               </div>
             </div>
@@ -14959,7 +14949,7 @@ function CustodyTab({ user }) {
               {!item.acknowledged && (
                 <button onClick={function(){ acknowledge(item); }} style={{ padding: "6px 12px", borderRadius: 6, background: COLORS.goldGradient, color: "#000", border: "none", ...TYPOGRAPHY.tiny, fontWeight: 800, cursor: "pointer" }}>✓ استلمت العهدة</button>
               )}
-              {item.acknowledged && <span style={{ padding: "4px 10px", borderRadius: 6, background: "#10b98120", color: "#10b981", ...TYPOGRAPHY.tiny, fontWeight: 700 }}>✓ موقّع في {new Date(item.acknowledgedAt).toLocaleDateString("ar-SA")}</span>}
+              {item.acknowledged && <span style={{ padding: "4px 10px", borderRadius: 6, background: "#10b98120", color: "#10b981", ...TYPOGRAPHY.tiny, fontWeight: 700 }}>✓ موقّع في {fmtDateAr(item.acknowledgedAt)}</span>}
               {item.type === "cash" && item.status === "active" && (
                 <button onClick={function(){ setSelectedCash(item); }} style={{ padding: "6px 12px", borderRadius: 6, background: COLORS.metallicBorder, color: COLORS.textPrimary, border: "none", ...TYPOGRAPHY.tiny, fontWeight: 700, cursor: "pointer" }}>
                   📄 الفواتير ({itemInvoices.length}{pending > 0 ? " • " + pending + " معلّقة" : ""})
@@ -15125,7 +15115,7 @@ function CashInvoicesModal({ user, custody, invoices, onClose }) {
                       <div style={{ ...TYPOGRAPHY.bodySm, fontWeight: 700, color: COLORS.textPrimary }}>{inv.description}</div>
                       <div style={{ ...TYPOGRAPHY.tiny, color: COLORS.textMuted, marginTop: 2 }}>
                         {inv.vendor && "🏪 " + inv.vendor + " • "}
-                        📅 {new Date(inv.invoiceDate).toLocaleDateString("ar-SA")}
+                        📅 {fmtDateAr(inv.invoiceDate)}
                       </div>
                       <div style={{ marginTop: 4, ...TYPOGRAPHY.h3, color: COLORS.goldLight }}>{inv.amount} ر.س</div>
                       {inv.rejectionReason && <div style={{ ...TYPOGRAPHY.tiny, color: "#ef4444", marginTop: 4 }}>سبب الرفض: {inv.rejectionReason}</div>}
@@ -15164,7 +15154,7 @@ function DelegationCard({ user }) {
 
   return (
     <div style={{ background: COLORS.metallic, border: "1px solid " + COLORS.metallicBorder, borderRadius: RADIUS.xl, padding: SPACING.lg, boxShadow: SHADOWS.button, marginBottom: SPACING.md }}>
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: SPACING.md }}>
+      <div style={{ ...FLEX_BETWEEN, marginBottom: SPACING.md }}>
         <span style={{ ...TYPOGRAPHY.h3, color: COLORS.textPrimary }}>الانتدابات</span>
         <span style={{ ...TYPOGRAPHY.tiny, color: COLORS.textMuted }}>{delegations.length}</span>
       </div>
@@ -15221,7 +15211,7 @@ function WeeklyChart({ allAtt, empId, branch }) {
 
   return (
     <Card>
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: SPACING.md }}>
+      <div style={{ ...FLEX_BETWEEN, marginBottom: SPACING.md }}>
         <span style={{ ...TYPOGRAPHY.h3, color: COLORS.textPrimary }}>آخر أسبوعين</span>
         <div style={{ display: "flex", gap: SPACING.sm }}>
           {[
@@ -15314,7 +15304,7 @@ function ViolationsCard({ user }) {
                 </div>
                 <div style={{ ...TYPOGRAPHY.caption, fontWeight: 700, color: COLORS.textPrimary, lineHeight: 1.5 }}>{v.description}</div>
                 <div style={{ display: "flex", justifyContent: "space-between", marginTop: 6 }}>
-                  <span style={{ ...TYPOGRAPHY.tiny, color: COLORS.textMuted }}>{v.createdAt ? new Date(v.createdAt).toLocaleDateString("ar-SA") : ""}</span>
+                  <span style={{ ...TYPOGRAPHY.tiny, color: COLORS.textMuted }}>{v.createdAt ? fmtDateAr(v.createdAt) : ""}</span>
                   <span style={{ ...TYPOGRAPHY.caption, fontWeight: 800, color: COLORS.textDanger }}>{v.penaltyLabel}</span>
                 </div>
               </div>
@@ -15920,8 +15910,8 @@ function BiometricSettingsCard({ user }) {
                         ✅ <span>{d.deviceName || "جهاز"}</span>
                       </div>
                       <div style={{ fontSize: 9, color: COLORS.textMuted, marginTop: 2 }}>
-                        سُجّل: {new Date(d.registeredAt).toLocaleDateString("ar-SA")}
-                        {d.lastUsed && " · آخر استخدام: " + new Date(d.lastUsed).toLocaleDateString("ar-SA")}
+                        سُجّل: {fmtDateAr(d.registeredAt)}
+                        {d.lastUsed && " · آخر استخدام: " + fmtDateAr(d.lastUsed)}
                       </div>
                     </div>
                     <button onClick={function(){ removeDevice(d.credentialId); }} style={{ padding: "5px 10px", borderRadius: 6, background: "transparent", color: "#DC2626", border: "1px solid rgba(220,38,38,0.4)", fontSize: 10, fontWeight: 700, cursor: "pointer", fontFamily: TYPOGRAPHY.fontTajawal }}>
@@ -16197,9 +16187,9 @@ function FakeCallScreen({ type, label, user, onAnswer, onDecline }) {
 
     // Vibrate loop
     var vibrate = setInterval(function(){
-      if (navigator.vibrate) navigator.vibrate([600, 300, 600, 300, 600]);
+      buzz([600,300,600,300,600]);
     }, 2500);
-    if (navigator.vibrate) navigator.vibrate([600, 300, 600, 300, 600]);
+    buzz([600,300,600,300,600]);
 
     // Timer
     var timer = setInterval(function(){ setSeconds(function(s){ return s + 1; }); }, 1000);
@@ -16215,20 +16205,20 @@ function FakeCallScreen({ type, label, user, onAnswer, onDecline }) {
       clearInterval(timer);
       clearTimeout(autoEnd);
       if (audioRef.current) audioRef.current.stop();
-      if (navigator.vibrate) navigator.vibrate(0);
+      buzz(0);
     };
   }, []);
 
   function handleAnswer() {
     setRinging(false);
     if (audioRef.current) audioRef.current.stop();
-    if (navigator.vibrate) navigator.vibrate(0);
+    buzz(0);
     onAnswer();
   }
   function handleDecline() {
     setRinging(false);
     if (audioRef.current) audioRef.current.stop();
-    if (navigator.vibrate) navigator.vibrate(0);
+    buzz(0);
     onDecline();
   }
 
@@ -16462,7 +16452,7 @@ function EditRequestCard({ user }) {
       {!loadingReqs && myRequests.slice(0, 5).map(function(req){
         var st = getStatusMeta(req.status || "pending");
         return <div key={req.id} style={{ padding: "8px 10px", background: COLORS.bg, borderRadius: 8, marginBottom: 6, fontSize: 11, border: "1px solid " + COLORS.cardBorder }}>
-          <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 4 }}>
+          <div style={{ ...FLEX_BETWEEN, marginBottom: 4 }}>
             <span style={{ fontWeight: 700, color: COLORS.textPrimary }}>{req.fieldLabel}</span>
             <span style={{ color: st.color, fontWeight: 800 }}>{st.icon} {st.label}</span>
           </div>
@@ -17668,7 +17658,7 @@ function MyEvaluationsTab({ user }) {
               📅 {e.periodStart}{e.periodEnd ? " → " + e.periodEnd : ""}
             </div>
             <div style={{ fontSize: 10, color: COLORS.textMuted, marginTop: 2 }}>
-              اعتُمد في {e.approvedAt ? new Date(e.approvedAt).toLocaleDateString("ar-SA") : "—"}
+              اعتُمد في {e.approvedAt ? fmtDateAr(e.approvedAt) : "—"}
             </div>
           </div>
           <div style={{ fontSize: 20, color: COLORS.textMuted }}>‹</div>
@@ -17717,7 +17707,7 @@ function MyEvaluationDetail({ evaluation, user, onClose }) {
         {evaluation.periodStart} → {evaluation.periodEnd || "—"}
       </div>
       <div style={{ fontSize: 10, color: COLORS.textMuted, marginTop: 6 }}>
-        اعتُمد: {evaluation.approvedAt ? new Date(evaluation.approvedAt).toLocaleDateString("ar-SA") : "—"}
+        اعتُمد: {evaluation.approvedAt ? fmtDateAr(evaluation.approvedAt) : "—"}
       </div>
     </Card>
 
@@ -18663,8 +18653,8 @@ function SalarySlipDetail({ slip, user, onClose }) {
     <Card>
       <div style={{ fontSize: 12, fontWeight: 700, color: COLORS.textPrimary, marginBottom: 8 }}>📜 الحالة</div>
       <div style={{ fontSize: 11, color: COLORS.textSecondary, lineHeight: 1.8 }}>
-        {slip.calculatedAt && <div>تم الاحتساب: {new Date(slip.calculatedAt).toLocaleDateString("ar-SA")}</div>}
-        {slip.sentAt && <div>تم الإرسال للبنك: {new Date(slip.sentAt).toLocaleDateString("ar-SA")}</div>}
+        {slip.calculatedAt && <div>تم الاحتساب: {fmtDateAr(slip.calculatedAt)}</div>}
+        {slip.sentAt && <div>تم الإرسال للبنك: {fmtDateAr(slip.sentAt)}</div>}
       </div>
     </Card>
   </div>;
