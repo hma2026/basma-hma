@@ -11,7 +11,7 @@ import { exportEmploymentLetter, exportLeaveLetter } from "./formalPdfs";
 
 /* ═══════════ APP CONFIG (إعدادات التطبيق) ═══════════ */
 const APP_CONFIG = {
-  VER: "7.48",
+  VER: "7.49",
   NAME: "بصمة HMA",
   FULL_NAME: "نظام الحضور والانصراف الذكي",
   COMPANY: "هاني محمد عسيري للاستشارات الهندسية",
@@ -1182,8 +1182,10 @@ function MobileAppInner() {
       setStreak(s);
       // Fetch leaves and tickets
       try {
-        const allLeaves = await api("leaves");
-        setMyLeaves((allLeaves || []).filter(function(l){ return l.empId === emp.id; }));
+        /* v7.48 — استخدام endpoint جديد leave-requests (القديم action=leaves متروك) */
+        var lr = await fetch("/api/data?action=leave-requests&empId=" + encodeURIComponent(emp.id));
+        var lrData = await lr.json();
+        setMyLeaves((lrData && lrData.requests) || []);
       } catch(e) { /**/ }
       try {
         const allTickets = await api("tickets");
@@ -1554,7 +1556,7 @@ function MobileAppInner() {
       {!online && <OfflineBanner />}
 
       <div key={page} style={{ flex: 1, display: "flex", flexDirection: "column", animation: "pageIn .3s ease" }}>
-        {page === "home" && <HomePage user={user} branch={branch} workType={workType} now={now} todayAtt={todayAtt} allAtt={allAtt} gps={gps} gpsDist={gpsDist} streak={streak} loading={loading} refreshing={refreshing} dayState={getDayState()} checkpoints={getCheckpoints()} isOffDay={isOffDay()} pendingCount={myLeaves.filter(function(l){ return l.status === "pending"; }).length + myTickets.filter(function(t){ return t.status === "pending"; }).length} teamToday={teamToday} pwaPrompt={pwaPrompt} onPwaInstall={async function(){ if(pwaPrompt){pwaPrompt.prompt();await pwaPrompt.userChoice;setPwaPrompt(null);} }} onCheckin={requestCheckin} onChallenge={function(pts) { var u = { ...user, points: (user.points||0)+pts }; setUser(u); localStorage.setItem("basma_user", JSON.stringify(u)); showToast("🎉 +" + pts + " نقطة!"); }} onLeave={function(){ setPage("profile"); setTimeout(function(){ localStorage.setItem("basma_profile_tab", "records"); window.dispatchEvent(new CustomEvent("basma:profile-tab-changed")); localStorage.setItem("basma_records_filter", "leaves"); }, 50); }} onRefresh={refresh} onPreAbsence={function(){ setPreAbsModal(true); }} onManualAtt={function(){ setManualAttModal(true); }} onPermission={function(){ setPermModal(true); }} kadwarNotifs={kadwarNotifs} darkMode={darkMode} announcements={announcements} banners={banners} fieldProjects={fieldProjects} onShowAnnouncements={function(){ setShowAnnModal(true); }} />}
+        {page === "home" && <HomePage user={user} branch={branch} workType={workType} now={now} todayAtt={todayAtt} allAtt={allAtt} gps={gps} gpsDist={gpsDist} streak={streak} loading={loading} refreshing={refreshing} dayState={getDayState()} checkpoints={getCheckpoints()} isOffDay={isOffDay()} pendingCount={myLeaves.filter(function(l){ return ["pending_m1","handover_open","pending_delegates","pending_final"].indexOf(l.status) !== -1; }).length + myTickets.filter(function(t){ return t.status === "pending"; }).length} teamToday={teamToday} pwaPrompt={pwaPrompt} onPwaInstall={async function(){ if(pwaPrompt){pwaPrompt.prompt();await pwaPrompt.userChoice;setPwaPrompt(null);} }} onCheckin={requestCheckin} onChallenge={function(pts) { var u = { ...user, points: (user.points||0)+pts }; setUser(u); localStorage.setItem("basma_user", JSON.stringify(u)); showToast("🎉 +" + pts + " نقطة!"); }} onLeave={function(){ setPage("profile"); setTimeout(function(){ localStorage.setItem("basma_profile_tab", "records"); window.dispatchEvent(new CustomEvent("basma:profile-tab-changed")); }, 50); }} onRefresh={refresh} onPreAbsence={function(){ setPreAbsModal(true); }} onManualAtt={function(){ setManualAttModal(true); }} onPermission={function(){ setPermModal(true); }} kadwarNotifs={kadwarNotifs} darkMode={darkMode} announcements={announcements} banners={banners} fieldProjects={fieldProjects} onShowAnnouncements={function(){ setShowAnnModal(true); }} />}
         {page === "report" && <ReportPage user={user} allAtt={allAtt} todayAtt={todayAtt} branch={branch} isOffDay={isOffDay()} myLeaves={myLeaves} allEmps={allEmps} />}
         {page === "benefits" && <BenefitsPage user={user} />}
         {page === "tawasul" && <TawasulPage user={user} allEmps={allEmps} />}
@@ -3317,18 +3319,25 @@ function RecordsHero({ user, onTicket, onRequestLeave }) {
     if (!user || !user.id) return;
     async function loadCounts() {
       try {
-        /* v7.48 — حُذف fetch leaves القديم (الإجازات في MyLeavesHub بـ leave-requests) */
-        var [perms, preAbs, bal, contracts] = await Promise.all([
+        /* v7.48 — يستخدم leave-requests الجديد (بدل leaves القديم) */
+        var [leaveReqs, perms, preAbs, bal, contracts] = await Promise.all([
+          fetch("/api/data?action=leave-requests&empId=" + encodeURIComponent(user.id)).then(function(r){ return r.json(); }).then(function(d){ return (d && d.ok && Array.isArray(d.requests)) ? d.requests : []; }).catch(function(){ return []; }),
           fetch("/api/data?action=permissions&empId=" + encodeURIComponent(user.id)).then(function(r){ return r.json(); }).catch(function(){ return []; }),
           fetch("/api/data?action=pre_absence").then(function(r){ return r.json(); }).then(function(d){ return (Array.isArray(d) ? d : []).filter(function(x){ return x.empId === user.id; }); }).catch(function(){ return []; }),
           fetch("/api/data?action=leave-balance&empId=" + encodeURIComponent(user.id)).then(function(r){ return r.json(); }).catch(function(){ return null; }),
           fetch("/api/data?action=emp_records&empId=" + encodeURIComponent(user.id) + "&type=contract").then(function(r){ return r.json(); }).catch(function(){ return []; }),
         ]);
+        var lvArr = Array.isArray(leaveReqs) ? leaveReqs : [];
         var pmArr = Array.isArray(perms) ? perms : [];
         var paArr = Array.isArray(preAbs) ? preAbs : [];
         var ctrArr = Array.isArray(contracts) ? contracts : [];
-        var openCount = [].concat(pmArr, paArr).filter(function(x){ return (x.status || "pending") === "pending"; }).length;
-        var totalRecords = pmArr.length + paArr.length + ctrArr.length;
+        // v7.48 — leave-requests pending statuses (not just "pending")
+        var LEAVE_PENDING = ["pending_m1", "handover_open", "pending_delegates", "pending_final"];
+        var lvPending = lvArr.filter(function(x){ return LEAVE_PENDING.indexOf(x.status) !== -1; }).length;
+        var pmPending = pmArr.filter(function(x){ return (x.status || "pending") === "pending"; }).length;
+        var paPending = paArr.filter(function(x){ return (x.status || "pending") === "pending"; }).length;
+        var openCount = lvPending + pmPending + paPending;
+        var totalRecords = lvArr.length + pmArr.length + paArr.length + ctrArr.length;
         var balTotal = 0;
         if (bal && !bal.error) {
           balTotal = (bal.annual || 0) + (bal.sick || 0) + (bal.emergency || 0) + (bal.personal || 0);
