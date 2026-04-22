@@ -11,7 +11,7 @@ import { exportEmploymentLetter, exportLeaveLetter } from "./formalPdfs";
 
 /* ═══════════ APP CONFIG (إعدادات التطبيق) ═══════════ */
 const APP_CONFIG = {
-  VER: "7.46",
+  VER: "7.47",
   NAME: "بصمة HMA",
   FULL_NAME: "نظام الحضور والانصراف الذكي",
   COMPANY: "هاني محمد عسيري للاستشارات الهندسية",
@@ -3669,18 +3669,19 @@ function AchievementsHeroCompact({ user }) {
 
 /* ── AchievementsStatsRow — 3 big stats ── */
 function AchievementsStatsRow({ user, stats, loading }) {
-  var points = user.points || 0;
   var unlockedCount = 0;
   if (stats && !loading) {
     var unlocked = getUnlockedAchievements(user, stats);
     unlockedCount = unlocked.filter(function(a){ return a.unlocked; }).length;
   }
   var maxStreak = (stats && stats.maxStreak) || 0;
+  var totalDays = (stats && stats.totalDays) || 0;
 
   return (
     <Card padding={0} style={{ overflow: "hidden" }}>
       <div style={{ display: "flex", alignItems: "stretch" }}>
-        <StatCell icon="⭐" value={points.toLocaleString("ar-SA")} label="إجمالي النقاط" accent={COLORS.goldLight} loading={false} />
+        {/* v7.47 — النقاط محذوفة (مكررة مع AchievementsHeroCompact). أضيف: إجمالي أيام الحضور */}
+        <StatCell icon="📅" value={totalDays} label="أيام حضور" accent={COLORS.goldLight} loading={loading} />
         <StatDivider />
         <StatCell icon="🏅" value={unlockedCount + "/" + ACHIEVEMENTS.length} label="شارات مفتوحة" accent={COLORS.success} loading={loading} />
         <StatDivider />
@@ -5006,7 +5007,6 @@ function ProfilePage({ user, branch, workType, onLogout, onTicket, myTickets, da
     ["الفرع", branch ? branch.name : "—"],
     ["نوع الدوام", workTypeText],
     ["الالتحاق", user.joinDate || "—"],
-    ["النقاط", badge.icon + " " + (user.points || 0) + " نقطة"],
   ];
   // v7.15 — IA restructure: 5 tabs (records merges time+tickets+employee_record, achievements is separate, perf becomes legal)
   var tabs = [
@@ -5080,9 +5080,31 @@ function ProfilePage({ user, branch, workType, onLogout, onTicket, myTickets, da
             <ProfileAccordion
               emoji="💼"
               title="البيانات الوظيفية"
-              subtitle="شخصية · وظيفية · مالية · عقد · مرافقين"
+              subtitle="شخصية · وظيفية · مالية · عقد · مرافقين · المسؤولون · الهيئة"
             >
               <MyProfileCard user={user} />
+
+              {/* v7.47 — ManagersCard مدموج هنا (كان عائماً) */}
+              <div style={{ marginTop: SPACING.md }}>
+                <ManagersCard user={user} />
+              </div>
+
+              {/* v7.47 — SCE Card مدموج هنا (كان عائماً) */}
+              {user.sceNumber && (
+                <div style={{ marginTop: SPACING.md }}>
+                  <Card>
+                    <SectionHeader emoji="🏛️" title="الهيئة السعودية للمهندسين" />
+                    <div style={{ display: "flex", justifyContent: "space-between", padding: SPACING.sm + "px 0" }}>
+                      <span style={{ ...TYPOGRAPHY.body, fontWeight: 700, color: COLORS.textPrimary }}>{user.sceNumber}</span>
+                      <span style={{ ...TYPOGRAPHY.caption, color: COLORS.textMuted }}>رقم العضوية</span>
+                    </div>
+                    <div style={{ display: "flex", justifyContent: "space-between", padding: SPACING.sm + "px 0", borderTop: "1px solid " + COLORS.cardBorder }}>
+                      <span style={{ ...TYPOGRAPHY.body, fontWeight: 700, color: user.sceStatus === "active" ? COLORS.goldLight : COLORS.textDanger }}>{user.sceStatus === "active" ? "ساري" : "منتهي"}</span>
+                      <span style={{ ...TYPOGRAPHY.caption, color: COLORS.textMuted }}>{"انتهاء: " + user.sceExpiry}</span>
+                    </div>
+                  </Card>
+                </div>
+              )}
             </ProfileAccordion>
 
             <ProfileAccordion
@@ -5093,22 +5115,7 @@ function ProfilePage({ user, branch, workType, onLogout, onTicket, myTickets, da
               <ProfileAttachmentsLite user={user} />
             </ProfileAccordion>
 
-            {/* 4. OBJECTS — Managers + SCE + Tickets + EditRequests */}
-            <ManagersCard user={user} />
-
-            {user.sceNumber && (
-              <Card>
-                <SectionHeader emoji="🏛️" title="الهيئة السعودية للمهندسين" />
-                <div style={{ display: "flex", justifyContent: "space-between", padding: SPACING.sm + "px 0" }}>
-                  <span style={{ ...TYPOGRAPHY.body, fontWeight: 700, color: COLORS.textPrimary }}>{user.sceNumber}</span>
-                  <span style={{ ...TYPOGRAPHY.caption, color: COLORS.textMuted }}>رقم العضوية</span>
-                </div>
-                <div style={{ display: "flex", justifyContent: "space-between", padding: SPACING.sm + "px 0", borderTop: "1px solid " + COLORS.cardBorder }}>
-                  <span style={{ ...TYPOGRAPHY.body, fontWeight: 700, color: user.sceStatus === "active" ? COLORS.goldLight : COLORS.textDanger }}>{user.sceStatus === "active" ? "ساري" : "منتهي"}</span>
-                  <span style={{ ...TYPOGRAPHY.caption, color: COLORS.textMuted }}>{"انتهاء: " + user.sceExpiry}</span>
-                </div>
-              </Card>
-            )}
+            {/* v7.47 — ManagersCard + SCE نُقلا داخل "البيانات الوظيفية" */}
 
             {/* v7.45 — TicketsCard نُقلت إلى سجلي وطلباتي */}
 
@@ -15645,8 +15652,9 @@ function AchievementsCard({ user, part }) {
             <div style={{ ...TYPOGRAPHY.body, fontWeight: 800, color: COLORS.textPrimary, display: "flex", alignItems: "center", gap: 6 }}>
               🏆 الإنجازات
             </div>
+            {/* v7.47 — حذف عدد الشارات (مكرر مع AchievementsStatsRow) — يبقى فقط النقاط المكتسبة من الشارات */}
             <div style={{ ...TYPOGRAPHY.tiny, color: COLORS.textMuted, marginTop: 2 }}>
-              <strong style={{ color: COLORS.goldLight }}>{unlockedCount}</strong>/{ACHIEVEMENTS.length} مفتوح · <strong style={{ color: COLORS.goldLight }}>{earnedPoints}</strong> نقطة مكتسبة
+              <strong style={{ color: COLORS.goldLight }}>{earnedPoints}</strong> نقطة مكتسبة من الشارات
             </div>
           </div>
           <div style={{ width: 54, height: 54, borderRadius: 27, background: "linear-gradient(135deg, " + COLORS.goldLight + ", " + COLORS.gold + ")", display: "flex", alignItems: "center", justifyContent: "center", color: "#000", fontWeight: 900, fontSize: 16 }}>
