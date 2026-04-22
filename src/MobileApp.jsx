@@ -11,7 +11,7 @@ import { exportEmploymentLetter, exportLeaveLetter } from "./formalPdfs";
 
 /* ═══════════ APP CONFIG (إعدادات التطبيق) ═══════════ */
 const APP_CONFIG = {
-  VER: "7.55",
+  VER: "7.56",
   NAME: "بصمة HMA",
   FULL_NAME: "نظام الحضور والانصراف الذكي",
   COMPANY: "هاني محمد عسيري للاستشارات الهندسية",
@@ -699,6 +699,7 @@ function MobileAppInner() {
   const [preAbsModal, setPreAbsModal] = useState(false);
   const [manualAttModal, setManualAttModal] = useState(false);
   const [permModal, setPermModal] = useState(false);
+  const [leaveModal, setLeaveModal] = useState(false);  // v7.56 — bottom sheet للإجازة من الشاشة الرئيسية
   const [refreshing, setRefreshing] = useState(false);
   const [myLeaves, setMyLeaves] = useState([]);
   const [myTickets, setMyTickets] = useState([]);
@@ -1545,7 +1546,7 @@ function MobileAppInner() {
       {!online && <OfflineBanner />}
 
       <div key={page} style={{ flex: 1, display: "flex", flexDirection: "column", animation: "pageIn .3s ease" }}>
-        {page === "home" && <HomePage user={user} branch={branch} workType={workType} now={now} todayAtt={todayAtt} allAtt={allAtt} gps={gps} gpsDist={gpsDist} streak={streak} loading={loading} refreshing={refreshing} dayState={getDayState()} checkpoints={getCheckpoints()} isOffDay={isOffDay()} pendingCount={myLeaves.filter(function(l){ return ["pending_m1","handover_open","pending_delegates","pending_final"].indexOf(l.status) !== -1; }).length + myTickets.filter(function(t){ return t.status === "pending"; }).length} teamToday={teamToday} pwaPrompt={pwaPrompt} onPwaInstall={async function(){ if(pwaPrompt){pwaPrompt.prompt();await pwaPrompt.userChoice;setPwaPrompt(null);} }} onCheckin={requestCheckin} onChallenge={function(pts) { var u = { ...user, points: (user.points||0)+pts }; setUser(u); localStorage.setItem("basma_user", JSON.stringify(u)); showToast("🎉 +" + pts + " نقطة!"); }} onLeave={function(){ setPage("profile"); setTimeout(function(){ localStorage.setItem("basma_profile_tab", "records"); window.dispatchEvent(new CustomEvent("basma:profile-tab-changed")); }, 50); }} onRefresh={refresh} onPreAbsence={function(){ setPreAbsModal(true); }} onManualAtt={function(){ setManualAttModal(true); }} onPermission={function(){ setPermModal(true); }} kadwarNotifs={kadwarNotifs} darkMode={darkMode} announcements={announcements} banners={banners} fieldProjects={fieldProjects} onShowAnnouncements={function(){ setShowAnnModal(true); }} />}
+        {page === "home" && <HomePage user={user} branch={branch} workType={workType} now={now} todayAtt={todayAtt} allAtt={allAtt} gps={gps} gpsDist={gpsDist} streak={streak} loading={loading} refreshing={refreshing} dayState={getDayState()} checkpoints={getCheckpoints()} isOffDay={isOffDay()} pendingCount={myLeaves.filter(function(l){ return ["pending_m1","handover_open","pending_delegates","pending_final"].indexOf(l.status) !== -1; }).length + myTickets.filter(function(t){ return t.status === "pending"; }).length} teamToday={teamToday} pwaPrompt={pwaPrompt} onPwaInstall={async function(){ if(pwaPrompt){pwaPrompt.prompt();await pwaPrompt.userChoice;setPwaPrompt(null);} }} onCheckin={requestCheckin} onChallenge={function(pts) { var u = { ...user, points: (user.points||0)+pts }; setUser(u); localStorage.setItem("basma_user", JSON.stringify(u)); showToast("🎉 +" + pts + " نقطة!"); }} onLeave={function(){ setLeaveModal(true); }} onRefresh={refresh} onPreAbsence={function(){ setPreAbsModal(true); }} onManualAtt={function(){ setManualAttModal(true); }} onPermission={function(){ setPermModal(true); }} kadwarNotifs={kadwarNotifs} darkMode={darkMode} announcements={announcements} banners={banners} fieldProjects={fieldProjects} onShowAnnouncements={function(){ setShowAnnModal(true); }} />}
         {page === "report" && <ReportPage user={user} allAtt={allAtt} todayAtt={todayAtt} branch={branch} isOffDay={isOffDay()} myLeaves={myLeaves} allEmps={allEmps} />}
         {page === "benefits" && <BenefitsPage user={user} />}
         {page === "tawasul" && <TawasulPage user={user} allEmps={allEmps} />}
@@ -1585,6 +1586,8 @@ function MobileAppInner() {
       {preAbsModal && <PreAbsenceModal allEmps={allEmps} user={user} onClose={function(){ setPreAbsModal(false); }} onSubmit={async function(data) { try { var r = await apiWithQueue("pre_absence", { method: "POST", body: { ...data, reportedBy: user.id } }); setPreAbsModal(false); showToast(r._queued ? "💾 إفادة الغياب محفوظة محلياً" : "✅ تم تسجيل الإفادة المسبقة"); } catch(e) { showToast("خطأ في الإرسال", "error"); } }} />}
       {manualAttModal && <ManualAttModal allEmps={allEmps} user={user} onClose={function(){ setManualAttModal(false); }} onSubmit={async function(data) { try { await api("manual_checkin", { method: "POST", body: { ...data, adminId: user.id } }); setManualAttModal(false); showToast("✅ تم التحضير اليدوي"); loadData(user); } catch(e) { showToast("خطأ", "error"); } }} />}
       {permModal && <PermissionModal user={user} branch={branch} onClose={function(){ setPermModal(false); }} onSubmit={async function(data) { try { var r = await apiWithQueue("permissions", { method: "POST", body: { empId: user.id, ...data, date: todayStr() } }); setPermModal(false); showToast(r._queued ? "💾 طلب الاستئذان محفوظ محلياً" : "✅ تم إرسال طلب الإذن"); } catch(e) { showToast("خطأ في الإرسال", "error"); } }} />}
+      {/* v7.56 — bottom sheet للإجازة من الشاشة الرئيسية (يستخدم LeaveRequestForm نفسه الموجود في tab الإجازات) */}
+      {leaveModal && <LeaveSheetModal user={user} onClose={function(){ setLeaveModal(false); }} />}
       {showAnnModal && <AnnouncementsModal announcements={announcements} user={user} onClose={function(){ setShowAnnModal(false); }} onRead={async function(id){
         try { await fetch("/api/data?action=announcement-read", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ empId: user.id, announcementId: id }) }); } catch(e) {}
       }} />}
@@ -2436,10 +2439,11 @@ function HomePage({ user, branch, workType, now, todayAtt, allAtt, gps, gpsDist,
           </div>
         )}
 
-        {/* إجازة + إذن (secondary) */}
-        <div style={{ display: "flex", gap: SPACING.sm }}>
+        {/* v7.56 — 3 أزرار: إجازة + إذن + إفادة (كلها bottom sheets، تبقى في الشاشة الرئيسية) */}
+        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: SPACING.sm }}>
           <Button variant="secondary" size="md" icon={<Icons.clipboard size={20} />} onClick={onLeave}>إجازة</Button>
           <Button variant="secondary" size="md" icon={<Icons.hand size={20} />} onClick={onPermission}>إذن</Button>
+          <Button variant="secondary" size="md" icon="🏥" onClick={onPreAbsence}>إفادة</Button>
         </div>
       </div>
 
@@ -16775,6 +16779,23 @@ function LeaveRequestsTab({ user }) {
      </div>
     }
   </div>;
+}
+
+/* ────── v7.56 — LeaveSheetModal: bottom-sheet wrapper لطلب إجازة من الشاشة الرئيسية ────── */
+function LeaveSheetModal({ user, onClose }) {
+  return (
+    <div style={S.overlay} onClick={onClose}>
+      <div className="basma-slideup" style={{
+        ...S.modal,
+        maxWidth: 420,
+        background: COLORS.bg1,
+        maxHeight: "90vh",
+        overflowY: "auto"
+      }} onClick={function(e){ e.stopPropagation(); }}>
+        <LeaveRequestForm user={user} onClose={onClose} />
+      </div>
+    </div>
+  );
 }
 
 /* ────── LeaveRequestForm — نموذج طلب إجازة جديد ────── */
