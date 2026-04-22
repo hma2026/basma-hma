@@ -11,7 +11,7 @@ import { exportEmploymentLetter, exportLeaveLetter } from "./formalPdfs";
 
 /* ═══════════ APP CONFIG (إعدادات التطبيق) ═══════════ */
 const APP_CONFIG = {
-  VER: "7.58",
+  VER: "7.59",
   NAME: "بصمة HMA",
   FULL_NAME: "نظام الحضور والانصراف الذكي",
   COMPANY: "هاني محمد عسيري للاستشارات الهندسية",
@@ -15346,7 +15346,7 @@ function MyProfileCard({ user }) {
   var [profile, setProfile] = useState(null);
   var [completeness, setCompleteness] = useState(null);
   var [attachments, setAttachments] = useState([]);
-  var [activeTab, setActiveTab] = useState("personal");
+  var [activeTab, setActiveTab] = useState("personal");  /* v7.59 — لم يعد يُستخدم بعد التحويل لأقسام عمودية، باقٍ لتجنب breaking */
   var [requestingEdit, setRequestingEdit] = useState(null);
   var [editData, setEditData] = useState({});
   var [sending, setSending] = useState(false);
@@ -15522,38 +15522,16 @@ function MyProfileCard({ user }) {
       <button onClick={function(){setMsg(null);}} style={{ background: "none", border: "none", fontSize: 14, color: "inherit", cursor: "pointer" }}>✕</button>
     </div>}
 
-    {/* Tabs — horizontal scroll on mobile */}
-    <div style={{ display: "flex", overflowX: "auto", borderBottom: "1px solid " + COLORS.cardBorder, marginBottom: SPACING.md }}>
-      {[
-        { id: "personal", icon: "👤", label: "شخصية" },
-        { id: "employment", icon: "💼", label: "وظيفية" },
-        { id: "compensation", icon: "💰", label: "مالية" },
-        { id: "contract", icon: "📄", label: "عقد" },
-        { id: "attachments", icon: "📎", label: "مرفقات" },
-        { id: "dependents", icon: "👨‍👩‍👧", label: "مرافقين" },
-        { id: "medical", icon: "🏥", label: "طبي" },
-      ].map(function(tb){
-        var active = activeTab === tb.id;
-        return <button key={tb.id} onClick={function(){setActiveTab(tb.id); cancelRequest();}} style={{
-          padding: "11px 13px",
-          background: active ? levelColor + "15" : "transparent",
-          color: active ? levelColor : COLORS.textSecondary,
-          border: "none",
-          borderBottom: "2px solid " + (active ? levelColor : "transparent"),
-          fontSize: 11, fontWeight: 700, cursor: "pointer", fontFamily: TYPOGRAPHY.fontTajawal,
-          whiteSpace: "nowrap", display: "flex", alignItems: "center", gap: 5
-        }}>
-          <span>{tb.icon}</span>
-          <span>{tb.label}</span>
-        </button>;
-      })}
-    </div>
+    {/* v7.59 — خيار B: أقسام عمودية بدل تبويبات أفقية. كل الأقسام مفتوحة مرة واحدة (scroll عمودي) */}
 
-    {/* Content — v7.57 بدون padding إضافي (الـ accordion الخارجي يوفره) */}
-    <div>
-
-      {activeTab === "personal" && <EmpReadOrRequestSection
-        title="البيانات الشخصية" section="personal"
+    {/* Section: شخصية */}
+    <div style={{ marginBottom: SPACING.lg }}>
+      <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: SPACING.sm, paddingBottom: 6, borderBottom: "2px solid " + COLORS.cardBorder }}>
+        <span style={{ fontSize: 18 }}>👤</span>
+        <span style={{ fontSize: 13, fontWeight: 800, color: COLORS.goldLight, fontFamily: TYPOGRAPHY.fontCairo }}>الشخصية</span>
+      </div>
+      <EmpReadOrRequestSection
+        title="" section="personal"
         data={profile && profile.personal}
         fields={[
           { key: "fullName", label: "الاسم الكامل", type: "text" },
@@ -15575,10 +15553,17 @@ function MyProfileCard({ user }) {
         editData={editData} setEditData={setEditData}
         startRequest={startRequest} cancelRequest={cancelRequest}
         submitRequest={submitRequest} sending={sending}
-      />}
+      />
+    </div>
 
-      {activeTab === "employment" && <EmpReadOrRequestSection
-        title="بياناتي الوظيفية" section="employment"
+    {/* Section: وظيفية */}
+    <div style={{ marginBottom: SPACING.lg }}>
+      <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: SPACING.sm, paddingBottom: 6, borderBottom: "2px solid " + COLORS.cardBorder }}>
+        <span style={{ fontSize: 18 }}>💼</span>
+        <span style={{ fontSize: 13, fontWeight: 800, color: COLORS.goldLight, fontFamily: TYPOGRAPHY.fontCairo }}>الوظيفية</span>
+      </div>
+      <EmpReadOrRequestSection
+        title="" section="employment"
         data={profile && profile.employment}
         fields={[
           { key: "hireDate", label: "تاريخ التعيين", type: "readonly_date" },
@@ -15599,10 +15584,17 @@ function MyProfileCard({ user }) {
         submitRequest={function(){}} sending={false}
         note="البيانات الوظيفية تُدار من كوادر — للتعديل تواصل مع HR"
         hideEditBtn={true}
-      />}
+      />
+    </div>
 
-      {activeTab === "compensation" && <EmpReadOrRequestSection
-        title="الراتب والبدلات والحساب البنكي" section="compensation"
+    {/* Section: مالية + الحساب البنكي */}
+    <div style={{ marginBottom: SPACING.lg }}>
+      <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: SPACING.sm, paddingBottom: 6, borderBottom: "2px solid " + COLORS.cardBorder }}>
+        <span style={{ fontSize: 18 }}>💰</span>
+        <span style={{ fontSize: 13, fontWeight: 800, color: COLORS.goldLight, fontFamily: TYPOGRAPHY.fontCairo }}>المالية والحساب البنكي</span>
+      </div>
+      <EmpReadOrRequestSection
+        title="" section="compensation"
         data={profile && profile.compensation}
         fields={[
           { key: "basicSalary", label: "الراتب الأساسي (ريال)", type: "readonly_number" },
@@ -15624,10 +15616,17 @@ function MyProfileCard({ user }) {
         submitRequest={submitRequest} sending={sending}
         note="الراتب والبدلات تُعتمد من الإدارة — يمكنك طلب تعديل بيانات البنك فقط"
         restrictEdit={["iban","bankName","accountNumber","beneficiary"]}
-      />}
+      />
+    </div>
 
-      {activeTab === "contract" && <EmpReadOrRequestSection
-        title="عقد عملي" section="contract"
+      {/* Section: عقد العمل */}
+    <div style={{ marginBottom: SPACING.lg }}>
+      <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: SPACING.sm, paddingBottom: 6, borderBottom: "2px solid " + COLORS.cardBorder }}>
+        <span style={{ fontSize: 18 }}>📄</span>
+        <span style={{ fontSize: 13, fontWeight: 800, color: COLORS.goldLight, fontFamily: TYPOGRAPHY.fontCairo }}>عقد عملي</span>
+      </div>
+      <EmpReadOrRequestSection
+        title="" section="contract"
         data={profile && profile.contract}
         fields={[
           { key: "startDate", label: "تاريخ بداية العقد", type: "readonly_date" },
@@ -15645,9 +15644,16 @@ function MyProfileCard({ user }) {
         submitRequest={function(){}} sending={false}
         note="بيانات العقد للعرض فقط — لأي تعديل تواصل مع HR عبر رسائل الموظفين"
         hideEditBtn={true}
-      />}
+      />
+    </div>
 
-      {activeTab === "attachments" && <div>
+    {/* Section: المرفقات */}
+    <div style={{ marginBottom: SPACING.lg }}>
+      <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: SPACING.sm, paddingBottom: 6, borderBottom: "2px solid " + COLORS.cardBorder }}>
+        <span style={{ fontSize: 18 }}>📎</span>
+        <span style={{ fontSize: 13, fontWeight: 800, color: COLORS.goldLight, fontFamily: TYPOGRAPHY.fontCairo }}>المرفقات والمستندات</span>
+      </div>
+      <div>
         <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: SPACING.md }}>
           <div>
             <div style={{ fontSize: 13, fontWeight: 800, color: COLORS.textPrimary }}>📎 مرفقاتي ({attachments.length})</div>
@@ -15693,9 +15699,16 @@ function MyProfileCard({ user }) {
             </div>;
           })}
         </div>}
-      </div>}
+      </div>
+    </div>
 
-      {activeTab === "dependents" && <MyDependentsView
+    {/* Section: المرافقين */}
+    <div style={{ marginBottom: SPACING.lg }}>
+      <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: SPACING.sm, paddingBottom: 6, borderBottom: "2px solid " + COLORS.cardBorder }}>
+        <span style={{ fontSize: 18 }}>👨‍👩‍👧</span>
+        <span style={{ fontSize: 13, fontWeight: 800, color: COLORS.goldLight, fontFamily: TYPOGRAPHY.fontCairo }}>المرافقين</span>
+      </div>
+      <MyDependentsView
         user={user}
         dependents={profile && profile.dependents && profile.dependents.list ? profile.dependents.list : []}
         onSave={async function(newList){
@@ -15715,10 +15728,16 @@ function MyProfileCard({ user }) {
             }
           } catch(e) { setMsg({ type: "error", text: "فشل: " + e.message }); }
         }}
-      />}
+      />
+    </div>
 
-      {/* v7.58 — تبويب طبي (إفصاح طبي للتأمين) */}
-      {activeTab === "medical" && <MedicalDisclosureView
+    {/* Section: طبي (الإفصاح الطبي للتأمين) */}
+    <div style={{ marginBottom: SPACING.lg }}>
+      <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: SPACING.sm, paddingBottom: 6, borderBottom: "2px solid " + COLORS.cardBorder }}>
+        <span style={{ fontSize: 18 }}>🏥</span>
+        <span style={{ fontSize: 13, fontWeight: 800, color: COLORS.goldLight, fontFamily: TYPOGRAPHY.fontCairo }}>الإفصاح الطبي</span>
+      </div>
+      <MedicalDisclosureView
         user={user}
         medical={profile && profile.medical ? profile.medical : { chronicDiseases: [], allergies: [], medications: [], reports: [] }}
         onSave={async function(newData){
@@ -15739,7 +15758,7 @@ function MyProfileCard({ user }) {
             }
           } catch(e) { setMsg({ type: "error", text: "فشل: " + e.message }); }
         }}
-      />}
+      />
     </div>
 
     {/* Upload Sheet (bottom) */}
