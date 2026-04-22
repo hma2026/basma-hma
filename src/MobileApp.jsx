@@ -11,7 +11,7 @@ import { exportEmploymentLetter, exportLeaveLetter } from "./formalPdfs";
 
 /* ═══════════ APP CONFIG (إعدادات التطبيق) ═══════════ */
 const APP_CONFIG = {
-  VER: "7.64",
+  VER: "7.65",
   NAME: "بصمة HMA",
   FULL_NAME: "نظام الحضور والانصراف الذكي",
   COMPANY: "هاني محمد عسيري للاستشارات الهندسية",
@@ -1560,18 +1560,7 @@ function MobileAppInner() {
 
       {!isDesktopSession && <BottomNav page={page} setPage={setPage} legalAlerts={legalAlerts} tawasulUnread={tawasulUnread} hrUnread={hrUnread} user={user} />}
 
-      {/* Notification Bell — floating */}
-      {user && unreadCount > 0 && !showNotifs && (
-        <button onClick={function(){ setShowNotifs(true); }} style={{ position: "fixed", top: 16, left: 16, zIndex: 60, width: 44, height: 44, borderRadius: 22, background: COLORS.textDanger, border: "none", boxShadow: "0 4px 12px rgba(226,25,44,.4)", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", animation: "pulse 2s infinite" }}>
-          <span style={{ fontSize: 18 }}>🔔</span>
-          <div style={{ position: "absolute", top: -2, right: -2, minWidth: 18, height: 18, borderRadius: 9, background: "#fff", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 10, fontWeight: 900, color: COLORS.textDanger }}>{unreadCount}</div>
-        </button>
-      )}
-
-      {/* Notification Panel */}
-      {showNotifs && <NotificationPanel notifications={notifications} onClose={function(){ setShowNotifs(false); }} onMarkRead={async function(){
-        try { await api("notifications", { method: "PUT", body: { markAllRead: true, empId: user.id } }); setUnreadCount(0); setNotifications(function(prev){ return prev.map(function(n){ return {...n, read: true}; }); }); } catch(e) {}
-      }} onGoToLegal={function(){ setShowNotifs(false); setPage("profile"); setTimeout(function(){ localStorage.setItem("basma_profile_tab","perf"); window.dispatchEvent(new CustomEvent("basma:profile-tab-changed")); }, 50); }} />}
+      {/* v7.65 — الجرس العائم + NotificationPanel modal حُذفا. الإشعارات انتقلت لـ tab "المعاملات الإدارية" */}
 
       {/* Floating active-timer indicator — global, shows on all pages */}
       {user && <ActiveTimerFloater user={user} onGoTo={function(taskId){ setPage("tawasul"); setTimeout(function(){ window.dispatchEvent(new CustomEvent("basma:open-task", { detail: { taskId: taskId } })); }, 80); }} />}
@@ -3235,16 +3224,10 @@ function RecordsHero({ user, onRequestLeave }) {
             accent={COLORS.success}
             loading={data.loading}
           />
-          <StatDivider />
-          <StatCell
-            icon="📚"
-            value={data.totalRecords}
-            label="إجمالي السجلات"
-            accent={COLORS.goldLight}
-            loading={data.loading}
-          />
         </div>
       </Card>
+
+      {/* v7.65 — StatCell "إجمالي السجلات" + أيقونة الجرس حُذفا. الإشعارات انتقلت إلى المعاملات الإدارية */}
 
       {/* v7.53 — الزر الذهبي "طلب إجازة" حُذف (مكرر مع زر "+ طلب جديد" داخل قسم إجازاتي) */}
     </>
@@ -4254,6 +4237,11 @@ function PayHub({ user }) {
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: SPACING.md }}>
+      {/* v7.65 — قسم الإشعارات الجديد (نُقل من الجرس العائم) */}
+      <ProfileAccordion emoji="🔔" title="الإشعارات" subtitle="التحديثات والتنبيهات الإدارية" defaultOpen={true}>
+        <NotificationsInlineView user={user} />
+      </ProfileAccordion>
+
       {/* 1. Navy Hero with big net salary */}
       <SalaryHeroCard latestSlip={latestSlip} loading={loading} />
 
@@ -4903,10 +4891,7 @@ function ProfilePage({ user, branch, workType, onLogout, onTicket, myTickets, da
             >
               <MyProfileCard user={user} />
 
-              {/* v7.47 — ManagersCard مدموج هنا (كان عائماً) */}
-              <div style={{ marginTop: SPACING.md }}>
-                <ManagersCard user={user} />
-              </div>
+              {/* v7.65 — ManagersCard نُقل إلى tab "فريقي" (علاقات إدارية مع المدراء) */}
 
               {/* v7.47 — SCE Card مدموج هنا (كان عائماً) */}
               {user.sceNumber && (
@@ -12770,6 +12755,132 @@ function NotificationPanel({ notifications, onClose, onMarkRead, onGoToLegal }) 
   );
 }
 
+/* v7.65 — NotificationsInlineView: الإشعارات كقسم inline في tab "المعاملات الإدارية"
+   - يعرض 5 افتراضياً
+   - زر "إظهار المزيد" يكشف 5 إضافية كل نقرة (5 → 10 → 15 ...)
+   - استبدل الجرس العائم */
+function NotificationsInlineView({ user }) {
+  var [notifications, setNotifications] = useState([]);
+  var [loading, setLoading] = useState(true);
+  var [shownCount, setShownCount] = useState(5);
+
+  useEffect(function(){
+    async function load() {
+      try {
+        var d = await api("notifications", { params: { empId: user.id } });
+        setNotifications(Array.isArray(d) ? d : (d.items || []));
+      } catch(e) { setNotifications([]); }
+      setLoading(false);
+    }
+    if (user && user.id) load();
+  }, [user && user.id]);
+
+  async function markAllRead() {
+    try {
+      await api("notifications", { method: "PUT", body: { markAllRead: true, empId: user.id } });
+      setNotifications(function(prev){ return prev.map(function(n){ return {...n, read: true}; }); });
+    } catch(e) {}
+  }
+
+  var typeIcons = {
+    violation: "⚖️", investigation: "🔍", appeal_result: "📢", complaint_update: "📣",
+    leave: "🏖️", permission: "⏱", ticket: "🎫", hr_request: "📨", announcement: "📢",
+    handover: "📤", general: "📌"
+  };
+
+  if (loading) {
+    return <EmptyState text="جارِ التحميل..." />;
+  }
+
+  if (notifications.length === 0) {
+    return (
+      <div style={{ padding: SPACING.lg, textAlign: "center" }}>
+        <div style={{ fontSize: 32, marginBottom: 8 }}>📭</div>
+        <div style={{ ...TYPOGRAPHY.bodySm, color: COLORS.textMuted }}>لا توجد إشعارات</div>
+      </div>
+    );
+  }
+
+  var unreadCount = notifications.filter(function(n){ return !n.read; }).length;
+  var shown = notifications.slice(0, shownCount);
+  var hasMore = notifications.length > shownCount;
+  var remaining = notifications.length - shownCount;
+
+  return (
+    <div>
+      {/* Header with count + mark all read */}
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: SPACING.md }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+          <span style={{ fontSize: 12, color: COLORS.textMuted, fontFamily: TYPOGRAPHY.fontTajawal }}>
+            إجمالي: {notifications.length}
+          </span>
+          {unreadCount > 0 && (
+            <span style={{ fontSize: 10, fontWeight: 800, padding: "2px 8px", borderRadius: 10, background: COLORS.textDanger + "20", color: COLORS.textDanger }}>
+              {unreadCount} غير مقروء
+            </span>
+          )}
+        </div>
+        {unreadCount > 0 && (
+          <button onClick={markAllRead} style={{ padding: "5px 10px", borderRadius: 8, background: COLORS.bgSecondary, border: "1px solid " + COLORS.cardBorder, color: COLORS.textSecondary, fontSize: 10, fontWeight: 700, cursor: "pointer", fontFamily: TYPOGRAPHY.fontTajawal }}>
+            ✓ قراءة الكل
+          </button>
+        )}
+      </div>
+
+      {/* Notifications list */}
+      <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+        {shown.map(function(n){
+          return (
+            <div key={n.id || Math.random()} style={{
+              display: "flex", gap: 10, padding: 10,
+              background: n.read ? COLORS.bgSecondary : "rgba(201,168,76,0.08)",
+              border: "1px solid " + (n.read ? COLORS.cardBorder : COLORS.goldLight + "50"),
+              borderRadius: 10
+            }}>
+              <div style={{ fontSize: 18, width: 28, textAlign: "center", flexShrink: 0 }}>
+                {typeIcons[n.type] || "📌"}
+              </div>
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 6, marginBottom: 3 }}>
+                  <div style={{ fontSize: 12, fontWeight: 800, color: n.read ? COLORS.textSecondary : COLORS.textPrimary, flex: 1, minWidth: 0 }}>
+                    {n.title || "إشعار"}
+                  </div>
+                  {!n.read && <div style={{ width: 8, height: 8, borderRadius: 4, background: COLORS.textDanger, flexShrink: 0, marginTop: 4 }} />}
+                </div>
+                {n.body && <div style={{ fontSize: 10.5, color: COLORS.textMuted, lineHeight: 1.5 }}>{n.body}</div>}
+                <div style={{ fontSize: 9, color: COLORS.goldLight, marginTop: 4, fontFamily: TYPOGRAPHY.fontTajawal }}>
+                  {n.createdAt ? new Date(n.createdAt).toLocaleString("ar-SA") : ""}
+                </div>
+              </div>
+            </div>
+          );
+        })}
+      </div>
+
+      {/* Show more button - adds 5 each click */}
+      {hasMore && (
+        <button
+          onClick={function(){ setShownCount(function(prev){ return prev + 5; }); }}
+          style={{
+            width: "100%",
+            marginTop: SPACING.sm,
+            padding: "10px",
+            borderRadius: RADIUS.md,
+            background: "rgba(201,168,76,0.12)",
+            border: "1px solid " + COLORS.goldLight,
+            color: COLORS.goldLight,
+            fontSize: 12, fontWeight: 800,
+            cursor: "pointer",
+            fontFamily: TYPOGRAPHY.fontTajawal,
+          }}
+        >
+          ⬇️ إظهار المزيد ({remaining})
+        </button>
+      )}
+    </div>
+  );
+}
+
 /* ═══════════ MY TEAM PAGE — لوحة مدير الفريق (v6.56) ═══════════ */
 function MyTeamPage({ user, allEmps }) {
   var [tab, setTab] = useState("today"); // today | requests | stats
@@ -12975,18 +13086,39 @@ function MyTeamPage({ user, allEmps }) {
 
   if (loading) return <div style={{ padding: 30, textAlign: "center", color: COLORS.textMuted }}>جارِ تحميل الفريق...</div>;
 
+  // v7.65 — هل المستخدم مدير؟ (للتحكم بإظهار أقسام إدارة المرؤوسين)
+  var isManagerOrAdmin = user && (user.isManager || user.isAssistant || user.isAdmin || user.isGeneralManager);
+  var hasSubordinates = subordinates && subordinates.length > 0;
+
   return (
     <div>
       {/* Header */}
       <div style={{ background: "linear-gradient(135deg, #7c3aed 0%, #5b21b6 100%)", padding: "16px 16px 20px", color: "#fff" }}>
         <div style={{ fontSize: 22, fontWeight: 900, fontFamily: "'Cairo',sans-serif", marginBottom: 4 }}>👔 فريقي</div>
         <div style={{ fontSize: 11, opacity: 0.9 }}>
-          {subordinates.length} موظف تحت إدارتك
-          {pendingRequests.length > 0 && " · " + pendingRequests.length + " طلب معلّق"}
+          {hasSubordinates ? (
+            subordinates.length + " موظف تحت إدارتك" + (pendingRequests.length > 0 ? " · " + pendingRequests.length + " طلب معلّق" : "")
+          ) : (
+            "مدرائي والمسؤولون عني"
+          )}
         </div>
       </div>
 
+      {/* v7.65 — ManagersCard في الأعلى لكل الموظفين (نُقلت من البيانات الوظيفية) */}
+      <div style={{ padding: 12 }}>
+        <ManagersCard user={user} />
+      </div>
+
+      {/* v7.65 — الأقسام التالية للمدراء فقط (من لديه مرؤوسين) */}
+      {!hasSubordinates && !isManagerOrAdmin && (
+        <div style={{ padding: "0 12px 24px", textAlign: "center", color: COLORS.textMuted, fontSize: 11, fontFamily: TYPOGRAPHY.fontTajawal, lineHeight: 1.8 }}>
+          ℹ️ أنت موظف في الفريق — يمكنك رؤية مدرائك والتواصل معهم.<br/>
+          إدارة المرؤوسين تظهر فقط لمن لديه صلاحية إدارية.
+        </div>
+      )}
+
       {/* Tab switcher — v7.37 added "evals" tab for managers (تقييمات الفريق — منقولة من تقريري) */}
+      {hasSubordinates && (
       <div style={{ display: "flex", gap: 6, padding: 12, background: COLORS.bg1, overflowX: "auto", WebkitOverflowScrolling: "touch" }}>
         {(function(){
           var tabs = [
@@ -13010,7 +13142,9 @@ function MyTeamPage({ user, allEmps }) {
           );
         })}
       </div>
+      )}
 
+      {hasSubordinates && (
       <div style={{ padding: 12 }}>
         {/* Tab: Today */}
         {tab === "today" && (
@@ -13173,20 +13307,18 @@ function MyTeamPage({ user, allEmps }) {
           <ManagerEvaluationsTab user={user} />
         )}
       </div>
+      )}
     </div>
   );
 }
 
 function BottomNav({ page, setPage, legalAlerts, tawasulUnread, hrUnread, user }) {
-  // v6.56 — Show "فريقي" tab only for managers (alongside امتيازات)
-  var isManagerOrAdmin = user && (user.isManager || user.isAssistant || user.isAdmin || user.isGeneralManager);
+  // v7.65 — "فريقي" يظهر لكل الموظفين (الموظف يرى مدراءه، المدير يرى مدراءه + مرؤوسيه)
   var items = [
     { id: "home", icon: Icons.home, label: "الرئيسية" },
     { id: "tawasul", icon: Icons.message, label: "تواصل", badge: tawasulUnread || 0 },
+    { id: "team", icon: Icons.users || Icons.user, label: "فريقي" },
   ];
-  if (isManagerOrAdmin) {
-    items.push({ id: "team", icon: Icons.users || Icons.user, label: "فريقي" });
-  }
   items.push({ id: "benefits", icon: Icons.medal, label: "الامتيازات" });
   items.push({ id: "report", icon: Icons.chart, label: "تقريري" });
   items.push({ id: "profile", icon: Icons.user, label: "حسابي", badge: (legalAlerts || 0) + (hrUnread || 0) });
@@ -13457,11 +13589,7 @@ function MyRequestsTab({ user }) {
     <>
       {/* v7.48 — banner "لطلب إجازة" حُذف (الإجازات أسفله في accordion إجازاتي) */}
 
-      {/* Quick action buttons — استئذان + إفادة غياب */}
-      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 6, marginBottom: 8 }}>
-        <button onClick={function(){ setShowPerm(true); }} style={{ padding: "10px 4px", borderRadius: 10, background: "rgba(124,58,237,0.15)", border: "1px solid rgba(124,58,237,0.4)", color: "#7C3AED", fontWeight: 800, fontSize: 11, cursor: "pointer", fontFamily: TYPOGRAPHY.fontTajawal }}>⏱ استئذان</button>
-        <button onClick={function(){ setShowPreAbs(true); }} style={{ padding: "10px 4px", borderRadius: 10, background: "rgba(217,119,6,0.15)", border: "1px solid rgba(217,119,6,0.4)", color: "#D97706", fontWeight: 800, fontSize: 11, cursor: "pointer", fontFamily: TYPOGRAPHY.fontTajawal }}>🏥 إفادة غياب</button>
-      </div>
+      {/* v7.65 — الزرّان "استئذان" و"إفادة غياب" حُذفا (مكرران مع الشاشة الرئيسية) */}
       {/* v7.45 — بانر "الإفادات عبر طلب دعم فني" حُذف (قسم طلبات الدعم الفني موجود في سجلي) */}
 
       {/* Filter tabs */}
