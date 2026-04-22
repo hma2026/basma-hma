@@ -11,7 +11,7 @@ import { exportEmploymentLetter, exportLeaveLetter } from "./formalPdfs";
 
 /* ═══════════ APP CONFIG (إعدادات التطبيق) ═══════════ */
 const APP_CONFIG = {
-  VER: "7.52",
+  VER: "7.53",
   NAME: "بصمة HMA",
   FULL_NAME: "نظام الحضور والانصراف الذكي",
   COMPANY: "هاني محمد عسيري للاستشارات الهندسية",
@@ -353,6 +353,12 @@ const CRITERIA_WEIGHTS = {
 /* ── Membership Note ── */
 const MEMBERSHIP_NOTE = "هذه العضوية مقياس ذاتي تلقائي لانضباط الموظف والتزامه باستخدام وسائل وتطبيقات المكتب — وليست مقياساً للأداء الوظيفي السنوي.";
 
+/* v7.52 — مشترك بدل تكرار 3 مرات في ManagerEvaluationsTab + EvaluationForm + MyEvaluationsTab */
+const EVAL_PERIOD_LABELS = {
+  daily: "يومي", weekly: "أسبوعي", monthly: "شهري",
+  quarterly: "ربع سنوي", annual: "سنوي"
+};
+
 /* ═══ ACHIEVEMENTS — إنجازات وشارات (v6.57) ═══ */
 const ACHIEVEMENTS = [
   // Attendance streaks
@@ -406,6 +412,8 @@ var ADMIN_CARD_STYLE = { background: C.card, borderRadius: 12, padding: 14, bord
 var ADMIN_INPUT = { width: "100%", padding: 10, borderRadius: 10, border: "1px solid " + C.bg, fontSize: 13, fontFamily: "'Tajawal',sans-serif", background: C.card, color: C.text };
 var ADMIN_MODAL_TITLE = { fontSize: 16, fontWeight: 800, fontFamily: "'Cairo',sans-serif", textAlign: "center", color: C.text };
 var FLEX_BETWEEN = { display: "flex", justifyContent: "space-between", alignItems: "center" };
+/* v7.52 — FORM_LABEL مشترك (كان مكرر 11 مرة في النماذج) */
+var FORM_LABEL = { display: "block", fontSize: 11, fontWeight: 700, color: COLORS.textSecondary, marginBottom: 6 };
 
 /* ── v7.46 — fmtDateAr: Arabic date helper (replaces 19 inline calls) ── */
 function fmtDateAr(d) { if (!d) return "—"; try { return fmtDateAr(d); } catch(e) { return String(d); } }
@@ -3182,10 +3190,7 @@ function RecordsHero({ user, onRequestLeave }) {
         </div>
       </Card>
 
-      {/* v7.50 — زر واحد فقط: طلب إجازة (زر الدعم الفني نُقل داخل قسم TicketsCard) */}
-      <Button variant="primary" size="md" icon="🏖️" onClick={onRequestLeave}>
-        طلب إجازة جديد
-      </Button>
+      {/* v7.53 — الزر الذهبي "طلب إجازة" حُذف (مكرر مع زر "+ طلب جديد" داخل قسم إجازاتي) */}
     </>
   );
 }
@@ -3285,22 +3290,12 @@ function RecordsPromotionsView({ user }) {
 
 /* ── RecordsHub — container combining Hero + Chips + filtered content ── */
 function RecordsHub({ user, onTicket, myTickets }) {
-  // v7.43 — Open Layout: all sections visible as vertical stacks (no horizontal filter bar)
-  // Refs for smooth-scroll-to-section when action buttons clicked
-  var leavesRef = React.useRef(null);
-  var ticketsRef = React.useRef(null);
-
-  function handleRequestLeave() {
-    // Scroll to leaves section
-    setTimeout(function(){
-      if (leavesRef.current) leavesRef.current.scrollIntoView({ behavior: "smooth", block: "start" });
-    }, 50);
-  }
+  /* v7.53 — leavesRef + handleRequestLeave + ticketsRef محذوفة (لا أزرار scroll-to بعد إزالة زر الـHero) */
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: SPACING.lg }}>
-      {/* 1. Hero: 3 stats + 2 quick actions */}
-      <RecordsHero user={user} onRequestLeave={handleRequestLeave} />
+      {/* 1. Hero: stats only (الزر الذهبي حُذف — مكرر مع زر داخل القسم) */}
+      <RecordsHero user={user} />
 
       {/* v7.48 — Section 1: استئذان وإفادات (الإجازات نُقلت لقسم منفصل أدناه) */}
       <div style={{ background: COLORS.metallic, border: "1px solid " + COLORS.metallicBorder, borderRadius: RADIUS.xl, padding: SPACING.lg, boxShadow: SHADOWS.button }}>
@@ -3309,14 +3304,12 @@ function RecordsHub({ user, onTicket, myTickets }) {
       </div>
 
       {/* v7.43 — Section 2: إجازاتي (accordion, default open) */}
-      <div ref={leavesRef}>
-        <ProfileAccordion emoji="🏖️" title="إجازاتي" subtitle="الطلبات · التسليم · الرصيد" defaultOpen={true}>
-          <MyLeavesHub user={user} />
-        </ProfileAccordion>
-      </div>
+      <ProfileAccordion emoji="🏖️" title="إجازاتي" subtitle="الطلبات · التسليم · الرصيد" defaultOpen={true}>
+        <MyLeavesHub user={user} />
+      </ProfileAccordion>
 
       {/* v7.50 — Section 3: طلبات الموارد البشرية (دعم فني + تعديل بيانات مدموجين في accordion واحد) */}
-      <div ref={ticketsRef}>
+      <div>
         <ProfileAccordion emoji="📨" title="طلباتي للموارد البشرية" subtitle="دعم فني · تعديل البيانات" badge={(myTickets || []).length > 0 ? String((myTickets || []).length) : null}>
           {/* الجزء 1: تذاكر الدعم الفني */}
           <div style={{ marginBottom: SPACING.md }}>
@@ -15740,7 +15733,7 @@ function MyProfileCard({ user }) {
         <div style={{ fontSize: 15, fontWeight: 800, color: COLORS.textPrimary, marginBottom: 14 }}>📤 رفع مرفق</div>
 
         <div style={{ marginBottom: 14 }}>
-          <label style={{ display: "block", fontSize: 11, fontWeight: 700, color: COLORS.textSecondary, marginBottom: 6 }}>نوع المرفق</label>
+          <label style={FORM_LABEL}>نوع المرفق</label>
           <select value={uploadType} onChange={function(e){setUploadType(e.target.value);}} style={{
             width: "100%", padding: 12, borderRadius: 14, border: "1px solid " + COLORS.cardBorder,
             background: COLORS.bgSecondary, fontFamily: TYPOGRAPHY.fontTajawal, fontSize: 13
@@ -15758,7 +15751,7 @@ function MyProfileCard({ user }) {
         </div>
 
         <div style={{ marginBottom: 14 }}>
-          <label style={{ display: "block", fontSize: 11, fontWeight: 700, color: COLORS.textSecondary, marginBottom: 6 }}>الملف (حتى 3 MB)</label>
+          <label style={FORM_LABEL}>الملف (حتى 3 MB)</label>
           <label style={{
             display: "block", padding: 16, borderRadius: 14, border: "2px dashed " + COLORS.cardBorder,
             textAlign: "center", cursor: "pointer", background: COLORS.bgSecondary
@@ -16012,10 +16005,8 @@ function ManagerEvaluationsTab({ user }) {
     />;
   }
 
-  var typeLabels = {
-    daily: "يومي", weekly: "أسبوعي", monthly: "شهري",
-    quarterly: "ربع سنوي", annual: "سنوي"
-  };
+  /* v7.52 — استخدام EVAL_PERIOD_LABELS بدل تكرار التعريف */
+  var typeLabels = EVAL_PERIOD_LABELS;
   var statusLabels = {
     scheduled: { label: "مجدول", color: "#3B82F6", bg: "rgba(59,130,246,0.1)" },
     in_progress: { label: "قيد التنفيذ", color: "#D97706", bg: "rgba(217,119,6,0.1)" },
@@ -16157,10 +16148,8 @@ function EvaluationForm({ evaluation, user, onClose }) {
   var filledCount = criteria.filter(function(c){ return scores[c.id] != null; }).length;
   var canSubmit = filledCount === criteria.length && criteria.length > 0;
 
-  var typeLabels = {
-    daily: "يومي", weekly: "أسبوعي", monthly: "شهري",
-    quarterly: "ربع سنوي", annual: "سنوي"
-  };
+  /* v7.52 — استخدام EVAL_PERIOD_LABELS بدل تكرار التعريف */
+  var typeLabels = EVAL_PERIOD_LABELS;
 
   async function doSave(action) {
     setSaving(true);
@@ -16448,9 +16437,8 @@ function MyEvaluationsTab({ user }) {
 
   useEffect(function(){ load(); }, [user && user.id]);
 
-  var typeLabels = {
-    quarterly: "ربع سنوي", annual: "سنوي"
-  };
+  /* v7.52 — مشتق من EVAL_PERIOD_LABELS (subset) */
+  var typeLabels = { quarterly: EVAL_PERIOD_LABELS.quarterly, annual: EVAL_PERIOD_LABELS.annual };
 
   if (loading) {
     return <div style={{ padding: 40, textAlign: "center", color: COLORS.textMuted, fontSize: 13 }}>
@@ -16673,12 +16661,14 @@ function LeaveRequestsTab({ user }) {
 
   return <div>
     {/* v7.44 — title removed (accordion already shows "🏖️ إجازاتي") */}
+    {/* v7.53 — زر "+ طلب جديد" أكبر وأوضح */}
     <div style={{ display: "flex", alignItems: "center", justifyContent: "flex-end", marginBottom: SPACING.md }}>
       <button onClick={function(){setView("new");}} style={{
-        padding: "8px 14px", background: COLORS.goldLight, color: "#000",
-        border: "none", borderRadius: 12, fontSize: 12, fontWeight: 800,
-        cursor: "pointer", fontFamily: TYPOGRAPHY.fontTajawal
-      }}>+ طلب جديد</button>
+        padding: "10px 18px", background: COLORS.goldLight, color: "#000",
+        border: "none", borderRadius: 14, fontSize: 13, fontWeight: 800,
+        cursor: "pointer", fontFamily: TYPOGRAPHY.fontTajawal,
+        boxShadow: "0 2px 8px rgba(201,168,76,0.4)"
+      }}>+ طلب إجازة جديد</button>
     </div>
 
     {loading ? <EmptyState text="جارٍ التحميل..." /> :
@@ -16686,7 +16676,14 @@ function LeaveRequestsTab({ user }) {
        <div style={{ padding: 30, textAlign: "center" }}>
          <div style={{ fontSize: 48, marginBottom: 10, opacity: 0.4 }}>🏖️</div>
          <div style={{ fontSize: 14, fontWeight: 700, color: COLORS.textPrimary, marginBottom: 6 }}>لا توجد طلبات إجازة بعد</div>
-         <div style={{ fontSize: 11, color: COLORS.textMuted, marginBottom: 12 }}>اضغط "+ طلب جديد" لتقديم طلب</div>
+         <div style={{ fontSize: 11, color: COLORS.textMuted, marginBottom: 16 }}>قدّم طلبك بضغطة واحدة</div>
+         {/* v7.53 — زر CTA داخل الـ empty state (الزر الصغير أعلى الصفحة قد لا يُلاحظ) */}
+         <button onClick={function(){setView("new");}} style={{
+           padding: "12px 24px", background: COLORS.goldLight, color: "#000",
+           border: "none", borderRadius: 14, fontSize: 13, fontWeight: 800,
+           cursor: "pointer", fontFamily: TYPOGRAPHY.fontTajawal,
+           boxShadow: "0 2px 8px rgba(201,168,76,0.4)"
+         }}>+ تقديم طلب إجازة</button>
        </div>
      </Card> :
      <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
@@ -16827,7 +16824,7 @@ function LeaveRequestForm({ user, onClose }) {
 
     <Card>
       <div style={{ marginBottom: SPACING.md }}>
-        <label style={{ display: "block", fontSize: 11, fontWeight: 700, color: COLORS.textSecondary, marginBottom: 6 }}>نوع الإجازة</label>
+        <label style={FORM_LABEL}>نوع الإجازة</label>
         <select value={type} onChange={function(e){setType(e.target.value);}} style={{
           width: "100%", padding: 12, borderRadius: 12,
           border: "1px solid " + COLORS.cardBorder, background: COLORS.bgSecondary,
@@ -16846,7 +16843,7 @@ function LeaveRequestForm({ user, onClose }) {
 
       <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10, marginBottom: SPACING.md }}>
         <div>
-          <label style={{ display: "block", fontSize: 11, fontWeight: 700, color: COLORS.textSecondary, marginBottom: 6 }}>من</label>
+          <label style={FORM_LABEL}>من</label>
           <input type="date" value={from} onChange={function(e){setFrom(e.target.value);}} style={{
             width: "100%", padding: 12, borderRadius: 12,
             border: "1px solid " + COLORS.cardBorder, background: COLORS.bgSecondary,
@@ -16854,7 +16851,7 @@ function LeaveRequestForm({ user, onClose }) {
           }} />
         </div>
         <div>
-          <label style={{ display: "block", fontSize: 11, fontWeight: 700, color: COLORS.textSecondary, marginBottom: 6 }}>إلى</label>
+          <label style={FORM_LABEL}>إلى</label>
           <input type="date" value={to} onChange={function(e){setTo(e.target.value);}} style={{
             width: "100%", padding: 12, borderRadius: 12,
             border: "1px solid " + COLORS.cardBorder, background: COLORS.bgSecondary,
@@ -16868,7 +16865,7 @@ function LeaveRequestForm({ user, onClose }) {
       </div>}
 
       <div style={{ marginBottom: SPACING.md }}>
-        <label style={{ display: "block", fontSize: 11, fontWeight: 700, color: COLORS.textSecondary, marginBottom: 6 }}>السبب (اختياري)</label>
+        <label style={FORM_LABEL}>السبب (اختياري)</label>
         <textarea value={reason} onChange={function(e){setReason(e.target.value);}} rows={3}
           placeholder="اكتب سبب الإجازة..."
           style={{
@@ -16880,7 +16877,7 @@ function LeaveRequestForm({ user, onClose }) {
       </div>
 
       <div style={{ marginBottom: SPACING.md }}>
-        <label style={{ display: "block", fontSize: 11, fontWeight: 700, color: COLORS.textSecondary, marginBottom: 6 }}>كيفية التواصل خلال الإجازة</label>
+        <label style={FORM_LABEL}>كيفية التواصل خلال الإجازة</label>
         <input type="text" value={contact} onChange={function(e){setContact(e.target.value);}}
           placeholder="جوال احتياطي، إيميل، أو لا يمكن التواصل..."
           style={{
@@ -17081,7 +17078,7 @@ function HandoverItemForm({ allEmps, onAdd, onCancel }) {
     </div>
 
     <div style={{ marginBottom: SPACING.md }}>
-      <label style={{ display: "block", fontSize: 11, fontWeight: 700, color: COLORS.textSecondary, marginBottom: 6 }}>الفئة</label>
+      <label style={FORM_LABEL}>الفئة</label>
       <select value={category} onChange={function(e){setCategory(e.target.value); setErr("");}} style={{
         width: "100%", padding: 12, borderRadius: 12,
         border: "1px solid " + COLORS.cardBorder, background: COLORS.bgSecondary,
@@ -17106,7 +17103,7 @@ function HandoverItemForm({ allEmps, onAdd, onCancel }) {
     </div>}
 
     <div style={{ marginBottom: SPACING.md }}>
-      <label style={{ display: "block", fontSize: 11, fontWeight: 700, color: COLORS.textSecondary, marginBottom: 6 }}>عنوان البند</label>
+      <label style={FORM_LABEL}>عنوان البند</label>
       <input type="text" value={title} onChange={function(e){setTitle(e.target.value); setErr("");}}
         placeholder="مثال: متابعة مشروع الفيلا 123"
         style={{
@@ -17117,7 +17114,7 @@ function HandoverItemForm({ allEmps, onAdd, onCancel }) {
     </div>
 
     <div style={{ marginBottom: SPACING.md }}>
-      <label style={{ display: "block", fontSize: 11, fontWeight: 700, color: COLORS.textSecondary, marginBottom: 6 }}>تفاصيل (اختياري)</label>
+      <label style={FORM_LABEL}>تفاصيل (اختياري)</label>
       <textarea value={description} onChange={function(e){setDescription(e.target.value);}} rows={3}
         placeholder="أي تعليمات أو ملاحظات للمُفوَّض..."
         style={{
@@ -17129,7 +17126,7 @@ function HandoverItemForm({ allEmps, onAdd, onCancel }) {
     </div>
 
     <div style={{ marginBottom: SPACING.md }}>
-      <label style={{ display: "block", fontSize: 11, fontWeight: 700, color: COLORS.textSecondary, marginBottom: 6 }}>المُفوَّض إليه</label>
+      <label style={FORM_LABEL}>المُفوَّض إليه</label>
       <select value={delegateId} onChange={function(e){setDelegateId(e.target.value); setErr("");}} style={{
         width: "100%", padding: 12, borderRadius: 12,
         border: "1px solid " + COLORS.cardBorder, background: COLORS.bgSecondary,
