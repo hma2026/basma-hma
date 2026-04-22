@@ -11,7 +11,7 @@ import { exportEmploymentLetter, exportLeaveLetter } from "./formalPdfs";
 
 /* ═══════════ APP CONFIG (إعدادات التطبيق) ═══════════ */
 const APP_CONFIG = {
-  VER: "7.63",
+  VER: "7.64",
   NAME: "بصمة HMA",
   FULL_NAME: "نظام الحضور والانصراف الذكي",
   COMPANY: "هاني محمد عسيري للاستشارات الهندسية",
@@ -3556,6 +3556,7 @@ function LeaderboardView({ user }) {
   var [loading, setLoading] = useState(true);
   var [ranked, setRanked] = useState([]);
   var [myRank, setMyRank] = useState(null);
+  var [showAll, setShowAll] = useState(false);  // v7.64 — يجب أن يكون قبل أي conditional return (Rules of Hooks)
 
   useEffect(function(){
     if (!user || !user.id) return;
@@ -3585,7 +3586,6 @@ function LeaderboardView({ user }) {
     return <EmptyState text="لا توجد بيانات ترتيب" />;
   }
 
-  var [showAll, setShowAll] = useState(false);  // v7.58 — توسيع لعرض الكل
   var topShown = showAll ? ranked.slice(0, 10) : ranked.slice(0, 5);
   var userInTopShown = myRank && myRank <= topShown.length;
 
