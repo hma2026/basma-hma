@@ -2,33 +2,41 @@
    BASMA HMA — DESIGN SYSTEM (supports DARK + LIGHT modes)
    ═══════════════════════════════════════════════════════ */
 
-/* ── DARK PALETTE ── v7.61 — نظام ألوان موحّد (UI/UX Spec) */
+/* ── DARK PALETTE ── v7.63 — Design Tokens موحدة (WCAG AA) */
 const DARK_COLORS = {
-  /* الخلفية الرئيسية والكروت */
-  bg1: "#0A1628", bg2: "#081122", bg3: "#050d1c",
-  bgSecondary: "#1A2B44",  /* حقول الإدخال */
-  card: "#132238", cardBorder: "#3A506B", cardHover: "#1a2e47",
+  /* الخلفيات — v7.63 tokens */
+  bg1: "#0A1628",       /* bg-main */
+  bg2: "#081122", bg3: "#050d1c",
+  bgSecondary: "#1A2B44", /* bg-input */
+  card: "#132238",       /* bg-card */
   cardBg: "#132238",
+  cardBorder: "#3A506B", /* border */
+  cardHover: "#1a2e47",
   cardRowBorder: "rgba(255,255,255,.10)",
 
   /* الذهبي (هوية HMA) */
-  gold: "#C9A227", goldLight: "#D4AF37", goldDark: "#B8960F",
+  gold: "#C9A227",
+  goldLight: "#D4AF37",  /* gold-start */
+  goldDark: "#B8960F",   /* gold-end */
   goldGradient: "linear-gradient(180deg, #D4AF37 0%, #C9A227 50%, #B8960F 100%)",
 
-  /* Primary (أزرق داكن) */
+  /* Primary */
   primary: "#2b5ea7",
 
-  /* النصوص — تباين WCAG AA */
-  textPrimary: "#FFFFFF",       /* العناوين والليبل (15:1) */
-  textSecondary: "#B8C2D0",     /* وصف ثانوي */
-  textMuted: "#8A99AD",         /* Placeholder وتلميحات (4.5:1) */
-  textOnGold: "#0A1628",        /* النص على خلفية ذهبية */
+  /* النصوص — tokens الجديدة */
+  textPrimary: "#FFFFFF",       /* text-primary (15:1) */
+  textSecondary: "#B8C2D0",     /* text-secondary */
+  textMuted: "#8A99AD",         /* text-placeholder (4.5:1) */
+  textOnGold: "#0A1628",        /* للنص على الذهبي */
   textDanger: "#EF4444",
 
   /* Status */
-  success: "#10b981", warning: "#FBBF24", danger: "#EF4444", info: "#2b5ea7",
+  success: "#2DD4BF",
+  warning: "#FBBF24",
+  danger: "#EF4444",
+  info: "#2b5ea7",
 
-  /* Metallic (للاستخدامات الخاصة) */
+  /* Metallic */
   metallic: "linear-gradient(180deg, rgba(255,255,255,.14) 0%, rgba(255,255,255,.05) 50%, rgba(255,255,255,.1) 100%)",
   metallicBorder: "rgba(255,255,255,.18)",
 
@@ -36,10 +44,11 @@ const DARK_COLORS = {
   white: "#ffffff", black: "#000000", transparent: "transparent",
   innerShadow: "rgba(255,255,255,.2)",
 
-  /* Warning box (ملاحظة صفراء) */
+  /* v7.63 — Box tokens للملاحظات والحالات */
   warningBg: "#3D2E12", warningText: "#FBBF24",
-  /* Info box (ملاحظة زرقاء) */
   infoBg: "#17324D", infoText: "#A3D5FF",
+  dangerBg: "#3D1212", dangerText: "#EF4444",
+  successBg: "#0F2E1F", successText: "#2DD4BF",
 };
 
 /* ── LIGHT PALETTE — polished dark titanium on cool silver bg ── */
@@ -48,6 +57,7 @@ const LIGHT_COLORS = {
   bgSecondary: "#f1f5f9",  /* v7.60 — inputs background */
   card: "#ffffff", cardBorder: "rgba(71,85,105,.35)", cardHover: "#f1f5f9",
   cardBg: "#ffffff",
+  cardRowBorder: "rgba(71,85,105,.15)",
   primary: "#2b5ea7",
   gold: "#475569", goldLight: "#64748b", goldDark: "#1e293b",
   goldGradient: "linear-gradient(180deg, #cbd5e1 0%, #94a3b8 20%, #475569 50%, #1e293b 80%, #334155 100%)",
@@ -58,7 +68,12 @@ const LIGHT_COLORS = {
   textOnGold: "#ffffff", textDanger: "#c0392b",
   white: "#ffffff", black: "#000000", transparent: "transparent",
   innerShadow: "rgba(255,255,255,.6)",
-  cardRowBorder: "rgba(71,85,105,.15)",
+  /* v7.61 — warning + info boxes للـ light mode */
+  warningBg: "#fef3c7", warningText: "#92400e",
+  infoBg: "#dbeafe", infoText: "#1e40af",
+  /* v7.63 — danger + success boxes للـ light mode */
+  dangerBg: "#fee2e2", dangerText: "#991b1b",
+  successBg: "#d1fae5", successText: "#065f46",
 };
 
 /* ── Active COLORS — mutable, updated by setTheme() ── */
