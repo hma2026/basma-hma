@@ -11,7 +11,7 @@ import { exportEmploymentLetter, exportLeaveLetter } from "./formalPdfs";
 
 /* ═══════════ APP CONFIG (إعدادات التطبيق) ═══════════ */
 const APP_CONFIG = {
-  VER: "7.57",
+  VER: "7.58",
   NAME: "بصمة HMA",
   FULL_NAME: "نظام الحضور والانصراف الذكي",
   COMPANY: "هاني محمد عسيري للاستشارات الهندسية",
@@ -3535,13 +3535,14 @@ function LeaderboardView({ user }) {
     return <EmptyState text="لا توجد بيانات ترتيب" />;
   }
 
-  var top10 = ranked.slice(0, 10);
-  var userInTop10 = myRank && myRank <= 10;
+  var [showAll, setShowAll] = useState(false);  // v7.58 — توسيع لعرض الكل
+  var topShown = showAll ? ranked.slice(0, 10) : ranked.slice(0, 5);
+  var userInTopShown = myRank && myRank <= topShown.length;
 
   return (
     <div>
       {/* My rank highlight */}
-      {myRank && !userInTop10 && (
+      {myRank && !userInTopShown && (
         <div style={{
           padding: SPACING.md,
           borderRadius: RADIUS.md,
@@ -3568,9 +3569,9 @@ function LeaderboardView({ user }) {
         </div>
       )}
 
-      {/* Top 10 */}
+      {/* v7.58 — Top 5 (or 10 when expanded) */}
       <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-        {top10.map(function(e, i){
+        {topShown.map(function(e, i){
           var rank = i + 1;
           var isMe = String(e.id) === String(user.id) || String(e.username) === String(user.username);
           var rankColor = rank === 1 ? "#FFD700" : rank === 2 ? "#C0C0C0" : rank === 3 ? "#CD7F32" : COLORS.textMuted;
@@ -3614,6 +3615,32 @@ function LeaderboardView({ user }) {
           );
         })}
       </div>
+
+      {/* v7.58 — زر "إظهار المزيد" يظهر فقط عند وجود أكثر من 5 موظفين */}
+      {!showAll && ranked.length > 5 && (
+        <button
+          onClick={function(){ setShowAll(true); }}
+          style={{
+            width: "100%",
+            marginTop: SPACING.sm,
+            padding: "10px",
+            borderRadius: RADIUS.md,
+            background: "rgba(201,168,76,0.12)",
+            border: "1px solid " + COLORS.goldLight,
+            color: COLORS.goldLight,
+            fontSize: 12, fontWeight: 800,
+            cursor: "pointer",
+            fontFamily: TYPOGRAPHY.fontTajawal,
+          }}
+        >
+          ⬇️ إظهار المزيد ({ranked.length - 5}+)
+        </button>
+      )}
+      {showAll && ranked.length > 10 && (
+        <div style={{ marginTop: SPACING.sm, textAlign: "center", fontSize: 10, color: COLORS.textMuted, fontStyle: "italic" }}>
+          عرض أعلى 10 من أصل {ranked.length}
+        </div>
+      )}
 
       {/* Total count footer */}
       <div style={{ marginTop: SPACING.md, textAlign: "center", fontSize: 10, color: COLORS.textMuted, fontFamily: TYPOGRAPHY.fontTajawal }}>
@@ -4196,8 +4223,7 @@ function PayHub({ user }) {
       {/* 5. Custody badges */}
       <CustodyBadgesCard user={user} />
 
-      {/* 6. Bank account */}
-      <BankAccountCard user={user} onRequestEdit={handleBankEditRequest} />
+      {/* v7.58 — BankAccountCard نُقل إلى ملفي → البيانات الوظيفية → 💰 المالية */}
 
       {/* 7. Full custody accordion (detailed view) */}
       <ProfileAccordion emoji="🗄️" title="تفاصيل العُهَد" subtitle="كل العُهَد والفواتير والاستلام">
@@ -4876,13 +4902,7 @@ function ProfilePage({ user, branch, workType, onLogout, onTicket, myTickets, da
               </div>
             </ProfileAccordion>
 
-            <ProfileAccordion
-              emoji="📎"
-              title="المرفقات والمستندات"
-              subtitle="الهوية · الشهادات · العقد · الآيبان"
-            >
-              <ProfileAttachmentsLite user={user} />
-            </ProfileAccordion>
+            {/* v7.58 — accordion "المرفقات والمستندات" حُذف (المحتوى متاح داخل البيانات الوظيفية → تبويب 📎 مرفقات) */}
 
             {/* v7.47 — ManagersCard + SCE نُقلا داخل "البيانات الوظيفية" */}
 
@@ -11873,7 +11893,7 @@ function PreAbsenceModal({ allEmps, user, onClose, onSubmit }) {
         </div>
 
         <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 14, padding: "8px 0" }}>
-          <div onClick={function(){ setAsLeave(!asLeave); }} style={{ width: 20, height: 20, borderRadius: 6, border: "2px solid " + (asLeave ? C.green : "#ddd"), background: asLeave ? C.green + "15" : "#fff", display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer" }}>
+          <div onClick={function(){ setAsLeave(!asLeave); }} style={{ width: 20, height: 20, borderRadius: 6, border: "2px solid " + (asLeave ? C.green : COLORS.cardBorder), background: asLeave ? C.green + "25" : COLORS.bgSecondary, display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer" }}>
             {asLeave && <span style={{ color: C.green, fontSize: 12, fontWeight: 900 }}>✓</span>}
           </div>
           <span style={{ fontSize: 12, fontWeight: 600, color: C.text }}>احتساب من الإجازة السنوية</span>
@@ -11885,7 +11905,7 @@ function PreAbsenceModal({ allEmps, user, onClose, onSubmit }) {
 
         <div style={{ display: "flex", gap: 8 }}>
           <button onClick={onClose} style={MODAL_CANCEL}>إلغاء</button>
-          <button onClick={function(){ if(empId) onSubmit({ empId: empId, date: tomorrowStr, reason: reason, asLeave: asLeave }); }} disabled={!empId} style={{ flex: 1, padding: 12, borderRadius: 14, border: "none", background: empId ? "linear-gradient(135deg,"+C.orange+","+C.orangeDark+")" : "#eee", color: empId ? "#fff" : "#aaa", fontSize: 14, fontWeight: 700, cursor: empId ? "pointer" : "default" }}>
+          <button onClick={function(){ if(empId) onSubmit({ empId: empId, date: tomorrowStr, reason: reason, asLeave: asLeave }); }} disabled={!empId} style={{ flex: 1, padding: 12, borderRadius: 14, border: "none", background: empId ? "linear-gradient(135deg,"+C.orange+","+C.orangeDark+")" : COLORS.bgSecondary, color: empId ? "#fff" : COLORS.textMuted, fontSize: 14, fontWeight: 700, cursor: empId ? "pointer" : "default" }}>
             تأكيد الإفادة
           </button>
         </div>
@@ -11922,7 +11942,7 @@ function ManualAttModal({ allEmps, user, onClose, onSubmit }) {
           {types.map(function(t) {
             var active = type === t.id;
             return (
-              <button key={t.id} onClick={function(){ setType(t.id); }} style={{ flex: 1, padding: "8px 4px", borderRadius: 10, background: active ? C.blue + "15" : "#f5f5f5", border: active ? "2px solid " + C.blue : "2px solid transparent", fontSize: 9, fontWeight: 700, color: active ? C.blue : C.sub, cursor: "pointer", textAlign: "center" }}>
+              <button key={t.id} onClick={function(){ setType(t.id); }} style={{ flex: 1, padding: "8px 4px", borderRadius: 10, background: active ? C.blue + "25" : COLORS.bgSecondary, border: active ? "2px solid " + C.blue : "2px solid " + COLORS.cardBorder, fontSize: 9, fontWeight: 700, color: active ? C.blue : COLORS.textPrimary, cursor: "pointer", textAlign: "center" }}>
                 <div style={{ fontSize: 14 }}>{t.icon}</div>{t.label}
               </button>
             );
@@ -11931,7 +11951,7 @@ function ManualAttModal({ allEmps, user, onClose, onSubmit }) {
 
         <div style={{ marginBottom: 14 }}>
           <div style={{ fontSize: 10, color: C.sub, fontWeight: 600, marginBottom: 4 }}>التاريخ</div>
-          <input type="date" value={date} onChange={function(e){ setDate(e.target.value); }} style={{ width: "100%", padding: 10, borderRadius: 10, border: "1px solid " + C.bg, fontSize: 13, fontFamily: "'Tajawal',sans-serif" }} />
+          <input type="date" value={date} onChange={function(e){ setDate(e.target.value); }} style={{ width: "100%", padding: 10, borderRadius: 10, border: "1px solid " + COLORS.cardBorder, background: COLORS.bgSecondary, color: COLORS.textPrimary, fontSize: 13, fontFamily: "'Tajawal',sans-serif" }} />
         </div>
 
         <div style={{ fontSize: 9, color: C.blue, marginBottom: 12, padding: 8, borderRadius: 8, background: C.blue + "08" }}>
@@ -11940,7 +11960,7 @@ function ManualAttModal({ allEmps, user, onClose, onSubmit }) {
 
         <div style={{ display: "flex", gap: 8 }}>
           <button onClick={onClose} style={MODAL_CANCEL}>إلغاء</button>
-          <button onClick={function(){ if(empId) onSubmit({ empId: empId, type: type, date: date }); }} disabled={!empId} style={{ flex: 1, padding: 12, borderRadius: 14, border: "none", background: empId ? "linear-gradient(135deg,"+C.blue+","+C.blueBright+")" : "#eee", color: empId ? "#fff" : "#aaa", fontSize: 14, fontWeight: 700, cursor: empId ? "pointer" : "default" }}>
+          <button onClick={function(){ if(empId) onSubmit({ empId: empId, type: type, date: date }); }} disabled={!empId} style={{ flex: 1, padding: 12, borderRadius: 14, border: "none", background: empId ? "linear-gradient(135deg,"+C.blue+","+C.blueBright+")" : COLORS.bgSecondary, color: empId ? "#fff" : COLORS.textMuted, fontSize: 14, fontWeight: 700, cursor: empId ? "pointer" : "default" }}>
             تسجيل ✓
           </button>
         </div>
@@ -11971,7 +11991,7 @@ function PermissionModal({ user, branch, onClose, onSubmit }) {
           {types.map(function(t) {
             var active = type === t.id;
             return (
-              <button key={t.id} onClick={function(){ setType(t.id); }} style={{ flex: 1, padding: "8px 4px", borderRadius: 10, background: active ? C.blue + "15" : "#f5f5f5", border: active ? "2px solid " + C.blue : "2px solid transparent", fontSize: 9, fontWeight: 700, color: active ? C.blue : C.sub, cursor: "pointer", textAlign: "center" }}>
+              <button key={t.id} onClick={function(){ setType(t.id); }} style={{ flex: 1, padding: "8px 4px", borderRadius: 10, background: active ? C.blue + "25" : COLORS.bgSecondary, border: active ? "2px solid " + C.blue : "2px solid " + COLORS.cardBorder, fontSize: 9, fontWeight: 700, color: active ? C.blue : COLORS.textPrimary, cursor: "pointer", textAlign: "center" }}>
                 <div style={{ fontSize: 14 }}>{t.icon}</div>{t.label}
               </button>
             );
@@ -11982,7 +12002,7 @@ function PermissionModal({ user, branch, onClose, onSubmit }) {
           <div style={{ fontSize: 10, color: C.sub, fontWeight: 600, marginBottom: 4 }}>
             {type === "early_leave" ? "وقت الانصراف المطلوب" : type === "late_arrival" ? "وقت الحضور المتوقع" : "مدة الإذن (بالدقائق)"}
           </div>
-          <input type="time" value={time} onChange={function(e){ setTime(e.target.value); }} style={{ width: "100%", padding: 10, borderRadius: 10, border: "1px solid " + C.bg, fontSize: 13, fontFamily: "'Tajawal',sans-serif" }} />
+          <input type="time" value={time} onChange={function(e){ setTime(e.target.value); }} style={{ width: "100%", padding: 10, borderRadius: 10, border: "1px solid " + COLORS.cardBorder, background: COLORS.bgSecondary, color: COLORS.textPrimary, fontSize: 13, fontFamily: "'Tajawal',sans-serif" }} />
         </div>
 
         <div style={{ marginBottom: 14 }}>
@@ -11996,7 +12016,7 @@ function PermissionModal({ user, branch, onClose, onSubmit }) {
 
         <div style={{ display: "flex", gap: 8 }}>
           <button onClick={onClose} style={MODAL_CANCEL}>إلغاء</button>
-          <button onClick={function(){ if(time && reason) onSubmit({ type: type, time: time, reason: reason }); }} disabled={!time || !reason} style={{ flex: 1, padding: 12, borderRadius: 14, border: "none", background: time && reason ? "linear-gradient(135deg,"+C.blue+","+C.blueBright+")" : "#eee", color: time && reason ? "#fff" : "#aaa", fontSize: 14, fontWeight: 700, cursor: time && reason ? "pointer" : "default" }}>
+          <button onClick={function(){ if(time && reason) onSubmit({ type: type, time: time, reason: reason }); }} disabled={!time || !reason} style={{ flex: 1, padding: 12, borderRadius: 14, border: "none", background: time && reason ? "linear-gradient(135deg,"+C.blue+","+C.blueBright+")" : COLORS.bgSecondary, color: time && reason ? "#fff" : COLORS.textMuted, fontSize: 14, fontWeight: 700, cursor: time && reason ? "pointer" : "default" }}>
             إرسال الطلب
           </button>
         </div>
@@ -14486,38 +14506,35 @@ function AchievementsCard({ user, part, stats, loading }) {
 
   var displayList = unlocked; // v7.37 — always show all badges (no collapse)
 
-  // v7.42 — "summary" part: only progress header + bar
+  // v7.58 — "summary" part: لم يعد يُستخدم منفصلاً (مدموج مع badges في صندوق واحد)
   if (part === "summary") {
-    return (
-      <Card padding={SPACING.md}>
-        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>
-          <div>
-            <div style={{ ...TYPOGRAPHY.body, fontWeight: 800, color: COLORS.textPrimary, display: "flex", alignItems: "center", gap: 6 }}>
-              🏆 الإنجازات
-            </div>
-            {/* v7.47 — حذف عدد الشارات (مكرر مع AchievementsStatsRow) — يبقى فقط النقاط المكتسبة من الشارات */}
-            <div style={{ ...TYPOGRAPHY.tiny, color: COLORS.textMuted, marginTop: 2 }}>
-              <strong style={{ color: COLORS.goldLight }}>{earnedPoints}</strong> نقطة مكتسبة من الشارات
-            </div>
-          </div>
-          <div style={{ width: 54, height: 54, borderRadius: 27, background: "linear-gradient(135deg, " + COLORS.goldLight + ", " + COLORS.gold + ")", display: "flex", alignItems: "center", justifyContent: "center", color: "#000", fontWeight: 900, fontSize: 16 }}>
-            {Math.round((unlockedCount / ACHIEVEMENTS.length) * 100)}%
-          </div>
-        </div>
-        <div style={{ height: 6, borderRadius: 3, background: COLORS.bg1, overflow: "hidden" }}>
-          <div style={{ height: "100%", width: ((unlockedCount / ACHIEVEMENTS.length) * 100) + "%", background: "linear-gradient(90deg, " + COLORS.goldLight + ", " + COLORS.gold + ")", transition: "width 0.5s" }}></div>
-        </div>
-      </Card>
-    );
+    return null;  // المحتوى انتقل لـ "badges" (دمج كامل)
   }
 
-  // v7.42 — "badges" part: only the grid + tip
+  // v7.58 — "badges" part: صندوق واحد يحوي الإحصائيات + الشارات (تنفيذ الملاحظة 3)
   if (part === "badges") {
+    var pct = Math.round((unlockedCount / ACHIEVEMENTS.length) * 100);
     return (
       <Card padding={SPACING.md}>
-        <div style={{ ...TYPOGRAPHY.body, fontWeight: 800, color: COLORS.textPrimary, display: "flex", alignItems: "center", gap: 6, marginBottom: 12 }}>
-          🎖️ إشاراتي
+        {/* Header: شاراتي + النقاط + النسبة كلها في سطر واحد */}
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12, flexWrap: "wrap", gap: 8 }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+            <div style={{ ...TYPOGRAPHY.body, fontWeight: 800, color: COLORS.textPrimary }}>🎖️ شاراتي</div>
+            <span style={{ fontSize: 11, color: COLORS.goldLight, fontWeight: 800, background: "rgba(201,168,76,0.15)", padding: "3px 9px", borderRadius: 8 }}>
+              {earnedPoints} نقطة
+            </span>
+            <span style={{ fontSize: 11, color: COLORS.goldLight, fontWeight: 800, background: "rgba(201,168,76,0.15)", padding: "3px 9px", borderRadius: 8 }}>
+              {pct}%
+            </span>
+          </div>
         </div>
+
+        {/* شريط التقدم */}
+        <div style={{ height: 6, borderRadius: 3, background: COLORS.bg1, overflow: "hidden", marginBottom: 14 }}>
+          <div style={{ height: "100%", width: pct + "%", background: "linear-gradient(90deg, " + COLORS.goldLight + ", " + COLORS.gold + ")", transition: "width 0.5s" }}></div>
+        </div>
+
+        {/* Grid الشارات */}
         <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 8 }}>
           {displayList.map(function(a){
             var cat = categories[a.category] || categories.engagement;
@@ -14526,7 +14543,8 @@ function AchievementsCard({ user, part, stats, loading }) {
                 <div style={{ fontSize: 24, marginBottom: 4, filter: a.unlocked ? "none" : "grayscale(60%) brightness(0.85)" }}>{a.icon}</div>
                 <div style={{ fontSize: 11, fontWeight: 900, color: a.unlocked ? cat.color : "#94A3B8", marginBottom: 3 }}>{a.name}</div>
                 <div style={{ fontSize: 9, color: a.unlocked ? COLORS.textSecondary : "#94A3B8", lineHeight: 1.5, fontWeight: 500 }}>{a.desc}</div>
-                <div style={{ marginTop: 6, padding: "3px 8px", borderRadius: 6, background: a.unlocked ? cat.color + "44" : "rgba(148,163,184,0.25)", color: a.unlocked ? "#fff" : "#CBD5E1", fontSize: 10, fontWeight: 800, display: "inline-block" }}>
+                {/* v7.58 — نقاط الشارة بلون ذهبي موحّد */}
+                <div style={{ marginTop: 6, padding: "3px 8px", borderRadius: 6, background: a.unlocked ? "rgba(201,168,76,0.25)" : "rgba(148,163,184,0.25)", color: a.unlocked ? COLORS.goldLight : "#CBD5E1", fontSize: 10, fontWeight: 800, display: "inline-block" }}>
                   +{a.points} نقطة
                 </div>
                 {a.unlocked && <div style={{ position: "absolute", top: 4, left: 4, fontSize: 14, background: "#10B981", color: "#fff", width: 20, height: 20, borderRadius: 10, display: "flex", alignItems: "center", justifyContent: "center", fontWeight: 900 }}>✓</div>}
@@ -14537,7 +14555,7 @@ function AchievementsCard({ user, part, stats, loading }) {
         </div>
         {unlockedCount < ACHIEVEMENTS.length && (
           <div style={{ marginTop: 10, padding: 10, borderRadius: 8, background: "rgba(245,158,11,0.1)", border: "1px solid rgba(245,158,11,0.3)", fontSize: 10, color: "#D97706", fontWeight: 600, textAlign: "center" }}>
-            🎯 استمر في الانضباط لفتح المزيد من الإشارات
+            🎯 استمر في الانضباط لفتح المزيد من الشارات
           </div>
         )}
       </Card>
@@ -15513,6 +15531,7 @@ function MyProfileCard({ user }) {
         { id: "contract", icon: "📄", label: "عقد" },
         { id: "attachments", icon: "📎", label: "مرفقات" },
         { id: "dependents", icon: "👨‍👩‍👧", label: "مرافقين" },
+        { id: "medical", icon: "🏥", label: "طبي" },
       ].map(function(tb){
         var active = activeTab === tb.id;
         return <button key={tb.id} onClick={function(){setActiveTab(tb.id); cancelRequest();}} style={{
@@ -15583,7 +15602,7 @@ function MyProfileCard({ user }) {
       />}
 
       {activeTab === "compensation" && <EmpReadOrRequestSection
-        title="الراتب والبدلات" section="compensation"
+        title="الراتب والبدلات والحساب البنكي" section="compensation"
         data={profile && profile.compensation}
         fields={[
           { key: "basicSalary", label: "الراتب الأساسي (ريال)", type: "readonly_number" },
@@ -15592,16 +15611,19 @@ function MyProfileCard({ user }) {
           { key: "communicationsAllowance", label: "بدل الاتصالات", type: "readonly_number" },
           { key: "fieldAllowance", label: "بدل طبيعة العمل", type: "readonly_number" },
           { key: "otherAllowances", label: "بدلات أخرى", type: "readonly_number" },
-          { key: "iban", label: "رقم الآيبان (IBAN)", type: "text", placeholder: "SA..." },
-          { key: "bankName", label: "اسم البنك", type: "text" },
+          /* v7.58 — الحساب البنكي مدموج هنا (نُقل من tab الأجر) */
+          { key: "bankName", label: "🏦 اسم البنك", type: "text" },
+          { key: "iban", label: "🏦 رقم الآيبان (IBAN)", type: "text", placeholder: "SA..." },
+          { key: "accountNumber", label: "🏦 رقم الحساب", type: "text" },
+          { key: "beneficiary", label: "🏦 اسم المستفيد", type: "text" },
         ]}
         user={user}
         requesting={requestingEdit === "compensation"}
         editData={editData} setEditData={setEditData}
         startRequest={startRequest} cancelRequest={cancelRequest}
         submitRequest={submitRequest} sending={sending}
-        note="الراتب والبدلات تُعتمد من الإدارة — يمكنك طلب تعديل IBAN والبنك فقط"
-        restrictEdit={["iban","bankName"]}
+        note="الراتب والبدلات تُعتمد من الإدارة — يمكنك طلب تعديل بيانات البنك فقط"
+        restrictEdit={["iban","bankName","accountNumber","beneficiary"]}
       />}
 
       {activeTab === "contract" && <EmpReadOrRequestSection
@@ -15690,6 +15712,30 @@ function MyProfileCard({ user }) {
             var d = await r.json();
             if (d.ok && d.pending) {
               setMsg({ type: "success", text: "✓ تم إرسال طلب تحديث المرافقين للـ HR" });
+            }
+          } catch(e) { setMsg({ type: "error", text: "فشل: " + e.message }); }
+        }}
+      />}
+
+      {/* v7.58 — تبويب طبي (إفصاح طبي للتأمين) */}
+      {activeTab === "medical" && <MedicalDisclosureView
+        user={user}
+        medical={profile && profile.medical ? profile.medical : { chronicDiseases: [], allergies: [], medications: [], reports: [] }}
+        onSave={async function(newData){
+          try {
+            var r = await fetch("/api/data?action=emp-profile", {
+              method: "PUT",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({
+                empId: user.id, section: "medical",
+                data: newData,
+                source: "employee_request", requestedBy: user.id
+              })
+            });
+            var d = await r.json();
+            if (d.ok) {
+              setMsg({ type: "success", text: d.pending ? "✓ تم إرسال الإفصاح الطبي للـ HR" : "✓ تم الحفظ" });
+              loadProfile();
             }
           } catch(e) { setMsg({ type: "error", text: "فشل: " + e.message }); }
         }}
@@ -15931,6 +15977,127 @@ function MyDependentsView({ user, dependents, onSave }) {
       {editing && <button onClick={function(){ setList(function(prev){ return [...prev, { name: "", relationship: "", dob: "", hasInsurance: false }]; }); }} style={{ padding: 12, background: COLORS.bgSecondary, color: COLORS.primary, border: "2px dashed " + COLORS.primary + "50", borderRadius: 14, fontSize: 12, fontWeight: 700, cursor: "pointer", fontFamily: TYPOGRAPHY.fontTajawal }}>+ إضافة مرافق</button>}
     </div>}
   </div>;
+}
+
+
+/* ═══════════════════════════════════════════════════════════════════
+ * v7.58 — MedicalDisclosureView
+ * إفصاح طبي: أمراض مزمنة + حساسيات + أدوية + تقارير طبية
+ * الهدف: تصدير Excel من لوحة الإدارة لإرسال لشركات التأمين الطبي للتسعير
+ * ═══════════════════════════════════════════════════════════════════ */
+function MedicalDisclosureView({ user, medical, onSave }) {
+  var [editing, setEditing] = useState(false);
+  var [data, setData] = useState({
+    chronicDiseases: medical.chronicDiseases || [],
+    allergies: medical.allergies || [],
+    medications: medical.medications || [],
+    reports: medical.reports || [],
+  });
+  var [newItem, setNewItem] = useState({ chronicDiseases: "", allergies: "", medications: "" });
+  var [saving, setSaving] = useState(false);
+
+  function addChip(field) {
+    var val = (newItem[field] || "").trim();
+    if (!val) return;
+    setData(function(prev){
+      var next = { ...prev };
+      next[field] = [...(prev[field] || []), val];
+      return next;
+    });
+    setNewItem(function(prev){ var n = { ...prev }; n[field] = ""; return n; });
+  }
+
+  function removeChip(field, idx) {
+    setData(function(prev){
+      var next = { ...prev };
+      next[field] = (prev[field] || []).filter(function(_, i){ return i !== idx; });
+      return next;
+    });
+  }
+
+  async function handleSave() {
+    setSaving(true);
+    await onSave(data);
+    setSaving(false);
+    setEditing(false);
+  }
+
+  function renderChipSection(field, title, emoji, placeholder) {
+    var items = data[field] || [];
+    return (
+      <div style={{ marginBottom: 14 }}>
+        <div style={{ fontSize: 11.5, fontWeight: 800, color: COLORS.textPrimary, marginBottom: 8, display: "flex", alignItems: "center", gap: 6 }}>
+          <span style={{ fontSize: 14 }}>{emoji}</span>{title}
+          {items.length > 0 && <span style={{ background: "rgba(220,38,38,0.15)", color: "#dc2626", fontSize: 9, padding: "1px 6px", borderRadius: 6, fontWeight: 800 }}>{items.length}</span>}
+        </div>
+        {items.length === 0 && !editing && (
+          <div style={{ padding: 8, background: COLORS.bgSecondary, borderRadius: 8, fontSize: 10.5, color: COLORS.textMuted, textAlign: "center", fontStyle: "italic" }}>لا يوجد</div>
+        )}
+        <div style={{ display: "flex", flexWrap: "wrap", gap: 5 }}>
+          {items.map(function(item, idx) {
+            return (
+              <span key={idx} style={{ display: "inline-flex", alignItems: "center", gap: 5, padding: "4px 10px", background: "rgba(220,38,38,0.1)", border: "1px solid rgba(220,38,38,0.3)", borderRadius: 14, fontSize: 11, color: COLORS.textPrimary }}>
+                {item}
+                {editing && <button onClick={function(){ removeChip(field, idx); }} style={{ background: "none", border: "none", color: "#dc2626", cursor: "pointer", fontSize: 12, fontWeight: 800, padding: 0 }}>×</button>}
+              </span>
+            );
+          })}
+        </div>
+        {editing && (
+          <div style={{ display: "flex", gap: 6, marginTop: 8 }}>
+            <input
+              type="text"
+              value={newItem[field] || ""}
+              onChange={function(e){ var n = { ...newItem }; n[field] = e.target.value; setNewItem(n); }}
+              onKeyDown={function(e){ if (e.key === "Enter") { e.preventDefault(); addChip(field); } }}
+              placeholder={placeholder}
+              style={{ flex: 1, padding: 8, borderRadius: 8, border: "1px solid " + COLORS.cardBorder, background: COLORS.bgSecondary, color: COLORS.textPrimary, fontSize: 11, fontFamily: TYPOGRAPHY.fontTajawal }}
+            />
+            <button onClick={function(){ addChip(field); }} style={{ padding: "8px 14px", borderRadius: 8, background: "rgba(220,38,38,0.15)", border: "1px solid rgba(220,38,38,0.4)", color: "#fca5a5", fontSize: 11, fontWeight: 800, cursor: "pointer" }}>+</button>
+          </div>
+        )}
+      </div>
+    );
+  }
+
+  return (
+    <div>
+      {/* Header */}
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 14, padding: 10, background: "rgba(220,38,38,0.08)", border: "1px solid rgba(220,38,38,0.25)", borderRadius: 10 }}>
+        <div>
+          <div style={{ fontSize: 12.5, fontWeight: 800, color: COLORS.textPrimary, fontFamily: TYPOGRAPHY.fontCairo }}>🏥 الإفصاح الطبي</div>
+          <div style={{ fontSize: 10, color: COLORS.textMuted, marginTop: 2 }}>للتأمين الطبي · يراها HR فقط · خاص</div>
+        </div>
+        {!editing ? (
+          <button onClick={function(){ setEditing(true); }} style={{ padding: "7px 14px", borderRadius: 8, background: COLORS.goldLight, color: "#000", border: "none", fontSize: 11, fontWeight: 800, cursor: "pointer", fontFamily: TYPOGRAPHY.fontTajawal }}>✏️ تعديل</button>
+        ) : (
+          <div style={{ display: "flex", gap: 5 }}>
+            <button onClick={function(){ setEditing(false); setData({ chronicDiseases: medical.chronicDiseases || [], allergies: medical.allergies || [], medications: medical.medications || [], reports: medical.reports || [] }); }} style={{ padding: "7px 12px", borderRadius: 8, background: COLORS.bgSecondary, color: COLORS.textPrimary, border: "1px solid " + COLORS.cardBorder, fontSize: 11, fontWeight: 700, cursor: "pointer" }}>إلغاء</button>
+            <button onClick={handleSave} disabled={saving} style={{ padding: "7px 14px", borderRadius: 8, background: COLORS.goldLight, color: "#000", border: "none", fontSize: 11, fontWeight: 800, cursor: saving ? "wait" : "pointer", fontFamily: TYPOGRAPHY.fontTajawal }}>{saving ? "جارِ..." : "💾 حفظ"}</button>
+          </div>
+        )}
+      </div>
+
+      {renderChipSection("chronicDiseases", "أمراض مزمنة", "🩺", "اكتب المرض ثم Enter (مثل: سكري نوع 2)")}
+      {renderChipSection("allergies", "حساسيات", "⚠️", "اكتب الحساسية ثم Enter (مثل: البنسلين)")}
+      {renderChipSection("medications", "أدوية بانتظام", "💊", "اكتب الدواء + الجرعة ثم Enter")}
+
+      {/* Medical reports — placeholder for now (file upload similar to attachments) */}
+      <div style={{ marginBottom: 14 }}>
+        <div style={{ fontSize: 11.5, fontWeight: 800, color: COLORS.textPrimary, marginBottom: 8, display: "flex", alignItems: "center", gap: 6 }}>
+          <span style={{ fontSize: 14 }}>📎</span>تقارير طبية مرفقة
+        </div>
+        <div style={{ padding: 10, background: COLORS.bgSecondary, border: "1px dashed " + COLORS.cardBorder, borderRadius: 8, fontSize: 10.5, color: COLORS.textMuted, textAlign: "center", fontStyle: "italic" }}>
+          📎 قسم رفع التقارير الطبية قيد التطوير<br/>
+          <span style={{ fontSize: 9 }}>سيتم إضافته مع نظام المرفقات الرسمية</span>
+        </div>
+      </div>
+
+      <div style={{ padding: 10, background: "rgba(59,130,246,0.08)", border: "1px solid rgba(59,130,246,0.25)", borderRadius: 8, fontSize: 10, color: COLORS.textMuted, lineHeight: 1.6 }}>
+        ℹ️ هذه البيانات سرية ولا يطّلع عليها سوى الموارد البشرية. تُستخدم فقط لإرسالها لشركات التأمين الطبي للحصول على عرض السعر المناسب.
+      </div>
+    </div>
+  );
 }
 
 
