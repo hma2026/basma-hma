@@ -11,7 +11,7 @@ import { exportEmploymentLetter, exportLeaveLetter } from "./formalPdfs";
 
 /* ═══════════ APP CONFIG (إعدادات التطبيق) ═══════════ */
 const APP_CONFIG = {
-  VER: "7.47",
+  VER: "7.48",
   NAME: "بصمة HMA",
   FULL_NAME: "نظام الحضور والانصراف الذكي",
   COMPANY: "هاني محمد عسيري للاستشارات الهندسية",
@@ -2876,26 +2876,7 @@ function ReportPage({ user, allAtt, todayAtt, branch, isOffDay, myLeaves, allEmp
           )}
         </Card>
 
-        {/* إجازاتي */}
-        {myLeaves && myLeaves.length > 0 && (
-          <Card>
-            <div style={{ ...TYPOGRAPHY.h3, color: COLORS.textPrimary, marginBottom: SPACING.md }}>إجازاتي</div>
-            {myLeaves.slice(0, 5).map(function(l, i) {
-              var statusMap = { pending: { label: "قيد المراجعة", color: COLORS.textMuted }, approved: { label: "مقبولة", color: COLORS.goldLight }, rejected: { label: "مرفوضة", color: COLORS.textDanger } };
-              var s = statusMap[l.status] || statusMap.pending;
-              var typeLabels = { annual: "سنوية", sick: "مرضية", emergency: "طارئة", personal: "شخصية" };
-              return (
-                <div key={l.id || i} style={{ display: "flex", alignItems: "center", gap: SPACING.md, padding: SPACING.sm + "px 0", borderBottom: i < myLeaves.length - 1 ? "1px solid " + COLORS.cardBorder : "none" }}>
-                  <div style={{ flex: 1 }}>
-                    <div style={{ ...TYPOGRAPHY.bodySm, fontWeight: 700, color: COLORS.textPrimary }}>{typeLabels[l.type] || l.type}</div>
-                    <div style={{ ...TYPOGRAPHY.caption, color: COLORS.textMuted }}>{l.from + " → " + l.to}</div>
-                  </div>
-                  <span style={{ ...TYPOGRAPHY.caption, fontWeight: 700, color: s.color, padding: "3px 10px", borderRadius: RADIUS.sm, background: s.color + "20" }}>{s.label}</span>
-                </div>
-              );
-            })}
-          </Card>
-        )}
+        {/* v7.48 — قائمة إجازاتي حُذفت من هنا (مكررة مع MyLeavesHub في سجلي + تستخدم endpoint قديم) */}
 
         {/* رسم بياني أسبوعي */}
         <WeeklyChart allAtt={allAtt} empId={user.id} branch={branch} />
@@ -3336,20 +3317,18 @@ function RecordsHero({ user, onTicket, onRequestLeave }) {
     if (!user || !user.id) return;
     async function loadCounts() {
       try {
-        var [leaves, perms, preAbs, bal, contracts] = await Promise.all([
-          fetch("/api/data?action=leaves").then(function(r){ return r.json(); }).then(function(d){ return (Array.isArray(d) ? d : []).filter(function(x){ return x.empId === user.id; }); }).catch(function(){ return []; }),
+        /* v7.48 — حُذف fetch leaves القديم (الإجازات في MyLeavesHub بـ leave-requests) */
+        var [perms, preAbs, bal, contracts] = await Promise.all([
           fetch("/api/data?action=permissions&empId=" + encodeURIComponent(user.id)).then(function(r){ return r.json(); }).catch(function(){ return []; }),
           fetch("/api/data?action=pre_absence").then(function(r){ return r.json(); }).then(function(d){ return (Array.isArray(d) ? d : []).filter(function(x){ return x.empId === user.id; }); }).catch(function(){ return []; }),
           fetch("/api/data?action=leave-balance&empId=" + encodeURIComponent(user.id)).then(function(r){ return r.json(); }).catch(function(){ return null; }),
           fetch("/api/data?action=emp_records&empId=" + encodeURIComponent(user.id) + "&type=contract").then(function(r){ return r.json(); }).catch(function(){ return []; }),
         ]);
-        var lvArr = Array.isArray(leaves) ? leaves : [];
         var pmArr = Array.isArray(perms) ? perms : [];
         var paArr = Array.isArray(preAbs) ? preAbs : [];
         var ctrArr = Array.isArray(contracts) ? contracts : [];
-        var openCount = [].concat(lvArr, pmArr, paArr).filter(function(x){ return (x.status || "pending") === "pending"; }).length;
-        // v7.41 — violations excluded from total (moved to القانونية)
-        var totalRecords = lvArr.length + pmArr.length + paArr.length + ctrArr.length;
+        var openCount = [].concat(pmArr, paArr).filter(function(x){ return (x.status || "pending") === "pending"; }).length;
+        var totalRecords = pmArr.length + paArr.length + ctrArr.length;
         var balTotal = 0;
         if (bal && !bal.error) {
           balTotal = (bal.annual || 0) + (bal.sick || 0) + (bal.emergency || 0) + (bal.personal || 0);
@@ -3466,14 +3445,13 @@ function RecordsArchiveView({ user }) {
     if (!user || !user.id) return;
     async function load() {
       try {
-        var [leaves, perms, preAbs, contracts] = await Promise.all([
-          fetch("/api/data?action=leaves").then(function(r){ return r.json(); }).then(function(d){ return (Array.isArray(d) ? d : []).filter(function(x){ return x.empId === user.id; }); }).catch(function(){ return []; }),
+        /* v7.48 — حُذف fetch leaves القديم. الإجازات (مع تاريخها) كاملة في MyLeavesHub */
+        var [perms, preAbs, contracts] = await Promise.all([
           fetch("/api/data?action=permissions&empId=" + encodeURIComponent(user.id)).then(function(r){ return r.json(); }).catch(function(){ return []; }),
           fetch("/api/data?action=pre_absence").then(function(r){ return r.json(); }).then(function(d){ return (Array.isArray(d) ? d : []).filter(function(x){ return x.empId === user.id; }); }).catch(function(){ return []; }),
           fetch("/api/data?action=emp_records&empId=" + encodeURIComponent(user.id) + "&type=contract").then(function(r){ return r.json(); }).catch(function(){ return []; }),
         ]);
         var all = [];
-        (leaves || []).forEach(function(l){ if (l.status === "approved" || l.status === "rejected") all.push({ kind: "leave", icon: "🏖️", title: "إجازة " + (l.type || ""), sub: (l.from || "") + " → " + (l.to || ""), status: l.status, ts: l.ts || l.decidedAt || "" }); });
         (perms || []).forEach(function(p){ if (p.status === "approved" || p.status === "rejected") all.push({ kind: "permission", icon: "⏱", title: "استئذان", sub: (p.from_time || "") + " → " + (p.to_time || ""), status: p.status, ts: p.ts || "" }); });
         (preAbs || []).forEach(function(pa){ if (pa.status === "approved" || pa.status === "rejected") all.push({ kind: "preabs", icon: "🏥", title: "إفادة غياب", sub: pa.date || "", status: pa.status, ts: pa.ts || "" }); });
         (contracts || []).forEach(function(c){ if (c.status !== "active") all.push({ kind: "contract", icon: "📄", title: c.title || "عقد", sub: (c.startDate || "") + " → " + (c.endDate || ""), status: c.status || "ended", ts: c.endDate || c.startDate || "" }); });
@@ -3580,9 +3558,9 @@ function RecordsHub({ user, onTicket, myTickets }) {
       {/* 1. Hero: 3 stats + 2 quick actions */}
       <RecordsHero user={user} onTicket={onTicket} onRequestLeave={handleRequestLeave} />
 
-      {/* v7.43 — Section 1: الطلبات المفتوحة (always visible, no accordion) */}
+      {/* v7.48 — Section 1: استئذان وإفادات (الإجازات نُقلت لقسم منفصل أدناه) */}
       <div style={{ background: COLORS.metallic, border: "1px solid " + COLORS.metallicBorder, borderRadius: RADIUS.xl, padding: SPACING.lg, boxShadow: SHADOWS.button }}>
-        <SectionHeader emoji="📬" title="الطلبات المفتوحة" />
+        <SectionHeader emoji="🙋" title="استئذان وإفادات الغياب" />
         <MyRequestsTab user={user} />
       </div>
 
@@ -13865,14 +13843,14 @@ function EmployeeRecordTab({ user, initialSubTab, hideSubTabs }) {
   async function loadAll() {
     setLoading(true);
     try {
-      var [c, l, v] = await Promise.all([
-        api("emp_records", { params: { empId: user.id, type: "contract" } }),
-        api("leaves", { params: { empId: user.id } }),
-        api("violations_v2", { params: { empId: user.id } }),
-      ]);
-      setContracts(c || []);
-      setLeaves(l || []);
-      setViolations(v || []);
+      /* v7.48 — leaves fetch محذوف (الإجازات في MyLeavesHub فقط). جلب فقط حسب الـ subTab المعروض */
+      var promises = [api("emp_records", { params: { empId: user.id, type: "contract" } })];
+      if (!hideSubTabs || subTab === "violations") {
+        promises.push(api("violations_v2", { params: { empId: user.id } }));
+      }
+      var results = await Promise.all(promises);
+      setContracts(results[0] || []);
+      if (results[1]) setViolations(results[1] || []);
     } catch(e) { console.error(e); }
     setLoading(false);
   }
@@ -14034,48 +14012,38 @@ function exportViolationsRecord(user, violations) {
   if (w) { w.document.write(html); w.document.close(); }
 }
 
-/* ═══════════ LEGAL TAB ═══════════ */
+/* ═══════════ MyRequestsTab — استئذان + إفادات الغياب فقط (الإجازات في MyLeavesHub) ═══════════ */
 function MyRequestsTab({ user }) {
-  var [leaves, setLeaves] = useState([]);
+  /* v7.48 — حُذفت الإجازات نهائياً من هنا (تكرار مع MyLeavesHub أدناه + endpoint قديم) */
   var [permissions, setPermissions] = useState([]);
   var [preAbsences, setPreAbsences] = useState([]);
-  var [balance, setBalance] = useState(null);
   var [loading, setLoading] = useState(true);
-  var [activeTab, setActiveTab] = useState("all"); // all | leaves | permissions | preabs
-  // v7.00 — showLeave state removed
+  var [activeTab, setActiveTab] = useState("all"); // all | permissions | preabs
   var [showPerm, setShowPerm] = useState(false);
   var [showPreAbs, setShowPreAbs] = useState(false);
 
   async function loadAll() {
     setLoading(true);
     try {
-      var [lv, pm, pa, bl] = await Promise.all([
-        api("leaves").then(function(d){ return (Array.isArray(d) ? d : []).filter(function(x){ return x.empId === user.id; }); }).catch(function(){ return []; }),
+      var [pm, pa] = await Promise.all([
         api("permissions", { params: { empId: user.id } }).catch(function(){ return []; }),
         api("pre_absence").then(function(d){ return (Array.isArray(d) ? d : []).filter(function(x){ return x.empId === user.id; }); }).catch(function(){ return []; }),
-        fetch("/api/data?action=leave-balance&empId=" + encodeURIComponent(user.id)).then(function(r){ return r.json(); }).catch(function(){ return null; }),
       ]);
-      setLeaves(lv || []);
       setPermissions(pm || []);
       setPreAbsences(pa || []);
-      setBalance(bl && !bl.error ? bl : null);
     } catch(e) {}
     setLoading(false);
   }
 
   useEffect(function(){ loadAll(); }, [user.id]);
 
-  var leaveTypesMeta = { annual: {l:"سنوية",i:"🏖️"}, sick:{l:"مرضية",i:"🏥"}, emergency:{l:"طارئة",i:"⚡"}, personal:{l:"شخصية",i:"👤"} };
-
   var all = [];
-  (leaves || []).forEach(function(l){ all.push({ kind: "leave", ts: l.ts, data: l }); });
   (permissions || []).forEach(function(p){ all.push({ kind: "permission", ts: p.ts, data: p }); });
   (preAbsences || []).forEach(function(pa){ all.push({ kind: "preabs", ts: pa.ts, data: pa }); });
   all.sort(function(a,b){ return (b.ts || "").localeCompare(a.ts || ""); });
 
   var filtered = all;
-  if (activeTab === "leaves") filtered = all.filter(function(x){ return x.kind === "leave"; });
-  else if (activeTab === "permissions") filtered = all.filter(function(x){ return x.kind === "permission"; });
+  if (activeTab === "permissions") filtered = all.filter(function(x){ return x.kind === "permission"; });
   else if (activeTab === "preabs") filtered = all.filter(function(x){ return x.kind === "preabs"; });
 
   var pendingCount = all.filter(function(x){ return x.data.status === "pending"; }).length;
@@ -14085,12 +14053,7 @@ function MyRequestsTab({ user }) {
     var d = x.data;
     var s = getStatusMeta(d.status);
     var title = "", sub = "", icon = "📋";
-    if (x.kind === "leave") {
-      var lm = leaveTypesMeta[d.type] || { l: d.type || "—", i: "📋" };
-      icon = lm.i;
-      title = "إجازة " + lm.l + " (" + (d.days || 1) + " يوم)";
-      sub = "من " + d.from + " إلى " + d.to + (d.reason ? " — " + d.reason : "");
-    } else if (x.kind === "permission") {
+    if (x.kind === "permission") {
       icon = "⏱";
       title = "استئذان";
       sub = (d.from_time ? d.from_time + " → " + (d.to_time || "—") : "") + (d.reason ? " — " + d.reason : "");
@@ -14116,36 +14079,21 @@ function MyRequestsTab({ user }) {
           {d.decidedAt && <span>قُرِّر: {fmtDateAr(d.decidedAt)}</span>}
         </div>
         {d.rejectReason && <div style={{ marginTop: 6, padding: 6, borderRadius: 6, background: "rgba(220,38,38,0.1)", color: "#DC2626", fontSize: 10, fontWeight: 600 }}>سبب الرفض: {d.rejectReason}</div>}
-        {/* v6.52 — Print leave confirmation letter after approval */}
-        {x.kind === "leave" && d.status === "approved" && (
-          <div style={{ marginTop: 8, display: "flex", justifyContent: "flex-end" }}>
-            <button onClick={function(){ exportLeaveLetter(user, d, {}); }} style={{ padding: "5px 10px", borderRadius: 6, border: "1px solid " + COLORS.goldLight, background: COLORS.goldLight + "15", color: COLORS.goldLight, fontSize: 10, fontWeight: 800, cursor: "pointer", fontFamily: TYPOGRAPHY.fontTajawal }}>
-              📄 طباعة إفادة إجازة PDF
-            </button>
-          </div>
-        )}
       </div>
     );
   }
 
   var filterTabs = [
     { id: "all", label: "الكل", count: all.length },
-    { id: "leaves", label: "إجازات", count: leaves.length },
     { id: "permissions", label: "استئذان", count: permissions.length },
     { id: "preabs", label: "غياب بعذر", count: preAbsences.length },
   ];
 
   return (
     <>
-      {/* v7.41 — Summary cards and leave balance REMOVED (already in RecordsHero above) */}
+      {/* v7.48 — banner "لطلب إجازة" حُذف (الإجازات أسفله في accordion إجازاتي) */}
 
-      {/* v7.00 — زر "طلب إجازة" نُقل إلى تبويب "إجازاتي" (نظام الإجازات الجديد مع التسليم) */}
-      <div style={{ padding: "10px 14px", marginBottom: 8, borderRadius: 10, background: "rgba(8,145,178,0.08)", border: "1px dashed rgba(8,145,178,0.3)", fontSize: 11, color: COLORS.textMuted, lineHeight: 1.7, textAlign: "center", cursor: "pointer" }}
-        onClick={function(){ localStorage.setItem("basma_profile_tab", "records"); localStorage.setItem("basma_records_filter", "leaves"); window.dispatchEvent(new CustomEvent("basma:profile-tab-changed")); }}>
-        🏖️ <strong style={{ color: "#0891B2" }}>لطلب إجازة</strong> — انتقل إلى تبويب <strong style={{ color: COLORS.textPrimary }}>«إجازاتي»</strong> (يدعم تسليم المهام)
-      </div>
-
-      {/* Quick action buttons — 2 columns بعد إزالة الإجازة */}
+      {/* Quick action buttons — استئذان + إفادة غياب */}
       <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 6, marginBottom: 8 }}>
         <button onClick={function(){ setShowPerm(true); }} style={{ padding: "10px 4px", borderRadius: 10, background: "rgba(124,58,237,0.15)", border: "1px solid rgba(124,58,237,0.4)", color: "#7C3AED", fontWeight: 800, fontSize: 11, cursor: "pointer", fontFamily: TYPOGRAPHY.fontTajawal }}>⏱ استئذان</button>
         <button onClick={function(){ setShowPreAbs(true); }} style={{ padding: "10px 4px", borderRadius: 10, background: "rgba(217,119,6,0.15)", border: "1px solid rgba(217,119,6,0.4)", color: "#D97706", fontWeight: 800, fontSize: 11, cursor: "pointer", fontFamily: TYPOGRAPHY.fontTajawal }}>🏥 إفادة غياب</button>
