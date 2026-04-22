@@ -2,23 +2,44 @@
    BASMA HMA — DESIGN SYSTEM (supports DARK + LIGHT modes)
    ═══════════════════════════════════════════════════════ */
 
-/* ── DARK PALETTE ── */
+/* ── DARK PALETTE ── v7.61 — نظام ألوان موحّد (UI/UX Spec) */
 const DARK_COLORS = {
-  bg1: "#0d2445", bg2: "#091a38", bg3: "#071428",
-  bgSecondary: "#0e1d35",  /* v7.60 — للـ inputs والـ inline fields (بين card و bg) */
-  card: "#142537", cardBorder: "#1f3a55", cardHover: "#1a2e47",
-  cardBg: "#142537",  /* v7.60 — alias لـ card لتوافق بعض الاستدعاءات */
-  primary: "#2b5ea7",  /* v7.60 — ملون أساسي للأزرار والـ info boxes */
-  gold: "#c9a84c", goldLight: "#e8d5a3", goldDark: "#8b6914",
-  goldGradient: "linear-gradient(180deg, #fae7b8 0%, #e8d19a 15%, #c9a84c 45%, #a17e2f 70%, #8b6914 100%)",
+  /* الخلفية الرئيسية والكروت */
+  bg1: "#0A1628", bg2: "#081122", bg3: "#050d1c",
+  bgSecondary: "#1A2B44",  /* حقول الإدخال */
+  card: "#132238", cardBorder: "#3A506B", cardHover: "#1a2e47",
+  cardBg: "#132238",
+  cardRowBorder: "rgba(255,255,255,.10)",
+
+  /* الذهبي (هوية HMA) */
+  gold: "#C9A227", goldLight: "#D4AF37", goldDark: "#B8960F",
+  goldGradient: "linear-gradient(180deg, #D4AF37 0%, #C9A227 50%, #B8960F 100%)",
+
+  /* Primary (أزرق داكن) */
+  primary: "#2b5ea7",
+
+  /* النصوص — تباين WCAG AA */
+  textPrimary: "#FFFFFF",       /* العناوين والليبل (15:1) */
+  textSecondary: "#B8C2D0",     /* وصف ثانوي */
+  textMuted: "#8A99AD",         /* Placeholder وتلميحات (4.5:1) */
+  textOnGold: "#0A1628",        /* النص على خلفية ذهبية */
+  textDanger: "#EF4444",
+
+  /* Status */
+  success: "#10b981", warning: "#FBBF24", danger: "#EF4444", info: "#2b5ea7",
+
+  /* Metallic (للاستخدامات الخاصة) */
   metallic: "linear-gradient(180deg, rgba(255,255,255,.14) 0%, rgba(255,255,255,.05) 50%, rgba(255,255,255,.1) 100%)",
   metallicBorder: "rgba(255,255,255,.18)",
-  success: "#10b981", warning: "#d4a017", danger: "#E2192C", info: "#2b5ea7",
-  textPrimary: "#e8edf4", textSecondary: "#a8b5cc", textMuted: "#7a8fa8",
-  textOnGold: "#1a1200", textDanger: "#FF6B6B",
+
+  /* Utility */
   white: "#ffffff", black: "#000000", transparent: "transparent",
   innerShadow: "rgba(255,255,255,.2)",
-  cardRowBorder: "rgba(255,255,255,.08)",
+
+  /* Warning box (ملاحظة صفراء) */
+  warningBg: "#3D2E12", warningText: "#FBBF24",
+  /* Info box (ملاحظة زرقاء) */
+  infoBg: "#17324D", infoText: "#A3D5FF",
 };
 
 /* ── LIGHT PALETTE — polished dark titanium on cool silver bg ── */

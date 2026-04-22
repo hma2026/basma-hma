@@ -11,7 +11,7 @@ import { exportEmploymentLetter, exportLeaveLetter } from "./formalPdfs";
 
 /* ═══════════ APP CONFIG (إعدادات التطبيق) ═══════════ */
 const APP_CONFIG = {
-  VER: "7.60",
+  VER: "7.61",
   NAME: "بصمة HMA",
   FULL_NAME: "نظام الحضور والانصراف الذكي",
   COMPANY: "هاني محمد عسيري للاستشارات الهندسية",
@@ -401,21 +401,25 @@ function isAdminUser(user) {
 var APP_ICON = { src: "/app-icon-512.png", alt: "بصمة HMA", style: { width: "100%", height: "100%", objectFit: "cover", display: "block" } };
 
 /* ── v7.46 — Modal helpers (replaces 5 identical patterns) ── */
-var MODAL_CANCEL = { flex: 1, padding: 12, borderRadius: 14, border: "2px solid " + C.bg, background: C.card, color: C.sub, fontSize: 14, fontWeight: 700, cursor: "pointer" };
-var MODAL_BODY = { maxWidth: 380, background: C.card };
+/* v7.61 — Unified UI/UX theme: أسود داكن + ذهبي فخم */
+var MODAL_CANCEL = { flex: 1, padding: 14, borderRadius: 12, border: "1px solid " + COLORS.cardBorder, background: "#2A3F5F", color: COLORS.textPrimary, fontSize: 14, fontWeight: 700, cursor: "pointer", fontFamily: TYPOGRAPHY.fontTajawal };
+var MODAL_BODY = { maxWidth: 380, background: COLORS.card };
 
 /* ── v7.46 — buzz helper (replaces 12 navigator.vibrate checks) ── */
 function buzz(pattern) { try { if (navigator.vibrate) navigator.vibrate(pattern); } catch(e){} }
 
 /* ── v7.46 — Admin theme style constants ── */
-var ADMIN_CARD_STYLE = { background: C.card, borderRadius: 12, padding: 14, border: "1px solid " + C.cardBorder, marginBottom: 14 };
-var ADMIN_INPUT = { width: "100%", padding: 10, borderRadius: 10, border: "1px solid " + C.bg, fontSize: 13, fontFamily: "'Tajawal',sans-serif", background: C.card, color: C.text };
-var ADMIN_MODAL_TITLE = { fontSize: 16, fontWeight: 800, fontFamily: "'Cairo',sans-serif", textAlign: "center", color: C.text };
+/* v7.61 — Unified: padding 14px + border-radius 12px + contrast WCAG AA */
+var ADMIN_CARD_STYLE = { background: COLORS.card, borderRadius: 12, padding: 14, border: "1px solid " + COLORS.cardBorder, marginBottom: 14 };
+var ADMIN_INPUT = { width: "100%", padding: 14, borderRadius: 12, border: "1px solid " + COLORS.cardBorder, fontSize: 13, fontFamily: TYPOGRAPHY.fontTajawal, background: COLORS.bgSecondary, color: COLORS.textPrimary, outline: "none", boxSizing: "border-box" };
+var ADMIN_MODAL_TITLE = { fontSize: 17, fontWeight: 800, fontFamily: TYPOGRAPHY.fontCairo, textAlign: "center", color: COLORS.textPrimary };
 var FLEX_BETWEEN = { display: "flex", justifyContent: "space-between", alignItems: "center" };
 /* v7.52 — FORM_LABEL مشترك (كان مكرر 11 مرة في النماذج) */
-var FORM_LABEL = { display: "block", fontSize: 11, fontWeight: 700, color: COLORS.textSecondary, marginBottom: 6 };
+/* v7.61 — Unified: 15px + Semi-Bold + أبيض صريح */
+var FORM_LABEL = { display: "block", fontSize: 15, fontWeight: 700, color: COLORS.textPrimary, marginBottom: 6, fontFamily: TYPOGRAPHY.fontTajawal };
 /* v7.53 — FORM_INPUT مشترك (يضمن لون نص واضح في الثيم الفاتح والداكن) */
-var FORM_INPUT = { width: "100%", padding: 12, borderRadius: 12, border: "1px solid " + COLORS.cardBorder, background: COLORS.bgSecondary, color: COLORS.textPrimary, fontFamily: TYPOGRAPHY.fontTajawal, fontSize: 12, boxSizing: "border-box" };
+/* v7.61 — Unified: padding 14 + radius 12 */
+var FORM_INPUT = { width: "100%", padding: 14, borderRadius: 12, border: "1px solid " + COLORS.cardBorder, background: COLORS.bgSecondary, color: COLORS.textPrimary, fontFamily: TYPOGRAPHY.fontTajawal, fontSize: 13, outline: "none", boxSizing: "border-box" };
 
 /* ── v7.46 — fmtDateAr: Arabic date helper (replaces 19 inline calls) ── */
 function fmtDateAr(d) { if (!d) return "—"; try { return fmtDateAr(d); } catch(e) { return String(d); } }
@@ -11922,36 +11926,39 @@ function PreAbsenceModal({ allEmps, user, onClose, onSubmit }) {
   return (
     <div style={S.overlay} onClick={onClose}>
       <div className="basma-slideup" style={{ ...S.modal, ...MODAL_BODY }} onClick={function(e){ e.stopPropagation(); }}>
-        <div style={{ ...ADMIN_MODAL_TITLE, marginBottom: 4 }}>📋 إفادة مسبقة بالغياب</div>
-        <div style={{ fontSize: 10, color: C.sub, textAlign: "center", marginBottom: 14 }}>{"الموظف لن يحضر غداً: " + tomorrowStr}</div>
+        {/* v7.61 — العنوان أبيض صريح */}
+        <div style={{ ...ADMIN_MODAL_TITLE, marginBottom: 4, color: COLORS.textPrimary }}>📋 إفادة مسبقة بالغياب</div>
+        <div style={{ fontSize: 11, color: COLORS.textSecondary, textAlign: "center", marginBottom: 18 }}>{"الموظف لن يحضر غداً: " + tomorrowStr}</div>
 
-        <div style={{ marginBottom: 10 }}>
-          <div style={{ fontSize: 10, color: C.sub, fontWeight: 600, marginBottom: 4 }}>اختر الموظف</div>
+        <div style={{ marginBottom: 14 }}>
+          <label style={FORM_LABEL}>اختر الموظف</label>
           <select value={empId} onChange={function(e){ setEmpId(e.target.value); }} style={ADMIN_INPUT}>
             <option value="">— اختر —</option>
             {managed.map(function(e) { return React.createElement("option", { key: e.id, value: e.id }, e.name + " (" + e.id + ")"); })}
           </select>
         </div>
 
-        <div style={{ marginBottom: 10 }}>
-          <div style={{ fontSize: 10, color: C.sub, fontWeight: 600, marginBottom: 4 }}>السبب</div>
-          <textarea value={reason} onChange={function(e){ setReason(e.target.value); }} placeholder="سبب الغياب..." rows={2} style={{ ...ADMIN_INPUT, resize: "none" }} />
+        <div style={{ marginBottom: 14 }}>
+          <label style={FORM_LABEL}>السبب</label>
+          <textarea value={reason} onChange={function(e){ setReason(e.target.value); }} placeholder="سبب الغياب..." rows={3} style={{ ...ADMIN_INPUT, resize: "none" }} />
         </div>
 
-        <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 14, padding: "8px 0" }}>
-          <div onClick={function(){ setAsLeave(!asLeave); }} style={{ width: 20, height: 20, borderRadius: 6, border: "2px solid " + (asLeave ? C.green : COLORS.cardBorder), background: asLeave ? C.green + "25" : COLORS.bgSecondary, display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer" }}>
-            {asLeave && <span style={{ color: C.green, fontSize: 12, fontWeight: 900 }}>✓</span>}
+        {/* v7.61 — Checkbox مع حدود ذهبية عند التفعيل */}
+        <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 16, padding: "8px 0" }}>
+          <div onClick={function(){ setAsLeave(!asLeave); }} style={{ width: 22, height: 22, borderRadius: 6, border: "2px solid " + (asLeave ? COLORS.goldLight : COLORS.cardBorder), background: asLeave ? "rgba(212,175,55,0.15)" : COLORS.bgSecondary, display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer", flexShrink: 0 }}>
+            {asLeave && <span style={{ color: COLORS.goldLight, fontSize: 14, fontWeight: 900 }}>✓</span>}
           </div>
-          <span style={{ fontSize: 12, fontWeight: 600, color: C.text }}>احتساب من الإجازة السنوية</span>
+          <span style={{ fontSize: 13, fontWeight: 600, color: COLORS.textPrimary, fontFamily: TYPOGRAPHY.fontTajawal }}>احتساب من الإجازة السنوية</span>
         </div>
 
-        <div style={{ fontSize: 9, color: C.orange, marginBottom: 12, padding: 8, borderRadius: 8, background: C.orange + "08" }}>
+        {/* v7.61 — الملاحظة الصفراء بخلفية #3D2E12 ونص #FBBF24 */}
+        <div style={{ fontSize: 11, color: COLORS.warningText, marginBottom: 14, padding: "10px 12px", borderRadius: 10, background: COLORS.warningBg, border: "1px solid rgba(251,191,36,0.3)", fontWeight: 600, lineHeight: 1.6 }}>
           ⚖️ حسب لائحة العمل: طلب الإجازة يجب أن يكون قبل الغياب وليس بعده
         </div>
 
-        <div style={{ display: "flex", gap: 8 }}>
+        <div style={{ display: "flex", gap: 10 }}>
           <button onClick={onClose} style={MODAL_CANCEL}>إلغاء</button>
-          <button onClick={function(){ if(empId) onSubmit({ empId: empId, date: tomorrowStr, reason: reason, asLeave: asLeave }); }} disabled={!empId} style={{ flex: 1, padding: 12, borderRadius: 14, border: "none", background: empId ? "linear-gradient(135deg,"+C.orange+","+C.orangeDark+")" : COLORS.bgSecondary, color: empId ? "#fff" : COLORS.textMuted, fontSize: 14, fontWeight: 700, cursor: empId ? "pointer" : "default" }}>
+          <button onClick={function(){ if(empId) onSubmit({ empId: empId, date: tomorrowStr, reason: reason, asLeave: asLeave }); }} disabled={!empId} style={{ flex: 1, padding: 14, borderRadius: 12, border: "none", background: empId ? "linear-gradient(135deg, " + COLORS.goldLight + ", " + COLORS.goldDark + ")" : COLORS.bgSecondary, color: empId ? COLORS.textOnGold : COLORS.textMuted, fontSize: 14, fontWeight: 800, cursor: empId ? "pointer" : "default", fontFamily: TYPOGRAPHY.fontTajawal }}>
             تأكيد الإفادة
           </button>
         </div>
@@ -12031,38 +12038,53 @@ function PermissionModal({ user, branch, onClose, onSubmit }) {
   return (
     <div style={S.overlay} onClick={onClose}>
       <div className="basma-slideup" style={{ ...S.modal, ...MODAL_BODY }} onClick={function(e){ e.stopPropagation(); }}>
-        <div style={{ ...ADMIN_MODAL_TITLE, marginBottom: 14 }}>🙋 طلب إذن</div>
+        {/* v7.61 — العنوان أبيض */}
+        <div style={{ ...ADMIN_MODAL_TITLE, marginBottom: 16, color: COLORS.textPrimary }}>🙋 طلب إذن</div>
 
-        <div style={{ display: "flex", gap: 4, marginBottom: 12 }}>
+        {/* v7.61 — الأربعة كروت: خلفية #1A2B44 + نص أبيض + المختار ذهبي 2px */}
+        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8, marginBottom: 14 }}>
           {types.map(function(t) {
             var active = type === t.id;
             return (
-              <button key={t.id} onClick={function(){ setType(t.id); }} style={{ flex: 1, padding: "8px 4px", borderRadius: 10, background: active ? C.blue + "25" : COLORS.bgSecondary, border: active ? "2px solid " + C.blue : "2px solid " + COLORS.cardBorder, fontSize: 9, fontWeight: 700, color: active ? C.blue : COLORS.textPrimary, cursor: "pointer", textAlign: "center" }}>
-                <div style={{ fontSize: 14 }}>{t.icon}</div>{t.label}
+              <button key={t.id} onClick={function(){ setType(t.id); }} style={{
+                padding: "12px 8px",
+                borderRadius: 12,
+                background: COLORS.bgSecondary,
+                border: active ? "2px solid " + COLORS.goldLight : "1px solid " + COLORS.cardBorder,
+                fontSize: 11, fontWeight: 700,
+                color: COLORS.textPrimary,
+                cursor: "pointer",
+                textAlign: "center",
+                fontFamily: TYPOGRAPHY.fontTajawal,
+                transition: "border-color .15s",
+              }}>
+                <div style={{ fontSize: 22, marginBottom: 4 }}>{t.icon}</div>
+                <div>{t.label}</div>
               </button>
             );
           })}
         </div>
 
-        <div style={{ marginBottom: 10 }}>
-          <div style={{ fontSize: 10, color: C.sub, fontWeight: 600, marginBottom: 4 }}>
-            {type === "early_leave" ? "وقت الانصراف المطلوب" : type === "late_arrival" ? "وقت الحضور المتوقع" : "مدة الإذن (بالدقائق)"}
-          </div>
-          <input type="time" value={time} onChange={function(e){ setTime(e.target.value); }} style={{ width: "100%", padding: 10, borderRadius: 10, border: "1px solid " + COLORS.cardBorder, background: COLORS.bgSecondary, color: COLORS.textPrimary, fontSize: 13, fontFamily: "'Tajawal',sans-serif" }} />
-        </div>
-
         <div style={{ marginBottom: 14 }}>
-          <div style={{ fontSize: 10, color: C.sub, fontWeight: 600, marginBottom: 4 }}>السبب</div>
-          <textarea value={reason} onChange={function(e){ setReason(e.target.value); }} placeholder="سبب الإذن..." rows={2} style={{ ...ADMIN_INPUT, resize: "none" }} />
+          <label style={FORM_LABEL}>
+            {type === "early_leave" ? "وقت الانصراف المطلوب" : type === "late_arrival" ? "وقت الحضور المتوقع" : "مدة الإذن (بالدقائق)"}
+          </label>
+          <input type="time" value={time} onChange={function(e){ setTime(e.target.value); }} style={ADMIN_INPUT} />
         </div>
 
-        <div style={{ fontSize: 9, color: C.sub, marginBottom: 12, padding: 8, borderRadius: 8, background: C.blue + "08" }}>
+        <div style={{ marginBottom: 16 }}>
+          <label style={FORM_LABEL}>السبب</label>
+          <textarea value={reason} onChange={function(e){ setReason(e.target.value); }} placeholder="سبب الإذن..." rows={3} style={{ ...ADMIN_INPUT, resize: "none" }} />
+        </div>
+
+        {/* v7.61 — ملاحظة زرقاء بخلفية #17324D ونص #A3D5FF */}
+        <div style={{ fontSize: 11, color: COLORS.infoText, marginBottom: 14, padding: "10px 12px", borderRadius: 10, background: COLORS.infoBg, border: "1px solid rgba(163,213,255,0.2)", fontWeight: 500, lineHeight: 1.6 }}>
           📋 سيُرسل الطلب للمدير المباشر للموافقة — يُحسم من رصيد الإجازات إن تجاوز ساعتين
         </div>
 
-        <div style={{ display: "flex", gap: 8 }}>
+        <div style={{ display: "flex", gap: 10 }}>
           <button onClick={onClose} style={MODAL_CANCEL}>إلغاء</button>
-          <button onClick={function(){ if(time && reason) onSubmit({ type: type, time: time, reason: reason }); }} disabled={!time || !reason} style={{ flex: 1, padding: 12, borderRadius: 14, border: "none", background: time && reason ? "linear-gradient(135deg,"+C.blue+","+C.blueBright+")" : COLORS.bgSecondary, color: time && reason ? "#fff" : COLORS.textMuted, fontSize: 14, fontWeight: 700, cursor: time && reason ? "pointer" : "default" }}>
+          <button onClick={function(){ if(time && reason) onSubmit({ type: type, time: time, reason: reason }); }} disabled={!time || !reason} style={{ flex: 1, padding: 14, borderRadius: 12, border: "none", background: time && reason ? "linear-gradient(135deg, " + COLORS.goldLight + ", " + COLORS.goldDark + ")" : COLORS.bgSecondary, color: time && reason ? COLORS.textOnGold : COLORS.textMuted, fontSize: 14, fontWeight: 800, cursor: time && reason ? "pointer" : "default", fontFamily: TYPOGRAPHY.fontTajawal }}>
             إرسال الطلب
           </button>
         </div>
@@ -17016,11 +17038,7 @@ function LeaveRequestForm({ user, onClose }) {
     <Card>
       <div style={{ marginBottom: SPACING.md }}>
         <label style={FORM_LABEL}>نوع الإجازة</label>
-        <select value={type} onChange={function(e){setType(e.target.value);}} style={{
-          width: "100%", padding: 12, borderRadius: 12,
-          border: "1px solid " + COLORS.cardBorder, background: COLORS.bgSecondary,
-          fontFamily: TYPOGRAPHY.fontTajawal, fontSize: 13
-        }}>
+        <select value={type} onChange={function(e){setType(e.target.value);}} style={FORM_INPUT}>
           <option value="annual">🌴 سنوية</option>
           <option value="sick">🤒 مرضية</option>
           <option value="emergency">🚨 طارئة</option>
@@ -17043,7 +17061,7 @@ function LeaveRequestForm({ user, onClose }) {
         </div>
       </div>
 
-      {from && to && <div style={{ padding: 10, background: COLORS.primary + "10", borderRadius: 10, marginBottom: SPACING.md, fontSize: 12, fontWeight: 700, color: COLORS.primary, textAlign: "center" }}>
+      {from && to && <div style={{ padding: 12, background: COLORS.infoBg, borderRadius: 10, marginBottom: SPACING.md, fontSize: 13, fontWeight: 800, color: COLORS.infoText, textAlign: "center", border: "1px solid rgba(163,213,255,0.25)" }}>
         📅 {days} يوم
       </div>}
 
@@ -17061,8 +17079,9 @@ function LeaveRequestForm({ user, onClose }) {
           style={FORM_INPUT} />
       </div>
 
-      <div style={{ padding: 10, background: "rgba(59,130,246,0.08)", borderRadius: 10, fontSize: 10, color: COLORS.primary, marginBottom: SPACING.md, lineHeight: 1.6 }}>
-        ℹ️ بعد الإرسال:<br/>
+      {/* v7.61 — صندوق المعلومات بخلفية #17324D ونص #A3D5FF */}
+      <div style={{ padding: 12, background: COLORS.infoBg, borderRadius: 10, fontSize: 11, color: COLORS.infoText, marginBottom: SPACING.md, lineHeight: 1.7, border: "1px solid rgba(163,213,255,0.2)" }}>
+        ℹ️ <b>بعد الإرسال:</b><br/>
         1. المدير المباشر يراجع الطلب<br/>
         2. إن وافق مبدئياً، ستفتح لك شاشة تسليم المهام<br/>
         3. المفوَّضون يوافقون على استلام بنودك<br/>
@@ -17070,18 +17089,20 @@ function LeaveRequestForm({ user, onClose }) {
       </div>
 
       {msg && <div style={{
-        padding: 10, borderRadius: 10, marginBottom: SPACING.md, fontSize: 12, fontWeight: 700, textAlign: "center",
-        background: msg.type === "error" ? "rgba(239,68,68,0.1)" : "rgba(34,197,94,0.1)",
-        color: msg.type === "error" ? "#DC2626" : "#16A34A"
+        padding: 12, borderRadius: 10, marginBottom: SPACING.md, fontSize: 12, fontWeight: 700, textAlign: "center",
+        background: msg.type === "error" ? "rgba(239,68,68,0.15)" : "rgba(16,185,129,0.15)",
+        color: msg.type === "error" ? "#FCA5A5" : "#6EE7B7",
+        border: "1px solid " + (msg.type === "error" ? "rgba(239,68,68,0.35)" : "rgba(16,185,129,0.35)")
       }}>{msg.text}</div>}
 
+      {/* v7.61 — زر ذهبي مع نص أسود Bold */}
       <button onClick={submit} disabled={saving} style={{
         width: "100%", padding: 14,
-        background: saving ? COLORS.metallic : "linear-gradient(135deg, " + COLORS.goldLight + ", " + COLORS.gold + ")",
-        color: saving ? COLORS.textMuted : "#000",
-        border: "none", borderRadius: 14, fontSize: 14, fontWeight: 800,
+        background: saving ? COLORS.bgSecondary : "linear-gradient(135deg, " + COLORS.goldLight + ", " + COLORS.goldDark + ")",
+        color: saving ? COLORS.textMuted : COLORS.textOnGold,
+        border: "none", borderRadius: 12, fontSize: 14, fontWeight: 900,
         cursor: saving ? "wait" : "pointer", fontFamily: TYPOGRAPHY.fontTajawal,
-        boxShadow: saving ? "none" : "0 4px 12px rgba(201,168,76,0.4)"
+        boxShadow: saving ? "none" : "0 4px 12px rgba(212,175,55,0.4)"
       }}>{saving ? "جارٍ الإرسال..." : "📤 إرسال الطلب"}</button>
     </Card>
   </div>;
