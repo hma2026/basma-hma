@@ -11,7 +11,7 @@ import { exportEmploymentLetter, exportLeaveLetter } from "./formalPdfs";
 
 /* ═══════════ APP CONFIG (إعدادات التطبيق) ═══════════ */
 const APP_CONFIG = {
-  VER: "7.65",
+  VER: "7.66",
   NAME: "بصمة HMA",
   FULL_NAME: "نظام الحضور والانصراف الذكي",
   COMPANY: "هاني محمد عسيري للاستشارات الهندسية",
@@ -3347,28 +3347,7 @@ function RecordsHub({ user, onTicket, myTickets }) {
         <MyLeavesHub user={user} />
       </ProfileAccordion>
 
-      {/* v7.50 — Section 3: طلبات الموارد البشرية (دعم فني + تعديل بيانات مدموجين في accordion واحد) */}
-      <div>
-        <ProfileAccordion emoji="📨" title="طلباتي للموارد البشرية" subtitle="دعم فني · تعديل البيانات" badge={(myTickets || []).length > 0 ? String((myTickets || []).length) : null}>
-          {/* الجزء 1: تذاكر الدعم الفني */}
-          <div style={{ marginBottom: SPACING.md }}>
-            <div style={{ ...TYPOGRAPHY.bodySm, fontWeight: 800, color: COLORS.textPrimary, marginBottom: SPACING.sm, paddingBottom: SPACING.xs, borderBottom: "1px solid " + COLORS.cardRowBorder }}>
-              🎫 الدعم الفني
-            </div>
-            <TicketsCard user={user} myTickets={myTickets} onTicket={onTicket} />
-          </div>
-
-          {/* الجزء 2: طلبات تعديل البيانات */}
-          <div>
-            <div style={{ ...TYPOGRAPHY.bodySm, fontWeight: 800, color: COLORS.textPrimary, marginBottom: SPACING.sm, paddingBottom: SPACING.xs, borderBottom: "1px solid " + COLORS.cardRowBorder }}>
-              ✏️ تعديل البيانات
-            </div>
-            <EditRequestCard user={user} />
-          </div>
-        </ProfileAccordion>
-      </div>
-
-      {/* v7.50 — accordion المنفصل لتعديل البيانات حُذف (مدموج مع الدعم الفني أعلاه) */}
+      {/* v7.66 — "طلباتي للموارد البشرية" نُقل إلى "المعاملات الإدارية" (تطبيقاً للقاعدة الذهبية) */}
 
       {/* v7.43 — Section 5: عقودي (accordion) */}
       <ProfileAccordion emoji="📄" title="عقودي" subtitle="العقود والتجديدات">
@@ -4203,7 +4182,7 @@ function BankAccountCard({ user, onRequestEdit }) {
 }
 
 /* ── PayHub — container for pay tab ── */
-function PayHub({ user }) {
+function PayHub({ user, onTicket, myTickets }) {
   var [loading, setLoading] = useState(true);
   var [slips, setSlips] = useState([]);
   var [selected, setSelected] = useState(null);
@@ -4240,6 +4219,30 @@ function PayHub({ user }) {
       {/* v7.65 — قسم الإشعارات الجديد (نُقل من الجرس العائم) */}
       <ProfileAccordion emoji="🔔" title="الإشعارات" subtitle="التحديثات والتنبيهات الإدارية" defaultOpen={true}>
         <NotificationsInlineView user={user} />
+      </ProfileAccordion>
+
+      {/* v7.66 — مهام مُسنَدة لي من موظف لغرض إجازة (نُقل من tab "الإجازات") */}
+      <ProfileAccordion emoji="📤" title="مهام مُسنَدة لي من موظف لغرض إجازة" subtitle="تسلّم مهام الزملاء الذاهبين في إجازة">
+        <HandoverTasksHub user={user} />
+      </ProfileAccordion>
+
+      {/* v7.66 — طلباتي للموارد البشرية (نُقل من tab "الإجازات") */}
+      <ProfileAccordion emoji="📨" title="طلباتي للموارد البشرية" subtitle="دعم فني · تعديل البيانات" badge={(myTickets || []).length > 0 ? String((myTickets || []).length) : null}>
+        {/* الجزء 1: تذاكر الدعم الفني */}
+        <div style={{ marginBottom: SPACING.md }}>
+          <div style={{ ...TYPOGRAPHY.bodySm, fontWeight: 800, color: COLORS.textPrimary, marginBottom: SPACING.sm, paddingBottom: SPACING.xs, borderBottom: "1px solid " + COLORS.cardRowBorder }}>
+            🎫 الدعم الفني
+          </div>
+          <TicketsCard user={user} myTickets={myTickets} onTicket={onTicket} />
+        </div>
+
+        {/* الجزء 2: طلبات تعديل البيانات */}
+        <div>
+          <div style={{ ...TYPOGRAPHY.bodySm, fontWeight: 800, color: COLORS.textPrimary, marginBottom: SPACING.sm, paddingBottom: SPACING.xs, borderBottom: "1px solid " + COLORS.cardRowBorder }}>
+            ✏️ تعديل البيانات
+          </div>
+          <EditRequestCard user={user} />
+        </div>
       </ProfileAccordion>
 
       {/* 1. Navy Hero with big net salary */}
@@ -5005,7 +5008,8 @@ function ProfilePage({ user, branch, workType, onLogout, onTicket, myTickets, da
         {/* v6.95 — tab "handover_tasks" محذوف: دُمج داخل "إجازاتي" */}
 
         {/* v7.19 — tab: pay (الأجر والاستحقاقات) — visual redesign: navy hero + breakdown bar + transactions + custody + bank */}
-        {tab === "pay" && <PayHub user={user} />}
+        {/* v7.66 — PayHub الآن يحوي: الإشعارات + مهام لتسلُّمها + طلبات HR + الراتب/العُهَد */}
+        {tab === "pay" && <PayHub user={user} onTicket={onTicket} myTickets={myTickets} />}
 
         {/* v7.16 — HMA Banner (footer) shown ONLY in profile tab */}
         {tab === "profile" && (
@@ -17872,22 +17876,16 @@ function MyEvalsHub({ user }) {
 
 /* MyLeavesHub — إجازاتي: طلباتي + مهام تسليم استلمتها */
 function MyLeavesHub({ user }) {
-  var [sub, setSub] = useState("requests");
-  var [pendingHandovers, setPendingHandovers] = useState(0);
-  useEffect(function(){
-    // تحميل سريع لعدّ المهام المعلّقة (للـ badge)
-    api("leave-my-handover-tasks", { params: { empId: user.id, status: "pending" } })
-      .then(function(d){ setPendingHandovers(Array.isArray(d) ? d.length : 0); })
-      .catch(function(){});
-  }, [user && user.id]);
+  // v7.66 — "مهام لتسلُّمها" نُقل إلى tab "المعاملات الإدارية" (لأنه عمل إداري مع زميل)
   return <div>
-    <EmpSubTabBar
-      tabs={[
-        { id: "requests", icon: "🏖️", label: "طلبات الإجازة" },
-        { id: "handover", icon: "📥", label: "مهام لتسلُّمها", badge: pendingHandovers > 0 ? pendingHandovers : null },
-      ]}
-      active={sub} onChange={setSub} />
-    {sub === "requests" && <LeaveRequestsTab user={user} />}
-    {sub === "handover" && <HandoverTasksTab user={user} />}
+    <LeaveRequestsTab user={user} />
+  </div>;
+}
+
+/* v7.66 — HandoverTasksHub: المهام المُسنَدة للموظف من زميل ذاهب في إجازة
+   تظهر كأكورديون مستقل في tab "المعاملات الإدارية" */
+function HandoverTasksHub({ user }) {
+  return <div>
+    <HandoverTasksTab user={user} />
   </div>;
 }
