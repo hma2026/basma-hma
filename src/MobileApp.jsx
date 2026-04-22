@@ -11,7 +11,7 @@ import { exportEmploymentLetter, exportLeaveLetter } from "./formalPdfs";
 
 /* ═══════════ APP CONFIG (إعدادات التطبيق) ═══════════ */
 const APP_CONFIG = {
-  VER: "7.54",
+  VER: "7.55",
   NAME: "بصمة HMA",
   FULL_NAME: "نظام الحضور والانصراف الذكي",
   COMPANY: "هاني محمد عسيري للاستشارات الهندسية",
@@ -4606,7 +4606,25 @@ function LegalHub({ user }) {
         loading={loading}
       />
 
-      {/* 4. File complaint + print buttons */}
+      {/* v7.55 — أزرار "رفع شكوى" و"طباعة السجل" نُقلت للأسفل (بعد المحتوى) */}
+
+      {/* 4. Case timeline */}
+      <LegalCaseTimeline
+        violations={violations}
+        investigations={investigations}
+        complaints={complaints}
+        user={user}
+        onViewViolation={setActiveViolation}
+        onViewInvestigation={setActiveInvestigation}
+      />
+
+      {/* 5. References card */}
+      <LegalReferencesCard
+        onOpenLaiha={function(){ setShowLaiha(true); }}
+        onOpenPolicies={function(){ setShowPolicies(true); }}
+      />
+
+      {/* v7.55 — 6. الأزرار في النهاية (القراءة أولاً، ثم الإجراءات) */}
       <div style={{ display: "flex", gap: SPACING.sm }}>
         <div style={{ flex: 1 }}>
           <Button variant="primary" size="md" icon="✏️" onClick={function(){ setShowComplaintModal(true); }}>
@@ -4621,22 +4639,6 @@ function LegalHub({ user }) {
           </div>
         )}
       </div>
-
-      {/* 5. Case timeline */}
-      <LegalCaseTimeline
-        violations={violations}
-        investigations={investigations}
-        complaints={complaints}
-        user={user}
-        onViewViolation={setActiveViolation}
-        onViewInvestigation={setActiveInvestigation}
-      />
-
-      {/* 6. References card */}
-      <LegalReferencesCard
-        onOpenLaiha={function(){ setShowLaiha(true); }}
-        onOpenPolicies={function(){ setShowPolicies(true); }}
-      />
 
       {/* 7. Legal footer citation */}
       <LegalFooterNote />
@@ -4741,12 +4743,13 @@ function ProfilePage({ user, branch, workType, onLogout, onTicket, myTickets, da
     ["نوع الدوام", workTypeText],
     ["الالتحاق", user.joinDate || "—"],
   ];
-  // v7.15 — IA restructure: 5 tabs (records merges time+tickets+employee_record, achievements is separate, perf becomes legal)
+  // v7.55 — Tab renames: "سجلي وطلباتي" → "الإجازات" · "الأجر والاستحقاقات" → "المعاملات الإدارية"
+  // (المحتوى سيتغير في إصدارات لاحقة — هنا تسمية فقط)
   var tabs = [
     { id: "profile",      emoji: "👤", label: "ملفي" },
-    { id: "records",      emoji: "📋", label: "سجلي وطلباتي" },
+    { id: "records",      emoji: "🏖️", label: "الإجازات" },
     { id: "achievements", emoji: "🏆", label: "إنجازاتي" },
-    { id: "pay",          emoji: "💰", label: "الأجر والاستحقاقات" },
+    { id: "pay",          emoji: "📋", label: "المعاملات الإدارية" },
     { id: "legal",        emoji: "⚖️", label: "الشؤون القانونية" },
   ];
 
@@ -4843,6 +4846,32 @@ function ProfilePage({ user, branch, workType, onLogout, onTicket, myTickets, da
               )}
             </ProfileAccordion>
 
+            {/* v7.55 — الإعدادات نُقلت للأعلى (كانت في الأسفل قبل الخروج) */}
+            <ProfileAccordion
+              emoji="⚙️"
+              title="الإعدادات"
+              subtitle="المظهر · التذكيرات · بصمة الوجه · ربط الديسكتوب"
+            >
+              <BiometricSettingsCard user={user} />
+
+              <div style={{ marginTop: SPACING.md, padding: SPACING.md, borderRadius: RADIUS.md, background: "rgba(255,255,255,0.03)", border: "1px solid " + COLORS.metallicBorder }}>
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: SPACING.sm + "px 0", borderBottom: "1px solid " + COLORS.cardRowBorder }}>
+                  <span style={{ ...TYPOGRAPHY.bodySm, fontWeight: 600, color: COLORS.textPrimary }}>الوضع الليلي</span>
+                  <div onClick={toggleDark} style={{ width: 44, height: 24, borderRadius: 12, background: darkMode ? COLORS.goldLight : COLORS.metallic, border: "1px solid " + COLORS.metallicBorder, position: "relative", cursor: "pointer", transition: "background .3s" }}>
+                    <div style={{ width: 18, height: 18, borderRadius: 9, background: COLORS.white, position: "absolute", top: 3, transition: "all .3s", left: darkMode ? 3 : undefined, right: darkMode ? undefined : 3, boxShadow: "0 1px 3px rgba(0,0,0,.2)" }} />
+                  </div>
+                </div>
+                <ToggleRow label="تذكير بالحضور" storeKey="remind_in" border={true} />
+                <ToggleRow label="تذكير بالانصراف" storeKey="remind_out" border={true} />
+                <FaceResetRow empId={user.id} />
+                <DesktopPairRow user={user} />
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: SPACING.sm + "px 0", borderTop: "1px solid " + COLORS.cardRowBorder }}>
+                  <span style={{ ...TYPOGRAPHY.bodySm, fontWeight: 600, color: COLORS.textPrimary }}>إصدار التطبيق</span>
+                  <span style={{ ...TYPOGRAPHY.caption, fontWeight: 800, color: COLORS.goldLight }}>{"v" + VER}</span>
+                </div>
+              </div>
+            </ProfileAccordion>
+
             <ProfileAccordion
               emoji="📎"
               title="المرفقات والمستندات"
@@ -4878,33 +4907,7 @@ function ProfilePage({ user, branch, workType, onLogout, onTicket, myTickets, da
 
             {/* v7.45 — زري "طلب دعم فني" و"طلبات تعديل البيانات" حُذفا (نُقلا إلى سجلي وطلباتي كأقسام) */}
 
-            {/* v7.35 — Logout moved below HelpGuide */}
-
-            {/* 6. SETTINGS — accordion */}
-            <ProfileAccordion
-              emoji="⚙️"
-              title="الإعدادات"
-              subtitle="المظهر · التذكيرات · بصمة الوجه · ربط الديسكتوب"
-            >
-              <BiometricSettingsCard user={user} />
-
-              <div style={{ marginTop: SPACING.md, padding: SPACING.md, borderRadius: RADIUS.md, background: "rgba(255,255,255,0.03)", border: "1px solid " + COLORS.metallicBorder }}>
-                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: SPACING.sm + "px 0", borderBottom: "1px solid " + COLORS.cardRowBorder }}>
-                  <span style={{ ...TYPOGRAPHY.bodySm, fontWeight: 600, color: COLORS.textPrimary }}>الوضع الليلي</span>
-                  <div onClick={toggleDark} style={{ width: 44, height: 24, borderRadius: 12, background: darkMode ? COLORS.goldLight : COLORS.metallic, border: "1px solid " + COLORS.metallicBorder, position: "relative", cursor: "pointer", transition: "background .3s" }}>
-                    <div style={{ width: 18, height: 18, borderRadius: 9, background: COLORS.white, position: "absolute", top: 3, transition: "all .3s", left: darkMode ? 3 : undefined, right: darkMode ? undefined : 3, boxShadow: "0 1px 3px rgba(0,0,0,.2)" }} />
-                  </div>
-                </div>
-                <ToggleRow label="تذكير بالحضور" storeKey="remind_in" border={true} />
-                <ToggleRow label="تذكير بالانصراف" storeKey="remind_out" border={true} />
-                <FaceResetRow empId={user.id} />
-                <DesktopPairRow user={user} />
-                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: SPACING.sm + "px 0", borderTop: "1px solid " + COLORS.cardRowBorder }}>
-                  <span style={{ ...TYPOGRAPHY.bodySm, fontWeight: 600, color: COLORS.textPrimary }}>إصدار التطبيق</span>
-                  <span style={{ ...TYPOGRAPHY.caption, fontWeight: 800, color: COLORS.goldLight }}>{"v" + VER}</span>
-                </div>
-              </div>
-            </ProfileAccordion>
+            {/* v7.55 — الإعدادات نُقلت للأعلى (بعد البيانات الوظيفية) */}
 
             {/* 7. HELP */}
             <HelpGuideSection />
