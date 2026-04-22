@@ -5,7 +5,10 @@
 /* ── DARK PALETTE ── */
 const DARK_COLORS = {
   bg1: "#0d2445", bg2: "#091a38", bg3: "#071428",
+  bgSecondary: "#0e1d35",  /* v7.60 — للـ inputs والـ inline fields (بين card و bg) */
   card: "#142537", cardBorder: "#1f3a55", cardHover: "#1a2e47",
+  cardBg: "#142537",  /* v7.60 — alias لـ card لتوافق بعض الاستدعاءات */
+  primary: "#2b5ea7",  /* v7.60 — ملون أساسي للأزرار والـ info boxes */
   gold: "#c9a84c", goldLight: "#e8d5a3", goldDark: "#8b6914",
   goldGradient: "linear-gradient(180deg, #fae7b8 0%, #e8d19a 15%, #c9a84c 45%, #a17e2f 70%, #8b6914 100%)",
   metallic: "linear-gradient(180deg, rgba(255,255,255,.14) 0%, rgba(255,255,255,.05) 50%, rgba(255,255,255,.1) 100%)",
@@ -21,7 +24,10 @@ const DARK_COLORS = {
 /* ── LIGHT PALETTE — polished dark titanium on cool silver bg ── */
 const LIGHT_COLORS = {
   bg1: "#e8ebf0", bg2: "#d5dae2", bg3: "#c2c9d4",
+  bgSecondary: "#f1f5f9",  /* v7.60 — inputs background */
   card: "#ffffff", cardBorder: "rgba(71,85,105,.35)", cardHover: "#f1f5f9",
+  cardBg: "#ffffff",
+  primary: "#2b5ea7",
   gold: "#475569", goldLight: "#64748b", goldDark: "#1e293b",
   goldGradient: "linear-gradient(180deg, #cbd5e1 0%, #94a3b8 20%, #475569 50%, #1e293b 80%, #334155 100%)",
   metallic: "linear-gradient(180deg, rgba(255,255,255,.65) 0%, rgba(255,255,255,.35) 50%, rgba(255,255,255,.55) 100%)",

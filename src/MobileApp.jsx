@@ -11,7 +11,7 @@ import { exportEmploymentLetter, exportLeaveLetter } from "./formalPdfs";
 
 /* ═══════════ APP CONFIG (إعدادات التطبيق) ═══════════ */
 const APP_CONFIG = {
-  VER: "7.59",
+  VER: "7.60",
   NAME: "بصمة HMA",
   FULL_NAME: "نظام الحضور والانصراف الذكي",
   COMPANY: "هاني محمد عسيري للاستشارات الهندسية",
@@ -2940,6 +2940,52 @@ function ProfileAccordion({ emoji, title, subtitle, badge, defaultOpen, children
         </div>
       )}
     </Card>
+  );
+}
+
+/* v7.60 — SubAccordion: accordion مُصغَّر للأقسام الفرعية داخل ProfileAccordion
+   - أصغر حجماً من ProfileAccordion (لا يتكرر نفس الحجم)
+   - كل واحد مستقل (يفتح/يغلق بدون تأثير على الآخرين)
+   - contrast عالٍ للنصوص في الوضع الليلي */
+function SubAccordion({ emoji, title, defaultOpen, children }) {
+  var [open, setOpen] = useState(!!defaultOpen);
+  return (
+    <div style={{
+      background: COLORS.bgSecondary,
+      border: "1px solid " + COLORS.cardBorder,
+      borderRadius: RADIUS.md,
+      marginBottom: SPACING.sm,
+      overflow: "hidden",
+    }}>
+      <button
+        onClick={function(){ setOpen(!open); }}
+        style={{
+          width: "100%",
+          padding: "11px 14px",
+          display: "flex", alignItems: "center", gap: 10,
+          background: open ? "rgba(201,168,76,0.10)" : "transparent",
+          border: "none",
+          borderBottom: open ? "1px solid " + COLORS.cardBorder : "none",
+          cursor: "pointer",
+          textAlign: "right",
+          fontFamily: TYPOGRAPHY.fontCairo,
+        }}
+      >
+        <span style={{ fontSize: 16, flexShrink: 0 }}>{emoji}</span>
+        <span style={{ flex: 1, fontSize: 13, fontWeight: 800, color: open ? COLORS.goldLight : COLORS.textPrimary }}>{title}</span>
+        <span style={{
+          fontSize: 14, color: COLORS.goldLight, fontWeight: 900,
+          transform: open ? "rotate(180deg)" : "rotate(0deg)",
+          transition: "transform .2s ease",
+          flexShrink: 0,
+        }}>⌄</span>
+      </button>
+      {open && (
+        <div style={{ padding: "12px 14px" }}>
+          {children}
+        </div>
+      )}
+    </div>
   );
 }
 
@@ -15522,14 +15568,9 @@ function MyProfileCard({ user }) {
       <button onClick={function(){setMsg(null);}} style={{ background: "none", border: "none", fontSize: 14, color: "inherit", cursor: "pointer" }}>✕</button>
     </div>}
 
-    {/* v7.59 — خيار B: أقسام عمودية بدل تبويبات أفقية. كل الأقسام مفتوحة مرة واحدة (scroll عمودي) */}
+    {/* v7.60 — خيار B محسَّن: sub-accordions مستقلة (تفتح/تغلق كل واحدة لوحدها) */}
 
-    {/* Section: شخصية */}
-    <div style={{ marginBottom: SPACING.lg }}>
-      <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: SPACING.sm, paddingBottom: 6, borderBottom: "2px solid " + COLORS.cardBorder }}>
-        <span style={{ fontSize: 18 }}>👤</span>
-        <span style={{ fontSize: 13, fontWeight: 800, color: COLORS.goldLight, fontFamily: TYPOGRAPHY.fontCairo }}>الشخصية</span>
-      </div>
+    <SubAccordion emoji="👤" title="الشخصية" defaultOpen={true}>
       <EmpReadOrRequestSection
         title="" section="personal"
         data={profile && profile.personal}
@@ -15554,14 +15595,9 @@ function MyProfileCard({ user }) {
         startRequest={startRequest} cancelRequest={cancelRequest}
         submitRequest={submitRequest} sending={sending}
       />
-    </div>
+    </SubAccordion>
 
-    {/* Section: وظيفية */}
-    <div style={{ marginBottom: SPACING.lg }}>
-      <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: SPACING.sm, paddingBottom: 6, borderBottom: "2px solid " + COLORS.cardBorder }}>
-        <span style={{ fontSize: 18 }}>💼</span>
-        <span style={{ fontSize: 13, fontWeight: 800, color: COLORS.goldLight, fontFamily: TYPOGRAPHY.fontCairo }}>الوظيفية</span>
-      </div>
+    <SubAccordion emoji="💼" title="الوظيفية">
       <EmpReadOrRequestSection
         title="" section="employment"
         data={profile && profile.employment}
@@ -15585,14 +15621,9 @@ function MyProfileCard({ user }) {
         note="البيانات الوظيفية تُدار من كوادر — للتعديل تواصل مع HR"
         hideEditBtn={true}
       />
-    </div>
+    </SubAccordion>
 
-    {/* Section: مالية + الحساب البنكي */}
-    <div style={{ marginBottom: SPACING.lg }}>
-      <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: SPACING.sm, paddingBottom: 6, borderBottom: "2px solid " + COLORS.cardBorder }}>
-        <span style={{ fontSize: 18 }}>💰</span>
-        <span style={{ fontSize: 13, fontWeight: 800, color: COLORS.goldLight, fontFamily: TYPOGRAPHY.fontCairo }}>المالية والحساب البنكي</span>
-      </div>
+    <SubAccordion emoji="💰" title="المالية والحساب البنكي">
       <EmpReadOrRequestSection
         title="" section="compensation"
         data={profile && profile.compensation}
@@ -15617,14 +15648,9 @@ function MyProfileCard({ user }) {
         note="الراتب والبدلات تُعتمد من الإدارة — يمكنك طلب تعديل بيانات البنك فقط"
         restrictEdit={["iban","bankName","accountNumber","beneficiary"]}
       />
-    </div>
+    </SubAccordion>
 
-      {/* Section: عقد العمل */}
-    <div style={{ marginBottom: SPACING.lg }}>
-      <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: SPACING.sm, paddingBottom: 6, borderBottom: "2px solid " + COLORS.cardBorder }}>
-        <span style={{ fontSize: 18 }}>📄</span>
-        <span style={{ fontSize: 13, fontWeight: 800, color: COLORS.goldLight, fontFamily: TYPOGRAPHY.fontCairo }}>عقد عملي</span>
-      </div>
+    <SubAccordion emoji="📄" title="عقد عملي">
       <EmpReadOrRequestSection
         title="" section="contract"
         data={profile && profile.contract}
@@ -15645,14 +15671,9 @@ function MyProfileCard({ user }) {
         note="بيانات العقد للعرض فقط — لأي تعديل تواصل مع HR عبر رسائل الموظفين"
         hideEditBtn={true}
       />
-    </div>
+    </SubAccordion>
 
-    {/* Section: المرفقات */}
-    <div style={{ marginBottom: SPACING.lg }}>
-      <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: SPACING.sm, paddingBottom: 6, borderBottom: "2px solid " + COLORS.cardBorder }}>
-        <span style={{ fontSize: 18 }}>📎</span>
-        <span style={{ fontSize: 13, fontWeight: 800, color: COLORS.goldLight, fontFamily: TYPOGRAPHY.fontCairo }}>المرفقات والمستندات</span>
-      </div>
+    <SubAccordion emoji="📎" title="المرفقات والمستندات">
       <div>
         <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: SPACING.md }}>
           <div>
@@ -15700,14 +15721,9 @@ function MyProfileCard({ user }) {
           })}
         </div>}
       </div>
-    </div>
+    </SubAccordion>
 
-    {/* Section: المرافقين */}
-    <div style={{ marginBottom: SPACING.lg }}>
-      <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: SPACING.sm, paddingBottom: 6, borderBottom: "2px solid " + COLORS.cardBorder }}>
-        <span style={{ fontSize: 18 }}>👨‍👩‍👧</span>
-        <span style={{ fontSize: 13, fontWeight: 800, color: COLORS.goldLight, fontFamily: TYPOGRAPHY.fontCairo }}>المرافقين</span>
-      </div>
+    <SubAccordion emoji="👨‍👩‍👧" title="المرافقين">
       <MyDependentsView
         user={user}
         dependents={profile && profile.dependents && profile.dependents.list ? profile.dependents.list : []}
@@ -15729,14 +15745,9 @@ function MyProfileCard({ user }) {
           } catch(e) { setMsg({ type: "error", text: "فشل: " + e.message }); }
         }}
       />
-    </div>
+    </SubAccordion>
 
-    {/* Section: طبي (الإفصاح الطبي للتأمين) */}
-    <div style={{ marginBottom: SPACING.lg }}>
-      <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: SPACING.sm, paddingBottom: 6, borderBottom: "2px solid " + COLORS.cardBorder }}>
-        <span style={{ fontSize: 18 }}>🏥</span>
-        <span style={{ fontSize: 13, fontWeight: 800, color: COLORS.goldLight, fontFamily: TYPOGRAPHY.fontCairo }}>الإفصاح الطبي</span>
-      </div>
+    <SubAccordion emoji="🏥" title="الإفصاح الطبي">
       <MedicalDisclosureView
         user={user}
         medical={profile && profile.medical ? profile.medical : { chronicDiseases: [], allergies: [], medications: [], reports: [] }}
@@ -15759,7 +15770,7 @@ function MyProfileCard({ user }) {
           } catch(e) { setMsg({ type: "error", text: "فشل: " + e.message }); }
         }}
       />
-    </div>
+    </SubAccordion>
 
     {/* Upload Sheet (bottom) */}
     {showUploadSheet && <div style={{
