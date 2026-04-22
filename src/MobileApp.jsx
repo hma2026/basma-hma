@@ -4999,23 +4999,20 @@ function ProfilePage({ user, branch, workType, onLogout, onTicket, myTickets, da
           <div style={{ ...TYPOGRAPHY.caption, color: COLORS.textMuted }}>{user.role + " — " + user.id}</div>
         </div>
 
-        {/* Profile Tabs — fixed 6 tabs, no scroll, 2-line text, gold active icon (v6.71) */}
-        <div style={{ display: "flex", gap: 3, background: COLORS.metallic, border: "1px solid " + COLORS.metallicBorder, borderRadius: RADIUS.lg, padding: 4, boxShadow: SHADOWS.button }}>
-          {tabs.map(function(t) {
-            var active = tab === t.id;
-            var parts = t.label.split(" ");
-            var line1 = parts.slice(0, Math.ceil(parts.length / 2)).join(" ");
-            var line2 = parts.slice(Math.ceil(parts.length / 2)).join(" ");
-            return (
-              <button key={t.id} onClick={function(){ setTab(t.id); }} style={{ flex: 1, minWidth: 0, padding: "7px 2px", borderRadius: RADIUS.md, background: active ? "rgba(201,168,76,0.12)" : "transparent", border: "1px solid " + (active ? COLORS.goldLight : "transparent"), cursor: "pointer", textAlign: "center", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 3, minHeight: 52 }}>
-                <span style={{ fontSize: 18, filter: active ? "hue-rotate(30deg) saturate(1.5) brightness(1.1)" : "grayscale(0.3)", opacity: active ? 1 : 0.75 }}>{t.emoji}</span>
-                <span style={{ fontSize: 8.5, fontWeight: 800, lineHeight: 1.2, color: active ? COLORS.goldLight : COLORS.textMuted, display: "flex", flexDirection: "column", gap: 1 }}>
-                  <span>{line1}</span>
-                  {line2 && <span>{line2}</span>}
-                </span>
-              </button>
-            );
-          })}
+        {/* v7.46 — Profile Tabs: scrollable horizontal strip (replaces cramped 5-tab fixed bar) */}
+        <div style={{ margin: "0 -" + SPACING.lg + "px", padding: "0 " + SPACING.lg + "px", overflowX: "auto", WebkitOverflowScrolling: "touch", scrollSnapType: "x proximity", msOverflowStyle: "none", scrollbarWidth: "none" }}>
+          <style>{`.basma-profile-tabs::-webkit-scrollbar{display:none}`}</style>
+          <div className="basma-profile-tabs" style={{ display: "flex", gap: 8, paddingBottom: 2 }}>
+            {tabs.map(function(t) {
+              var active = tab === t.id;
+              return (
+                <button key={t.id} onClick={function(){ setTab(t.id); }} style={{ scrollSnapAlign: "start", flexShrink: 0, padding: "8px 14px", borderRadius: RADIUS.pill, background: active ? COLORS.goldLight + "1A" : COLORS.metallic, border: "1.5px solid " + (active ? COLORS.goldLight : COLORS.metallicBorder), cursor: "pointer", display: "flex", alignItems: "center", gap: 6, boxShadow: active ? "0 2px 8px " + COLORS.goldLight + "33" : SHADOWS.button, transition: "all 0.2s" }}>
+                  <span style={{ fontSize: 18, filter: active ? "none" : "grayscale(0.4)", opacity: active ? 1 : 0.7 }}>{t.emoji}</span>
+                  <span style={{ fontSize: 11, fontWeight: 800, color: active ? COLORS.goldLight : COLORS.textMuted, fontFamily: TYPOGRAPHY.fontTajawal, whiteSpace: "nowrap" }}>{t.label}</span>
+                </button>
+              );
+            })}
+          </div>
         </div>
 
         {/* v7.42 — tab: profile (ملفي) — ProfileHeroCard removed (duplicated top header) */}
