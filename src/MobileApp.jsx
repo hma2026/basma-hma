@@ -11,7 +11,7 @@ import { exportEmploymentLetter, exportLeaveLetter } from "./formalPdfs";
 
 /* ═══════════ APP CONFIG (إعدادات التطبيق) ═══════════ */
 const APP_CONFIG = {
-  VER: "7.56",
+  VER: "7.57",
   NAME: "بصمة HMA",
   FULL_NAME: "نظام الحضور والانصراف الذكي",
   COMPANY: "هاني محمد عسيري للاستشارات الهندسية",
@@ -15323,8 +15323,8 @@ function EditRequestCard({ user }) {
  * الفلسفة: الموظف يرى ويطلب تعديلات → HR تعتمد عبر HR Tickets
  * ═══════════════════════════════════════════════════════════════════ */
 function MyProfileCard({ user }) {
+  /* v7.57 — حُذف expanded state (كان يُسبب "صندوق داخل صندوق" — العرض الآن مباشر) */
   var [loading, setLoading] = useState(true);
-  var [expanded, setExpanded] = useState(false);
   var [profile, setProfile] = useState(null);
   var [completeness, setCompleteness] = useState(null);
   var [attachments, setAttachments] = useState([]);
@@ -15463,72 +15463,39 @@ function MyProfileCard({ user }) {
   var levelColor = levelColors[level];
   var missingCount = completeness ? completeness.missing.length : 0;
 
-  // Collapsed view
-  if (!expanded) {
-    return <div onClick={function(){setExpanded(true);}} style={{
-      background: COLORS.card, borderRadius: 20, padding: SPACING.lg, marginBottom: SPACING.md,
-      cursor: "pointer", border: "1px solid " + COLORS.cardBorder,
-      display: "flex", alignItems: "center", gap: SPACING.md
+  // v7.57 — الحالة المُطوية حُذفت (كانت تسبب "صندوق داخل صندوق")
+  // الـ accordion الخارجي "البيانات الوظيفية" هو الذي يطوي/يفتح — MyProfileCard يعرض محتواه مباشرة
+
+  // Expanded view — v7.57: no wrapper card (parent accordion is already the card)
+  return <div>
+
+    {/* v7.57 — Header مبسَّط: شريط معلومات رفيع فقط بدل الكرت الكبير (تجنب الصندوق داخل صندوق) */}
+    {missingCount > 0 && completeness && <div style={{
+      padding: "10px 12px",
+      background: levelColor + "10",
+      border: "1px solid " + levelColor + "30",
+      borderRadius: 10,
+      marginBottom: SPACING.md,
+      display: "flex", alignItems: "center", gap: 10
     }}>
       <div style={{
-        width: 56, height: 56, borderRadius: "50%",
-        background: "conic-gradient(" + levelColor + " " + (score * 3.6) + "deg, #e5e7eb 0deg)",
-        display: "flex", alignItems: "center", justifyContent: "center", position: "relative"
+        width: 36, height: 36, borderRadius: "50%",
+        background: "conic-gradient(" + levelColor + " " + (score * 3.6) + "deg, rgba(255,255,255,0.08) 0deg)",
+        display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0
       }}>
-        <div style={{ width: 44, height: 44, borderRadius: "50%", background: COLORS.card, display: "flex", alignItems: "center", justifyContent: "center" }}>
-          <div style={{ fontSize: 14, fontWeight: 800, color: levelColor }}>{score}%</div>
+        <div style={{ width: 28, height: 28, borderRadius: "50%", background: COLORS.card, display: "flex", alignItems: "center", justifyContent: "center" }}>
+          <div style={{ fontSize: 10, fontWeight: 800, color: levelColor }}>{score}%</div>
         </div>
       </div>
-      <div style={{ flex: 1 }}>
-        <div style={{ fontSize: 15, fontWeight: 700, color: COLORS.textPrimary, marginBottom: 2 }}>📋 ملفي الكامل</div>
-        <div style={{ fontSize: 12, color: levelColor, fontWeight: 600 }}>{levelLabels[level]}</div>
-        {missingCount > 0 && <div style={{ fontSize: 10, color: COLORS.textMuted, marginTop: 3 }}>
-          💡 ينقص {missingCount} حقل — اضغط للإكمال
-        </div>}
+      <div style={{ flex: 1, minWidth: 0 }}>
+        <div style={{ fontSize: 11, fontWeight: 700, color: levelColor }}>{levelLabels[level]}</div>
+        <div style={{ fontSize: 10, color: COLORS.textMuted, marginTop: 1 }}>ينقص {missingCount} حقل — راجع الأقسام أدناه</div>
       </div>
-      <div style={{ fontSize: 20, color: COLORS.textMuted }}>▾</div>
-    </div>;
-  }
-
-  // Expanded view
-  return <div style={{ background: COLORS.card, borderRadius: 20, marginBottom: SPACING.md, overflow: "hidden", border: "1px solid " + COLORS.cardBorder }}>
-
-    {/* Header */}
-    <div style={{
-      padding: SPACING.lg,
-      background: "linear-gradient(135deg, " + levelColor + "15, " + levelColor + "05)",
-      borderBottom: "1px solid " + COLORS.cardBorder,
-    }}>
-      <div style={{ display: "flex", alignItems: "center", gap: SPACING.md }}>
-        <div style={{
-          width: 52, height: 52, borderRadius: "50%",
-          background: "conic-gradient(" + levelColor + " " + (score * 3.6) + "deg, #e5e7eb 0deg)",
-          display: "flex", alignItems: "center", justifyContent: "center"
-        }}>
-          <div style={{ width: 40, height: 40, borderRadius: "50%", background: COLORS.card, display: "flex", alignItems: "center", justifyContent: "center" }}>
-            <div style={{ fontSize: 13, fontWeight: 800, color: levelColor }}>{score}%</div>
-          </div>
-        </div>
-        <div style={{ flex: 1 }}>
-          <div style={{ fontSize: 14, fontWeight: 800, color: COLORS.textPrimary }}>📋 ملفي الكامل</div>
-          <div style={{ fontSize: 11, color: levelColor, fontWeight: 700, marginTop: 1 }}>{levelLabels[level]}</div>
-        </div>
-        <button onClick={function(){setExpanded(false);}} style={{ background: "none", border: "none", fontSize: 18, color: COLORS.textMuted, cursor: "pointer" }}>▴</button>
-      </div>
-      {missingCount > 0 && completeness && <div style={{ marginTop: 10, padding: 10, background: "rgba(255,255,255,0.7)", borderRadius: 10, fontSize: 11, color: COLORS.textPrimary }}>
-        <div style={{ fontWeight: 700, marginBottom: 5, color: levelColor }}>💡 ينقص من ملفك:</div>
-        <div style={{ display: "flex", flexWrap: "wrap", gap: 4 }}>
-          {completeness.missing.slice(0, 6).map(function(m, i){
-            return <span key={i} style={{ padding: "2px 8px", background: COLORS.cardBg, borderRadius: 10, fontSize: 10, color: COLORS.textMuted, border: "1px solid " + COLORS.cardBorder }}>{m.label}</span>;
-          })}
-          {missingCount > 6 && <span style={{ padding: "2px 8px", fontSize: 10, color: COLORS.textMuted, fontWeight: 700 }}>+ {missingCount - 6}</span>}
-        </div>
-      </div>}
-    </div>
+    </div>}
 
     {/* Message */}
     {msg && <div style={{
-      padding: "10px 14px", margin: "8px 14px", borderRadius: 8, fontSize: 11, fontWeight: 700,
+      padding: "10px 14px", marginBottom: SPACING.md, borderRadius: 10, fontSize: 11, fontWeight: 700,
       background: msg.type === "error" ? "rgba(239,68,68,0.1)" : "rgba(34,197,94,0.1)",
       color: msg.type === "error" ? "#DC2626" : "#16A34A",
       display: "flex", justifyContent: "space-between", alignItems: "center"
@@ -15538,7 +15505,7 @@ function MyProfileCard({ user }) {
     </div>}
 
     {/* Tabs — horizontal scroll on mobile */}
-    <div style={{ display: "flex", overflowX: "auto", borderBottom: "1px solid " + COLORS.cardBorder, background: COLORS.cardBg }}>
+    <div style={{ display: "flex", overflowX: "auto", borderBottom: "1px solid " + COLORS.cardBorder, marginBottom: SPACING.md }}>
       {[
         { id: "personal", icon: "👤", label: "شخصية" },
         { id: "employment", icon: "💼", label: "وظيفية" },
@@ -15563,8 +15530,8 @@ function MyProfileCard({ user }) {
       })}
     </div>
 
-    {/* Content */}
-    <div style={{ padding: SPACING.md }}>
+    {/* Content — v7.57 بدون padding إضافي (الـ accordion الخارجي يوفره) */}
+    <div>
 
       {activeTab === "personal" && <EmpReadOrRequestSection
         title="البيانات الشخصية" section="personal"
