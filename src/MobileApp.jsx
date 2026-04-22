@@ -394,6 +394,48 @@ const ACHIEVEMENTS = [
   { id: "mentor",         icon: "🧑‍🏫", name: "قدوة", desc: "وافقت على 10 طلبات لفريقك",       points: 60,  category: "leadership" },
 ];
 
+/* ── v7.46 — Global STATUS_META (unified from 3 local definitions) ── */
+var STATUS_META = {
+  pending:  { label: "قيد المراجعة", icon: "⏳", color: "#D97706", bg: "rgba(217,119,6,0.15)" },
+  approved: { label: "معتمد",        icon: "✅", color: "#10B981", bg: "rgba(16,185,129,0.15)" },
+  rejected: { label: "مرفوض",        icon: "❌", color: "#DC2626", bg: "rgba(220,38,38,0.15)" },
+  ended:    { label: "منتهي",        icon: "📕", color: "#6B7280", bg: "rgba(107,114,128,0.15)" },
+};
+function getStatusMeta(status) {
+  return STATUS_META[status] || { label: status || "—", icon: "•", color: COLORS.textMuted, bg: COLORS.metallic };
+}
+
+/* ── v7.46 — EmptyState component (replaces ~15 inline patterns) ── */
+function EmptyState({ icon, text }) {
+  return (
+    <div style={{ padding: SPACING.xl + "px " + SPACING.lg + "px", textAlign: "center" }}>
+      {icon && <div style={{ fontSize: 28, marginBottom: SPACING.sm, opacity: 0.5 }}>{icon}</div>}
+      <div style={{ ...TYPOGRAPHY.body, color: COLORS.textMuted, fontWeight: 700, fontFamily: TYPOGRAPHY.fontTajawal }}>{text}</div>
+    </div>
+  );
+}
+
+/* ── v7.46 — SectionHeader (emoji + title, replaces 12+ inline headers) ── */
+function SectionHeader({ emoji, title, extra }) {
+  return (
+    <div style={{ ...TYPOGRAPHY.h3, color: COLORS.textPrimary, fontFamily: TYPOGRAPHY.fontCairo, marginBottom: SPACING.md, display: "flex", alignItems: "center", gap: 6 }}>
+      {emoji && <span>{emoji}</span>} {title}
+      {extra && <div style={{ marginRight: "auto", marginLeft: 0 }}>{extra}</div>}
+    </div>
+  );
+}
+
+/* ── v7.46 — StatusBadge pill (replaces 6+ inline patterns) ── */
+function StatusBadge({ status, compact }) {
+  var m = getStatusMeta(status);
+  if (compact) return <span style={{ color: m.color, fontSize: 10, fontWeight: 800 }}>{m.icon} {m.label}</span>;
+  return (
+    <span style={{ padding: "4px 9px", borderRadius: 8, background: m.bg, color: m.color, fontSize: 10, fontWeight: 800, whiteSpace: "nowrap", flexShrink: 0 }}>
+      {m.icon} {m.label}
+    </span>
+  );
+}
+
 function getUnlockedAchievements(user, stats) {
   stats = stats || {};
   var unlocked = [];
@@ -1620,7 +1662,7 @@ function OfflineQueueModal({ onClose }) {
         </div>
         <div style={{ padding: 14 }}>
           {queue.length === 0 ? (
-            <div style={{ padding: 20, textAlign: "center", color: COLORS.textMuted, fontSize: 12 }}>✓ لا توجد عمليات معلّقة</div>
+            <EmptyState text="✓ لا توجد عمليات معلّقة" />
           ) : (
             <>
               {queue.map(function(item){
@@ -3146,7 +3188,7 @@ function ProfileAttachmentsLite({ user }) {
   }
 
   if (loading) {
-    return <div style={{ padding: SPACING.md, textAlign: "center", color: COLORS.textMuted, fontSize: 12 }}>جارٍ التحميل...</div>;
+    return <EmptyState text="جارٍ التحميل..." />;
   }
 
   var approved = attachments.filter(function(a){ return (a.status || "approved") === "approved"; });
@@ -3419,7 +3461,7 @@ function RecordsArchiveView({ user }) {
   }, [user && user.id]);
 
   if (loading) {
-    return <div style={{ padding: SPACING.xl, textAlign: "center", color: COLORS.textMuted, fontSize: 12 }}>جارٍ التحميل...</div>;
+    return <EmptyState text="جارٍ التحميل..." />;
   }
   if (items.length === 0) {
     return (
@@ -3433,16 +3475,10 @@ function RecordsArchiveView({ user }) {
     );
   }
 
-  var statusMeta = {
-    approved: { label: "✅ معتمد",  color: COLORS.success },
-    rejected: { label: "❌ مرفوض",  color: COLORS.textDanger },
-    ended:    { label: "📕 منتهي",  color: COLORS.textMuted },
-  };
-
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: SPACING.sm }}>
       {items.map(function(x, i){
-        var st = statusMeta[x.status] || { label: x.status, color: COLORS.textMuted };
+        var st = getStatusMeta(x.status);
         return (
           <div key={i} style={{ padding: "10px 12px", borderRadius: RADIUS.md, background: COLORS.metallic, border: "1px solid " + COLORS.metallicBorder, display: "flex", alignItems: "center", gap: SPACING.sm }}>
             <div style={{ fontSize: 20, flexShrink: 0 }}>{x.icon}</div>
@@ -3451,7 +3487,7 @@ function RecordsArchiveView({ user }) {
               <div style={{ fontSize: 10, color: COLORS.textMuted, marginTop: 2 }}>{x.sub}</div>
             </div>
             <span style={{ fontSize: 9, fontWeight: 800, color: st.color, padding: "3px 8px", borderRadius: RADIUS.pill, background: st.color + "22", border: "1px solid " + st.color + "44", flexShrink: 0 }}>
-              {st.label}
+              {st.icon} {st.label}
             </span>
           </div>
         );
@@ -3473,7 +3509,7 @@ function RecordsPromotionsView({ user }) {
       .catch(function(){ setLoading(false); });
   }, [user && user.id]);
 
-  if (loading) return <div style={{ padding: SPACING.xl, textAlign: "center", color: COLORS.textMuted, fontSize: 12 }}>جارٍ التحميل...</div>;
+  if (loading) return <EmptyState text="جارٍ التحميل..." />;
   if (promotions.length === 0) {
     return (
       <Card padding={SPACING.lg}>
@@ -3642,7 +3678,7 @@ function AchievementsStatsRow({ user, stats, loading }) {
 /* ── AchievementsBadgesStrip — horizontal scrollable badges ── */
 function AchievementsBadgesStrip({ user, stats, loading }) {
   if (loading) {
-    return <div style={{ padding: SPACING.md, textAlign: "center", color: COLORS.textMuted, fontSize: 12 }}>جارٍ تحميل الشارات...</div>;
+    return <EmptyState text="جارٍ تحميل الشارات..." />;
   }
 
   var unlocked = getUnlockedAchievements(user, stats || {});
@@ -3750,10 +3786,10 @@ function LeaderboardView({ user }) {
   }, [user && user.id]);
 
   if (loading) {
-    return <div style={{ padding: SPACING.md, textAlign: "center", color: COLORS.textMuted, fontSize: 12 }}>جارٍ تحميل الترتيب...</div>;
+    return <EmptyState text="جارٍ تحميل الترتيب..." />;
   }
   if (ranked.length === 0) {
-    return <div style={{ padding: SPACING.md, textAlign: "center", color: COLORS.textMuted, fontSize: 12 }}>لا توجد بيانات ترتيب</div>;
+    return <EmptyState text="لا توجد بيانات ترتيب" />;
   }
 
   var top10 = ranked.slice(0, 10);
@@ -4209,7 +4245,7 @@ function CustodyBadgesCard({ user }) {
         <div style={{ ...TYPOGRAPHY.h3, color: COLORS.textPrimary, fontFamily: TYPOGRAPHY.fontCairo, display: "flex", alignItems: "center", gap: 6 }}>
           <span>📦</span> العُهَد
         </div>
-        <div style={{ padding: SPACING.md, textAlign: "center", fontSize: 11, color: COLORS.textMuted }}>جارٍ التحميل...</div>
+        <EmptyState text="جارٍ التحميل..." />
       </Card>
     );
   }
@@ -5381,7 +5417,7 @@ function BenefitsPage({ user }) {
           </div>
         </Card>
 
-        {dynamicCoupons === null && <div style={{ textAlign: "center", padding: 30, color: COLORS.textMuted }}>جارِ التحميل...</div>}
+        {dynamicCoupons === null && <EmptyState text="جارِ التحميل..." />}
 
         {dynamicCoupons !== null && dynamicCoupons.length === 0 && (
           <Card>
@@ -13346,7 +13382,7 @@ function NotificationPanel({ notifications, onClose, onMarkRead, onGoToLegal }) 
         </div>
 
         <div style={{ padding: SPACING.md }}>
-          {notifications.length === 0 && <div style={{ textAlign: "center", padding: SPACING.xl, color: COLORS.textMuted }}>لا توجد إشعارات</div>}
+          {notifications.length === 0 && <EmptyState text="لا توجد إشعارات" />}
           {notifications.slice(0, 30).map(function(n) {
             return (
               <div key={n.id} onClick={function(){ if (n.type === "violation" || n.type === "investigation") onGoToLegal(); }} style={{ display: "flex", gap: SPACING.sm, padding: SPACING.md, borderBottom: "1px solid " + COLORS.metallicBorder, cursor: "pointer", background: n.read ? "transparent" : COLORS.goldDark + "15", borderRadius: RADIUS.sm, marginBottom: 4 }}>
@@ -13633,7 +13669,7 @@ function MyTeamPage({ user, allEmps }) {
             {/* Subordinates list */}
             <div style={{ ...TYPOGRAPHY.caption, color: COLORS.textMuted, fontWeight: 700, marginBottom: 8 }}>أعضاء الفريق</div>
             {subordinates.length === 0 ? (
-              <Card><div style={{ padding: 20, textAlign: "center", color: COLORS.textMuted }}>لا يوجد أعضاء في الفريق</div></Card>
+              <Card><EmptyState text="لا يوجد أعضاء في الفريق" /></Card>
             ) : (
               subordinates.map(function(emp){
                 var status = getEmpToday(emp.id);
@@ -13860,13 +13896,13 @@ function EmployeeRecordTab({ user, initialSubTab, hideSubTabs }) {
         </div>
       )}
 
-      {loading && <div style={{ textAlign: "center", padding: SPACING.xl, color: COLORS.textMuted }}>جارِ التحميل...</div>}
+      {loading && <EmptyState text="جارِ التحميل..." />}
 
       {/* العقود */}
       {!loading && subTab === "contracts" && (
         <div>
           <button onClick={function(){ setAddType("contract"); setShowAdd(true); }} style={{ width: "100%", height: 44, borderRadius: RADIUS.lg, background: COLORS.metallic, border: "1px dashed " + COLORS.goldLight, color: COLORS.goldLight, fontSize: 12, fontWeight: 700, cursor: "pointer", marginBottom: SPACING.md }}>+ إضافة عقد سابق</button>
-          {contracts.length === 0 && <div style={{ textAlign: "center", padding: SPACING.xl, color: COLORS.textMuted }}>لا توجد عقود مسجّلة</div>}
+          {contracts.length === 0 && <EmptyState text="لا توجد عقود مسجّلة" />}
           {contracts.map(function(c) {
             return (
               <div key={c.id} style={{ background: COLORS.metallic, border: "1px solid " + COLORS.metallicBorder, borderRadius: RADIUS.md, padding: SPACING.md, marginBottom: SPACING.sm }}>
@@ -13887,7 +13923,7 @@ function EmployeeRecordTab({ user, initialSubTab, hideSubTabs }) {
       {/* الإجازات */}
       {!loading && subTab === "leaves" && (
         <div>
-          {leaves.length === 0 && <div style={{ textAlign: "center", padding: SPACING.xl, color: COLORS.textMuted }}>لا توجد إجازات</div>}
+          {leaves.length === 0 && <EmptyState text="لا توجد إجازات" />}
           {leaves.map(function(l) {
             var typeLabels = { annual: "سنوية", sick: "مرضية", emergency: "طارئة", personal: "شخصية", unpaid: "بدون راتب" };
             var statusColors = { pending: COLORS.textMuted, approved: "#10b981", rejected: COLORS.textDanger };
@@ -13908,7 +13944,7 @@ function EmployeeRecordTab({ user, initialSubTab, hideSubTabs }) {
       {/* المخالفات */}
       {!loading && subTab === "violations" && (
         <div>
-          {violations.length === 0 && <div style={{ textAlign: "center", padding: SPACING.xl, color: COLORS.textMuted }}>سجل نظيف 👌</div>}
+          {violations.length === 0 && <EmptyState text="سجل نظيف 👌" />}
           {violations.map(function(v) {
             var st = VIOLATION_STATUS[v.status] || { label: v.status, color: COLORS.textMuted };
             return (
@@ -13932,7 +13968,7 @@ function EmployeeRecordTab({ user, initialSubTab, hideSubTabs }) {
       {!loading && subTab === "promotions" && (
         <div>
           <button onClick={function(){ setAddType("promotion"); setShowAdd(true); }} style={{ width: "100%", height: 44, borderRadius: RADIUS.lg, background: COLORS.metallic, border: "1px dashed " + COLORS.goldLight, color: COLORS.goldLight, fontSize: 12, fontWeight: 700, cursor: "pointer", marginBottom: SPACING.md }}>+ إضافة ترقية / تغيير مسمى</button>
-          <div style={{ textAlign: "center", padding: SPACING.xl, color: COLORS.textMuted }}>سجل الترقيات يُحدّث من لوحة الإدارة</div>
+          <EmptyState text="سجل الترقيات يُحدّث من لوحة الإدارة" />
         </div>
       )}
 
@@ -14028,12 +14064,6 @@ function MyRequestsTab({ user }) {
 
   useEffect(function(){ loadAll(); }, [user.id]);
 
-  var statusMeta = {
-    pending: { label: "قيد المراجعة", color: "#D97706", bg: "rgba(217,119,6,0.15)", icon: "⏳" },
-    approved: { label: "معتمد", color: "#10B981", bg: "rgba(16,185,129,0.15)", icon: "✅" },
-    rejected: { label: "مرفوض", color: "#DC2626", bg: "rgba(220,38,38,0.15)", icon: "❌" },
-  };
-
   var leaveTypesMeta = { annual: {l:"سنوية",i:"🏖️"}, sick:{l:"مرضية",i:"🏥"}, emergency:{l:"طارئة",i:"⚡"}, personal:{l:"شخصية",i:"👤"} };
 
   var all = [];
@@ -14052,7 +14082,7 @@ function MyRequestsTab({ user }) {
 
   function renderItem(x) {
     var d = x.data;
-    var s = statusMeta[d.status] || { label: d.status, color: COLORS.textMuted, bg: COLORS.metallic, icon: "•" };
+    var s = getStatusMeta(d.status);
     var title = "", sub = "", icon = "📋";
     if (x.kind === "leave") {
       var lm = leaveTypesMeta[d.type] || { l: d.type || "—", i: "📋" };
@@ -14078,9 +14108,7 @@ function MyRequestsTab({ user }) {
               {sub && <div style={{ ...TYPOGRAPHY.tiny, color: COLORS.textMuted, marginTop: 2 }}>{sub}</div>}
             </div>
           </div>
-          <div style={{ padding: "4px 9px", borderRadius: 8, background: s.bg, color: s.color, fontSize: 10, fontWeight: 800, whiteSpace: "nowrap", flexShrink: 0 }}>
-            {s.icon} {s.label}
-          </div>
+          <StatusBadge status={d.status} />
         </div>
         <div style={{ fontSize: 9, color: COLORS.textMuted, display: "flex", justifyContent: "space-between" }}>
           <span>📅 قُدِّم: {d.ts ? new Date(d.ts).toLocaleDateString("ar-SA") : "—"}</span>
@@ -14137,7 +14165,7 @@ function MyRequestsTab({ user }) {
 
       {/* Items list */}
       {loading ? (
-        <div style={{ padding: 30, textAlign: "center", color: COLORS.textMuted }}>جارِ التحميل...</div>
+        <EmptyState text="جارِ التحميل..." />
       ) : filtered.length === 0 ? (
         <Card padding={SPACING.lg}>
           <div style={{ textAlign: "center", color: COLORS.textMuted, padding: 20 }}>
@@ -14336,7 +14364,7 @@ function LegalTab({ user }) {
         })}
       </div>
 
-      {loading && <div style={{ textAlign: "center", padding: SPACING.xl, color: COLORS.textMuted }}>جارِ التحميل...</div>}
+      {loading && <EmptyState text="جارِ التحميل..." />}
 
       {/* SUMMARY */}
       {!loading && subTab === "summary" && (
@@ -14374,7 +14402,7 @@ function LegalTab({ user }) {
       {/* VIOLATIONS */}
       {!loading && subTab === "violations" && (
         <div>
-          {violations.length === 0 && <div style={{ textAlign: "center", padding: SPACING.xl, color: COLORS.textMuted }}>لا توجد مخالفات — سجلك نظيف 👌</div>}
+          {violations.length === 0 && <EmptyState text="لا توجد مخالفات — سجلك نظيف 👌" />}
           {violations.map(function(v) {
             var st = VIOLATION_STATUS[v.status] || { label: v.status, color: COLORS.textMuted };
             return (
@@ -14409,7 +14437,7 @@ function LegalTab({ user }) {
       {/* INVESTIGATIONS */}
       {!loading && subTab === "investigations" && (
         <div>
-          {investigations.length === 0 && <div style={{ textAlign: "center", padding: SPACING.xl, color: COLORS.textMuted }}>لا توجد تحقيقات</div>}
+          {investigations.length === 0 && <EmptyState text="لا توجد تحقيقات" />}
           {investigations.map(function(inv) {
             var statusLabel = inv.status === "WAITING_RESPONSE" ? "بانتظار ردك" : inv.status === "RESPONSE_RECEIVED" ? "تم الرد — بانتظار القرار" : inv.status === "CONVERTED" ? "تحولت لمخالفة" : inv.status === "CLOSED" ? "أُغلقت — برئ" : inv.status;
             var statusColor = inv.status === "WAITING_RESPONSE" ? COLORS.textDanger : inv.status === "RESPONSE_RECEIVED" ? COLORS.goldLight : inv.status === "CLOSED" ? "#10b981" : COLORS.textMuted;
@@ -14438,7 +14466,7 @@ function LegalTab({ user }) {
             رفع شكوى جديدة
           </Button>
           <div style={{ height: SPACING.md }} />
-          {complaints.filter(function(c){ return c.filedBy === user.id; }).length === 0 && <div style={{ textAlign: "center", padding: SPACING.xl, color: COLORS.textMuted }}>لم ترفع أي شكوى</div>}
+          {complaints.filter(function(c){ return c.filedBy === user.id; }).length === 0 && <EmptyState text="لم ترفع أي شكوى" />}
           {complaints.filter(function(c){ return c.filedBy === user.id; }).map(function(c) {
             var st = COMPLAINT_STATUS[c.status] || { label: c.status, color: COLORS.textMuted };
             return (
@@ -14864,7 +14892,7 @@ function CustodyTab({ user }) {
     closed: { label: "مغلقة", color: COLORS.textMuted },
   };
 
-  if (loading) return <div style={{ textAlign: "center", padding: 20, color: COLORS.textMuted }}>جارِ التحميل...</div>;
+  if (loading) return <EmptyState text="جارِ التحميل..." />;
 
   var cashItems = items.filter(function(i){ return i.type === "cash" && i.status === "active"; });
 
@@ -16400,12 +16428,6 @@ function EditRequestCard({ user }) {
   }
 
   var pending = myRequests.filter(function(x){ return (x.status || "pending") === "pending"; });
-  var statusMeta = {
-    pending:  { label: "⏳ بانتظار الموافقة", color: "#D97706" },
-    approved: { label: "✅ معتمد",            color: "#16A34A" },
-    rejected: { label: "❌ مرفوض",            color: "#DC2626" },
-  };
-
   return (
     <div style={{ background: COLORS.cardBg, borderRadius: 16, padding: SPACING.md, border: "1px solid " + COLORS.cardBorder, marginBottom: SPACING.md }}>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
@@ -16435,14 +16457,14 @@ function EditRequestCard({ user }) {
         </div>
       )}
 
-      {loadingReqs && <div style={{ padding: 12, textAlign: "center", color: COLORS.textMuted, fontSize: 11 }}>جارٍ التحميل...</div>}
+      {loadingReqs && <EmptyState text="جارٍ التحميل..." />}
       {!loadingReqs && myRequests.length === 0 && !open && <div style={{ padding: 10, textAlign: "center", color: COLORS.textMuted, fontSize: 11 }}>لا توجد طلبات تعديل — اضغط "+ طلب جديد" للبدء</div>}
       {!loadingReqs && myRequests.slice(0, 5).map(function(req){
-        var st = statusMeta[req.status || "pending"];
+        var st = getStatusMeta(req.status || "pending");
         return <div key={req.id} style={{ padding: "8px 10px", background: COLORS.bg, borderRadius: 8, marginBottom: 6, fontSize: 11, border: "1px solid " + COLORS.cardBorder }}>
           <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 4 }}>
             <span style={{ fontWeight: 700, color: COLORS.textPrimary }}>{req.fieldLabel}</span>
-            <span style={{ color: st.color, fontWeight: 800 }}>{st.label}</span>
+            <span style={{ color: st.color, fontWeight: 800 }}>{st.icon} {st.label}</span>
           </div>
           <div style={{ fontSize: 10, color: COLORS.textMuted }}>
             {req.oldValue || "—"} ← {req.newValue || "—"}
@@ -17820,7 +17842,7 @@ function LeaveRequestsTab({ user }) {
       }}>+ طلب جديد</button>
     </div>
 
-    {loading ? <div style={{ padding: 40, textAlign: "center", color: COLORS.textMuted }}>جارٍ التحميل...</div> :
+    {loading ? <EmptyState text="جارٍ التحميل..." /> :
      requests.length === 0 ? <Card>
        <div style={{ padding: 30, textAlign: "center" }}>
          <div style={{ fontSize: 48, marginBottom: 10, opacity: 0.4 }}>🏖️</div>
@@ -18343,7 +18365,7 @@ function HandoverTasksTab({ user }) {
   };
 
   if (loading) {
-    return <div style={{ padding: 40, textAlign: "center", color: COLORS.textMuted }}>جارٍ التحميل...</div>;
+    return <EmptyState text="جارٍ التحميل..." />;
   }
 
   return <div>
@@ -18462,7 +18484,7 @@ function MySalaryTab({ user }) {
       ℹ️ تظهر هنا كشوف رواتبك المعتمدة فقط
     </div>
 
-    {loading ? <div style={{ padding: 40, textAlign: "center", color: COLORS.textMuted }}>جارٍ التحميل...</div> :
+    {loading ? <EmptyState text="جارٍ التحميل..." /> :
      slips.length === 0 ? <Card>
        <div style={{ padding: 30, textAlign: "center" }}>
          <div style={{ fontSize: 48, marginBottom: 10, opacity: 0.4 }}>💰</div>
