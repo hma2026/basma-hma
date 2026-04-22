@@ -11,7 +11,7 @@ import { exportEmploymentLetter, exportLeaveLetter } from "./formalPdfs";
 
 /* ═══════════ APP CONFIG (إعدادات التطبيق) ═══════════ */
 const APP_CONFIG = {
-  VER: "7.45",
+  VER: "7.46",
   NAME: "بصمة HMA",
   FULL_NAME: "نظام الحضور والانصراف الذكي",
   COMPANY: "هاني محمد عسيري للاستشارات الهندسية",
@@ -2973,73 +2973,55 @@ function computeYearsOfService(joinDate) {
 }
 
 
-/* ── ProfileStatsRow — 3 Big Stats (years / points / leave balance) ── */
-function ProfileStatsRow({ user }) {
-  var [leaveBalance, setLeaveBalance] = useState(null);
-
-  useEffect(function(){
-    if (!user || !user.id) return;
-    fetch("/api/data?action=leave-balance&empId=" + encodeURIComponent(user.id))
-      .then(function(r){ return r.json(); })
-      .then(function(d){
-        if (d && (d.ok || typeof d.balance !== "undefined")) {
-          setLeaveBalance(typeof d.balance === "number" ? d.balance : (d.remaining || d.annual || 0));
-        }
-      })
-      .catch(function(){});
-  }, [user && user.id]);
-
-  var svc = computeYearsOfService(user.joinDate);
-  var points = user.points || 0;
-  var leave = leaveBalance !== null ? leaveBalance : (user.leaveBalance !== undefined ? user.leaveBalance : "—");
-
-  function StatCell({ icon, bigValue, subValue, label, accent }) {
-    return (
+/* ── StatCell — unified stat display (v7.46) ── */
+function StatCell({ icon, value, subValue, label, accent, loading }) {
+  return (
+    <div style={{
+      flex: 1, minWidth: 0,
+      padding: "14px 8px",
+      display: "flex", flexDirection: "column", alignItems: "center",
+      textAlign: "center",
+    }}>
+      <div style={{ fontSize: 18, marginBottom: 4, filter: "drop-shadow(0 1px 2px rgba(0,0,0,0.3))" }}>{icon}</div>
       <div style={{
-        flex: 1, minWidth: 0,
-        padding: "14px 8px",
-        display: "flex", flexDirection: "column", alignItems: "center",
-        textAlign: "center",
-      }}>
-        <div style={{ fontSize: 18, marginBottom: 4, filter: "drop-shadow(0 1px 2px rgba(0,0,0,0.3))" }}>{icon}</div>
-        <div style={{
-          fontSize: 22, fontWeight: 900,
-          color: accent || COLORS.goldLight,
-          fontFamily: TYPOGRAPHY.fontCairo,
-          lineHeight: 1,
-          letterSpacing: -0.5,
-        }}>{bigValue}</div>
-        {subValue && <div style={{ fontSize: 9, fontWeight: 700, color: COLORS.textMuted, marginTop: 2, fontFamily: TYPOGRAPHY.fontTajawal }}>{subValue}</div>}
-        <div style={{ fontSize: 10, fontWeight: 700, color: COLORS.textSecondary, marginTop: 6, fontFamily: TYPOGRAPHY.fontTajawal, lineHeight: 1.2 }}>{label}</div>
-      </div>
-    );
-  }
+        fontSize: 22, fontWeight: 900,
+        color: accent || COLORS.goldLight,
+        fontFamily: TYPOGRAPHY.fontCairo,
+        lineHeight: 1,
+        letterSpacing: -0.5,
+      }}>{loading ? "…" : value}</div>
+      {subValue && <div style={{ fontSize: 9, fontWeight: 700, color: COLORS.textMuted, marginTop: 2, fontFamily: TYPOGRAPHY.fontTajawal }}>{subValue}</div>}
+      <div style={{ fontSize: 10, fontWeight: 700, color: COLORS.textSecondary, marginTop: 6, fontFamily: TYPOGRAPHY.fontTajawal, lineHeight: 1.2 }}>{label}</div>
+    </div>
+  );
+}
+
+function StatDivider() {
+  return <div style={{ width: 1, background: "linear-gradient(180deg, transparent, " + COLORS.metallicBorder + " 30%, " + COLORS.metallicBorder + " 70%, transparent)" }} />;
+}
+
+/* ── ProfileStatsRow — 2 Stats (years / membership) — v7.46: removed duplicates ── */
+function ProfileStatsRow({ user }) {
+  var svc = computeYearsOfService(user.joinDate);
+  var badge = memberBadge(user.points || 0);
 
   return (
     <Card padding={0} style={{ overflow: "hidden" }}>
       <div style={{ display: "flex", alignItems: "stretch" }}>
         <StatCell
           icon="📅"
-          bigValue={svc.years > 0 ? svc.years : (svc.months || 0)}
+          value={svc.years > 0 ? svc.years : (svc.months || 0)}
           subValue={svc.years > 0 ? (svc.years === 1 ? "سنة" : svc.years === 2 ? "سنتان" : svc.years <= 10 ? "سنوات" : "سنة") : (svc.months ? "شهر" : "—")}
           label="سنوات الخدمة"
           accent={COLORS.goldLight}
         />
-        <div style={{ width: 1, background: "linear-gradient(180deg, transparent, " + COLORS.metallicBorder + " 30%, " + COLORS.metallicBorder + " 70%, transparent)" }} />
+        <StatDivider />
         <StatCell
-          icon="⭐"
-          bigValue={points}
-          subValue="نقطة"
-          label="رصيد النقاط"
-          accent={COLORS.goldLight}
-        />
-        <div style={{ width: 1, background: "linear-gradient(180deg, transparent, " + COLORS.metallicBorder + " 30%, " + COLORS.metallicBorder + " 70%, transparent)" }} />
-        <StatCell
-          icon="🏖️"
-          bigValue={leave}
-          subValue="يوم"
-          label="رصيد الإجازة"
-          accent={COLORS.success}
+          icon={badge.icon}
+          value={badge.label.replace("عضوية ", "")}
+          subValue={badge.next ? (badge.progress + "%") : "أعلى مستوى"}
+          label="العضوية"
+          accent={badge.color}
         />
       </div>
     </Card>
@@ -3313,18 +3295,6 @@ function RecordsHero({ user, onTicket, onRequestLeave }) {
     loadCounts();
   }, [user && user.id]);
 
-  function StatCell({ icon, value, label, accent, loading }) {
-    return (
-      <div style={{ flex: 1, minWidth: 0, padding: "14px 8px", display: "flex", flexDirection: "column", alignItems: "center", textAlign: "center" }}>
-        <div style={{ fontSize: 18, marginBottom: 4, filter: "drop-shadow(0 1px 2px rgba(0,0,0,0.3))" }}>{icon}</div>
-        <div style={{ fontSize: 22, fontWeight: 900, color: accent, fontFamily: TYPOGRAPHY.fontCairo, lineHeight: 1, letterSpacing: -0.5 }}>
-          {loading ? "…" : value}
-        </div>
-        <div style={{ fontSize: 10, fontWeight: 700, color: COLORS.textSecondary, marginTop: 6, fontFamily: TYPOGRAPHY.fontTajawal, lineHeight: 1.2 }}>{label}</div>
-      </div>
-    );
-  }
-
   return (
     <>
       {/* 3 Stats */}
@@ -3337,7 +3307,7 @@ function RecordsHero({ user, onTicket, onRequestLeave }) {
             accent={data.openCount > 0 ? COLORS.warning : COLORS.textMuted}
             loading={data.loading}
           />
-          <div style={{ width: 1, background: "linear-gradient(180deg, transparent, " + COLORS.metallicBorder + " 30%, " + COLORS.metallicBorder + " 70%, transparent)" }} />
+          <StatDivider />
           <StatCell
             icon="🏖️"
             value={data.leaveBalance !== null ? data.leaveBalance : 0}
@@ -3345,7 +3315,7 @@ function RecordsHero({ user, onTicket, onRequestLeave }) {
             accent={COLORS.success}
             loading={data.loading}
           />
-          <div style={{ width: 1, background: "linear-gradient(180deg, transparent, " + COLORS.metallicBorder + " 30%, " + COLORS.metallicBorder + " 70%, transparent)" }} />
+          <StatDivider />
           <StatCell
             icon="📚"
             value={data.totalRecords}
@@ -3656,25 +3626,13 @@ function AchievementsStatsRow({ user, stats, loading }) {
   }
   var maxStreak = (stats && stats.maxStreak) || 0;
 
-  function StatCell({ icon, value, label, accent, loading }) {
-    return (
-      <div style={{ flex: 1, minWidth: 0, padding: "14px 8px", display: "flex", flexDirection: "column", alignItems: "center", textAlign: "center" }}>
-        <div style={{ fontSize: 18, marginBottom: 4, filter: "drop-shadow(0 1px 2px rgba(0,0,0,0.3))" }}>{icon}</div>
-        <div style={{ fontSize: 22, fontWeight: 900, color: accent, fontFamily: TYPOGRAPHY.fontCairo, lineHeight: 1, letterSpacing: -0.5 }}>
-          {loading ? "…" : value}
-        </div>
-        <div style={{ fontSize: 10, fontWeight: 700, color: COLORS.textSecondary, marginTop: 6, fontFamily: TYPOGRAPHY.fontTajawal, lineHeight: 1.2 }}>{label}</div>
-      </div>
-    );
-  }
-
   return (
     <Card padding={0} style={{ overflow: "hidden" }}>
       <div style={{ display: "flex", alignItems: "stretch" }}>
         <StatCell icon="⭐" value={points.toLocaleString("ar-SA")} label="إجمالي النقاط" accent={COLORS.goldLight} loading={false} />
-        <div style={{ width: 1, background: "linear-gradient(180deg, transparent, " + COLORS.metallicBorder + " 30%, " + COLORS.metallicBorder + " 70%, transparent)" }} />
+        <StatDivider />
         <StatCell icon="🏅" value={unlockedCount + "/" + ACHIEVEMENTS.length} label="شارات مفتوحة" accent={COLORS.success} loading={loading} />
-        <div style={{ width: 1, background: "linear-gradient(180deg, transparent, " + COLORS.metallicBorder + " 30%, " + COLORS.metallicBorder + " 70%, transparent)" }} />
+        <StatDivider />
         <StatCell icon="🔥" value={maxStreak} label="أيام متتالية" accent={COLORS.warning} loading={loading} />
       </div>
     </Card>
@@ -5065,7 +5023,7 @@ function ProfilePage({ user, branch, workType, onLogout, onTicket, myTickets, da
           <>
             {/* v7.42 — Big hero removed: top header already shows avatar + name + role */}
 
-            {/* 2. 3 STATS — سنوات الخدمة · النقاط · رصيد الإجازة */}
+            {/* 2. 2 STATS — سنوات الخدمة · العضوية */}
             <ProfileStatsRow user={user} />
 
             {/* 3. THREE ACCORDIONS */}
