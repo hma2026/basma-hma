@@ -11,7 +11,7 @@ import { exportEmploymentLetter, exportLeaveLetter } from "./formalPdfs";
 
 /* ═══════════ APP CONFIG (إعدادات التطبيق) ═══════════ */
 const APP_CONFIG = {
-  VER: "7.53",
+  VER: "7.54",
   NAME: "بصمة HMA",
   FULL_NAME: "نظام الحضور والانصراف الذكي",
   COMPANY: "هاني محمد عسيري للاستشارات الهندسية",
@@ -414,6 +414,8 @@ var ADMIN_MODAL_TITLE = { fontSize: 16, fontWeight: 800, fontFamily: "'Cairo',sa
 var FLEX_BETWEEN = { display: "flex", justifyContent: "space-between", alignItems: "center" };
 /* v7.52 — FORM_LABEL مشترك (كان مكرر 11 مرة في النماذج) */
 var FORM_LABEL = { display: "block", fontSize: 11, fontWeight: 700, color: COLORS.textSecondary, marginBottom: 6 };
+/* v7.53 — FORM_INPUT مشترك (يضمن لون نص واضح في الثيم الفاتح والداكن) */
+var FORM_INPUT = { width: "100%", padding: 12, borderRadius: 12, border: "1px solid " + COLORS.cardBorder, background: COLORS.bgSecondary, color: COLORS.textPrimary, fontFamily: TYPOGRAPHY.fontTajawal, fontSize: 12, boxSizing: "border-box" };
 
 /* ── v7.46 — fmtDateAr: Arabic date helper (replaces 19 inline calls) ── */
 function fmtDateAr(d) { if (!d) return "—"; try { return fmtDateAr(d); } catch(e) { return String(d); } }
@@ -16661,15 +16663,17 @@ function LeaveRequestsTab({ user }) {
 
   return <div>
     {/* v7.44 — title removed (accordion already shows "🏖️ إجازاتي") */}
-    {/* v7.53 — زر "+ طلب جديد" أكبر وأوضح */}
-    <div style={{ display: "flex", alignItems: "center", justifyContent: "flex-end", marginBottom: SPACING.md }}>
-      <button onClick={function(){setView("new");}} style={{
-        padding: "10px 18px", background: COLORS.goldLight, color: "#000",
-        border: "none", borderRadius: 14, fontSize: 13, fontWeight: 800,
-        cursor: "pointer", fontFamily: TYPOGRAPHY.fontTajawal,
-        boxShadow: "0 2px 8px rgba(201,168,76,0.4)"
-      }}>+ طلب إجازة جديد</button>
-    </div>
+    {/* v7.54 — الزر العلوي يظهر فقط عند وجود طلبات (لإضافة جديد). حالة الفراغ لها CTA منفصل داخلها لتجنب التكرار */}
+    {!loading && requests.length > 0 && (
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "flex-end", marginBottom: SPACING.md }}>
+        <button onClick={function(){setView("new");}} style={{
+          padding: "10px 18px", background: COLORS.goldLight, color: "#000",
+          border: "none", borderRadius: 14, fontSize: 13, fontWeight: 800,
+          cursor: "pointer", fontFamily: TYPOGRAPHY.fontTajawal,
+          boxShadow: "0 2px 8px rgba(201,168,76,0.4)"
+        }}>+ طلب إجازة جديد</button>
+      </div>
+    )}
 
     {loading ? <EmptyState text="جارٍ التحميل..." /> :
      requests.length === 0 ? <Card>
@@ -16677,7 +16681,6 @@ function LeaveRequestsTab({ user }) {
          <div style={{ fontSize: 48, marginBottom: 10, opacity: 0.4 }}>🏖️</div>
          <div style={{ fontSize: 14, fontWeight: 700, color: COLORS.textPrimary, marginBottom: 6 }}>لا توجد طلبات إجازة بعد</div>
          <div style={{ fontSize: 11, color: COLORS.textMuted, marginBottom: 16 }}>قدّم طلبك بضغطة واحدة</div>
-         {/* v7.53 — زر CTA داخل الـ empty state (الزر الصغير أعلى الصفحة قد لا يُلاحظ) */}
          <button onClick={function(){setView("new");}} style={{
            padding: "12px 24px", background: COLORS.goldLight, color: "#000",
            border: "none", borderRadius: 14, fontSize: 13, fontWeight: 800,
@@ -16844,19 +16847,11 @@ function LeaveRequestForm({ user, onClose }) {
       <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10, marginBottom: SPACING.md }}>
         <div>
           <label style={FORM_LABEL}>من</label>
-          <input type="date" value={from} onChange={function(e){setFrom(e.target.value);}} style={{
-            width: "100%", padding: 12, borderRadius: 12,
-            border: "1px solid " + COLORS.cardBorder, background: COLORS.bgSecondary,
-            fontFamily: TYPOGRAPHY.fontTajawal, fontSize: 12, boxSizing: "border-box"
-          }} />
+          <input type="date" value={from} onChange={function(e){setFrom(e.target.value);}} style={FORM_INPUT} />
         </div>
         <div>
           <label style={FORM_LABEL}>إلى</label>
-          <input type="date" value={to} onChange={function(e){setTo(e.target.value);}} style={{
-            width: "100%", padding: 12, borderRadius: 12,
-            border: "1px solid " + COLORS.cardBorder, background: COLORS.bgSecondary,
-            fontFamily: TYPOGRAPHY.fontTajawal, fontSize: 12, boxSizing: "border-box"
-          }} />
+          <input type="date" value={to} onChange={function(e){setTo(e.target.value);}} style={FORM_INPUT} />
         </div>
       </div>
 
@@ -16868,23 +16863,14 @@ function LeaveRequestForm({ user, onClose }) {
         <label style={FORM_LABEL}>السبب (اختياري)</label>
         <textarea value={reason} onChange={function(e){setReason(e.target.value);}} rows={3}
           placeholder="اكتب سبب الإجازة..."
-          style={{
-            width: "100%", padding: 12, borderRadius: 12,
-            border: "1px solid " + COLORS.cardBorder, background: COLORS.bgSecondary,
-            fontFamily: TYPOGRAPHY.fontTajawal, fontSize: 12,
-            resize: "vertical", boxSizing: "border-box"
-          }} />
+          style={{...FORM_INPUT, resize: "vertical"}} />
       </div>
 
       <div style={{ marginBottom: SPACING.md }}>
         <label style={FORM_LABEL}>كيفية التواصل خلال الإجازة</label>
         <input type="text" value={contact} onChange={function(e){setContact(e.target.value);}}
           placeholder="جوال احتياطي، إيميل، أو لا يمكن التواصل..."
-          style={{
-            width: "100%", padding: 12, borderRadius: 12,
-            border: "1px solid " + COLORS.cardBorder, background: COLORS.bgSecondary,
-            fontFamily: TYPOGRAPHY.fontTajawal, fontSize: 12, boxSizing: "border-box"
-          }} />
+          style={FORM_INPUT} />
       </div>
 
       <div style={{ padding: 10, background: "rgba(59,130,246,0.08)", borderRadius: 10, fontSize: 10, color: COLORS.primary, marginBottom: SPACING.md, lineHeight: 1.6 }}>
@@ -16902,9 +16888,12 @@ function LeaveRequestForm({ user, onClose }) {
       }}>{msg.text}</div>}
 
       <button onClick={submit} disabled={saving} style={{
-        width: "100%", padding: 14, background: COLORS.primary, color: "#fff",
-        border: "none", borderRadius: 14, fontSize: 13, fontWeight: 800,
-        cursor: saving ? "wait" : "pointer", fontFamily: TYPOGRAPHY.fontTajawal
+        width: "100%", padding: 14,
+        background: saving ? COLORS.metallic : "linear-gradient(135deg, " + COLORS.goldLight + ", " + COLORS.gold + ")",
+        color: saving ? COLORS.textMuted : "#000",
+        border: "none", borderRadius: 14, fontSize: 14, fontWeight: 800,
+        cursor: saving ? "wait" : "pointer", fontFamily: TYPOGRAPHY.fontTajawal,
+        boxShadow: saving ? "none" : "0 4px 12px rgba(201,168,76,0.4)"
       }}>{saving ? "جارٍ الإرسال..." : "📤 إرسال الطلب"}</button>
     </Card>
   </div>;
