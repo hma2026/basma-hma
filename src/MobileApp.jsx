@@ -3733,7 +3733,7 @@ function AchievementsHub({ user }) {
 
       {/* v7.42 — 3. TWO INDEPENDENT open cards: الإنجازات (summary) + إشاراتي (badges) */}
       {/* v7.51 — stats تأتي من AchievementsHub (مرة واحدة) بدل تكرار fetch داخل كل Card */}
-      <AchievementsCard user={user} part="summary" stats={stats} loading={statsLoading} />
+      {/* v7.59 — summary حُذف (مدموج مع badges في صندوق واحد - تنفيذ ملاحظة 3) */}
       <AchievementsCard user={user} part="badges" stats={stats} loading={statsLoading} />
 
       {/* v7.37 — 4. Points log DIRECTLY below badges (not accordion) */}
