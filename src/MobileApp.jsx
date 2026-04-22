@@ -11,7 +11,7 @@ import { exportEmploymentLetter, exportLeaveLetter } from "./formalPdfs";
 
 /* ═══════════ APP CONFIG (إعدادات التطبيق) ═══════════ */
 const APP_CONFIG = {
-  VER: "7.49",
+  VER: "7.51",
   NAME: "بصمة HMA",
   FULL_NAME: "نظام الحضور والانصراف الذكي",
   COMPANY: "هاني محمد عسيري للاستشارات الهندسية",
@@ -2470,7 +2470,7 @@ function HomePage({ user, branch, workType, now, todayAtt, allAtt, gps, gpsDist,
           })()}
           <span style={{ fontSize: 11, color: C.sub }}>{badge.icon + " " + badge.label}</span>
           <span style={{ fontSize: 10, color: C.gold, fontWeight: 800 }}>{"⭐" + (user.points || 0)}</span>
-          {pendingCount > 0 && <div style={{ position: "relative" }}><span style={{ fontSize: 14 }}>🔔</span><div style={{ position: "absolute", top: -4, right: -6, width: 14, height: 14, borderRadius: 7, background: C.red, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 8, fontWeight: 800, color: "#fff" }}>{pendingCount}</div></div>}
+          {/* v7.50 — جرس الإشعارات في الهيدر محذوف (جرس عائم top-left يُغطي كل الإشعارات بدون تكرار) */}
         </div>
       </div>
 
@@ -3312,7 +3312,7 @@ function ProfileAttachmentsLite({ user }) {
  * ═══════════════════════════════════════════════════════════════════ */
 
 /* ── RecordsHero — 3 stats + 2 quick action buttons ── */
-function RecordsHero({ user, onTicket, onRequestLeave }) {
+function RecordsHero({ user, onRequestLeave }) {
   var [data, setData] = useState({ openCount: 0, leaveBalance: null, totalRecords: 0, loading: true });
 
   useEffect(function(){
@@ -3381,19 +3381,10 @@ function RecordsHero({ user, onTicket, onRequestLeave }) {
         </div>
       </Card>
 
-      {/* 2 Quick action buttons */}
-      <div style={{ display: "flex", gap: SPACING.sm }}>
-        <div style={{ flex: 1 }}>
-          <Button variant="primary" size="md" icon="🏖️" onClick={onRequestLeave}>
-            طلب إجازة جديد
-          </Button>
-        </div>
-        <div style={{ flex: 1 }}>
-          <Button variant="secondary" size="md" icon="🎫" onClick={onTicket}>
-            فتح طلب دعم فني
-          </Button>
-        </div>
-      </div>
+      {/* v7.50 — زر واحد فقط: طلب إجازة (زر الدعم الفني نُقل داخل قسم TicketsCard) */}
+      <Button variant="primary" size="md" icon="🏖️" onClick={onRequestLeave}>
+        طلب إجازة جديد
+      </Button>
     </>
   );
 }
@@ -3445,64 +3436,7 @@ function RecordsFilterChips({ active, onChange }) {
   );
 }
 
-/* ── RecordsArchiveView — closed/archived items across all sources ── */
-function RecordsArchiveView({ user }) {
-  var [loading, setLoading] = useState(true);
-  var [items, setItems] = useState([]);
-
-  useEffect(function(){
-    if (!user || !user.id) return;
-    async function load() {
-      try {
-        /* v7.48 — حُذف fetch leaves القديم. الإجازات (مع تاريخها) كاملة في MyLeavesHub */
-        var [perms, preAbs, contracts] = await Promise.all([
-          fetch("/api/data?action=permissions&empId=" + encodeURIComponent(user.id)).then(function(r){ return r.json(); }).catch(function(){ return []; }),
-          fetch("/api/data?action=pre_absence").then(function(r){ return r.json(); }).then(function(d){ return (Array.isArray(d) ? d : []).filter(function(x){ return x.empId === user.id; }); }).catch(function(){ return []; }),
-          fetch("/api/data?action=emp_records&empId=" + encodeURIComponent(user.id) + "&type=contract").then(function(r){ return r.json(); }).catch(function(){ return []; }),
-        ]);
-        var all = [];
-        (perms || []).forEach(function(p){ if (p.status === "approved" || p.status === "rejected") all.push({ kind: "permission", icon: "⏱", title: "استئذان", sub: (p.from_time || "") + " → " + (p.to_time || ""), status: p.status, ts: p.ts || "" }); });
-        (preAbs || []).forEach(function(pa){ if (pa.status === "approved" || pa.status === "rejected") all.push({ kind: "preabs", icon: "🏥", title: "إفادة غياب", sub: pa.date || "", status: pa.status, ts: pa.ts || "" }); });
-        (contracts || []).forEach(function(c){ if (c.status !== "active") all.push({ kind: "contract", icon: "📄", title: c.title || "عقد", sub: (c.startDate || "") + " → " + (c.endDate || ""), status: c.status || "ended", ts: c.endDate || c.startDate || "" }); });
-        all.sort(function(a, b){ return (b.ts || "").localeCompare(a.ts || ""); });
-        setItems(all);
-      } catch(e) {}
-      setLoading(false);
-    }
-    load();
-  }, [user && user.id]);
-
-  if (loading) {
-    return <EmptyState text="جارٍ التحميل..." />;
-  }
-  if (items.length === 0) {
-    return (
-      <Card padding={SPACING.lg}>
-        <EmptyState icon="🗄️" text="الأرشيف فارغ" sub="ستظهر هنا السجلات المغلقة (المعتمدة أو المرفوضة أو المنتهية)" />
-      </Card>
-    );
-  }
-
-  return (
-    <div style={{ display: "flex", flexDirection: "column", gap: SPACING.sm }}>
-      {items.map(function(x, i){
-        var st = getStatusMeta(x.status);
-        return (
-          <div key={i} style={{ padding: "10px 12px", borderRadius: RADIUS.md, background: COLORS.metallic, border: "1px solid " + COLORS.metallicBorder, display: "flex", alignItems: "center", gap: SPACING.sm }}>
-            <div style={{ fontSize: 20, flexShrink: 0 }}>{x.icon}</div>
-            <div style={{ flex: 1, minWidth: 0 }}>
-              <div style={{ fontSize: 12, fontWeight: 800, color: COLORS.textPrimary, fontFamily: TYPOGRAPHY.fontTajawal, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{x.title}</div>
-              <div style={{ fontSize: 10, color: COLORS.textMuted, marginTop: 2 }}>{x.sub}</div>
-            </div>
-            <span style={{ fontSize: 9, fontWeight: 800, color: st.color, padding: "3px 8px", borderRadius: RADIUS.pill, background: st.color + "22", border: "1px solid " + st.color + "44", flexShrink: 0 }}>
-              {st.icon} {st.label}
-            </span>
-          </div>
-        );
-      })}
-    </div>
-  );
-}
+/* v7.48 — RecordsArchiveView حُذف كاملاً: محتواه كان مكرر 100% مع أقسام أخرى */
 
 /* ── RecordsPromotionsView — standalone promotions list ── */
 function RecordsPromotionsView({ user }) {
@@ -3565,7 +3499,7 @@ function RecordsHub({ user, onTicket, myTickets }) {
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: SPACING.lg }}>
       {/* 1. Hero: 3 stats + 2 quick actions */}
-      <RecordsHero user={user} onTicket={onTicket} onRequestLeave={handleRequestLeave} />
+      <RecordsHero user={user} onRequestLeave={handleRequestLeave} />
 
       {/* v7.48 — Section 1: استئذان وإفادات (الإجازات نُقلت لقسم منفصل أدناه) */}
       <div style={{ background: COLORS.metallic, border: "1px solid " + COLORS.metallicBorder, borderRadius: RADIUS.xl, padding: SPACING.lg, boxShadow: SHADOWS.button }}>
@@ -3580,17 +3514,28 @@ function RecordsHub({ user, onTicket, myTickets }) {
         </ProfileAccordion>
       </div>
 
-      {/* v7.45 — Section 3: طلبات الدعم الفني (accordion) */}
+      {/* v7.50 — Section 3: طلبات الموارد البشرية (دعم فني + تعديل بيانات مدموجين في accordion واحد) */}
       <div ref={ticketsRef}>
-        <ProfileAccordion emoji="🎫" title="طلبات الدعم الفني" subtitle="رسائلي مع الموارد البشرية" badge={(myTickets || []).length > 0 ? String((myTickets || []).length) : null}>
-          <TicketsCard user={user} myTickets={myTickets} />
+        <ProfileAccordion emoji="📨" title="طلباتي للموارد البشرية" subtitle="دعم فني · تعديل البيانات" badge={(myTickets || []).length > 0 ? String((myTickets || []).length) : null}>
+          {/* الجزء 1: تذاكر الدعم الفني */}
+          <div style={{ marginBottom: SPACING.md }}>
+            <div style={{ ...TYPOGRAPHY.bodySm, fontWeight: 800, color: COLORS.textPrimary, marginBottom: SPACING.sm, paddingBottom: SPACING.xs, borderBottom: "1px solid " + COLORS.cardRowBorder }}>
+              🎫 الدعم الفني
+            </div>
+            <TicketsCard user={user} myTickets={myTickets} onTicket={onTicket} />
+          </div>
+
+          {/* الجزء 2: طلبات تعديل البيانات */}
+          <div>
+            <div style={{ ...TYPOGRAPHY.bodySm, fontWeight: 800, color: COLORS.textPrimary, marginBottom: SPACING.sm, paddingBottom: SPACING.xs, borderBottom: "1px solid " + COLORS.cardRowBorder }}>
+              ✏️ تعديل البيانات
+            </div>
+            <EditRequestCard user={user} />
+          </div>
         </ProfileAccordion>
       </div>
 
-      {/* v7.45 — Section 4: طلبات تعديل البيانات (accordion) */}
-      <ProfileAccordion emoji="✏️" title="طلبات تعديل البيانات" subtitle="طلبات تعديل الحقول المعتمدة">
-        <EditRequestCard user={user} />
-      </ProfileAccordion>
+      {/* v7.50 — accordion المنفصل لتعديل البيانات حُذف (مدموج مع الدعم الفني أعلاه) */}
 
       {/* v7.43 — Section 5: عقودي (accordion) */}
       <ProfileAccordion emoji="📄" title="عقودي" subtitle="العقود والتجديدات">
@@ -3602,10 +3547,7 @@ function RecordsHub({ user, onTicket, myTickets }) {
         <RecordsPromotionsView user={user} />
       </ProfileAccordion>
 
-      {/* v7.43 — Section 7: الأرشيف (accordion, default closed) */}
-      <ProfileAccordion emoji="🗄️" title="الأرشيف" subtitle="الطلبات المغلقة والمنتهية">
-        <RecordsArchiveView user={user} />
-      </ProfileAccordion>
+      {/* v7.48 — الأرشيف حُذف كاملاً: محتواه مكرر 100% مع MyRequestsTab (استئذان/إفادات) و عقودي */}
     </div>
   );
 }
@@ -3881,6 +3823,58 @@ function LeaderboardView({ user }) {
   );
 }
 
+/* v7.51 — Helper مشترك لحساب إحصائيات الإنجازات (كان مكرر في AchievementsHub + AchievementsCard) */
+function computeAchievementStats(att, tl, user) {
+  var myAtt = (att || []).filter(function(a){ return a.empId === user.id; });
+  var byDate = {};
+  myAtt.forEach(function(a){
+    var dt = a.date || (a.ts && a.ts.split("T")[0]);
+    if (!dt) return;
+    if (!byDate[dt]) byDate[dt] = {};
+    byDate[dt][a.type] = a.ts;
+  });
+  var dates = Object.keys(byDate).filter(function(dt){ return byDate[dt].checkin; }).sort();
+  var totalDays = dates.length;
+  var earlyCheckins = 0;
+  dates.forEach(function(dt){
+    var cin = new Date(byDate[dt].checkin);
+    if (cin.getHours() < 8 || (cin.getHours() === 8 && cin.getMinutes() === 0)) earlyCheckins++;
+  });
+  var maxStreak = 0, curStreak = 0, prevDate = null;
+  dates.forEach(function(dt){
+    if (prevDate) {
+      var diff = (new Date(dt) - new Date(prevDate)) / (86400000);
+      if (diff <= 3) curStreak++;
+      else curStreak = 1;
+    } else curStreak = 1;
+    if (curStreak > maxStreak) maxStreak = curStreak;
+    prevDate = dt;
+  });
+  var monthAgo = new Date(); monthAgo.setDate(monthAgo.getDate() - 30);
+  var monthLates = dates.filter(function(dt){
+    if (new Date(dt) < monthAgo) return false;
+    var cin = new Date(byDate[dt].checkin);
+    return cin.getHours() >= 9 || (cin.getHours() === 8 && cin.getMinutes() > 45);
+  });
+  var monthWorkDays = dates.filter(function(dt){ return new Date(dt) >= monthAgo; }).length;
+  var myTasks = tl && tl.requests ? tl.requests.filter(function(r){ return r.requesterId === user.id; }) : [];
+  var myCompleted = tl && tl.requests ? tl.requests.filter(function(r){
+    return (r.assignees || []).some(function(a){ return String(a.id) === String(user.id); }) && (r.status === "accepted" || r.status === "done");
+  }) : [];
+  return {
+    totalDays: totalDays,
+    maxStreak: maxStreak,
+    earlyCheckins: earlyCheckins,
+    zeroLateMonth: monthWorkDays >= 15 && monthLates.length === 0,
+    profileComplete: !!(user.name && user.email && user.phone),
+    hasFace: !!user.hasFace,
+    pushEnabled: typeof Notification !== "undefined" && Notification.permission === "granted",
+    tasksCreated: myTasks.length,
+    tasksCompleted: myCompleted.length,
+    approvalsGiven: 0,
+  };
+}
+
 /* ── AchievementsHub — container for the whole achievements tab ── */
 function AchievementsHub({ user }) {
   var [stats, setStats] = useState(null);
@@ -3894,54 +3888,8 @@ function AchievementsHub({ user }) {
           fetch("/api/data?action=attendance").then(function(r){ return r.json(); }).catch(function(){ return []; }),
           fetch("/api/data?action=tawasul-list").then(function(r){ return r.json(); }).catch(function(){ return null; }),
         ]);
-        var myAtt = (att || []).filter(function(a){ return a.empId === user.id; });
-        var byDate = {};
-        myAtt.forEach(function(a){
-          var dt = a.date || (a.ts && a.ts.split("T")[0]);
-          if (!dt) return;
-          if (!byDate[dt]) byDate[dt] = {};
-          byDate[dt][a.type] = a.ts;
-        });
-        var dates = Object.keys(byDate).filter(function(dt){ return byDate[dt].checkin; }).sort();
-        var totalDays = dates.length;
-        var earlyCheckins = 0;
-        dates.forEach(function(dt){
-          var cin = new Date(byDate[dt].checkin);
-          if (cin.getHours() < 8 || (cin.getHours() === 8 && cin.getMinutes() === 0)) earlyCheckins++;
-        });
-        var maxStreak = 0, curStreak = 0, prevDate = null;
-        dates.forEach(function(dt){
-          if (prevDate) {
-            var diff = (new Date(dt) - new Date(prevDate)) / (86400000);
-            if (diff <= 3) curStreak++;
-            else curStreak = 1;
-          } else curStreak = 1;
-          if (curStreak > maxStreak) maxStreak = curStreak;
-          prevDate = dt;
-        });
-        var monthAgo = new Date(); monthAgo.setDate(monthAgo.getDate() - 30);
-        var monthLates = dates.filter(function(dt){
-          if (new Date(dt) < monthAgo) return false;
-          var cin = new Date(byDate[dt].checkin);
-          return cin.getHours() >= 9 || (cin.getHours() === 8 && cin.getMinutes() > 45);
-        });
-        var monthWorkDays = dates.filter(function(dt){ return new Date(dt) >= monthAgo; }).length;
-        var myTasks = tl && tl.requests ? tl.requests.filter(function(r){ return r.requesterId === user.id; }) : [];
-        var myCompleted = tl && tl.requests ? tl.requests.filter(function(r){
-          return (r.assignees || []).some(function(a){ return String(a.id) === String(user.id); }) && (r.status === "accepted" || r.status === "done");
-        }) : [];
-        setStats({
-          totalDays: totalDays,
-          maxStreak: maxStreak,
-          earlyCheckins: earlyCheckins,
-          zeroLateMonth: monthWorkDays >= 15 && monthLates.length === 0,
-          profileComplete: !!(user.name && user.email && user.phone),
-          hasFace: !!user.hasFace,
-          pushEnabled: typeof Notification !== "undefined" && Notification.permission === "granted",
-          tasksCreated: myTasks.length,
-          tasksCompleted: myCompleted.length,
-          approvalsGiven: 0,
-        });
+        /* v7.51 — استخدام helper مشترك بدل تكرار 50 سطر */
+        setStats(computeAchievementStats(att, tl, user));
       } catch(e) {}
       setStatsLoading(false);
     }
@@ -3957,8 +3905,9 @@ function AchievementsHub({ user }) {
       <AchievementsStatsRow user={user} stats={stats} loading={statsLoading} />
 
       {/* v7.42 — 3. TWO INDEPENDENT open cards: الإنجازات (summary) + إشاراتي (badges) */}
-      <AchievementsCard user={user} part="summary" />
-      <AchievementsCard user={user} part="badges" />
+      {/* v7.51 — stats تأتي من AchievementsHub (مرة واحدة) بدل تكرار fetch داخل كل Card */}
+      <AchievementsCard user={user} part="summary" stats={stats} loading={statsLoading} />
+      <AchievementsCard user={user} part="badges" stats={stats} loading={statsLoading} />
 
       {/* v7.37 — 4. Points log DIRECTLY below badges (not accordion) */}
       <div style={{ background: COLORS.metallic, border: "1px solid " + COLORS.metallicBorder, borderRadius: RADIUS.xl, padding: SPACING.lg, boxShadow: SHADOWS.button }}>
@@ -3966,10 +3915,11 @@ function AchievementsHub({ user }) {
         <PointsLogCard user={user} allAtt={[]} />
       </div>
 
-      {/* v7.37 — 5. Leaderboard at the VERY BOTTOM (last element) */}
-      <ProfileAccordion emoji="📊" title="ترتيبي بين الزملاء" subtitle="أين موقعي بالنسبة للجميع">
+      {/* v7.50 — Leaderboard as open list (accordion removed) */}
+      <div style={{ background: COLORS.metallic, border: "1px solid " + COLORS.metallicBorder, borderRadius: RADIUS.xl, padding: SPACING.lg, boxShadow: SHADOWS.button }}>
+        <SectionHeader emoji="📊" title="ترتيبي بين الزملاء" />
         <LeaderboardView user={user} />
-      </ProfileAccordion>
+      </div>
     </div>
   );
 }
@@ -5021,20 +4971,23 @@ function ProfilePage({ user, branch, workType, onLogout, onTicket, myTickets, da
           <div style={{ ...TYPOGRAPHY.caption, color: COLORS.textMuted }}>{user.role + " — " + user.id}</div>
         </div>
 
-        {/* v7.46 — Profile Tabs: scrollable horizontal strip (replaces cramped 5-tab fixed bar) */}
-        <div style={{ margin: "0 -" + SPACING.lg + "px", padding: "0 " + SPACING.lg + "px", overflowX: "auto", WebkitOverflowScrolling: "touch", scrollSnapType: "x proximity", msOverflowStyle: "none", scrollbarWidth: "none" }}>
-          <style>{`.basma-profile-tabs::-webkit-scrollbar{display:none}`}</style>
-          <div className="basma-profile-tabs" style={{ display: "flex", gap: 8, paddingBottom: 2 }}>
-            {tabs.map(function(t) {
-              var active = tab === t.id;
-              return (
-                <button key={t.id} onClick={function(){ setTab(t.id); }} style={{ scrollSnapAlign: "start", flexShrink: 0, padding: "8px 14px", borderRadius: RADIUS.pill, background: active ? COLORS.goldLight + "1A" : COLORS.metallic, border: "1.5px solid " + (active ? COLORS.goldLight : COLORS.metallicBorder), cursor: "pointer", display: "flex", alignItems: "center", gap: 6, boxShadow: active ? "0 2px 8px " + COLORS.goldLight + "33" : SHADOWS.button, transition: "all 0.2s" }}>
-                  <span style={{ fontSize: 18, filter: active ? "none" : "grayscale(0.4)", opacity: active ? 1 : 0.7 }}>{t.emoji}</span>
-                  <span style={{ fontSize: 11, fontWeight: 800, color: active ? COLORS.goldLight : COLORS.textMuted, fontFamily: TYPOGRAPHY.fontTajawal, whiteSpace: "nowrap" }}>{t.label}</span>
-                </button>
-              );
-            })}
-          </div>
+        {/* v7.50 — استعادة التصميم الأصلي v7.45: 5 tabs ثابتة، نص سطرين، أيقونة صغيرة بفلتر ذهبي عند التفعيل */}
+        <div style={{ display: "flex", gap: 3, background: COLORS.metallic, border: "1px solid " + COLORS.metallicBorder, borderRadius: RADIUS.lg, padding: 4, boxShadow: SHADOWS.button }}>
+          {tabs.map(function(t) {
+            var active = tab === t.id;
+            var parts = t.label.split(" ");
+            var line1 = parts.slice(0, Math.ceil(parts.length / 2)).join(" ");
+            var line2 = parts.slice(Math.ceil(parts.length / 2)).join(" ");
+            return (
+              <button key={t.id} onClick={function(){ setTab(t.id); }} style={{ flex: 1, minWidth: 0, padding: "7px 2px", borderRadius: RADIUS.md, background: active ? "rgba(201,168,76,0.12)" : "transparent", border: "1px solid " + (active ? COLORS.goldLight : "transparent"), cursor: "pointer", textAlign: "center", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 3, minHeight: 52 }}>
+                <span style={{ fontSize: 18, filter: active ? "hue-rotate(30deg) saturate(1.5) brightness(1.1)" : "grayscale(0.3)", opacity: active ? 1 : 0.75 }}>{t.emoji}</span>
+                <span style={{ fontSize: 8.5, fontWeight: 800, lineHeight: 1.2, color: active ? COLORS.goldLight : COLORS.textMuted, display: "flex", flexDirection: "column", gap: 1 }}>
+                  <span>{line1}</span>
+                  {line2 && <span>{line2}</span>}
+                </span>
+              </button>
+            );
+          })}
         </div>
 
         {/* v7.42 — tab: profile (ملفي) — ProfileHeroCard removed (duplicated top header) */}
@@ -12538,125 +12491,10 @@ function PermissionModal({ user, branch, onClose, onSubmit }) {
 
 /* ═══════════ LEAVE + TICKET MODALS ═══════════ */
 
-function LeaveModal({ user, onClose, onSubmit }) {
-  var [type, setType] = useState("annual");
-  var [from, setFrom] = useState(todayStr());
-  var [to, setTo] = useState(todayStr());
-  var [reason, setReason] = useState("");
-  var [submitting, setSubmitting] = useState(false);
-  // v6.37 — Leave balance
-  var [balance, setBalance] = useState(null);
-
-  useEffect(function(){
-    if (!user || !user.id) return;
-    fetch("/api/data?action=leave-balance&empId=" + encodeURIComponent(user.id))
-      .then(function(r){ return r.json(); })
-      .then(function(d){ if (d && !d.error) setBalance(d); })
-      .catch(function(){});
-  }, [user]);
-
-  var leaveTypes = [
-    { id: "annual", label: "سنوية", icon: "🏖️" },
-    { id: "sick", label: "مرضية", icon: "🏥" },
-    { id: "emergency", label: "طارئة", icon: "⚡" },
-    { id: "personal", label: "شخصية", icon: "👤" },
-  ];
-
-  // Compute requested days
-  var requestedDays = 1;
-  try {
-    if (from && to) {
-      var fromD = new Date(from);
-      var toD = new Date(to);
-      requestedDays = Math.max(1, Math.round((toD - fromD) / (24*3600*1000)) + 1);
-    }
-  } catch(e) {}
-
-  var currentBalance = balance ? (balance[type] || 0) : null;
-  var exceedsBalance = currentBalance !== null && requestedDays > currentBalance && type !== "personal";
-
-  async function submit() {
-    if (!from || !to) return;
-    if (exceedsBalance) {
-      if (!window.confirm("الرصيد المتبقي (" + currentBalance + " يوم) أقل من الأيام المطلوبة (" + requestedDays + " يوم). هل تريد المتابعة؟ سيتم رفع الطلب ولكن قد يُرفض.")) return;
-    }
-    setSubmitting(true);
-    await onSubmit({ type: type, from: from, to: to, reason: reason, days: requestedDays });
-    setSubmitting(false);
-  }
-
-  return (
-    <div style={S.overlay} onClick={onClose}>
-      <div className="basma-slideup" style={{ ...S.modal, ...MODAL_BODY }} onClick={function(e){ e.stopPropagation(); }}>
-        <div style={{ ...ADMIN_MODAL_TITLE, marginBottom: 12 }}>📝 طلب إجازة</div>
-
-        {/* v6.37 — Balance summary */}
-        {balance && (
-          <div style={{ background: "linear-gradient(135deg, rgba(201,168,76,0.12), rgba(201,168,76,0.05))", border: "1px solid rgba(201,168,76,0.3)", borderRadius: 12, padding: 10, marginBottom: 12 }}>
-            <div style={{ fontSize: 10, color: C.sub, fontWeight: 700, marginBottom: 6 }}>📊 رصيدك المتبقي (سنة {balance.year})</div>
-            <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 6 }}>
-              {[{k:"annual",l:"سنوية",i:"🏖️"},{k:"sick",l:"مرضية",i:"🏥"},{k:"emergency",l:"طارئة",i:"⚡"},{k:"personal",l:"شخصية",i:"👤"}].map(function(b){
-                return (
-                  <div key={b.k} style={{ textAlign: "center", padding: "6px 2px", borderRadius: 8, background: type === b.k ? "rgba(201,168,76,0.2)" : "transparent", border: type === b.k ? "1px solid rgba(201,168,76,0.5)" : "1px solid transparent" }}>
-                    <div style={{ fontSize: 12 }}>{b.i}</div>
-                    <div style={{ fontSize: 14, fontWeight: 900, color: type === b.k ? "#C9A84C" : C.text }}>{balance[b.k] || 0}</div>
-                    <div style={{ fontSize: 8, color: C.sub }}>{b.l}</div>
-                  </div>
-                );
-              })}
-            </div>
-          </div>
-        )}
-
-        <div style={{ display: "flex", gap: 6, marginBottom: 14 }}>
-          {leaveTypes.map(function(lt) {
-            var active = type === lt.id;
-            return (
-              <button key={lt.id} onClick={function(){ setType(lt.id); }} style={{ flex: 1, padding: "8px 4px", borderRadius: 12, background: active ? C.blue + "15" : "#f5f5f5", border: active ? "2px solid " + C.blue : "2px solid transparent", fontSize: 10, fontWeight: 700, color: active ? C.blue : C.sub, cursor: "pointer", textAlign: "center" }}>
-                <div style={{ fontSize: 16 }}>{lt.icon}</div>
-                {lt.label}
-              </button>
-            );
-          })}
-        </div>
-
-        <div style={{ display: "flex", gap: 8, marginBottom: 10 }}>
-          <div style={{ flex: 1 }}>
-            <div style={{ fontSize: 10, color: C.sub, fontWeight: 600, marginBottom: 4 }}>من</div>
-            <input type="date" value={from} onChange={function(e){ setFrom(e.target.value); }} style={{ width: "100%", padding: 10, borderRadius: 10, border: "1px solid " + C.bg, fontSize: 13, fontFamily: "'Tajawal',sans-serif" }} />
-          </div>
-          <div style={{ flex: 1 }}>
-            <div style={{ fontSize: 10, color: C.sub, fontWeight: 600, marginBottom: 4 }}>إلى</div>
-            <input type="date" value={to} onChange={function(e){ setTo(e.target.value); }} style={{ width: "100%", padding: 10, borderRadius: 10, border: "1px solid " + C.bg, fontSize: 13, fontFamily: "'Tajawal',sans-serif" }} />
-          </div>
-        </div>
-
-        {/* Days counter + balance warning */}
-        <div style={{ padding: "8px 10px", borderRadius: 10, background: exceedsBalance ? "rgba(239,68,68,0.1)" : "rgba(43,94,167,0.08)", border: "1px solid " + (exceedsBalance ? "rgba(239,68,68,0.3)" : "rgba(43,94,167,0.2)"), marginBottom: 12, fontSize: 11, fontWeight: 600, color: exceedsBalance ? "#EF4444" : C.blue, textAlign: "center" }}>
-          {exceedsBalance ? "⚠️ " : "📅 "}
-          الأيام المطلوبة: <strong>{requestedDays}</strong>
-          {currentBalance !== null && <span> · الرصيد المتبقي: <strong>{currentBalance}</strong></span>}
-          {exceedsBalance && <div style={{ marginTop: 2, fontSize: 10 }}>الأيام المطلوبة أكثر من الرصيد!</div>}
-        </div>
-
-        <div style={{ marginBottom: 14 }}>
-          <div style={{ fontSize: 10, color: C.sub, fontWeight: 600, marginBottom: 4 }}>السبب (اختياري)</div>
-          <textarea value={reason} onChange={function(e){ setReason(e.target.value); }} placeholder="اكتب سبب الإجازة..." rows={2} style={{ ...ADMIN_INPUT, resize: "none" }} />
-        </div>
-
-        <div style={{ display: "flex", gap: 8 }}>
-          <button onClick={onClose} style={MODAL_CANCEL}>إلغاء</button>
-          <button onClick={submit} disabled={submitting} style={{ flex: 1, padding: 12, borderRadius: 14, border: "none", background: "linear-gradient(135deg,"+C.blue+","+C.blueBright+")", color: "#fff", fontSize: 14, fontWeight: 700, cursor: "pointer", opacity: submitting ? .6 : 1 }}>
-            {submitting ? "جارِ الإرسال..." : "إرسال الطلب"}
-          </button>
-        </div>
-      </div>
-    </div>
-  );
-}
+/* v7.51 — LeaveModal (116 سطر) حُذف نهائياً: dead code منذ v7.00 (نظام الإجازات الجديد في MyLeavesHub بـ leave-requests) */
 
 /* ═══ TICKETS CARD — عرض تذاكري مع Chat Thread (v6.81) ═══ */
-function TicketsCard({ user, myTickets }) {
+function TicketsCard({ user, myTickets, onTicket }) {
   var [selected, setSelected] = useState(null);
   var [replyText, setReplyText] = useState("");
   var [sending, setSending] = useState(false);
@@ -12728,11 +12566,19 @@ function TicketsCard({ user, myTickets }) {
     return new Date(tk.lastReadByEmp) < new Date(lastMsg.ts);
   }
 
-  // v7.45 — show empty state in accordion instead of returning null
+  // v7.50 — empty state مع زر طلب جديد
   if (!tickets || tickets.length === 0) {
     return (
-      <div style={{ padding: 16, textAlign: "center", color: COLORS.textMuted, fontSize: 11 }}>
-        📭 لا توجد طلبات دعم فني بعد
+      <div style={{ padding: 20, textAlign: "center" }}>
+        <div style={{ fontSize: 32, marginBottom: 8, opacity: 0.4 }}>📭</div>
+        <div style={{ fontSize: 12, color: COLORS.textMuted, marginBottom: 12 }}>لا توجد طلبات دعم فني بعد</div>
+        {onTicket && (
+          <button onClick={onTicket} style={{
+            padding: "8px 16px", background: COLORS.goldLight, color: "#000",
+            border: "none", borderRadius: 10, fontSize: 11, fontWeight: 800,
+            cursor: "pointer", fontFamily: TYPOGRAPHY.fontTajawal
+          }}>+ فتح طلب دعم فني</button>
+        )}
       </div>
     );
   }
@@ -12748,9 +12594,16 @@ function TicketsCard({ user, myTickets }) {
   return (
     <>
       <Card>
-        {/* v7.45 — title removed (accordion shows "🎫 طلبات الدعم الفني") */}
-        <div style={{ display: "flex", alignItems: "center", justifyContent: "flex-end", marginBottom: SPACING.sm }}>
+        {/* v7.50 — header: عدد الرسائل + زر طلب جديد */}
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: SPACING.sm }}>
           <span style={{ fontSize: 10, color: COLORS.textMuted, fontWeight: 600 }}>{tickets.length} رسالة</span>
+          {onTicket && (
+            <button onClick={onTicket} style={{
+              padding: "6px 12px", background: COLORS.goldLight, color: "#000",
+              border: "none", borderRadius: 10, fontSize: 10, fontWeight: 800,
+              cursor: "pointer", fontFamily: TYPOGRAPHY.fontTajawal
+            }}>+ طلب جديد</button>
+          )}
         </div>
         {sorted.slice(0, 6).map(function(tk, i){
           var st = statusLabel(tk.status);
@@ -13842,7 +13695,7 @@ function BottomNav({ page, setPage, legalAlerts, tawasulUnread, hrUnread, user }
 function EmployeeRecordTab({ user, initialSubTab, hideSubTabs }) {
   var [subTab, setSubTab] = useState(initialSubTab || "contracts");
   var [contracts, setContracts] = useState([]);
-  var [leaves, setLeaves] = useState([]);
+  /* v7.48 — leaves state محذوف نهائياً (النظام الجديد leave-requests في MyLeavesHub فقط) */
   var [violations, setViolations] = useState([]);
   var [loading, setLoading] = useState(true);
   var [showAdd, setShowAdd] = useState(false);
@@ -13866,7 +13719,6 @@ function EmployeeRecordTab({ user, initialSubTab, hideSubTabs }) {
 
   var tabs = [
     { id: "contracts", l: "العقود", count: contracts.length },
-    { id: "leaves", l: "الإجازات", count: leaves.length },
     { id: "violations", l: "المخالفات", count: violations.length },
     { id: "promotions", l: "الترقيات" },
   ];
@@ -13908,26 +13760,7 @@ function EmployeeRecordTab({ user, initialSubTab, hideSubTabs }) {
         </div>
       )}
 
-      {/* الإجازات */}
-      {!loading && subTab === "leaves" && (
-        <div>
-          {leaves.length === 0 && <EmptyState text="لا توجد إجازات" />}
-          {leaves.map(function(l) {
-            var typeLabels = { annual: "سنوية", sick: "مرضية", emergency: "طارئة", personal: "شخصية", unpaid: "بدون راتب" };
-            var statusColors = { pending: COLORS.textMuted, approved: "#10b981", rejected: COLORS.textDanger };
-            var statusLabels = { pending: "قيد المراجعة", approved: "معتمدة", rejected: "مرفوضة" };
-            return (
-              <div key={l.id} style={{ background: COLORS.metallic, border: "1px solid " + COLORS.metallicBorder, borderRadius: RADIUS.md, padding: SPACING.md, marginBottom: SPACING.sm }}>
-                <div style={{ ...FLEX_BETWEEN, marginBottom: 4 }}>
-                  <div style={{ ...TYPOGRAPHY.caption, fontWeight: 700, color: COLORS.textPrimary }}>{typeLabels[l.type] || l.type || "إجازة"}</div>
-                  <span style={{ ...TYPOGRAPHY.tiny, fontWeight: 700, color: statusColors[l.status] || COLORS.textMuted, background: (statusColors[l.status] || COLORS.textMuted) + "20", padding: "2px 8px", borderRadius: RADIUS.sm }}>{statusLabels[l.status] || l.status}</span>
-                </div>
-                <div style={{ ...TYPOGRAPHY.tiny, color: COLORS.textMuted }}>{(l.from || "—") + " → " + (l.to || "—")}{l.days ? " (" + l.days + " يوم)" : ""}</div>
-              </div>
-            );
-          })}
-        </div>
-      )}
+      {/* v7.48 — render block للإجازات محذوف (الإجازات كاملة في MyLeavesHub) */}
 
       {/* المخالفات */}
       {!loading && subTab === "violations" && (
@@ -15242,7 +15075,6 @@ function InvestigationBanner({ user }) {
 
 function ViolationsCard({ user }) {
   var [violations, setViolations] = useState([]);
-  var [expanded, setExpanded] = useState(false);
 
   useEffect(function() {
     api("violations_v2", { params: { empId: user.id, status: "ACTIVE" } }).then(function(v) { setViolations(v || []); }).catch(function(){});
@@ -15251,34 +15083,34 @@ function ViolationsCard({ user }) {
   var total = violations.length;
   if (total === 0) return null;
 
+  /* v7.48 — بانر موجز فقط (التفاصيل الكاملة في حسابي→القانونية بدل التكرار) */
+  function goLegal() {
+    localStorage.setItem("basma_profile_tab", "legal");
+    window.dispatchEvent(new CustomEvent("basma:profile-tab-changed"));
+    window.dispatchEvent(new CustomEvent("basma_goto_profile"));
+  }
+
   return (
-    <div style={{ background: COLORS.metallic, border: "1px solid " + COLORS.textDanger + "60", borderRadius: RADIUS.xl, padding: SPACING.lg, boxShadow: SHADOWS.button, marginBottom: SPACING.md }}>
-      <div onClick={function(){ setExpanded(!expanded); }} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", cursor: "pointer" }}>
-        <span style={{ ...TYPOGRAPHY.h3, color: COLORS.textPrimary }}>{"⚖️ مخالفات سارية (" + total + ")"}</span>
-        <span style={{ color: COLORS.textDanger }}>{expanded ? "▲" : "▼"}</span>
-      </div>
-      {expanded && (
-        <div style={{ marginTop: SPACING.md }}>
-          {violations.map(function(v, i) {
-            return (
-              <div key={v.id || i} style={{ padding: SPACING.sm + "px 0", borderBottom: i < violations.length - 1 ? "1px solid " + COLORS.cardRowBorder : "none" }}>
-                <div style={{ display: "flex", gap: 6, alignItems: "center", marginBottom: 4 }}>
-                  <span style={{ fontSize: 9, fontWeight: 700, color: "#fff", background: COLORS.goldDark, padding: "2px 6px", borderRadius: 4 }}>{v.violationId}</span>
-                  <span style={{ ...TYPOGRAPHY.tiny, color: COLORS.textMuted }}>المرة {v.occurrence}</span>
-                </div>
-                <div style={{ ...TYPOGRAPHY.caption, fontWeight: 700, color: COLORS.textPrimary, lineHeight: 1.5 }}>{v.description}</div>
-                <div style={{ display: "flex", justifyContent: "space-between", marginTop: 6 }}>
-                  <span style={{ ...TYPOGRAPHY.tiny, color: COLORS.textMuted }}>{v.createdAt ? fmtDateAr(v.createdAt) : ""}</span>
-                  <span style={{ ...TYPOGRAPHY.caption, fontWeight: 800, color: COLORS.textDanger }}>{v.penaltyLabel}</span>
-                </div>
-              </div>
-            );
-          })}
-          <div style={{ marginTop: SPACING.sm, padding: SPACING.sm, background: "rgba(0,0,0,.15)", borderRadius: RADIUS.sm, ...TYPOGRAPHY.tiny, color: COLORS.textMuted, textAlign: "center" }}>
-            اذهب إلى: حسابي → الشؤون القانونية لعرض التفاصيل والتظلم
-          </div>
+    <div onClick={goLegal} style={{
+      background: "rgba(220,38,38,0.08)",
+      border: "1px solid " + COLORS.textDanger + "60",
+      borderRadius: RADIUS.xl,
+      padding: SPACING.md,
+      boxShadow: SHADOWS.button,
+      marginBottom: SPACING.md,
+      cursor: "pointer",
+      display: "flex", alignItems: "center", gap: SPACING.md,
+    }}>
+      <div style={{ fontSize: 24, flexShrink: 0 }}>⚖️</div>
+      <div style={{ flex: 1, minWidth: 0 }}>
+        <div style={{ ...TYPOGRAPHY.body, fontWeight: 800, color: COLORS.textDanger, fontFamily: TYPOGRAPHY.fontCairo }}>
+          لديك {total} {total === 1 ? "مخالفة سارية" : total === 2 ? "مخالفتان ساريتان" : "مخالفات سارية"}
         </div>
-      )}
+        <div style={{ ...TYPOGRAPHY.tiny, color: COLORS.textMuted, marginTop: 2 }}>
+          اضغط لعرض التفاصيل والتظلم في الشؤون القانونية
+        </div>
+      </div>
+      <div style={{ fontSize: 18, color: COLORS.textDanger, flexShrink: 0 }}>◄</div>
     </div>
   );
 }
@@ -15505,84 +15337,11 @@ function FieldProjectsCard({ user, gps }) {
 }
 
 /* ═══════════ POINTS LOG (سجل النقاط) ═══════════ */
-function AchievementsCard({ user, part }) {
-  // v7.42 — part: "summary" (progress+counts) or "badges" (grid). Default: both (legacy).
-  var [stats, setStats] = useState({});
-  var [loading, setLoading] = useState(true);
+function AchievementsCard({ user, part, stats, loading }) {
+  /* v7.51 — لم نعد نـfetch داخلياً. الـstats تأتي من AchievementsHub عبر props (مكان واحد) */
   var [showAll, setShowAll] = useState(false);
-
-  async function loadStats() {
-    setLoading(true);
-    try {
-      var [att, tl] = await Promise.all([
-        fetch("/api/data?action=attendance").then(function(r){ return r.json(); }).catch(function(){ return []; }),
-        fetch("/api/data?action=tawasul-list").then(function(r){ return r.json(); }).catch(function(){ return null; }),
-      ]);
-      var myAtt = (att || []).filter(function(a){ return a.empId === user.id; });
-
-      // Group by date
-      var byDate = {};
-      myAtt.forEach(function(a){
-        var dt = a.date || (a.ts && a.ts.split("T")[0]);
-        if (!dt) return;
-        if (!byDate[dt]) byDate[dt] = {};
-        byDate[dt][a.type] = a.ts;
-      });
-
-      var dates = Object.keys(byDate).filter(function(dt){ return byDate[dt].checkin; }).sort();
-      var totalDays = dates.length;
-      var earlyCheckins = 0;
-      var lateCheckins = 0;
-      dates.forEach(function(dt){
-        var cin = new Date(byDate[dt].checkin);
-        if (cin.getHours() < 8 || (cin.getHours() === 8 && cin.getMinutes() === 0)) earlyCheckins++;
-        if (cin.getHours() >= 9 || (cin.getHours() === 8 && cin.getMinutes() > 45)) lateCheckins++;
-      });
-
-      // Max streak
-      var maxStreak = 0, curStreak = 0, prevDate = null;
-      dates.forEach(function(dt){
-        if (prevDate) {
-          var diff = (new Date(dt) - new Date(prevDate)) / (86400000);
-          if (diff <= 3) curStreak++;
-          else curStreak = 1;
-        } else curStreak = 1;
-        if (curStreak > maxStreak) maxStreak = curStreak;
-        prevDate = dt;
-      });
-
-      // Zero-late in last month
-      var monthAgo = new Date(); monthAgo.setDate(monthAgo.getDate() - 30);
-      var monthLates = dates.filter(function(dt){
-        if (new Date(dt) < monthAgo) return false;
-        var cin = new Date(byDate[dt].checkin);
-        return cin.getHours() >= 9 || (cin.getHours() === 8 && cin.getMinutes() > 45);
-      });
-      var monthWorkDays = dates.filter(function(dt){ return new Date(dt) >= monthAgo; }).length;
-
-      // Tasks
-      var myTasks = tl && tl.requests ? tl.requests.filter(function(r){ return r.requesterId === user.id; }) : [];
-      var myCompleted = tl && tl.requests ? tl.requests.filter(function(r){
-        return (r.assignees || []).some(function(a){ return String(a.id) === String(user.id); }) && (r.status === "accepted" || r.status === "done");
-      }) : [];
-
-      setStats({
-        totalDays: totalDays,
-        maxStreak: maxStreak,
-        earlyCheckins: earlyCheckins,
-        zeroLateMonth: monthWorkDays >= 15 && monthLates.length === 0,
-        profileComplete: !!(user.name && user.email && user.phone),
-        hasFace: !!user.hasFace,
-        pushEnabled: typeof Notification !== "undefined" && Notification.permission === "granted",
-        tasksCreated: myTasks.length,
-        tasksCompleted: myCompleted.length,
-        approvalsGiven: 0,
-      });
-    } catch(e) {}
-    setLoading(false);
-  }
-
-  useEffect(function(){ loadStats(); }, [user.id]);
+  stats = stats || {};
+  loading = !!loading;
 
   if (loading) return null;
 
