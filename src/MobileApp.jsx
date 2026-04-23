@@ -12,7 +12,7 @@ import { t as tr, setLang, getLang, getDir, isRTL, subscribeLangChange } from ".
 
 /* ═══════════ APP CONFIG (إعدادات التطبيق) ═══════════ */
 const APP_CONFIG = {
-  VER: "7.109",
+  VER: "7.110",
   NAME: "بصمة HMA",
   FULL_NAME: "نظام الحضور والانصراف الذكي",
   COMPANY: "هاني محمد عسيري للاستشارات الهندسية",
@@ -2435,9 +2435,7 @@ function HomePage({ user, branch, workType, now, todayAtt, allAtt, gps, gpsDist,
         })}
         <InvestigationBanner user={user} /><MembershipFreezeNotice user={user} /><BranchHolidayBanner branch={branch} /><OccasionBanner user={user} /><SurveyBanner user={user} /><HRMessagesBanner user={user} onOpenProfile={function(){ if (typeof window !== "undefined" && window.dispatchEvent) { window.dispatchEvent(new CustomEvent("basma_goto_profile")); } }} />
         <HomeBanner banners={banners} user={user} onShowAnnouncements={onShowAnnouncements} announcements={announcements} />
-
-        {/* v7.108 — Admin Smart Card (visible only to admin/HR) */}
-        {isAdminUser(user) && <AdminSmartCard user={user} />}
+        {/* v7.110 — AdminSmartCard نُقلت إلى صفحة "فريقي" */}
       </div>
 
       {/* Clock centered */}
@@ -15053,6 +15051,13 @@ function MyTeamPage({ user, allEmps }) {
           )}
         </div>
       </div>
+
+      {/* v7.110 — AdminSmartCard في بداية فريقي (للمدير/HR فقط) */}
+      {isAdminUser(user) && (
+        <div style={{ padding: "12px 12px 0" }}>
+          <AdminSmartCard user={user} />
+        </div>
+      )}
 
       {/* v7.65 — ManagersCard في الأعلى لكل الموظفين (نُقلت من البيانات الوظيفية) */}
       <div style={{ padding: 12 }}>
