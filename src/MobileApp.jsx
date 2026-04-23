@@ -12,7 +12,7 @@ import { t as tr, setLang, getLang, getDir, isRTL, subscribeLangChange } from ".
 
 /* ═══════════ APP CONFIG (إعدادات التطبيق) ═══════════ */
 const APP_CONFIG = {
-  VER: "7.106",
+  VER: "7.107",
   NAME: "بصمة HMA",
   FULL_NAME: "نظام الحضور والانصراف الذكي",
   COMPANY: "هاني محمد عسيري للاستشارات الهندسية",
@@ -1146,8 +1146,18 @@ function MobileAppInner() {
           var label = ct === 'checkin' ? 'تسجيل الحضور' : ct === 'break_end' ? 'العودة من الاستراحة' : 'التسجيل';
           setFakeCall({ type: ct, label: label });
         } else if (latest.type === 'test') {
-          // Show in-app toast for regular notifications
+          // v7.107 — FIX: Show toast with auto-dismiss + mark as read
           setToast({ msg: '📢 ' + latest.title + ': ' + latest.message, type: 'info' });
+          // Auto-dismiss after 5 seconds
+          setTimeout(function(){ setToast(null); }, 5000);
+          // Mark as read on server (prevent re-appearance) — uses PUT on notifications endpoint
+          try {
+            fetch('/api/data?action=notifications', {
+              method: 'PUT',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ id: latest.id }),
+            }).catch(function(){});
+          } catch(e) {}
         }
       } catch(e) { /**/ }
     }
@@ -11888,10 +11898,17 @@ function FlashChallengeModal({ flash, user, onClose, onPointsAwarded }) {
 
 function Toast({ msg, type, onDismiss }) {
   var bg = type === "error" ? C.red : type === "warning" ? C.orange : C.green;
+  function handleDismiss(e) {
+    if (e) {
+      e.preventDefault();
+      e.stopPropagation();
+    }
+    if (onDismiss) onDismiss();
+  }
   return (
     <div className="basma-slidedown" style={{
       position: "fixed", top: 16, left: "50%",
-      transform: "translateX(-50%)", zIndex: 999,
+      transform: "translateX(-50%)", zIndex: 10000,
       background: bg, color: "#fff",
       padding: "10px 16px 10px 24px",
       borderRadius: 14, fontSize: 13, fontWeight: 700,
@@ -11902,16 +11919,25 @@ function Toast({ msg, type, onDismiss }) {
     }}>
       <span style={{ flex: 1, textAlign: "center" }}>{msg}</span>
       {onDismiss && (
-        <button onClick={onDismiss} style={{
-          background: "rgba(255,255,255,0.25)",
-          border: "none", borderRadius: "50%",
-          width: 22, height: 22,
-          display: "flex", alignItems: "center", justifyContent: "center",
-          color: "#fff", fontSize: 14, fontWeight: 900,
-          cursor: "pointer", flexShrink: 0,
-          fontFamily: "inherit",
-          lineHeight: 1,
-        }}>×</button>
+        <button
+          onClick={handleDismiss}
+          onTouchStart={handleDismiss}
+          type="button"
+          style={{
+            background: "rgba(255,255,255,0.3)",
+            border: "none", borderRadius: "50%",
+            width: 28, height: 28,
+            display: "flex", alignItems: "center", justifyContent: "center",
+            color: "#fff", fontSize: 16, fontWeight: 900,
+            cursor: "pointer", flexShrink: 0,
+            fontFamily: "inherit",
+            lineHeight: 1,
+            padding: 0,
+            WebkitTapHighlightColor: "transparent",
+            touchAction: "manipulation",
+          }}
+          aria-label="Close"
+        >×</button>
       )}
     </div>
   );
