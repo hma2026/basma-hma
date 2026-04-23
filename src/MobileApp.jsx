@@ -12,7 +12,7 @@ import { t as tr, setLang, getLang, getDir, isRTL, subscribeLangChange } from ".
 
 /* ═══════════ APP CONFIG (إعدادات التطبيق) ═══════════ */
 const APP_CONFIG = {
-  VER: "7.88",
+  VER: "7.92",
   NAME: "بصمة HMA",
   FULL_NAME: "نظام الحضور والانصراف الذكي",
   COMPANY: "هاني محمد عسيري للاستشارات الهندسية",
@@ -1254,6 +1254,23 @@ function MobileAppInner() {
         fetch("/api/data?action=settings").then(function(r){ return r.json(); }).then(function(sd){
           if (sd && Array.isArray(sd.questions) && sd.questions.length > 0) {
             CHALLENGES_CACHE = sd.questions;
+          } else {
+            // v7.91 — Auto-seed if bank is empty (fire-and-forget)
+            // This ensures the morning challenge shows even if admin hasn't set up questions
+            fetch("/api/data?action=seed_questions", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ mode: "append" }),
+            }).then(function(r){ return r.json(); }).then(function(seedD){
+              if (seedD.ok) {
+                // Re-fetch settings to get the seeded questions
+                fetch("/api/data?action=settings").then(function(r){ return r.json(); }).then(function(sd2){
+                  if (sd2 && Array.isArray(sd2.questions)) {
+                    CHALLENGES_CACHE = sd2.questions;
+                  }
+                }).catch(function(){});
+              }
+            }).catch(function(){});
           }
         }).catch(function(){}),
         // Field projects (only if field/mixed)
@@ -2201,10 +2218,11 @@ function HomePage({ user, branch, workType, now, todayAtt, allAtt, gps, gpsDist,
   var [showAnswerToast, setShowAnswerToast] = useState(false);
   var challengeDoneToday = localStorage.getItem("basma_challenge_" + todayStr()) === "1";
   var hasCheckedIn = (todayAtt || []).some(function(r){ return r.type === "checkin"; });
-  // v7.69 — نافذة التحدي موسَّعة: من ساعتين قبل الدوام إلى 30 دقيقة قبله (بدل 60 إلى 15)
+  // v7.91 — نافذة التحدي موسَّعة أكثر: من الفجر (4 صباحاً) إلى 30 دقيقة قبل الدوام
+  // السبب: الموظفون في فترات مختلفة، والنافذة القديمة (ساعتين-نصف ساعة) ضيقة جداً
   var nowMinC = new Date().getHours() * 60 + new Date().getMinutes();
   var shiftStartMinC = branch ? timeToMin(branch.start) : 480;
-  var challengeWindowOpen = nowMinC >= (shiftStartMinC - 120) && nowMinC <= (shiftStartMinC - 30);
+  var challengeWindowOpen = nowMinC >= 240 /* 4 AM */ && nowMinC <= (shiftStartMinC - 30);
   var showChallenge = !!challengeQ && !hasCheckedIn && !challengeDoneToday && challengeAnswer === null && !challengeDismissed && challengeWindowOpen;
 
   function answerChallenge(idx) {

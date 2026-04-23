@@ -2306,6 +2306,141 @@ export default async function handler(req, res) {
         return res.json({ ok: true, ...summary });
       }
 
+      /* ═══════════════════════════════════════════════════════════════
+       * v7.89 — Kadwar Sync Dashboard (تحليلي شامل)
+       * ═══════════════════════════════════════════════════════════════
+       * GET /api/data?action=kadwar-sync-dashboard
+       *   يُعيد:
+       *   - lastSync (timestamp)
+       *   - totalOps, successOps, failedOps (كل الأوقات)
+       *   - last24h { total, success, failed }
+       *   - last7d  { total, success, failed }
+       *   - byAction { "auto-push-update": {total, success, failed}, ... }
+       *   - dailyTrend (14 يوم — عدد success + failed لكل يوم)
+       *   - topFailures (آخر 10 أخطاء)
+       *   - catalogHealth { jobTitles, orgChart, kpis, lastFetchedAt, stale }
+       */
+      case 'kadwar-sync-dashboard': {
+        if (req.method !== 'GET') return res.status(405).json({ error: 'GET required' });
+
+        const log = (await dbGet('kadwar-sync-log')) || [];
+        const catalogCache = await dbGet('kadwar-job-catalog-cache');
+        const criteriaCache = await dbGet('kadwar-eval-criteria-cache');
+        const now = Date.now();
+        const oneDayMs = 24 * 60 * 60 * 1000;
+        const sevenDaysMs = 7 * oneDayMs;
+        const fourteenDaysMs = 14 * oneDayMs;
+
+        // Overall stats
+        const totalOps = log.length;
+        const successOps = log.filter(l => l.success).length;
+        const failedOps = log.filter(l => !l.success).length;
+        const lastSync = log.length > 0 ? log[log.length - 1].ts : null;
+
+        // Last 24h / 7d
+        const last24hLog = log.filter(l => l.ts && (now - new Date(l.ts).getTime()) < oneDayMs);
+        const last7dLog = log.filter(l => l.ts && (now - new Date(l.ts).getTime()) < sevenDaysMs);
+        const last24h = {
+          total: last24hLog.length,
+          success: last24hLog.filter(l => l.success).length,
+          failed: last24hLog.filter(l => !l.success).length,
+        };
+        const last7d = {
+          total: last7dLog.length,
+          success: last7dLog.filter(l => l.success).length,
+          failed: last7dLog.filter(l => !l.success).length,
+        };
+
+        // By action type
+        const byAction = {};
+        log.forEach(function(l) {
+          const a = l.action || 'unknown';
+          if (!byAction[a]) byAction[a] = { total: 0, success: 0, failed: 0 };
+          byAction[a].total++;
+          if (l.success) byAction[a].success++;
+          else byAction[a].failed++;
+        });
+
+        // Daily trend (14 days)
+        const last14dLog = log.filter(l => l.ts && (now - new Date(l.ts).getTime()) < fourteenDaysMs);
+        const dailyMap = {};
+        for (let i = 13; i >= 0; i--) {
+          const d = new Date(now - i * oneDayMs);
+          const key = d.toISOString().slice(0, 10);
+          dailyMap[key] = { date: key, success: 0, failed: 0, total: 0 };
+        }
+        last14dLog.forEach(function(l) {
+          const key = (l.ts || '').slice(0, 10);
+          if (dailyMap[key]) {
+            dailyMap[key].total++;
+            if (l.success) dailyMap[key].success++;
+            else dailyMap[key].failed++;
+          }
+        });
+        const dailyTrend = Object.values(dailyMap);
+
+        // Top failures (last 10)
+        const topFailures = log.filter(l => !l.success).slice(-10).reverse().map(function(l){
+          return {
+            ts: l.ts,
+            action: l.action,
+            ref: l.ref,
+            httpStatus: l.httpStatus,
+            error: l.error || (l.response && l.response.error) || 'unknown',
+          };
+        });
+
+        // Catalog health
+        const catalogHealth = catalogCache ? {
+          jobTitles: catalogCache.jobTitles ? catalogCache.jobTitles.length : 0,
+          orgChart: catalogCache.orgChart ? catalogCache.orgChart.length : 0,
+          kpis: catalogCache.kpisByTitle ? Object.keys(catalogCache.kpisByTitle).length : 0,
+          lastFetchedAt: catalogCache._fetchedAt,
+          cacheAgeMs: catalogCache._fetchedAt ? now - new Date(catalogCache._fetchedAt).getTime() : null,
+          stale: catalogCache._fetchedAt ? ((now - new Date(catalogCache._fetchedAt).getTime()) > (60 * 60 * 1000)) : true,
+        } : null;
+
+        // Criteria cache info
+        const criteriaHealth = criteriaCache ? {
+          positionsWithCriteria: criteriaCache.criteria_by_position ? Object.keys(criteriaCache.criteria_by_position).length : 0,
+          positionsWithoutCriteria: criteriaCache.positions_without_criteria ? criteriaCache.positions_without_criteria.length : 0,
+          lastFetchedAt: criteriaCache._fetchedAt,
+        } : null;
+
+        // Connection test (quick ping)
+        let kadwarOnline = null;
+        let kadwarPingMs = null;
+        try {
+          const pingStart = Date.now();
+          const pingR = await fetch('https://hma.engineer/api/basma-sync?action=ping', {
+            method: 'GET',
+            signal: AbortSignal.timeout ? AbortSignal.timeout(3000) : undefined,
+          });
+          kadwarOnline = pingR.ok;
+          kadwarPingMs = Date.now() - pingStart;
+        } catch(e) {
+          kadwarOnline = false;
+        }
+
+        return res.json({
+          ok: true,
+          lastSync: lastSync,
+          totalOps: totalOps,
+          successOps: successOps,
+          failedOps: failedOps,
+          successRate: totalOps > 0 ? Math.round((successOps / totalOps) * 100) : 0,
+          last24h: last24h,
+          last7d: last7d,
+          byAction: byAction,
+          dailyTrend: dailyTrend,
+          topFailures: topFailures,
+          catalogHealth: catalogHealth,
+          criteriaHealth: criteriaHealth,
+          kadwarOnline: kadwarOnline,
+          kadwarPingMs: kadwarPingMs,
+        });
+      }
+
       /* ═══════════════════════════════════════════════════════════════════
        * v6.87 — BATCH 2 — نظام التقييم (EVALUATION SYSTEM)
        * ═══════════════════════════════════════════════════════════════════
@@ -5961,6 +6096,101 @@ export default async function handler(req, res) {
         return res.json(wt);
       }
 
+      /* ═══════════════════════════════════════════════════════════════
+       * v7.90 — Holidays Management (العطل الرسمية + أيام الراحة)
+       * ═══════════════════════════════════════════════════════════════
+       * Storage:
+       *   - Key: 'holidays'
+       *   - Structure: {
+       *       weekendDays: [5, 6],              // أيام نهاية الأسبوع (0=Sunday ... 6=Saturday)
+       *       list: [{
+       *         id, name, date (YYYY-MM-DD), endDate?, type, recurring, description
+       *       }]
+       *     }
+       *
+       * GET ?action=holidays — يُعيد القائمة كاملة
+       * GET ?action=holidays&year=2026 — يُعيد عطل السنة المحددة فقط
+       * POST ?action=holidays — يحفظ القائمة كاملة (body: { weekendDays, list })
+       * GET ?action=is-holiday&date=YYYY-MM-DD — فحص إذا يوم معين عطلة
+       */
+      case 'holidays': {
+        if (req.method === 'GET') {
+          var h = (await dbGet('holidays')) || { weekendDays: [5, 6], list: [] };
+          if (!h.weekendDays) h.weekendDays = [5, 6];
+          if (!Array.isArray(h.list)) h.list = [];
+          // Optional year filter
+          var year = req.query.year;
+          if (year) {
+            var filtered = h.list.filter(function(x){
+              if (!x.date) return false;
+              if (x.recurring) return true; // recurring holidays apply every year
+              return x.date.startsWith(String(year));
+            });
+            return res.json({ ok: true, weekendDays: h.weekendDays, list: filtered, totalAllYears: h.list.length });
+          }
+          return res.json({ ok: true, ...h });
+        }
+        if (req.method === 'POST') {
+          var body = req.body || {};
+          var actorId = body.actorId || 'admin';
+          delete body.actorId;
+          var current = (await dbGet('holidays')) || { weekendDays: [5, 6], list: [] };
+          if (Array.isArray(body.weekendDays)) current.weekendDays = body.weekendDays;
+          if (Array.isArray(body.list)) current.list = body.list;
+          await dbSet('holidays', current);
+          // v7.90 — Audit log
+          await auditLog(actorId, 'holidays_updated', null, {
+            weekendDays: current.weekendDays,
+            listCount: current.list.length,
+          }, 'settings');
+          return res.json({ ok: true, ...current });
+        }
+        if (req.method === 'DELETE') {
+          var holidayId = req.query.id;
+          if (!holidayId) return res.status(400).json({ error: 'id required' });
+          var currentD = (await dbGet('holidays')) || { weekendDays: [5, 6], list: [] };
+          currentD.list = (currentD.list || []).filter(function(x){ return x.id !== holidayId; });
+          await dbSet('holidays', currentD);
+          return res.json({ ok: true, deleted: holidayId });
+        }
+        break;
+      }
+
+      /* ═══ v7.90 — فحص سريع: هل التاريخ عطلة؟ ═══ */
+      case 'is-holiday': {
+        if (req.method !== 'GET') return res.status(405).json({ error: 'GET required' });
+        var date = req.query.date;
+        if (!date) return res.status(400).json({ error: 'date required (YYYY-MM-DD)' });
+        var h = (await dbGet('holidays')) || { weekendDays: [5, 6], list: [] };
+        var weekendDays = h.weekendDays || [5, 6];
+        var dt = new Date(date);
+        if (isNaN(dt.getTime())) return res.status(400).json({ error: 'invalid date' });
+
+        // Check weekend
+        var dayOfWeek = dt.getDay();
+        if (weekendDays.indexOf(dayOfWeek) >= 0) {
+          return res.json({ ok: true, isHoliday: true, type: 'weekend', name: 'نهاية الأسبوع' });
+        }
+
+        // Check list of holidays
+        var mmDd = date.slice(5); // "MM-DD"
+        var matched = null;
+        for (var i = 0; i < (h.list || []).length; i++) {
+          var entry = h.list[i];
+          if (!entry.date) continue;
+          // Exact match
+          if (entry.date === date) { matched = entry; break; }
+          // Recurring (match MM-DD)
+          if (entry.recurring && entry.date.slice(5) === mmDd) { matched = entry; break; }
+          // Range (date...endDate)
+          if (entry.endDate && date >= entry.date && date <= entry.endDate) { matched = entry; break; }
+        }
+        if (matched) {
+          return res.json({ ok: true, isHoliday: true, type: matched.type || 'official', name: matched.name, details: matched });
+        }
+        return res.json({ ok: true, isHoliday: false });
+      }
+
       /* ═══ WEB PUSH — generate VAPID keys (ONE-TIME SETUP) ═══ */
       case 'vapid-generate': {
         try {
@@ -8806,6 +9036,134 @@ export default async function handler(req, res) {
         } catch (e) {
           return res.status(500).json({ error: 'self-call failed: ' + (e.message || 'unknown') });
         }
+      }
+
+      /* ═══════════════════════════════════════════════════════════════
+       * v7.92 — Morning Challenge Reminder (Cron Job)
+       * ═══════════════════════════════════════════════════════════════
+       * Called by Vercel cron at 08:00 AM Riyadh = 05:00 UTC
+       * Schedule: "0 5 * * 0-4" (Sunday through Thursday)
+       *
+       * Sends push notification to each active employee who:
+       *   - Has push subscription active
+       *   - Has NOT checked in yet today
+       *   - Is active and not on leave
+       *   - Branch offDay is not today
+       *
+       * Settings gate:
+       *   - settings.morningReminderEnabled !== false (default ON)
+       *
+       * Holiday gate:
+       *   - Today is not a weekend (from holidays.weekendDays)
+       *   - Today is not an official holiday (from holidays.list)
+       *
+       * Audit log: category 'admin', action 'morning_reminder_cron'
+       */
+      case 'morning-reminder': {
+        // 1) Settings gate
+        var settingsData = await dbGet('settings') || {};
+        if (settingsData.morningReminderEnabled === false) {
+          return res.json({ ok: true, skipped: true, reason: 'disabled in settings' });
+        }
+
+        // 2) Holiday/weekend gate
+        var holidaysData = await dbGet('holidays') || { weekendDays: [5, 6] };
+        var weekendDays = holidaysData.weekendDays || [5, 6];
+        var now = new Date();
+        var todayDow = now.getDay();
+
+        if (weekendDays.indexOf(todayDow) >= 0) {
+          return res.json({ ok: true, skipped: true, reason: 'weekend', dayOfWeek: todayDow });
+        }
+
+        var todayISO = now.toISOString().slice(0, 10);
+        var todayMmDd = todayISO.slice(5);
+        var matchedHoliday = (holidaysData.list || []).find(function(h){
+          if (!h.date) return false;
+          if (h.date === todayISO) return true;
+          if (h.recurring && h.date.slice(5) === todayMmDd) return true;
+          if (h.endDate && todayISO >= h.date && todayISO <= h.endDate) return true;
+          return false;
+        });
+        if (matchedHoliday) {
+          return res.json({ ok: true, skipped: true, reason: 'holiday', holiday: matchedHoliday.name });
+        }
+
+        // 3) Load data
+        var emps = (await dbGet('employees')) || [];
+        var attRaw = (await dbGet('attendance')) || [];
+        var todayAtt = attRaw.filter(function(a){ return a.date === todayISO; });
+        var checkedInToday = new Set(todayAtt.filter(function(a){ return a.type === 'checkin'; }).map(function(a){ return String(a.empId); }));
+        var pushSubs = (await dbGet('push_subscriptions')) || {};
+        var questionsCount = (settingsData.questions && settingsData.questions.length) || 0;
+
+        // 4) Target eligible employees
+        var targets = emps.filter(function(e){
+          if (e.active === false) return false;
+          if (e.terminated || e.onLeave) return false;
+          if (checkedInToday.has(String(e.id))) return false;  // already checked in
+          if (!pushSubs[e.id]) return false;                    // no push subscription
+          return true;
+        });
+
+        // 5) Send push to each target
+        var sent = 0, failed = 0, noSub = 0;
+        var results = [];
+
+        var pushTitle = questionsCount > 0
+          ? '⚡ تحدي الصباح بانتظارك!'
+          : '☀️ صباح الخير! وقت تسجيل الحضور';
+        var pushBody = questionsCount > 0
+          ? 'افتح التطبيق وأجب على سؤال اليوم قبل تسجيل حضورك'
+          : 'لا تنسَ تسجيل حضورك — الدوام يبدأ خلال 30 دقيقة';
+
+        for (var i = 0; i < targets.length; i++) {
+          var emp = targets[i];
+          var subEntry = pushSubs[emp.id];
+          if (!subEntry || !subEntry.subscription) {
+            noSub++;
+            continue;
+          }
+          try {
+            var pr = await sendWebPush(subEntry.subscription, {
+              title: pushTitle,
+              body: pushBody,
+              tag: 'morning-reminder-' + todayISO,
+              data: { type: 'morning_reminder', date: todayISO },
+            });
+            if (pr.sent) sent++;
+            else failed++;
+            results.push({ empId: emp.id, name: emp.name, sent: pr.sent, reason: pr.reason });
+          } catch(e) {
+            failed++;
+            results.push({ empId: emp.id, name: emp.name, sent: false, reason: 'error: ' + e.message });
+          }
+        }
+
+        // 6) Audit log
+        await auditLog('system_cron', 'morning_reminder_cron', null, {
+          totalEmployees: emps.length,
+          eligibleTargets: targets.length,
+          sent: sent,
+          failed: failed,
+          noSubscription: noSub,
+          questionsAvailable: questionsCount,
+          pushTitle: pushTitle,
+        }, 'admin');
+
+        return res.json({
+          ok: true,
+          summary: {
+            totalEmployees: emps.length,
+            eligibleTargets: targets.length,
+            alreadyCheckedIn: checkedInToday.size,
+            sent: sent,
+            failed: failed,
+            noSubscription: noSub,
+          },
+          questionsAvailable: questionsCount,
+          results: results,
+        });
       }
 
       case 'auto_violations': {

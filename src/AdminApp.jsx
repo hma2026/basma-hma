@@ -5,7 +5,7 @@ import { exportFormalWarning, exportInvestigationRecord, exportAffidavit, export
 import { t as tr, setLang, getLang, subscribeLangChange } from "./i18n";
 
 const APP = "بصمة HMA";
-const VER = "7.88";
+const VER = "7.92";
 const CO = "هاني محمد عسيري للإستشارات الهندسية";
 const B = { blue: "#2B5EA7", yellow: "#FDD800", red: "#E2192C", black: "#1A1A1A", blueDk: "#1E4478", blueLt: "#EDF3FB", gold: "#D4A017" };
 
@@ -4164,6 +4164,518 @@ function getTypeMeta(key) {
   return WORK_TYPE_META[key] || { icon: "⏰", color: "#6E6E73", light: "rgba(110,110,115,0.1)" };
 }
 
+/* ═════════════════════════════════════════════════════════════════
+ * v7.90 — HolidaysPanel — إدارة العطل الرسمية وأيام الراحة
+ * ═════════════════════════════════════════════════════════════════
+ * Features:
+ *   - قائمة العطل الرسمية (مع تواريخها)
+ *   - دعم عطل ممتدة (Range: من X إلى Y)
+ *   - دعم عطل متكررة سنوياً (recurring)
+ *   - اختيار أيام نهاية الأسبوع (Fri/Sat أو مرن)
+ *   - تقويم شهري مرئي يُظهر العطل
+ *   - Seeding للعطل السعودية الأساسية
+ * ═════════════════════════════════════════════════════════════════ */
+function HolidaysPanel({ t, B }) {
+  var [holidays, setHolidays] = useState([]);
+  var [weekendDays, setWeekendDays] = useState([5, 6]); // Fri, Sat default
+  var [loading, setLoading] = useState(true);
+  var [busy, setBusy] = useState(false);
+  var [selectedYear, setSelectedYear] = useState(new Date().getFullYear());
+  var [view, setView] = useState("list"); // list | calendar
+  var [editing, setEditing] = useState(null);
+  var [msg, setMsg] = useState(null);
+
+  // Saudi official holidays seeds (recurring)
+  var SAUDI_HOLIDAYS_SEED = [
+    { id: "h_natl", name: "اليوم الوطني", nameEn: "National Day", date: "2026-09-23", type: "national", recurring: true, description: "اليوم الوطني للمملكة" },
+    { id: "h_found", name: "يوم التأسيس", nameEn: "Founding Day", date: "2026-02-22", type: "national", recurring: true, description: "يوم تأسيس الدولة السعودية" },
+    // Eid Al-Fitr + Eid Al-Adha — dates vary by Hijri calendar, initially blank for user to update
+  ];
+
+  var DAY_NAMES_AR = ["الأحد", "الاثنين", "الثلاثاء", "الأربعاء", "الخميس", "الجمعة", "السبت"];
+  var DAY_NAMES_EN = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+
+  async function load() {
+    setLoading(true);
+    try {
+      var r = await fetch("/api/data?action=holidays");
+      var d = await r.json();
+      if (d.ok) {
+        setHolidays(d.list || []);
+        setWeekendDays(d.weekendDays || [5, 6]);
+      }
+    } catch(e) {
+      setMsg({ type: "error", text: tr("فشل التحميل: ") + e.message });
+    }
+    setLoading(false);
+  }
+
+  useEffect(function(){ load(); }, []);
+
+  async function save(newList, newWeekends) {
+    setBusy(true);
+    try {
+      var payload = {
+        list: newList !== undefined ? newList : holidays,
+        weekendDays: newWeekends !== undefined ? newWeekends : weekendDays,
+        actorId: "admin",
+      };
+      var r = await fetch("/api/data?action=holidays", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      });
+      var d = await r.json();
+      if (d.ok) {
+        setHolidays(d.list || []);
+        setWeekendDays(d.weekendDays || [5, 6]);
+        setMsg({ type: "success", text: tr("✓ تم الحفظ") });
+      } else {
+        setMsg({ type: "error", text: d.error || tr("فشل الحفظ") });
+      }
+    } catch(e) {
+      setMsg({ type: "error", text: tr("فشل الاتصال: ") + e.message });
+    }
+    setBusy(false);
+    setTimeout(function(){ setMsg(null); }, 3000);
+  }
+
+  function toggleWeekend(day) {
+    var newW;
+    if (weekendDays.indexOf(day) >= 0) {
+      newW = weekendDays.filter(function(x){ return x !== day; });
+    } else {
+      newW = weekendDays.concat([day]).sort();
+    }
+    setWeekendDays(newW);
+    save(holidays, newW);
+  }
+
+  function seedSaudi() {
+    var existingIds = holidays.map(function(h){ return h.id; });
+    var toAdd = SAUDI_HOLIDAYS_SEED.filter(function(h){ return existingIds.indexOf(h.id) < 0; });
+    if (toAdd.length === 0) {
+      setMsg({ type: "info", text: tr("العطل السعودية مضافة بالفعل") });
+      setTimeout(function(){ setMsg(null); }, 2500);
+      return;
+    }
+    var newList = holidays.concat(toAdd);
+    save(newList);
+  }
+
+  function addHoliday() {
+    var newH = {
+      id: "h_" + Date.now(),
+      name: "",
+      nameEn: "",
+      date: "",
+      endDate: "",
+      type: "official",
+      recurring: false,
+      description: "",
+    };
+    setEditing(newH);
+  }
+
+  function saveEditing() {
+    if (!editing.name || !editing.date) {
+      setMsg({ type: "error", text: tr("الاسم والتاريخ مطلوبان") });
+      return;
+    }
+    var exists = holidays.find(function(h){ return h.id === editing.id; });
+    var newList = exists
+      ? holidays.map(function(h){ return h.id === editing.id ? editing : h; })
+      : holidays.concat([editing]);
+    save(newList);
+    setEditing(null);
+  }
+
+  async function deleteHoliday(id) {
+    if (!confirm(tr("حذف هذه العطلة؟"))) return;
+    var newList = holidays.filter(function(h){ return h.id !== id; });
+    save(newList);
+  }
+
+  // Filter holidays for selected year
+  var yearHolidays = holidays.filter(function(h){
+    if (!h.date) return false;
+    if (h.recurring) return true;
+    return h.date.startsWith(String(selectedYear));
+  }).sort(function(a, b){
+    var aDate = a.recurring ? selectedYear + "-" + a.date.slice(5) : a.date;
+    var bDate = b.recurring ? selectedYear + "-" + b.date.slice(5) : b.date;
+    return aDate.localeCompare(bDate);
+  });
+
+  // Type styles
+  var TYPE_META = {
+    official:  { icon: "🇸🇦", color: "#0F766E", label: tr("رسمية") },
+    national:  { icon: "🎉", color: "#DC2626", label: tr("وطنية") },
+    religious: { icon: "🕌", color: "#7C3AED", label: tr("دينية") },
+    company:   { icon: "🏢", color: B.blue,    label: tr("شركة") },
+  };
+
+  if (loading) {
+    return <div style={{ padding: 40, textAlign: "center", color: t.txM }}>⏳ {tr("جاري التحميل...")}</div>;
+  }
+
+  return (
+    <div>
+      {/* Header */}
+      <div style={{ background: "linear-gradient(135deg, " + B.blue + ", " + B.blueDk + ")", borderRadius: 14, padding: "18px 22px", color: "#fff", marginBottom: 14, display: "flex", justifyContent: "space-between", alignItems: "center", gap: 14, flexWrap: "wrap" }}>
+        <div>
+          <div style={{ fontSize: 18, fontWeight: 900 }}>📅 {tr("العطل الرسمية وأيام الراحة")}</div>
+          <div style={{ fontSize: 11, opacity: 0.9, marginTop: 4 }}>{holidays.length} {tr("عطلة مسجلة")} · {weekendDays.length} {tr("يوم راحة أسبوعي")}</div>
+        </div>
+        <div style={{ display: "flex", gap: 8 }}>
+          <button onClick={seedSaudi} disabled={busy} style={{
+            padding: "10px 14px", borderRadius: 10,
+            background: "rgba(255,255,255,0.2)", color: "#fff",
+            border: "1px solid rgba(255,255,255,0.4)",
+            fontSize: 11, fontWeight: 700, cursor: busy ? "wait" : "pointer", fontFamily: "inherit",
+          }}>🇸🇦 {tr("إضافة عطل السعودية")}</button>
+          <button onClick={addHoliday} style={{
+            padding: "10px 16px", borderRadius: 10,
+            background: "#fff", color: B.blue,
+            border: "none",
+            fontSize: 12, fontWeight: 800, cursor: "pointer", fontFamily: "inherit",
+          }}>➕ {tr("عطلة جديدة")}</button>
+        </div>
+      </div>
+
+      {/* Weekend Days Selector */}
+      <div style={{ background: t.card, borderRadius: 14, padding: 16, border: "1px solid " + t.sep, marginBottom: 14 }}>
+        <div style={{ fontSize: 13, fontWeight: 800, color: t.tx, marginBottom: 10 }}>🗓️ {tr("أيام نهاية الأسبوع")}</div>
+        <div style={{ fontSize: 10, color: t.txM, marginBottom: 12 }}>{tr("اختر أيام الراحة الأسبوعية لموظفي المكتب (الافتراضي: الجمعة والسبت)")}</div>
+        <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+          {[0, 1, 2, 3, 4, 5, 6].map(function(day){
+            var active = weekendDays.indexOf(day) >= 0;
+            var names = getLang() === "ar" ? DAY_NAMES_AR : DAY_NAMES_EN;
+            return <button key={day} onClick={function(){ toggleWeekend(day); }} disabled={busy} style={{
+              flex: "1 1 auto", minWidth: 80,
+              padding: "10px 14px", borderRadius: 10,
+              background: active ? "linear-gradient(135deg, " + B.gold + ", " + B.gold + "cc)" : t.bg,
+              color: active ? "#fff" : t.tx,
+              border: "2px solid " + (active ? B.gold : t.sep),
+              fontSize: 12, fontWeight: active ? 800 : 600,
+              cursor: busy ? "wait" : "pointer", fontFamily: "inherit",
+              display: "flex", alignItems: "center", justifyContent: "center", gap: 6,
+            }}>
+              {active && <span>🌴</span>}
+              <span>{names[day]}</span>
+            </button>;
+          })}
+        </div>
+      </div>
+
+      {/* Year selector + view switch */}
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 10, marginBottom: 12, flexWrap: "wrap" }}>
+        <div style={{ display: "flex", gap: 6 }}>
+          <button onClick={function(){ setSelectedYear(selectedYear - 1); }} style={{
+            padding: "8px 12px", borderRadius: 8,
+            background: t.card, color: t.tx,
+            border: "1px solid " + t.sep,
+            fontSize: 12, fontWeight: 700, cursor: "pointer", fontFamily: "inherit",
+          }}>◀</button>
+          <div style={{
+            padding: "8px 20px", borderRadius: 8,
+            background: B.blue, color: "#fff",
+            fontSize: 14, fontWeight: 800,
+            display: "flex", alignItems: "center",
+          }}>{selectedYear}</div>
+          <button onClick={function(){ setSelectedYear(selectedYear + 1); }} style={{
+            padding: "8px 12px", borderRadius: 8,
+            background: t.card, color: t.tx,
+            border: "1px solid " + t.sep,
+            fontSize: 12, fontWeight: 700, cursor: "pointer", fontFamily: "inherit",
+          }}>▶</button>
+        </div>
+
+        <div style={{ display: "flex", gap: 4 }}>
+          {[
+            { id: "list",     icon: "📋", label: tr("قائمة") },
+            { id: "calendar", icon: "📅", label: tr("تقويم") },
+          ].map(function(v){
+            var active = view === v.id;
+            return <button key={v.id} onClick={function(){ setView(v.id); }} style={{
+              padding: "8px 14px", borderRadius: 8,
+              background: active ? B.blue : t.card,
+              color: active ? "#fff" : t.tx,
+              border: "1px solid " + (active ? B.blue : t.sep),
+              fontSize: 11, fontWeight: 700,
+              cursor: "pointer", fontFamily: "inherit",
+              display: "flex", alignItems: "center", gap: 6,
+            }}>
+              <span>{v.icon}</span>
+              <span>{v.label}</span>
+            </button>;
+          })}
+        </div>
+      </div>
+
+      {/* Message */}
+      {msg && (
+        <div style={{
+          padding: "10px 14px", borderRadius: 10, fontSize: 11, fontWeight: 700, marginBottom: 12,
+          background: msg.type === "error" ? t.bad + "15" : msg.type === "info" ? B.blue + "15" : t.ok + "15",
+          color: msg.type === "error" ? t.bad : msg.type === "info" ? B.blue : t.ok,
+          border: "1px solid " + (msg.type === "error" ? t.bad + "40" : msg.type === "info" ? B.blue + "40" : t.ok + "40"),
+          textAlign: "center",
+        }}>{msg.text}</div>
+      )}
+
+      {/* List view */}
+      {view === "list" && (
+        <div style={{ background: t.card, borderRadius: 14, border: "1px solid " + t.sep, overflow: "hidden" }}>
+          {yearHolidays.length === 0 ? (
+            <div style={{ padding: 40, textAlign: "center", color: t.txM }}>
+              <div style={{ fontSize: 42, marginBottom: 10 }}>🗓️</div>
+              <div style={{ fontSize: 13, fontWeight: 700, color: t.tx }}>{tr("لا توجد عطل مسجلة لسنة")} {selectedYear}</div>
+              <div style={{ fontSize: 11, marginTop: 6 }}>{tr("اضغط 'عطلة جديدة' أو 'إضافة عطل السعودية'")}</div>
+            </div>
+          ) : (
+            yearHolidays.map(function(h, i){
+              var meta = TYPE_META[h.type] || TYPE_META.official;
+              var displayDate = h.recurring ? selectedYear + "-" + h.date.slice(5) : h.date;
+              var isPast = new Date(displayDate) < new Date(new Date().toISOString().slice(0, 10));
+              return <div key={h.id} style={{
+                padding: "14px 16px",
+                borderBottom: i < yearHolidays.length - 1 ? "1px solid " + t.sep : "none",
+                display: "flex", alignItems: "center", gap: 12,
+                opacity: isPast ? 0.55 : 1,
+                transition: "opacity .15s",
+              }}>
+                {/* Icon */}
+                <div style={{
+                  width: 48, height: 48, borderRadius: 12,
+                  background: meta.color + "20",
+                  display: "flex", alignItems: "center", justifyContent: "center",
+                  fontSize: 24, flexShrink: 0,
+                }}>{meta.icon}</div>
+
+                {/* Content */}
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div style={{ fontSize: 13, fontWeight: 800, color: t.tx, marginBottom: 3 }}>
+                    {getLang() === "en" && h.nameEn ? h.nameEn : h.name}
+                    {h.recurring && <span style={{
+                      marginRight: 8, padding: "2px 8px", borderRadius: 10,
+                      background: B.gold + "20", color: B.gold,
+                      fontSize: 9, fontWeight: 700,
+                    }}>🔁 {tr("متكررة")}</span>}
+                  </div>
+                  <div style={{ fontSize: 10, color: t.txM, display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+                    <span>📅 {displayDate}</span>
+                    {h.endDate && <span>→ {h.endDate}</span>}
+                    <span>·</span>
+                    <span style={{ color: meta.color, fontWeight: 700 }}>{meta.label}</span>
+                    {h.description && (
+                      <>
+                        <span>·</span>
+                        <span style={{ fontStyle: "italic" }}>{h.description}</span>
+                      </>
+                    )}
+                  </div>
+                </div>
+
+                {/* Actions */}
+                <div style={{ display: "flex", gap: 6, flexShrink: 0 }}>
+                  <button onClick={function(){ setEditing(Object.assign({}, h)); }} style={{
+                    padding: "6px 10px", borderRadius: 8,
+                    background: B.blue + "15", color: B.blue,
+                    border: "none", fontSize: 11, fontWeight: 700, cursor: "pointer", fontFamily: "inherit",
+                  }}>✎</button>
+                  <button onClick={function(){ deleteHoliday(h.id); }} style={{
+                    padding: "6px 10px", borderRadius: 8,
+                    background: t.bad + "15", color: t.bad,
+                    border: "none", fontSize: 11, fontWeight: 700, cursor: "pointer", fontFamily: "inherit",
+                  }}>🗑</button>
+                </div>
+              </div>;
+            })
+          )}
+        </div>
+      )}
+
+      {/* Calendar view (12 months) */}
+      {view === "calendar" && (
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(280px, 1fr))", gap: 10 }}>
+          {[0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11].map(function(monthIdx){
+            var firstDay = new Date(selectedYear, monthIdx, 1);
+            var lastDay = new Date(selectedYear, monthIdx + 1, 0);
+            var daysInMonth = lastDay.getDate();
+            var startDayOfWeek = firstDay.getDay();
+            var monthName = firstDay.toLocaleDateString(getLang() === "ar" ? "ar-SA" : "en-US", { month: "long" });
+
+            // Build cells
+            var cells = [];
+            for (var b = 0; b < startDayOfWeek; b++) cells.push(null);
+            for (var d = 1; d <= daysInMonth; d++) {
+              var dateStr = selectedYear + "-" + String(monthIdx + 1).padStart(2, "0") + "-" + String(d).padStart(2, "0");
+              var dt = new Date(dateStr);
+              var dow = dt.getDay();
+              var isWeekend = weekendDays.indexOf(dow) >= 0;
+              var mmDd = dateStr.slice(5);
+              var match = holidays.find(function(h){
+                if (!h.date) return false;
+                if (h.date === dateStr) return true;
+                if (h.recurring && h.date.slice(5) === mmDd) return true;
+                if (h.endDate && dateStr >= h.date && dateStr <= h.endDate) return true;
+                return false;
+              });
+              cells.push({ day: d, dateStr: dateStr, isWeekend: isWeekend, holiday: match });
+            }
+
+            var dayNames = getLang() === "ar" ? DAY_NAMES_AR : DAY_NAMES_EN;
+            var todayStr = new Date().toISOString().slice(0, 10);
+
+            return <div key={monthIdx} style={{ background: t.card, borderRadius: 10, padding: 12, border: "1px solid " + t.sep }}>
+              <div style={{ fontSize: 12, fontWeight: 800, color: t.tx, marginBottom: 8, textAlign: "center" }}>
+                {monthName} {selectedYear}
+              </div>
+              <div style={{ display: "grid", gridTemplateColumns: "repeat(7, 1fr)", gap: 2 }}>
+                {dayNames.map(function(dn, di){
+                  return <div key={di} style={{
+                    fontSize: 8, fontWeight: 700, color: t.txM,
+                    textAlign: "center", padding: 3,
+                  }}>{dn.slice(0, 2)}</div>;
+                })}
+                {cells.map(function(cell, ci){
+                  if (!cell) return <div key={ci} />;
+                  var isToday = cell.dateStr === todayStr;
+                  var bg = "transparent";
+                  var color = t.tx;
+                  if (cell.holiday) {
+                    var m = TYPE_META[cell.holiday.type] || TYPE_META.official;
+                    bg = m.color;
+                    color = "#fff";
+                  } else if (cell.isWeekend) {
+                    bg = B.gold + "25";
+                    color = B.gold;
+                  }
+                  return <div key={ci} title={cell.holiday ? (cell.holiday.name || "") : (cell.isWeekend ? tr("نهاية الأسبوع") : "")} style={{
+                    aspectRatio: "1",
+                    fontSize: 10, fontWeight: 700,
+                    background: bg, color: color,
+                    border: isToday ? "2px solid " + B.blue : "1px solid transparent",
+                    borderRadius: 4,
+                    display: "flex", alignItems: "center", justifyContent: "center",
+                    cursor: cell.holiday ? "pointer" : "default",
+                  }}>{cell.day}</div>;
+                })}
+              </div>
+            </div>;
+          })}
+        </div>
+      )}
+
+      {/* Edit Modal */}
+      {editing && (
+        <div onClick={function(){ setEditing(null); }} style={{
+          position: "fixed", inset: 0,
+          background: "rgba(0,0,0,0.72)",
+          zIndex: 1200,
+          display: "flex", alignItems: "center", justifyContent: "center",
+          padding: 16, fontFamily: "inherit",
+        }}>
+          <div onClick={function(e){ e.stopPropagation(); }} style={{
+            background: t.bg, borderRadius: 14,
+            maxWidth: 500, width: "100%",
+            direction: isRTL() ? "rtl" : "ltr",
+            overflow: "hidden",
+          }}>
+            <div style={{ background: "linear-gradient(135deg, " + B.blue + ", " + B.blueDk + ")", padding: "16px 20px", color: "#fff" }}>
+              <div style={{ fontSize: 15, fontWeight: 900 }}>📅 {editing.id.startsWith("h_" + Date.now().toString().slice(0, -3)) ? tr("عطلة جديدة") : tr("تعديل عطلة")}</div>
+            </div>
+
+            <div style={{ padding: 20, maxHeight: "70vh", overflowY: "auto" }}>
+              <div style={{ marginBottom: 12 }}>
+                <label style={{ fontSize: 11, fontWeight: 700, color: t.tx, display: "block", marginBottom: 6 }}>{tr("الاسم بالعربية")} *</label>
+                <input type="text" value={editing.name || ""} onChange={function(e){ setEditing(Object.assign({}, editing, { name: e.target.value })); }}
+                  placeholder={tr("مثلاً: عيد الفطر")}
+                  style={{ width: "100%", padding: "10px 14px", borderRadius: 10, border: "1px solid " + t.sep, background: t.inp, color: t.tx, fontSize: 13, fontFamily: "inherit", boxSizing: "border-box" }} />
+              </div>
+
+              <div style={{ marginBottom: 12 }}>
+                <label style={{ fontSize: 11, fontWeight: 700, color: t.tx, display: "block", marginBottom: 6 }}>{tr("الاسم بالإنجليزية")}</label>
+                <input type="text" value={editing.nameEn || ""} onChange={function(e){ setEditing(Object.assign({}, editing, { nameEn: e.target.value })); }}
+                  placeholder="e.g., Eid Al-Fitr"
+                  style={{ width: "100%", padding: "10px 14px", borderRadius: 10, border: "1px solid " + t.sep, background: t.inp, color: t.tx, fontSize: 13, fontFamily: "inherit", boxSizing: "border-box" }} />
+              </div>
+
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10, marginBottom: 12 }}>
+                <div>
+                  <label style={{ fontSize: 11, fontWeight: 700, color: t.tx, display: "block", marginBottom: 6 }}>{tr("التاريخ")} *</label>
+                  <input type="date" value={editing.date || ""} onChange={function(e){ setEditing(Object.assign({}, editing, { date: e.target.value })); }}
+                    style={{ width: "100%", padding: "10px 14px", borderRadius: 10, border: "1px solid " + t.sep, background: t.inp, color: t.tx, fontSize: 13, fontFamily: "inherit", boxSizing: "border-box" }} />
+                </div>
+                <div>
+                  <label style={{ fontSize: 11, fontWeight: 700, color: t.tx, display: "block", marginBottom: 6 }}>{tr("تاريخ النهاية")} ({tr("اختياري")})</label>
+                  <input type="date" value={editing.endDate || ""} onChange={function(e){ setEditing(Object.assign({}, editing, { endDate: e.target.value })); }}
+                    style={{ width: "100%", padding: "10px 14px", borderRadius: 10, border: "1px solid " + t.sep, background: t.inp, color: t.tx, fontSize: 13, fontFamily: "inherit", boxSizing: "border-box" }} />
+                </div>
+              </div>
+
+              <div style={{ marginBottom: 12 }}>
+                <label style={{ fontSize: 11, fontWeight: 700, color: t.tx, display: "block", marginBottom: 6 }}>{tr("نوع العطلة")}</label>
+                <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 6 }}>
+                  {Object.keys(TYPE_META).map(function(typeKey){
+                    var m = TYPE_META[typeKey];
+                    var active = editing.type === typeKey;
+                    return <div key={typeKey} onClick={function(){ setEditing(Object.assign({}, editing, { type: typeKey })); }} style={{
+                      padding: "10px 6px", borderRadius: 8,
+                      background: active ? m.color + "20" : t.card,
+                      border: "2px solid " + (active ? m.color : t.sep),
+                      cursor: "pointer",
+                      textAlign: "center",
+                      transition: "all .15s",
+                    }}>
+                      <div style={{ fontSize: 18 }}>{m.icon}</div>
+                      <div style={{ fontSize: 10, fontWeight: 700, color: active ? m.color : t.tx, marginTop: 3 }}>{m.label}</div>
+                    </div>;
+                  })}
+                </div>
+              </div>
+
+              <div style={{ marginBottom: 12 }}>
+                <label style={{ display: "flex", alignItems: "center", gap: 10, cursor: "pointer", padding: "10px 14px", background: t.card, borderRadius: 10, border: "1px solid " + t.sep }}>
+                  <input type="checkbox" checked={editing.recurring || false} onChange={function(e){ setEditing(Object.assign({}, editing, { recurring: e.target.checked })); }} style={{ width: 18, height: 18 }} />
+                  <div>
+                    <div style={{ fontSize: 12, fontWeight: 700, color: t.tx }}>🔁 {tr("عطلة متكررة سنوياً")}</div>
+                    <div style={{ fontSize: 10, color: t.txM, marginTop: 2 }}>{tr("مثل الأعياد الوطنية والرسمية")}</div>
+                  </div>
+                </label>
+              </div>
+
+              <div style={{ marginBottom: 12 }}>
+                <label style={{ fontSize: 11, fontWeight: 700, color: t.tx, display: "block", marginBottom: 6 }}>{tr("ملاحظات")} ({tr("اختياري")})</label>
+                <input type="text" value={editing.description || ""} onChange={function(e){ setEditing(Object.assign({}, editing, { description: e.target.value })); }}
+                  placeholder={tr("تفاصيل إضافية...")}
+                  style={{ width: "100%", padding: "10px 14px", borderRadius: 10, border: "1px solid " + t.sep, background: t.inp, color: t.tx, fontSize: 13, fontFamily: "inherit", boxSizing: "border-box" }} />
+              </div>
+            </div>
+
+            <div style={{ padding: "14px 20px", borderTop: "1px solid " + t.sep, display: "flex", gap: 10, justifyContent: "space-between" }}>
+              <button onClick={function(){ setEditing(null); }} style={{
+                padding: "10px 18px", borderRadius: 10,
+                background: "transparent", color: t.tx,
+                border: "1px solid " + t.sep,
+                fontSize: 12, fontWeight: 700, cursor: "pointer", fontFamily: "inherit",
+              }}>{tr("إلغاء")}</button>
+              <button onClick={saveEditing} disabled={busy} style={{
+                padding: "10px 22px", borderRadius: 10,
+                background: busy ? t.sep : "linear-gradient(135deg, " + t.ok + ", " + t.ok + "cc)",
+                color: "#fff", border: "none",
+                fontSize: 13, fontWeight: 800,
+                cursor: busy ? "wait" : "pointer", fontFamily: "inherit",
+              }}>{busy ? "⏳" : "💾"} {tr("حفظ")}</button>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 function WorkTypesPanel({ t, B, emps }) {
   var [workTypes, setWorkTypes] = useState(null);
   var [overrides, setOverrides] = useState({});
@@ -6568,6 +7080,8 @@ function SystemSettingsPanel({ t, B }) {
         // Notifications
         dailyReminderTime: "08:00",
         dailyReminderEnabled: true,
+        // v7.92 — Morning Challenge Reminder (Cron 8:00 AM Riyadh)
+        morningReminderEnabled: true,
         // Face recognition
         faceMatchThreshold: 55,
         // Legal
@@ -6747,6 +7261,49 @@ function SystemSettingsPanel({ t, B }) {
               <span style={{ color: t.tx }}>{draft.dailyReminderEnabled ? "مفعَّل" : "معطَّل"}</span>
             </label>
           </Field>
+        </div>
+
+        {/* v7.92 — Morning Challenge Reminder */}
+        <div style={{ marginTop: 14, padding: 14, background: "linear-gradient(135deg, rgba(124,58,237,0.08), rgba(168,85,247,0.05))", border: "1px solid rgba(124,58,237,0.25)", borderRadius: 12 }}>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 10, flexWrap: "wrap", gap: 8 }}>
+            <div>
+              <div style={{ fontSize: 13, fontWeight: 800, color: "#a78bfa", marginBottom: 3 }}>⚡ تذكير تحدي الصباح (cron)</div>
+              <div style={{ fontSize: 10, color: t.txM, lineHeight: 1.6 }}>
+                يُرسل إشعار push تلقائياً للموظفين الذين لم يسجلوا حضور في تمام الساعة <b style={{ color: t.tx }}>08:00 صباحاً</b> (قبل الدوام بنصف ساعة).
+                <br />يعمل فقط أيام العمل (الأحد-الخميس) وليس في العطل الرسمية.
+              </div>
+            </div>
+            <label style={{ display: "flex", alignItems: "center", gap: 8, padding: "9px 14px", borderRadius: 10, border: "1px solid " + t.sep, background: t.inp, cursor: "pointer", fontSize: 12, flexShrink: 0 }}>
+              <input type="checkbox" checked={draft.morningReminderEnabled !== false} onChange={function(e){ upd("morningReminderEnabled", e.target.checked); }} />
+              <span style={{ color: draft.morningReminderEnabled !== false ? "#10b981" : "#ef4444", fontWeight: 800 }}>
+                {draft.morningReminderEnabled !== false ? "✓ مفعَّل" : "✗ معطَّل"}
+              </span>
+            </label>
+          </div>
+
+          {/* Test button */}
+          <button onClick={async function(){
+            if (!confirm("تشغيل تجريبي: سيرسل إشعار push لكل موظف مشترك لم يسجل حضوره بعد.\n\nمتابعة؟")) return;
+            try {
+              var r = await fetch("/api/data?action=morning-reminder");
+              var d = await r.json();
+              if (d.ok && d.summary) {
+                alert("✓ تم التشغيل!\n\n" +
+                  "المستهدفون: " + d.summary.eligibleTargets + "\n" +
+                  "تم الإرسال: " + d.summary.sent + "\n" +
+                  "فشل: " + d.summary.failed + "\n" +
+                  "بلا اشتراك: " + d.summary.noSubscription + "\n" +
+                  "سجلوا حضور مسبقاً: " + d.summary.alreadyCheckedIn + "\n" +
+                  (d.questionsAvailable > 0 ? "\n✓ الأسئلة متاحة (" + d.questionsAvailable + ")" : "\n⚠ لا توجد أسئلة — سيُرسل تذكير عام"));
+              } else if (d.skipped) {
+                alert("تم التخطي: " + d.reason);
+              } else {
+                alert("فشل: " + (d.error || JSON.stringify(d)));
+              }
+            } catch(e) { alert("فشل: " + e.message); }
+          }} style={{ padding: "10px 16px", borderRadius: 10, background: "#7c3aed", color: "#fff", border: "none", fontSize: 11, fontWeight: 800, cursor: "pointer", fontFamily: "inherit" }}>
+            🧪 تشغيل تجريبي الآن
+          </button>
         </div>
       </Section>
 
@@ -9520,7 +10077,7 @@ function TestPanel({ t, B, emps }) {
                 if (qCount === 0) {
                   addLog("⚡ تشخيص التحدي: ❌ بنك الأسئلة فارغ — لن يظهر التحدي للموظفين", "error", "الحل: اضغط 'استيراد 30 سؤال افتراضي' أدناه");
                 } else {
-                  addLog("⚡ تشخيص التحدي: ✓ البنك يحوي " + qCount + " سؤال", "ok", "الأسئلة ستظهر للموظفين في نافذة 90 دقيقة قبل بداية الدوام (من ساعتين إلى 30 دقيقة قبل)");
+                  addLog("⚡ تشخيص التحدي: ✓ البنك يحوي " + qCount + " سؤال", "ok", "v7.91: النافذة موسّعة — من 4 صباحاً إلى 30 دقيقة قبل بداية الدوام. التحدي يظهر للموظف قبل أن يسجل حضوره.");
                 }
               } catch(e) {
                 addLog("⚡ تشخيص التحدي: ❌ فشل في الاتصال", "error", e.message);
@@ -13260,6 +13817,412 @@ function DataCleanupManager({ t, B }) {
 /* ═══════════════════════════════════════════════════════════════════
  * KadwarSyncPanel — v6.83 — التكامل مع كوادر v37.141
  * ═══════════════════════════════════════════════════════════════════ */
+/* ═════════════════════════════════════════════════════════════════
+ * v7.89 — KadwarSyncDashboard — لوحة مراقبة التزامن مع كوادر
+ * ═════════════════════════════════════════════════════════════════
+ * Sections:
+ *   - Connection status (live ping + success rate)
+ *   - Time windows (24h · 7d · all-time)
+ *   - Daily trend chart (14 days, stacked bars)
+ *   - By-action breakdown
+ *   - Catalog health (jobTitles, orgChart, KPIs)
+ *   - Top failures (clickable for details)
+ * ═════════════════════════════════════════════════════════════════ */
+function KadwarSyncDashboard({ t, B }) {
+  var [data, setData] = useState(null);
+  var [loading, setLoading] = useState(true);
+  var [refreshing, setRefreshing] = useState(false);
+  var [error, setError] = useState(null);
+  var [selectedFailure, setSelectedFailure] = useState(null);
+
+  async function load(silent) {
+    if (silent) setRefreshing(true);
+    else setLoading(true);
+    setError(null);
+    try {
+      var r = await fetch("/api/data?action=kadwar-sync-dashboard");
+      var d = await r.json();
+      if (d.ok) setData(d);
+      else setError(d.error || tr("فشل التحميل"));
+    } catch(e) {
+      setError(tr("فشل الاتصال: ") + e.message);
+    }
+    setLoading(false);
+    setRefreshing(false);
+  }
+
+  async function refreshCatalog() {
+    setRefreshing(true);
+    try {
+      await fetch("/api/data?action=kadwar-job-catalog&refresh=1");
+      await load(true);
+    } catch(e) {}
+    setRefreshing(false);
+  }
+
+  useEffect(function(){ load(false); }, []);
+
+  // Format timestamp
+  function formatTs(ts) {
+    if (!ts) return "—";
+    try {
+      var d = new Date(ts);
+      var now = new Date();
+      var diffMs = now - d;
+      var diffMin = Math.floor(diffMs / 60000);
+      var diffHr = Math.floor(diffMin / 60);
+      var diffDay = Math.floor(diffHr / 24);
+      if (diffMin < 1) return tr("الآن");
+      if (diffMin < 60) return diffMin + " " + tr("د");
+      if (diffHr < 24) return diffHr + " " + tr("س");
+      if (diffDay < 30) return diffDay + " " + tr("يوم");
+      return d.toLocaleDateString(getLang() === "ar" ? "ar-SA" : "en-US", { year: "numeric", month: "short", day: "numeric" });
+    } catch(e) { return ts.slice(0, 10); }
+  }
+
+  function formatCacheAge(ms) {
+    if (!ms) return "—";
+    var min = Math.floor(ms / 60000);
+    var hr = Math.floor(min / 60);
+    if (min < 1) return "< 1 " + tr("د");
+    if (min < 60) return min + " " + tr("د");
+    if (hr < 24) return hr + " " + tr("س");
+    return Math.floor(hr / 24) + " " + tr("يوم");
+  }
+
+  // Translate action names
+  function actionLabel(action) {
+    var map = {
+      "auto-push-update":        tr("تحديث موظف"),
+      "auto-push-new-employee":  tr("إضافة موظف"),
+      "auto-push-evaluation":    tr("إرسال تقييم"),
+      "auto-push-violation":     tr("إرسال مخالفة"),
+      "auto-push-slip":          tr("إرسال قسيمة راتب"),
+      "auto-push-termination":   tr("إرسال إنهاء خدمة"),
+      "full-migration":          tr("مزامنة شاملة"),
+    };
+    return map[action] || action;
+  }
+
+  if (loading) {
+    return (
+      <div style={{ padding: 40, textAlign: "center", color: t.txM }}>
+        <div style={{ fontSize: 32, marginBottom: 8 }}>⏳</div>
+        <div style={{ fontSize: 12 }}>{tr("جاري تحميل لوحة المراقبة...")}</div>
+      </div>
+    );
+  }
+
+  if (error || !data) {
+    return (
+      <div style={{ padding: 30, background: t.badLt, borderRadius: 14, border: "1px solid " + t.bad + "40", textAlign: "center" }}>
+        <div style={{ fontSize: 32, marginBottom: 8 }}>❌</div>
+        <div style={{ fontSize: 12, color: t.bad, fontWeight: 700 }}>{error || tr("لا توجد بيانات")}</div>
+        <button onClick={function(){ load(false); }} style={{
+          marginTop: 12, padding: "8px 16px", borderRadius: 8,
+          background: B.blue, color: "#fff", border: "none",
+          fontSize: 11, fontWeight: 700, cursor: "pointer",
+        }}>🔄 {tr("إعادة المحاولة")}</button>
+      </div>
+    );
+  }
+
+  // Max value for daily trend chart
+  var maxDaily = Math.max.apply(null, data.dailyTrend.map(function(d){ return d.total; })) || 1;
+
+  return (
+    <div>
+      {/* ─── Header + Connection Status ─── */}
+      <div style={{
+        background: data.kadwarOnline
+          ? "linear-gradient(135deg, " + t.ok + ", " + t.ok + "cc)"
+          : "linear-gradient(135deg, " + t.bad + ", " + t.bad + "cc)",
+        borderRadius: 14, padding: "18px 22px", color: "#fff",
+        marginBottom: 14,
+        display: "flex", justifyContent: "space-between", alignItems: "center", gap: 14, flexWrap: "wrap",
+      }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 14 }}>
+          <div style={{
+            width: 50, height: 50, borderRadius: "50%",
+            background: "rgba(255,255,255,0.2)",
+            border: "3px solid rgba(255,255,255,0.4)",
+            display: "flex", alignItems: "center", justifyContent: "center",
+            fontSize: 24,
+          }}>{data.kadwarOnline ? "🟢" : "🔴"}</div>
+          <div>
+            <div style={{ fontSize: 18, fontWeight: 900 }}>
+              {data.kadwarOnline ? tr("كوادر متصل") : tr("كوادر غير متصل")}
+            </div>
+            <div style={{ fontSize: 11, opacity: 0.9, marginTop: 3 }}>
+              {data.kadwarOnline && data.kadwarPingMs !== null
+                ? tr("زمن الاستجابة: ") + data.kadwarPingMs + " ms"
+                : tr("تعذّر الاتصال — تحقق من hma.engineer")}
+            </div>
+          </div>
+        </div>
+
+        <div style={{ display: "flex", gap: 10, alignItems: "center" }}>
+          <div style={{ textAlign: "center", padding: "0 14px" }}>
+            <div style={{ fontSize: 28, fontWeight: 900, lineHeight: 1 }}>{data.successRate}%</div>
+            <div style={{ fontSize: 10, opacity: 0.85, marginTop: 4 }}>{tr("معدل النجاح")}</div>
+          </div>
+          <button onClick={function(){ load(true); }} disabled={refreshing} style={{
+            padding: "10px 16px", borderRadius: 10,
+            background: "rgba(255,255,255,0.25)",
+            color: "#fff", border: "none",
+            fontSize: 12, fontWeight: 700,
+            cursor: refreshing ? "wait" : "pointer", fontFamily: "inherit",
+          }}>
+            {refreshing ? "⏳" : "🔄"} {tr("تحديث")}
+          </button>
+        </div>
+      </div>
+
+      {/* ─── Time Windows (3 cards) ─── */}
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 12, marginBottom: 14 }}>
+        {[
+          { label: tr("آخر 24 ساعة"), icon: "⏰", data: data.last24h, color: B.blue },
+          { label: tr("آخر 7 أيام"),   icon: "📅", data: data.last7d,  color: "#8B5CF6" },
+          { label: tr("الإجمالي"),      icon: "📊", data: { total: data.totalOps, success: data.successOps, failed: data.failedOps }, color: B.gold },
+        ].map(function(card, i){
+          var rate = card.data.total > 0 ? Math.round((card.data.success / card.data.total) * 100) : 0;
+          return <div key={i} style={{
+            background: t.card, borderRadius: 14, padding: 16,
+            border: "1px solid " + t.sep, borderRight: "4px solid " + card.color,
+          }}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 10 }}>
+              <div style={{ fontSize: 11, fontWeight: 700, color: t.txM }}>{card.label}</div>
+              <div style={{ fontSize: 20 }}>{card.icon}</div>
+            </div>
+            <div style={{ fontSize: 28, fontWeight: 900, color: t.tx, lineHeight: 1 }}>{card.data.total}</div>
+            <div style={{ fontSize: 10, color: t.txM, marginTop: 4 }}>{tr("عملية")}</div>
+            <div style={{ display: "flex", gap: 10, marginTop: 10 }}>
+              <div style={{ flex: 1, padding: "6px 10px", background: t.ok + "15", borderRadius: 8, textAlign: "center" }}>
+                <div style={{ fontSize: 14, fontWeight: 800, color: t.ok }}>{card.data.success}</div>
+                <div style={{ fontSize: 8, color: t.txM }}>✓ {tr("نجح")}</div>
+              </div>
+              <div style={{ flex: 1, padding: "6px 10px", background: t.bad + "15", borderRadius: 8, textAlign: "center" }}>
+                <div style={{ fontSize: 14, fontWeight: 800, color: t.bad }}>{card.data.failed}</div>
+                <div style={{ fontSize: 8, color: t.txM }}>✗ {tr("فشل")}</div>
+              </div>
+            </div>
+            {card.data.total > 0 && (
+              <div style={{ marginTop: 8, padding: "4px 10px", background: t.bg, borderRadius: 6, textAlign: "center" }}>
+                <span style={{ fontSize: 10, fontWeight: 700, color: rate >= 90 ? t.ok : rate >= 70 ? t.warn : t.bad }}>
+                  {rate}% {tr("نجاح")}
+                </span>
+              </div>
+            )}
+          </div>;
+        })}
+      </div>
+
+      {/* ─── Daily Trend Chart (14 days) ─── */}
+      <div style={{ background: t.card, borderRadius: 14, padding: 16, border: "1px solid " + t.sep, marginBottom: 14 }}>
+        <div style={{ fontSize: 13, fontWeight: 800, color: t.tx, marginBottom: 14 }}>
+          📈 {tr("اتجاه آخر 14 يوم")}
+        </div>
+        {data.dailyTrend.every(function(d){ return d.total === 0; }) ? (
+          <div style={{ padding: 20, textAlign: "center", color: t.txM, fontSize: 11 }}>{tr("لا توجد عمليات في آخر 14 يوم")}</div>
+        ) : (
+          <div style={{ display: "flex", alignItems: "flex-end", gap: 4, height: 120 }}>
+            {data.dailyTrend.map(function(d, i){
+              var total = d.total;
+              var successH = total > 0 ? (d.success / maxDaily) * 100 : 0;
+              var failedH = total > 0 ? (d.failed / maxDaily) * 100 : 0;
+              var dateLabel = d.date.slice(8); // just day number
+              return <div key={i} style={{ flex: 1, display: "flex", flexDirection: "column", alignItems: "center", gap: 4 }}>
+                <div style={{ fontSize: 9, fontWeight: 700, color: t.tx, height: 12 }}>
+                  {total > 0 ? total : ""}
+                </div>
+                <div style={{ flex: 1, width: "100%", display: "flex", flexDirection: "column", justifyContent: "flex-end", background: t.bg, borderRadius: 4, overflow: "hidden", minHeight: 2 }}>
+                  {failedH > 0 && (
+                    <div style={{ height: failedH + "%", background: t.bad, minHeight: 2 }} title={tr("فشل: ") + d.failed} />
+                  )}
+                  {successH > 0 && (
+                    <div style={{ height: successH + "%", background: t.ok, minHeight: 2 }} title={tr("نجح: ") + d.success} />
+                  )}
+                </div>
+                <div style={{ fontSize: 8, color: t.txM }}>{dateLabel}</div>
+              </div>;
+            })}
+          </div>
+        )}
+        <div style={{ display: "flex", gap: 16, justifyContent: "center", marginTop: 12, fontSize: 10, color: t.txM }}>
+          <span style={{ display: "flex", alignItems: "center", gap: 4 }}>
+            <span style={{ width: 10, height: 10, background: t.ok, borderRadius: 2 }} /> {tr("نجح")}
+          </span>
+          <span style={{ display: "flex", alignItems: "center", gap: 4 }}>
+            <span style={{ width: 10, height: 10, background: t.bad, borderRadius: 2 }} /> {tr("فشل")}
+          </span>
+        </div>
+      </div>
+
+      {/* ─── By Action Breakdown + Catalog Health (side by side) ─── */}
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(280px, 1fr))", gap: 12, marginBottom: 14 }}>
+
+        {/* By Action */}
+        <div style={{ background: t.card, borderRadius: 14, padding: 16, border: "1px solid " + t.sep }}>
+          <div style={{ fontSize: 13, fontWeight: 800, color: t.tx, marginBottom: 12 }}>
+            📋 {tr("تصنيف حسب نوع العملية")}
+          </div>
+          {Object.keys(data.byAction).length === 0 ? (
+            <div style={{ padding: 20, textAlign: "center", color: t.txM, fontSize: 11 }}>{tr("لا توجد عمليات")}</div>
+          ) : (
+            <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+              {Object.entries(data.byAction).sort(function(a, b){ return b[1].total - a[1].total; }).slice(0, 8).map(function(entry){
+                var name = entry[0];
+                var stats = entry[1];
+                var rate = stats.total > 0 ? Math.round((stats.success / stats.total) * 100) : 0;
+                var rateColor = rate >= 90 ? t.ok : rate >= 70 ? t.warn : t.bad;
+                return <div key={name} style={{
+                  padding: "10px 12px", background: t.bg, borderRadius: 8,
+                  display: "flex", alignItems: "center", gap: 10,
+                }}>
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div style={{ fontSize: 11, fontWeight: 700, color: t.tx, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
+                      {actionLabel(name)}
+                    </div>
+                    <div style={{ fontSize: 9, color: t.txM, marginTop: 2 }}>
+                      {stats.success} {tr("نجح")} · {stats.failed} {tr("فشل")}
+                    </div>
+                  </div>
+                  <div style={{
+                    padding: "3px 10px", borderRadius: 12,
+                    background: rateColor + "20", color: rateColor,
+                    fontSize: 10, fontWeight: 800, flexShrink: 0,
+                  }}>{rate}%</div>
+                  <div style={{ fontSize: 14, fontWeight: 800, color: t.tx, minWidth: 30, textAlign: "left" }}>
+                    {stats.total}
+                  </div>
+                </div>;
+              })}
+            </div>
+          )}
+        </div>
+
+        {/* Catalog Health */}
+        <div style={{ background: t.card, borderRadius: 14, padding: 16, border: "1px solid " + t.sep }}>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>
+            <div style={{ fontSize: 13, fontWeight: 800, color: t.tx }}>
+              📚 {tr("حالة الكتالوج")}
+            </div>
+            <button onClick={refreshCatalog} disabled={refreshing} style={{
+              padding: "4px 10px", borderRadius: 6,
+              background: B.blue + "15", color: B.blue,
+              border: "1px solid " + B.blue + "30",
+              fontSize: 10, fontWeight: 700,
+              cursor: refreshing ? "wait" : "pointer", fontFamily: "inherit",
+            }}>🔄 {tr("تحديث")}</button>
+          </div>
+          {data.catalogHealth ? (
+            <>
+              <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 8, marginBottom: 10 }}>
+                {[
+                  { l: tr("مسميات"),  v: data.catalogHealth.jobTitles, c: B.blue },
+                  { l: tr("هيكل"),    v: data.catalogHealth.orgChart,  c: "#8B5CF6" },
+                  { l: "KPIs",         v: data.catalogHealth.kpis,      c: B.gold },
+                ].map(function(x, i){
+                  return <div key={i} style={{
+                    padding: 10, background: x.c + "10", borderRadius: 8,
+                    textAlign: "center", border: "1px solid " + x.c + "30",
+                  }}>
+                    <div style={{ fontSize: 18, fontWeight: 900, color: x.c }}>{x.v}</div>
+                    <div style={{ fontSize: 9, color: t.txM, marginTop: 2 }}>{x.l}</div>
+                  </div>;
+                })}
+              </div>
+              <div style={{
+                padding: "8px 12px", borderRadius: 8,
+                background: data.catalogHealth.stale ? t.warn + "10" : t.ok + "10",
+                border: "1px solid " + (data.catalogHealth.stale ? t.warn + "30" : t.ok + "30"),
+                fontSize: 10, color: t.tx, lineHeight: 1.6,
+              }}>
+                {data.catalogHealth.stale ? "⚠️ " : "✓ "}
+                {tr("آخر تحديث: ")} <b>{formatCacheAge(data.catalogHealth.cacheAgeMs)}</b>
+                {data.catalogHealth.stale && (
+                  <div style={{ fontSize: 9, color: t.warn, marginTop: 4 }}>
+                    {tr("الكاش قديم (> ساعة) — اضغط تحديث")}
+                  </div>
+                )}
+              </div>
+            </>
+          ) : (
+            <div style={{ padding: 20, textAlign: "center", color: t.txM, fontSize: 11 }}>
+              {tr("لم يتم تحميل الكتالوج بعد")}
+              <div style={{ marginTop: 8 }}>
+                <button onClick={refreshCatalog} style={{
+                  padding: "6px 12px", borderRadius: 8,
+                  background: B.blue, color: "#fff",
+                  border: "none", fontSize: 10, fontWeight: 700,
+                  cursor: "pointer",
+                }}>📥 {tr("جلب من كوادر")}</button>
+              </div>
+            </div>
+          )}
+
+          {/* Criteria Cache info */}
+          {data.criteriaHealth && (
+            <div style={{ marginTop: 10, padding: "8px 12px", background: t.bg, borderRadius: 8, fontSize: 10, color: t.txM, lineHeight: 1.6 }}>
+              🎯 {tr("معايير التقييم: ")}
+              <b style={{ color: t.tx }}>{data.criteriaHealth.positionsWithCriteria}</b> {tr("مسمى")}
+              {data.criteriaHealth.positionsWithoutCriteria > 0 && (
+                <span style={{ color: t.warn }}>
+                  {" · "}<b>{data.criteriaHealth.positionsWithoutCriteria}</b> {tr("بدون معايير")}
+                </span>
+              )}
+            </div>
+          )}
+        </div>
+      </div>
+
+      {/* ─── Top Failures ─── */}
+      {data.topFailures && data.topFailures.length > 0 && (
+        <div style={{ background: t.card, borderRadius: 14, padding: 16, border: "1px solid " + t.bad + "30", borderTop: "3px solid " + t.bad, marginBottom: 14 }}>
+          <div style={{ fontSize: 13, fontWeight: 800, color: t.tx, marginBottom: 12 }}>
+            ⚠️ {tr("آخر الأخطاء")} ({data.topFailures.length})
+          </div>
+          <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+            {data.topFailures.map(function(f, i){
+              var isSelected = selectedFailure === i;
+              return <div key={i} onClick={function(){ setSelectedFailure(isSelected ? null : i); }} style={{
+                padding: "10px 14px", background: t.bg, borderRadius: 8,
+                cursor: "pointer",
+                border: isSelected ? "1px solid " + t.bad + "50" : "1px solid transparent",
+              }}>
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 10 }}>
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div style={{ fontSize: 11, fontWeight: 700, color: t.tx }}>
+                      {actionLabel(f.action)}
+                      {f.ref && <span style={{ fontSize: 9, color: t.txM, fontWeight: 500, marginRight: 6 }}>· {f.ref}</span>}
+                    </div>
+                    <div style={{ fontSize: 9, color: t.bad, marginTop: 2, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
+                      {f.httpStatus && ("HTTP " + f.httpStatus + " · ")}{f.error}
+                    </div>
+                  </div>
+                  <div style={{ fontSize: 9, color: t.txM, flexShrink: 0 }}>{formatTs(f.ts)}</div>
+                </div>
+                {isSelected && (
+                  <div style={{ marginTop: 8, padding: "8px 10px", background: t.bg, borderRadius: 6, fontSize: 10, fontFamily: "monospace", color: t.txM, whiteSpace: "pre-wrap", wordBreak: "break-all" }}>
+                    {JSON.stringify(f, null, 2)}
+                  </div>
+                )}
+              </div>;
+            })}
+          </div>
+        </div>
+      )}
+
+      {/* Last sync info */}
+      <div style={{ padding: "10px 14px", background: B.blue + "08", border: "1px solid " + B.blue + "20", borderRadius: 10, fontSize: 10, color: t.txM, textAlign: "center", lineHeight: 1.6 }}>
+        ℹ️ {tr("آخر عملية تزامن: ")}<b style={{ color: t.tx }}>{formatTs(data.lastSync)}</b>
+        {" · "}
+        {tr("السجل يحتفظ بآخر 5000 عملية")}
+      </div>
+    </div>
+  );
+}
+
 function KadwarSyncPanel({ t, B, emps }) {
   var [loading, setLoading] = useState(true);
   var [status, setStatus] = useState(null);
@@ -13267,7 +14230,7 @@ function KadwarSyncPanel({ t, B, emps }) {
   var [busy, setBusy] = useState(false);
   var [busyLabel, setBusyLabel] = useState("");
   var [msg, setMsg] = useState(null);
-  var [view, setView] = useState("overview"); // overview | criteria | log | migration
+  var [view, setView] = useState("dashboard"); // dashboard | overview | criteria | log | migration | failures
   var [migrationResult, setMigrationResult] = useState(null);
   var [confirmMigration, setConfirmMigration] = useState(false);
 
@@ -13417,13 +14380,14 @@ function KadwarSyncPanel({ t, B, emps }) {
     </div>}
 
     {/* Tabs */}
-    <div style={{ display: "flex", gap: 4, marginBottom: 18, borderBottom: "2px solid " + t.sep }}>
+    <div style={{ display: "flex", gap: 4, marginBottom: 18, borderBottom: "2px solid " + t.sep, flexWrap: "wrap" }}>
       {[
-        { id: "overview", icon: "📊", label: "نظرة عامة" },
-        { id: "criteria", icon: "🎯", label: "معايير التقييم", badge: positionsWith.length || null },
-        { id: "migration", icon: "🚀", label: "المزامنة الشاملة" },
-        { id: "failures", icon: "⚠️", label: "محاولات فاشلة" },
-        { id: "log", icon: "📜", label: "سجل العمليات", badge: stats && stats.total },
+        { id: "dashboard", icon: "📈", label: tr("لوحة المراقبة") },
+        { id: "overview", icon: "📊", label: tr("نظرة عامة") },
+        { id: "criteria", icon: "🎯", label: tr("معايير التقييم"), badge: positionsWith.length || null },
+        { id: "migration", icon: "🚀", label: tr("المزامنة الشاملة") },
+        { id: "failures", icon: "⚠️", label: tr("محاولات فاشلة") },
+        { id: "log", icon: "📜", label: tr("سجل العمليات"), badge: stats && stats.total },
       ].map(function(v){
         var active = view === v.id;
         return <button key={v.id} onClick={function(){setView(v.id);}} style={{
@@ -13437,6 +14401,9 @@ function KadwarSyncPanel({ t, B, emps }) {
         </button>;
       })}
     </div>
+
+    {/* ═══ DASHBOARD TAB (v7.89) ═══ */}
+    {view === "dashboard" && <KadwarSyncDashboard t={t} B={B} />}
 
     {/* ═══ OVERVIEW TAB ═══ */}
     {view === "overview" && <div>
@@ -15862,6 +16829,7 @@ function SettingsHub({ t, B, emps, onLogout, onOpenOldSettings }) {
     <SubTabBar t={t} B={B} active={sub} onChange={setSub}
       tabs={[
         { id: "work",          icon: "⏰", label: tr("أنواع الدوام") },
+        { id: "holidays",      icon: "📅", label: tr("العطل الرسمية") },
         { id: "benefits",      icon: "🏅", label: tr("الامتيازات") },
         { id: "system",        icon: "🛠️", label: tr("إعدادات النظام") },
         { id: "emp_edits",     icon: "✏️", label: tr("تعديلات موظفين") },
@@ -15877,6 +16845,7 @@ function SettingsHub({ t, B, emps, onLogout, onOpenOldSettings }) {
         { id: "admin",         icon: "🔐", label: tr("حساب المدير") },
       ]} />
     {sub === "work" && <WorkTypesPanel t={t} B={B} emps={emps} />}
+    {sub === "holidays" && <HolidaysPanel t={t} B={B} />}
     {sub === "benefits" && <BenefitsPanel t={t} B={B} />}
     {sub === "system" && <SystemSettingsPanel t={t} B={B} />}
     {sub === "emp_edits" && <EmployeeEditsPanel t={t} B={B} actorName="HR" />}
