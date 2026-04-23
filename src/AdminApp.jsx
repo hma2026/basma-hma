@@ -5,7 +5,7 @@ import { exportFormalWarning, exportInvestigationRecord, exportAffidavit, export
 import { t as tr, setLang, getLang, subscribeLangChange } from "./i18n";
 
 const APP = "بصمة HMA";
-const VER = "7.112";
+const VER = "7.113";
 const CO = "هاني محمد عسيري للإستشارات الهندسية";
 const B = { blue: "#2B5EA7", yellow: "#FDD800", red: "#E2192C", black: "#1A1A1A", blueDk: "#1E4478", blueLt: "#EDF3FB", gold: "#D4A017" };
 
@@ -4680,6 +4680,7 @@ export default function AdminApp() {
         { id: "surveys", icon: "📊", label: "الاستطلاعات" },
         { id: "hr_tickets", icon: "📨", label: "رسائل الموظفين" },
         { id: "evaluations_hr", icon: "⭐", label: "التقييمات" },
+        { id: "recognition", icon: "🏆", label: "التكريم" },
         { id: "admin_requests", icon: "📝", label: "الطلبات" },
         { id: "discipline_hub", icon: "⚖️", label: "النظام التأديبي", badge: (badgeCounts.complaints || 0) + (badgeCounts.investigations || 0) + (badgeCounts.violations || 0) + (badgeCounts.appeals || 0) || null },
         { id: "termination", icon: "🚪", label: "إنهاء الخدمات" },
@@ -5698,6 +5699,7 @@ export default function AdminApp() {
       {tab === "hr_tickets" && <HRTicketsPanel t={t} B={B} emps={safeEmps} />}
       {tab === "kadwar_sync" && <KadwarSyncPanel t={t} B={B} emps={safeEmps} />}
       {tab === "evaluations_hr" && <EvaluationsHRPanel t={t} B={B} emps={safeEmps} />}
+      {tab === "recognition" && <RecognitionAdminPanel t={t} B={B} emps={safeEmps} />}
       {tab === "leave_requests_v2" && <LeaveRequestsHRPanel t={t} B={B} emps={safeEmps} />}
       {tab === "payroll" && <PayrollPanel t={t} B={B} emps={safeEmps} />}
       {tab === "salary_changes" && <SalaryChangeApprovalsPanel t={t} B={B} role={role} />}
@@ -6958,6 +6960,304 @@ function LeaveHistoryModal({ t, B, emp, leaves, onClose }) {
 /* ═══════════════════════════════════════════════════════════════
    SURVEYS PANEL — استطلاعات الرأي الداخلي (v6.67)
    ═══════════════════════════════════════════════════════════════ */
+/* ═════════════════════════════════════════════════════════════════
+ * v7.113 — RecognitionAdminPanel — لوحة إدارة التكريم
+ * ═════════════════════════════════════════════════════════════════ */
+function RecognitionAdminPanel({ t, B, emps }) {
+  var [data, setData] = useState(null);
+  var [loading, setLoading] = useState(true);
+  var [month, setMonth] = useState(new Date().toISOString().slice(0, 7));
+  var [awards, setAwards] = useState([]);
+  var [showAwardModal, setShowAwardModal] = useState(false);
+  var [awardForm, setAwardForm] = useState({
+    empId: "", empName: "",
+    awardType: "cafe",
+    description: "",
+    value: 0,
+    note: "",
+  });
+
+  async function load() {
+    setLoading(true);
+    try {
+      var r = await fetch("/api/data?action=recognition&month=" + month);
+      var d = await r.json();
+      if (d.ok) setData(d);
+      var ar = await fetch("/api/data?action=recognition-awards&month=" + month);
+      var aData = await ar.json();
+      setAwards(Array.isArray(aData) ? aData : []);
+    } catch(e) {}
+    setLoading(false);
+  }
+
+  useEffect(function(){ load(); }, [month]);
+
+  async function giveAward() {
+    if (!awardForm.empId || !awardForm.description) {
+      alert("اختر موظفاً واكتب وصف الجائزة");
+      return;
+    }
+    try {
+      var r = await fetch("/api/data?action=recognition-award", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(Object.assign({}, awardForm, { month: month, actorId: "admin" })),
+      });
+      var d = await r.json();
+      if (d.ok) {
+        alert("✅ تم تسجيل الجائزة");
+        setShowAwardModal(false);
+        setAwardForm({ empId: "", empName: "", awardType: "cafe", description: "", value: 0, note: "" });
+        await load();
+      }
+    } catch(e) { alert("خطأ: " + e.message); }
+  }
+
+  var AWARD_TYPES = [
+    { id: "cafe", icon: "☕", label: "كوبون كافيه" },
+    { id: "gift", icon: "🎁", label: "هدية" },
+    { id: "bonus", icon: "💰", label: "مكافأة مالية" },
+    { id: "certificate", icon: "📜", label: "شهادة تقدير" },
+    { id: "other", icon: "🏅", label: "أخرى" },
+  ];
+
+  return (
+    <div>
+      {/* Hero */}
+      <div style={{
+        background: "linear-gradient(135deg, #f59e0b, #d97706)",
+        borderRadius: 14, padding: "18px 22px",
+        color: "#fff", marginBottom: 14,
+      }}>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 12 }}>
+          <div>
+            <div style={{ fontSize: 20, fontWeight: 900 }}>🏆 {tr("نظام التكريم")}</div>
+            <div style={{ fontSize: 11, opacity: 0.9, marginTop: 4 }}>
+              {tr("تكريم تلقائي شهري + جوائز فعلية")}
+            </div>
+          </div>
+          <input type="month" value={month} onChange={function(e){ setMonth(e.target.value); }} style={{
+            padding: "8px 12px", borderRadius: 8,
+            background: "rgba(255,255,255,0.15)",
+            border: "1px solid rgba(255,255,255,0.3)",
+            color: "#fff", fontSize: 13, fontFamily: "inherit",
+          }} />
+        </div>
+      </div>
+
+      {loading ? (
+        <div style={{ padding: 40, textAlign: "center", color: t.txM }}>⏳ {tr("جاري التحميل...")}</div>
+      ) : !data ? (
+        <div style={{ padding: 40, textAlign: "center", color: t.txM }}>{tr("لا توجد بيانات")}</div>
+      ) : (
+        <>
+          {/* Winner showcase */}
+          {data.winner && (
+            <div style={{
+              background: "linear-gradient(135deg, rgba(245,158,11,0.15), rgba(168,85,247,0.08))",
+              border: "2px solid rgba(245,158,11,0.4)",
+              borderRadius: 14, padding: 20, marginBottom: 14, textAlign: "center",
+            }}>
+              <div style={{ fontSize: 42, marginBottom: 8 }}>👑</div>
+              <div style={{ fontSize: 12, color: "#D97706", fontWeight: 800, letterSpacing: 1, marginBottom: 4 }}>
+                {tr("موظف الشهر")}
+              </div>
+              <div style={{ fontSize: 20, color: t.tx, fontWeight: 900, marginBottom: 4 }}>
+                {data.winner.empName}
+              </div>
+              {data.winner.jobTitle && (
+                <div style={{ fontSize: 12, color: t.txM, marginBottom: 12 }}>
+                  {data.winner.jobTitle}
+                </div>
+              )}
+              <div style={{ fontSize: 24, fontWeight: 900, color: "#f59e0b" }}>
+                {data.winner.scores.total} / 100
+              </div>
+            </div>
+          )}
+
+          {/* Top 10 leaderboard */}
+          <div style={{ background: t.card, borderRadius: 14, padding: 16, border: "1px solid " + t.sep, marginBottom: 14 }}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>
+              <div style={{ fontSize: 14, fontWeight: 800, color: t.tx }}>
+                📊 {tr("الترتيب الكامل")}
+              </div>
+              <button onClick={function(){ setShowAwardModal(true); }} style={{
+                padding: "8px 14px", borderRadius: 8,
+                background: "linear-gradient(135deg, #f59e0b, #d97706)",
+                color: "#fff", border: "none",
+                fontSize: 11, fontWeight: 800,
+                cursor: "pointer", fontFamily: "inherit",
+              }}>🎁 {tr("إضافة جائزة")}</button>
+            </div>
+
+            {(data.allScores || []).map(function(emp, i){
+              var colors = ["#f59e0b", "#94a3b8", "#ea8a50"];
+              var medal = i < 3 ? ["🥇", "🥈", "🥉"][i] : "#" + (i + 1);
+              return <div key={emp.empId} style={{
+                display: "flex", alignItems: "center", gap: 12,
+                padding: "10px 12px",
+                background: i < 3 ? (colors[i] + "10") : t.bg,
+                border: "1px solid " + (i < 3 ? colors[i] + "30" : t.sep),
+                borderRadius: 10, marginBottom: 6,
+              }}>
+                <div style={{
+                  width: 32, height: 32, borderRadius: "50%",
+                  background: i < 3 ? (colors[i] + "30") : t.card,
+                  border: "2px solid " + (i < 3 ? colors[i] : t.sep),
+                  display: "flex", alignItems: "center", justifyContent: "center",
+                  fontSize: i < 3 ? 14 : 11, fontWeight: 800,
+                  color: i < 3 ? colors[i] : t.tx, flexShrink: 0,
+                }}>{medal}</div>
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div style={{ fontSize: 13, fontWeight: 700, color: t.tx }}>
+                    {emp.empName}
+                  </div>
+                  <div style={{ fontSize: 9, color: t.txM, marginTop: 2 }}>
+                    📅 {emp.raw.attendanceDays} {tr("يوم")} · ⏰ {emp.raw.latePct}% {tr("تأخر")} · ⭐ {emp.raw.points} {tr("نقطة")}
+                  </div>
+                </div>
+                <div style={{
+                  padding: "4px 10px",
+                  background: i < 3 ? colors[i] + "25" : t.card,
+                  color: i < 3 ? colors[i] : t.tx,
+                  borderRadius: 8,
+                  fontSize: 13, fontWeight: 900,
+                  flexShrink: 0,
+                }}>{emp.scores.total}</div>
+              </div>;
+            })}
+          </div>
+
+          {/* Awards log */}
+          {awards.length > 0 && (
+            <div style={{ background: t.card, borderRadius: 14, padding: 16, border: "1px solid " + t.sep }}>
+              <div style={{ fontSize: 14, fontWeight: 800, color: t.tx, marginBottom: 12 }}>
+                🎁 {tr("الجوائز المُعطاة هذا الشهر")} ({awards.length})
+              </div>
+              {awards.map(function(aw){
+                var type = AWARD_TYPES.find(function(tt){ return tt.id === aw.awardType; }) || AWARD_TYPES[4];
+                return <div key={aw.id} style={{
+                  display: "flex", alignItems: "center", gap: 10,
+                  padding: 10, background: t.bg, borderRadius: 8, marginBottom: 6,
+                }}>
+                  <div style={{ fontSize: 20 }}>{type.icon}</div>
+                  <div style={{ flex: 1 }}>
+                    <div style={{ fontSize: 12, fontWeight: 700, color: t.tx }}>
+                      {aw.empName} — {aw.description}
+                    </div>
+                    <div style={{ fontSize: 10, color: t.txM, marginTop: 2 }}>
+                      {type.label} · {new Date(aw.givenAt).toLocaleDateString("ar-SA")}
+                    </div>
+                  </div>
+                  {aw.value > 0 && (
+                    <div style={{ fontSize: 11, color: t.ok, fontWeight: 700 }}>
+                      {aw.value} ر.س
+                    </div>
+                  )}
+                </div>;
+              })}
+            </div>
+          )}
+        </>
+      )}
+
+      {/* Give Award Modal */}
+      {showAwardModal && (
+        <div style={{
+          position: "fixed", inset: 0, background: "rgba(0,0,0,0.7)",
+          zIndex: 9000, display: "flex", alignItems: "center", justifyContent: "center", padding: 16,
+        }} onClick={function(){ setShowAwardModal(false); }}>
+          <div onClick={function(e){ e.stopPropagation(); }} style={{
+            background: t.card, borderRadius: 16, padding: 20,
+            maxWidth: 500, width: "100%", maxHeight: "85vh", overflowY: "auto",
+            border: "1px solid " + t.sep,
+          }}>
+            <div style={{ fontSize: 16, fontWeight: 900, color: t.tx, marginBottom: 14 }}>
+              🎁 {tr("إضافة جائزة جديدة")}
+            </div>
+
+            <div style={{ marginBottom: 12 }}>
+              <label style={{ fontSize: 11, fontWeight: 700, color: t.tx, display: "block", marginBottom: 6 }}>{tr("الموظف")}</label>
+              <select value={awardForm.empId} onChange={function(e){
+                var sel = emps.find(function(em){ return String(em.id) === e.target.value; });
+                setAwardForm(Object.assign({}, awardForm, {
+                  empId: e.target.value,
+                  empName: sel ? sel.name : "",
+                }));
+              }} style={{
+                width: "100%", padding: "10px 12px", borderRadius: 8,
+                border: "1px solid " + t.sep, background: t.inp, color: t.tx,
+                fontSize: 13, fontFamily: "inherit",
+              }}>
+                <option value="">{tr("اختر موظف...")}</option>
+                {emps.filter(function(e){ return e.active !== false; }).map(function(e){
+                  return <option key={e.id} value={e.id}>{e.name}</option>;
+                })}
+              </select>
+            </div>
+
+            <div style={{ marginBottom: 12 }}>
+              <label style={{ fontSize: 11, fontWeight: 700, color: t.tx, display: "block", marginBottom: 6 }}>{tr("نوع الجائزة")}</label>
+              <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(110px, 1fr))", gap: 6 }}>
+                {AWARD_TYPES.map(function(tt){
+                  return <button key={tt.id} onClick={function(){ setAwardForm(Object.assign({}, awardForm, { awardType: tt.id })); }} style={{
+                    padding: "10px 6px", borderRadius: 8,
+                    background: awardForm.awardType === tt.id ? "#f59e0b20" : t.bg,
+                    border: "1px solid " + (awardForm.awardType === tt.id ? "#f59e0b" : t.sep),
+                    color: awardForm.awardType === tt.id ? "#f59e0b" : t.tx,
+                    fontSize: 10, fontWeight: 700, cursor: "pointer", fontFamily: "inherit",
+                  }}>
+                    <div style={{ fontSize: 18, marginBottom: 3 }}>{tt.icon}</div>
+                    {tt.label}
+                  </button>;
+                })}
+              </div>
+            </div>
+
+            <div style={{ marginBottom: 12 }}>
+              <label style={{ fontSize: 11, fontWeight: 700, color: t.tx, display: "block", marginBottom: 6 }}>{tr("الوصف")}</label>
+              <input type="text" value={awardForm.description} onChange={function(e){
+                setAwardForm(Object.assign({}, awardForm, { description: e.target.value }));
+              }} placeholder={tr("مثلاً: كوبون ستاربكس 100 ر.س")} style={{
+                width: "100%", padding: "10px 12px", borderRadius: 8,
+                border: "1px solid " + t.sep, background: t.inp, color: t.tx,
+                fontSize: 13, fontFamily: "inherit", boxSizing: "border-box",
+              }} />
+            </div>
+
+            <div style={{ marginBottom: 12 }}>
+              <label style={{ fontSize: 11, fontWeight: 700, color: t.tx, display: "block", marginBottom: 6 }}>{tr("القيمة (ر.س)")}</label>
+              <input type="number" min="0" value={awardForm.value} onChange={function(e){
+                setAwardForm(Object.assign({}, awardForm, { value: parseInt(e.target.value) || 0 }));
+              }} style={{
+                width: "100%", padding: "10px 12px", borderRadius: 8,
+                border: "1px solid " + t.sep, background: t.inp, color: t.tx,
+                fontSize: 13, fontFamily: "inherit", boxSizing: "border-box",
+              }} />
+            </div>
+
+            <div style={{ display: "flex", gap: 8 }}>
+              <button onClick={function(){ setShowAwardModal(false); }} style={{
+                flex: 1, padding: 12, borderRadius: 10,
+                background: t.bg, color: t.tx,
+                border: "1px solid " + t.sep,
+                fontSize: 12, fontWeight: 700, cursor: "pointer", fontFamily: "inherit",
+              }}>{tr("إلغاء")}</button>
+              <button onClick={giveAward} style={{
+                flex: 2, padding: 12, borderRadius: 10,
+                background: "linear-gradient(135deg, #f59e0b, #d97706)",
+                color: "#fff", border: "none",
+                fontSize: 13, fontWeight: 800, cursor: "pointer", fontFamily: "inherit",
+              }}>🎁 {tr("تسجيل الجائزة")}</button>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 function SurveysPanel({ t, B, emps }) {
   var [surveys, setSurveys] = useState([]);
   var [loading, setLoading] = useState(true);
@@ -19447,6 +19747,7 @@ function QuestionBankPanel({ t, B }) {
  * Unifies: Question Bank + Morning Challenge + Flash Challenge + Stats
  * Replaces 3 scattered locations with a single hub.
  */
+/* ChallengesHub */
 function ChallengesHub({ t, B, emps }) {
   var [sub, setSub] = useState("bank");
   var [stats, setStats] = useState(null);

@@ -4730,6 +4730,225 @@ export default async function handler(req, res) {
       }
 
       /* ═══════════════════════════════════════════════════════════════
+       * v7.113 — EMPLOYEE RECOGNITION SYSTEM (تكريم الموظفين)
+       * ═══════════════════════════════════════════════════════════════
+       * Multi-criteria weighted scoring:
+       *   • Attendance (40%): present days + low late%
+       *   • Points (25%): total points this month
+       *   • Performance (20%): violations (negative), streak
+       *   • Challenges (15%): morning + flash answered correctly
+       *
+       * Endpoints:
+       *   GET  /api/data?action=recognition                    — Current month results
+       *   GET  /api/data?action=recognition&month=YYYY-MM      — Specific month
+       *   GET  /api/data?action=recognition-history            — All past winners
+       *   POST /api/data?action=recognition-award              — Admin adds reward
+       *   GET  /api/data?action=recognition-awards&empId=X     — Employee rewards log
+       */
+      case 'recognition': {
+        if (req.method !== 'GET') return res.status(405).json({ error: 'GET required' });
+
+        var monthRec = req.query.month || new Date().toISOString().slice(0, 7);
+        var periodRec = req.query.period || 'month'; // 'month' | 'week'
+        var monthStart = monthRec + '-01';
+        var nextMonthRec = new Date(monthRec + '-01');
+        nextMonthRec.setMonth(nextMonthRec.getMonth() + 1);
+        var monthEnd = nextMonthRec.toISOString().slice(0, 10);
+
+        var empsRec = ((await dbGet('employees')) || []).filter(function(e){ return e.active !== false; });
+        var attRec = ((await dbGet('attendance')) || []).filter(function(a){
+          return a.date && a.date >= monthStart && a.date < monthEnd;
+        });
+        var violsRec = ((await dbGet('violations_v2')) || []).filter(function(v){
+          return v.createdAt && v.createdAt.slice(0, 7) === monthRec;
+        });
+        var challengesRec = ((await dbGet('challenge_answers')) || []).filter(function(c){
+          return c.ts && c.ts.slice(0, 7) === monthRec;
+        });
+
+        // Build scores per employee
+        var scoresRec = empsRec.map(function(emp){
+          var empIdStr = String(emp.id);
+
+          // ═══ Metric 1: Attendance (40 points max) ═══
+          var empCheckins = attRec.filter(function(a){ return String(a.empId) === empIdStr && a.type === 'checkin'; });
+          var empLate = empCheckins.filter(function(a){ return a.late; });
+          var attendanceDays = new Set(empCheckins.map(function(a){ return a.date; })).size;
+          var latePct = empCheckins.length > 0 ? (empLate.length / empCheckins.length) * 100 : 0;
+          // Attendance score: days (max 25) + low late bonus (max 15)
+          var attendanceScore = Math.min(25, attendanceDays * 1.2) + Math.max(0, 15 - latePct * 0.5);
+          attendanceScore = Math.round(attendanceScore);
+
+          // ═══ Metric 2: Points (25 points max) ═══
+          var empPoints = parseInt(emp.points || 0, 10);
+          // Normalize: 500+ points = full 25, scale linearly
+          var pointsScore = Math.min(25, Math.round(empPoints / 20));
+
+          // ═══ Metric 3: Performance (20 points max) ═══
+          var empViols = violsRec.filter(function(v){ return String(v.empId) === empIdStr; });
+          var activeViols = empViols.filter(function(v){ return v.status === 'ACTIVE' || v.status === 'open'; }).length;
+          var streak = parseInt(emp.streak || 0, 10);
+          // No violations = 15, each active viol -3, streak bonus max 5
+          var perfScore = Math.max(0, 15 - (activeViols * 3)) + Math.min(5, Math.round(streak / 3));
+
+          // ═══ Metric 4: Challenges (15 points max) ═══
+          var empChallenges = challengesRec.filter(function(c){ return String(c.empId) === empIdStr; });
+          var correctChallenges = empChallenges.filter(function(c){ return c.correct; }).length;
+          var challengeScore = Math.min(15, correctChallenges);
+
+          // Total
+          var totalScore = attendanceScore + pointsScore + perfScore + challengeScore;
+
+          return {
+            empId: emp.id,
+            empName: emp.name,
+            empAvatar: emp.avatar || null,
+            jobTitle: emp.jobTitle || '',
+            branch: emp.branch || '',
+            department: emp.department || '',
+            scores: {
+              attendance: attendanceScore,
+              points: pointsScore,
+              performance: perfScore,
+              challenges: challengeScore,
+              total: totalScore,
+            },
+            raw: {
+              attendanceDays: attendanceDays,
+              latePct: Math.round(latePct),
+              points: empPoints,
+              activeViolations: activeViols,
+              streak: streak,
+              correctChallenges: correctChallenges,
+              totalChallenges: empChallenges.length,
+            },
+          };
+        });
+
+        // Sort by total score desc
+        scoresRec.sort(function(a, b){ return b.scores.total - a.scores.total; });
+
+        // Top 3 with medals
+        var topThree = scoresRec.slice(0, 3).map(function(s, i){
+          return Object.assign({}, s, {
+            rank: i + 1,
+            medal: ['🥇', '🥈', '🥉'][i],
+          });
+        });
+
+        // The winner (if meets minimum threshold)
+        var winner = null;
+        if (scoresRec.length > 0 && scoresRec[0].scores.total >= 30) {
+          winner = Object.assign({}, scoresRec[0], { rank: 1, medal: '🏆' });
+        }
+
+        // Check for admin-set awards this month
+        var manualAwards = (await dbGet('recognition_awards')) || [];
+        var monthAwards = manualAwards.filter(function(a){ return a.month === monthRec; });
+
+        return res.json({
+          ok: true,
+          month: monthRec,
+          isCurrentMonth: monthRec === new Date().toISOString().slice(0, 7),
+          totalEmployees: empsRec.length,
+          winner: winner,
+          topThree: topThree,
+          allScores: scoresRec.slice(0, 10), // Top 10 for leaderboard
+          manualAwards: monthAwards,
+          weights: {
+            attendance: 40,
+            points: 25,
+            performance: 20,
+            challenges: 15,
+          },
+        });
+      }
+
+      case 'recognition-history': {
+        if (req.method !== 'GET') return res.status(405).json({ error: 'GET required' });
+
+        // Build history for last 12 months
+        var nowH = new Date();
+        var history = [];
+        for (var i = 0; i < 12; i++) {
+          var d = new Date(nowH);
+          d.setMonth(d.getMonth() - i);
+          var m = d.toISOString().slice(0, 7);
+          // Only show if month has passed
+          if (i === 0 && nowH.getDate() < 28) continue; // current month not finished
+          history.push({ month: m });
+        }
+
+        // Get stored history (winners cache)
+        var storedHistory = (await dbGet('recognition_winners')) || [];
+        history = history.map(function(h){
+          var stored = storedHistory.find(function(s){ return s.month === h.month; });
+          return stored || h;
+        });
+
+        return res.json({
+          ok: true,
+          history: history,
+        });
+      }
+
+      case 'recognition-award': {
+        if (req.method !== 'POST') return res.status(405).json({ error: 'POST required' });
+        var bodyA = req.body || {};
+        if (!bodyA.empId || !bodyA.awardType) {
+          return res.status(400).json({ error: 'empId + awardType required' });
+        }
+
+        var awardsList = (await dbGet('recognition_awards')) || [];
+        var newAward = {
+          id: 'AW_' + Date.now() + Math.random().toString(36).slice(2, 5),
+          empId: bodyA.empId,
+          empName: bodyA.empName || '',
+          awardType: bodyA.awardType, // cafe | gift | bonus | certificate | other
+          description: bodyA.description || '',
+          value: bodyA.value || 0,
+          month: bodyA.month || new Date().toISOString().slice(0, 7),
+          givenBy: bodyA.actorId || 'admin',
+          givenAt: new Date().toISOString(),
+          note: bodyA.note || '',
+        };
+        awardsList.push(newAward);
+        await dbSet('recognition_awards', awardsList);
+
+        // Create notification for employee
+        try {
+          var notifs = (await dbGet('notifications')) || [];
+          notifs.push({
+            id: 'NTF_AW_' + Date.now(),
+            empId: bodyA.empId,
+            type: 'recognition',
+            title: '🎁 تكريم جديد!',
+            body: 'حصلت على جائزة: ' + (bodyA.description || bodyA.awardType),
+            read: false,
+            createdAt: new Date().toISOString(),
+          });
+          await dbSet('notifications', notifs);
+        } catch(e) {}
+
+        await auditLog(bodyA.actorId || 'admin', 'recognition_award_given', null, newAward, 'admin');
+
+        return res.json({ ok: true, award: newAward });
+      }
+
+      case 'recognition-awards': {
+        if (req.method !== 'GET') return res.status(405).json({ error: 'GET required' });
+        var awardsAll = (await dbGet('recognition_awards')) || [];
+        if (req.query.empId) {
+          awardsAll = awardsAll.filter(function(a){ return String(a.empId) === String(req.query.empId); });
+        }
+        if (req.query.month) {
+          awardsAll = awardsAll.filter(function(a){ return a.month === req.query.month; });
+        }
+        awardsAll.sort(function(a, b){ return (b.givenAt || '').localeCompare(a.givenAt || ''); });
+        return res.json(awardsAll);
+      }
+
+      /* ═══════════════════════════════════════════════════════════════
        * v7.108 — ADMIN SUMMARY (Mobile Admin Smart Card)
        * ═══════════════════════════════════════════════════════════════
        * GET /api/data?action=admin-summary&role=admin|hr&empId=X

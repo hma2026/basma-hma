@@ -12,7 +12,7 @@ import { t as tr, setLang, getLang, getDir, isRTL, subscribeLangChange } from ".
 
 /* ═══════════ APP CONFIG (إعدادات التطبيق) ═══════════ */
 const APP_CONFIG = {
-  VER: "7.112",
+  VER: "7.113",
   NAME: "بصمة HMA",
   FULL_NAME: "نظام الحضور والانصراف الذكي",
   COMPANY: "هاني محمد عسيري للاستشارات الهندسية",
@@ -14857,6 +14857,275 @@ function NotificationsInlineView({ user }) {
 }
 
 /* ═══════════ MY TEAM PAGE — لوحة مدير الفريق (v6.56) ═══════════ */
+/* ═════════════════════════════════════════════════════════════════
+ * v7.113 — RecognitionCard — بطاقة التكريم (موظف الشهر + Top 3)
+ * ═════════════════════════════════════════════════════════════════
+ * Shown in فريقي page for all employees.
+ * Hero section for winner + podium for top 3 + "your rank" for current user.
+ */
+function RecognitionCard({ user, allEmps }) {
+  var [data, setData] = useState(null);
+  var [loading, setLoading] = useState(true);
+  var [expanded, setExpanded] = useState(true);
+
+  async function load() {
+    try {
+      var r = await fetch("/api/data?action=recognition");
+      var d = await r.json();
+      if (d.ok) setData(d);
+    } catch(e) {}
+    setLoading(false);
+  }
+
+  useEffect(function(){ load(); }, []);
+
+  if (loading) {
+    return (
+      <div style={{
+        background: "linear-gradient(135deg, rgba(245,158,11,0.1), rgba(217,119,6,0.03))",
+        border: "1px solid rgba(245,158,11,0.25)",
+        borderRadius: 14, padding: 14, marginBottom: 10,
+        textAlign: "center",
+      }}>
+        <div style={{ color: "rgba(255,255,255,0.6)", fontSize: 11 }}>
+          ⏳ {tr("تحميل التكريم...")}
+        </div>
+      </div>
+    );
+  }
+
+  if (!data || !data.topThree || data.topThree.length === 0) return null;
+
+  // Find current user's rank
+  var myRank = null;
+  var myScore = null;
+  if (user && user.id) {
+    var mine = (data.allScores || []).findIndex(function(s){ return String(s.empId) === String(user.id); });
+    if (mine >= 0) {
+      myRank = mine + 1;
+      myScore = data.allScores[mine];
+    }
+  }
+
+  var winner = data.winner;
+  var monthLabel = data.month;
+  try {
+    var dateParts = data.month.split("-");
+    var monthNames = ["يناير","فبراير","مارس","أبريل","مايو","يونيو","يوليو","أغسطس","سبتمبر","أكتوبر","نوفمبر","ديسمبر"];
+    monthLabel = monthNames[parseInt(dateParts[1]) - 1] + " " + dateParts[0];
+  } catch(e) {}
+
+  return (
+    <div style={{
+      background: "linear-gradient(135deg, rgba(245,158,11,0.12) 0%, rgba(217,119,6,0.06) 50%, rgba(168,85,247,0.08) 100%)",
+      border: "1.5px solid rgba(245,158,11,0.4)",
+      borderRadius: 16, padding: 14, marginBottom: 10,
+      overflow: "hidden", position: "relative",
+    }}>
+      {/* Decorative gold accents */}
+      <div style={{
+        position: "absolute", top: -30, right: -30,
+        width: 120, height: 120, borderRadius: "50%",
+        background: "radial-gradient(circle, rgba(245,158,11,0.2) 0%, transparent 70%)",
+      }}></div>
+
+      {/* Header */}
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: expanded ? 12 : 0, position: "relative" }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+          <div style={{
+            width: 40, height: 40, borderRadius: 10,
+            background: "linear-gradient(135deg, #f59e0b, #d97706)",
+            display: "flex", alignItems: "center", justifyContent: "center",
+            fontSize: 20, boxShadow: "0 4px 12px rgba(245,158,11,0.4)",
+          }}>🏆</div>
+          <div>
+            <div style={{ color: "#fff", fontSize: 14, fontWeight: 900 }}>
+              {tr("موظفو الشهر")}
+            </div>
+            <div style={{ color: "rgba(255,255,255,0.7)", fontSize: 10, marginTop: 2 }}>
+              {monthLabel}
+            </div>
+          </div>
+        </div>
+
+        <button onClick={function(){ setExpanded(!expanded); }} style={{
+          background: "rgba(255,255,255,0.1)",
+          border: "none", borderRadius: 6,
+          width: 26, height: 26,
+          color: "#fff", fontSize: 13, cursor: "pointer",
+          display: "flex", alignItems: "center", justifyContent: "center",
+        }}>{expanded ? "▼" : "◀"}</button>
+      </div>
+
+      {expanded && (
+        <>
+          {/* Winner Hero Section */}
+          {winner && (
+            <div style={{
+              padding: 14,
+              background: "linear-gradient(135deg, rgba(245,158,11,0.25), rgba(168,85,247,0.1))",
+              border: "1px solid rgba(245,158,11,0.4)",
+              borderRadius: 12,
+              marginBottom: 10,
+              textAlign: "center",
+              position: "relative",
+            }}>
+              <div style={{ fontSize: 32, marginBottom: 6 }}>👑</div>
+              <div style={{ fontSize: 11, color: "#fbbf24", fontWeight: 800, marginBottom: 4, letterSpacing: 1 }}>
+                {tr("موظف الشهر")}
+              </div>
+              <div style={{ fontSize: 16, color: "#fff", fontWeight: 900, marginBottom: 4 }}>
+                {winner.empName}
+              </div>
+              {winner.jobTitle && (
+                <div style={{ fontSize: 10, color: "rgba(255,255,255,0.7)", marginBottom: 8 }}>
+                  {winner.jobTitle}
+                </div>
+              )}
+              <div style={{
+                display: "inline-block",
+                padding: "4px 12px",
+                background: "rgba(16,185,129,0.2)",
+                border: "1px solid rgba(16,185,129,0.4)",
+                borderRadius: 20,
+                fontSize: 11, color: "#10b981", fontWeight: 800,
+              }}>
+                ⭐ {winner.scores.total} / 100 {tr("نقطة")}
+              </div>
+            </div>
+          )}
+
+          {/* Top 3 Podium */}
+          {data.topThree.length > 1 && (
+            <div style={{ marginBottom: 10 }}>
+              <div style={{ fontSize: 11, color: "rgba(255,255,255,0.6)", marginBottom: 6, paddingRight: 4 }}>
+                {tr("المراكز الثلاثة الأولى")}
+              </div>
+              <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+                {data.topThree.map(function(person, i){
+                  var colors = ["#fbbf24", "#94a3b8", "#ea8a50"];
+                  var isMe = user && String(person.empId) === String(user.id);
+                  return <div key={person.empId} style={{
+                    display: "flex", alignItems: "center", gap: 10,
+                    padding: "8px 10px",
+                    background: isMe ? "rgba(139,92,246,0.2)" : "rgba(255,255,255,0.05)",
+                    border: isMe ? "1px solid rgba(139,92,246,0.4)" : "1px solid rgba(255,255,255,0.08)",
+                    borderRadius: 10,
+                  }}>
+                    <div style={{
+                      width: 28, height: 28, borderRadius: "50%",
+                      background: colors[i] + "30",
+                      border: "2px solid " + colors[i],
+                      display: "flex", alignItems: "center", justifyContent: "center",
+                      fontSize: 14, flexShrink: 0,
+                    }}>{person.medal}</div>
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <div style={{ color: "#fff", fontSize: 12, fontWeight: 700, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
+                        {person.empName} {isMe && <span style={{ fontSize: 9, color: "#a78bfa" }}>({tr("أنت")})</span>}
+                      </div>
+                      {person.jobTitle && (
+                        <div style={{ color: "rgba(255,255,255,0.55)", fontSize: 9, marginTop: 1 }}>
+                          {person.jobTitle}
+                        </div>
+                      )}
+                    </div>
+                    <div style={{
+                      padding: "3px 8px",
+                      background: colors[i] + "25",
+                      color: colors[i],
+                      borderRadius: 6,
+                      fontSize: 10, fontWeight: 800,
+                      flexShrink: 0,
+                    }}>{person.scores.total}</div>
+                  </div>;
+                })}
+              </div>
+            </div>
+          )}
+
+          {/* Your rank (if not in top 3) */}
+          {myRank && myRank > 3 && myScore && (
+            <div style={{
+              padding: 10,
+              background: "rgba(139,92,246,0.15)",
+              border: "1px solid rgba(139,92,246,0.3)",
+              borderRadius: 10,
+              marginBottom: 10,
+              display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8,
+            }}>
+              <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                <div style={{
+                  padding: "3px 9px",
+                  background: "rgba(139,92,246,0.3)",
+                  borderRadius: 8,
+                  fontSize: 11, fontWeight: 800, color: "#a78bfa",
+                }}>#{myRank}</div>
+                <div style={{ fontSize: 11, color: "#fff" }}>{tr("مركزك الحالي")}</div>
+              </div>
+              <div style={{
+                padding: "3px 8px",
+                background: "rgba(255,255,255,0.1)",
+                borderRadius: 6,
+                fontSize: 10, fontWeight: 700, color: "#fff",
+              }}>{myScore.scores.total} {tr("نقطة")}</div>
+            </div>
+          )}
+
+          {/* Score breakdown (for current user) */}
+          {myScore && (
+            <div style={{
+              padding: 10,
+              background: "rgba(255,255,255,0.04)",
+              borderRadius: 10,
+            }}>
+              <div style={{ fontSize: 10, color: "rgba(255,255,255,0.6)", marginBottom: 8 }}>
+                {tr("تفاصيل نقاطك")}
+              </div>
+              <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 6 }}>
+                <ScoreMini icon="📅" label={tr("حضور")} val={myScore.scores.attendance} max={40} color="#10b981" />
+                <ScoreMini icon="⭐" label={tr("نقاط")} val={myScore.scores.points} max={25} color="#3b82f6" />
+                <ScoreMini icon="🎯" label={tr("أداء")} val={myScore.scores.performance} max={20} color="#a855f7" />
+                <ScoreMini icon="⚡" label={tr("تحديات")} val={myScore.scores.challenges} max={15} color="#f59e0b" />
+              </div>
+            </div>
+          )}
+
+          {/* Footer hint */}
+          <div style={{
+            textAlign: "center",
+            fontSize: 9, color: "rgba(255,255,255,0.45)",
+            marginTop: 10, paddingTop: 8,
+            borderTop: "1px solid rgba(255,255,255,0.08)",
+          }}>
+            💡 {tr("يُحدَّث تلقائياً بداية كل شهر")}
+          </div>
+        </>
+      )}
+    </div>
+  );
+}
+
+/* Helper: tiny score display */
+function ScoreMini({ icon, label, val, max, color }) {
+  var pct = max > 0 ? Math.min(100, (val / max) * 100) : 0;
+  return (
+    <div style={{ textAlign: "center", padding: "6px 2px", background: "rgba(0,0,0,0.2)", borderRadius: 8 }}>
+      <div style={{ fontSize: 14, marginBottom: 2 }}>{icon}</div>
+      <div style={{ fontSize: 13, fontWeight: 900, color: color, marginBottom: 1 }}>{val}</div>
+      <div style={{ fontSize: 8, color: "rgba(255,255,255,0.5)" }}>{label}</div>
+      <div style={{
+        height: 2, background: "rgba(255,255,255,0.1)",
+        borderRadius: 2, marginTop: 3, overflow: "hidden",
+      }}>
+        <div style={{
+          height: "100%", width: pct + "%",
+          background: color, borderRadius: 2,
+        }}></div>
+      </div>
+    </div>
+  );
+}
+
 function MyTeamPage({ user, allEmps }) {
   var [tab, setTab] = useState("today"); // today | requests | stats
   var [hierarchy, setHierarchy] = useState({});
@@ -15085,6 +15354,11 @@ function MyTeamPage({ user, allEmps }) {
           <AdminSmartCard user={user} />
         </div>
       )}
+
+      {/* v7.113 — Recognition Card (للجميع) */}
+      <div style={{ padding: "12px 12px 0" }}>
+        <RecognitionCard user={user} allEmps={allEmps} />
+      </div>
 
       {/* v7.65 — ManagersCard في الأعلى لكل الموظفين (نُقلت من البيانات الوظيفية) */}
       <div style={{ padding: 12 }}>

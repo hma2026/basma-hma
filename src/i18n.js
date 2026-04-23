@@ -171,6 +171,30 @@ var EN_TRANSLATIONS = {
 
 
 
+
+  // ────── v7.113 — Employee Recognition System ──────
+  "تحميل التكريم...": "Loading recognition...",
+  "موظفو الشهر": "Employees of the Month",
+  "موظف الشهر": "Employee of the Month",
+  "المراكز الثلاثة الأولى": "Top 3",
+  "مركزك الحالي": "Your current rank",
+  "تفاصيل نقاطك": "Your score breakdown",
+  "نقاط": "Points",
+  "أداء": "Perf.",
+  "يُحدَّث تلقائياً بداية كل شهر": "Auto-updated at start of each month",
+  "نظام التكريم": "Recognition System",
+  "تكريم تلقائي شهري + جوائز فعلية": "Auto monthly recognition + real rewards",
+  "الترتيب الكامل": "Full Leaderboard",
+  "إضافة جائزة": "Add Award",
+  "الجوائز المُعطاة هذا الشهر": "Awards given this month",
+  "إضافة جائزة جديدة": "Add New Award",
+  "اختر موظف...": "Select employee...",
+  "نوع الجائزة": "Award Type",
+  "الوصف": "Description",
+  "مثلاً: كوبون ستاربكس 100 ر.س": "e.g. Starbucks voucher 100 SAR",
+  "القيمة (ر.س)": "Value (SAR)",
+  "تسجيل الجائزة": "Record Award",
+
   // ────── v7.112 — Challenges Hub (unified) ──────
   "التحديات والأسئلة": "Challenges & Questions",
   "مركز موحّد — إدارة كل ما يتعلق بالأسئلة والتحديات في مكان واحد": "Unified Hub — Manage all challenges and questions in one place",
