@@ -5,7 +5,7 @@ import { exportFormalWarning, exportInvestigationRecord, exportAffidavit, export
 import { t as tr, setLang, getLang, subscribeLangChange } from "./i18n";
 
 const APP = "بصمة HMA";
-const VER = "7.117";
+const VER = "7.122";
 const CO = "هاني محمد عسيري للإستشارات الهندسية";
 const B = { blue: "#2B5EA7", yellow: "#FDD800", red: "#E2192C", black: "#1A1A1A", blueDk: "#1E4478", blueLt: "#EDF3FB", gold: "#D4A017" };
 
@@ -61,13 +61,13 @@ const ADMIN = {
     full: 999, // pills, avatars
   },
 
-  // ═══ SHADOWS ═══
+  // ═══ SHADOWS (v7.118 — stronger for better depth) ═══
   shadow: {
     none: "none",
-    card: "0 1px 3px rgba(0,0,0,0.06), 0 1px 2px rgba(0,0,0,0.04)",
-    float: "0 4px 12px rgba(0,0,0,0.10), 0 2px 4px rgba(0,0,0,0.06)",
-    modal: "0 12px 32px rgba(0,0,0,0.18), 0 4px 8px rgba(0,0,0,0.08)",
-    colored: function(color) { return "0 4px 14px " + color + "40, 0 2px 4px " + color + "20"; },
+    card: "0 2px 6px rgba(0,0,0,0.06), 0 4px 12px rgba(0,0,0,0.04), 0 1px 2px rgba(0,0,0,0.03)",
+    float: "0 4px 14px rgba(0,0,0,0.10), 0 8px 24px rgba(0,0,0,0.08), 0 2px 4px rgba(0,0,0,0.06)",
+    modal: "0 12px 40px rgba(0,0,0,0.20), 0 8px 16px rgba(0,0,0,0.10), 0 2px 4px rgba(0,0,0,0.06)",
+    colored: function(color) { return "0 4px 14px " + color + "50, 0 2px 4px " + color + "30, inset 0 1px 0 rgba(255,255,255,0.2)"; },
   },
 
   // ═══ TRANSITIONS ═══
@@ -161,59 +161,97 @@ function adminRipple(originalOnClick) {
 /* 🎯 PanelHeader — unified header for every panel */
 function PanelHeader({ icon, title, subtitle, action, gradient, t, B }) {
   var iconGradient = gradient || ("linear-gradient(135deg, " + B.blue + ", " + B.blueDk + ")");
+  // Extract color from gradient for accent border
+  var accentColor = B.blue;
+  var gradientMatch = iconGradient.match(/#[0-9A-Fa-f]{6}/);
+  if (gradientMatch) accentColor = gradientMatch[0];
   return (
     <div className="admin-fade-up" style={{
       display: "flex",
       alignItems: "center",
       justifyContent: "space-between",
-      gap: ADMIN.space.md,
-      marginBottom: ADMIN.space.lg,
-      padding: ADMIN.space.lg + "px " + ADMIN.space.xl + "px",
+      gap: ADMIN.space.lg,
+      marginBottom: ADMIN.space.xl,
+      padding: ADMIN.space.xl + "px " + ADMIN.space.xxl + "px",
       background: t.card,
       borderRadius: ADMIN.radius.lg,
       border: "1px solid " + t.sep,
-      boxShadow: ADMIN.shadow.card,
+      // Stronger layered shadows
+      boxShadow: "0 4px 12px rgba(0,0,0,0.08), 0 8px 24px rgba(0,0,0,0.06), 0 1px 2px rgba(0,0,0,0.04)",
+      borderRight: "5px solid " + accentColor,
       flexWrap: "wrap",
+      position: "relative",
+      overflow: "hidden",
     }}>
-      <div style={{ display: "flex", alignItems: "center", gap: ADMIN.space.md, flex: 1, minWidth: 0 }}>
+      {/* Subtle gradient overlay */}
+      <div style={{
+        position: "absolute",
+        top: 0, right: 0, bottom: 0,
+        width: "40%",
+        background: "linear-gradient(270deg, " + accentColor + "08, transparent)",
+        pointerEvents: "none",
+      }} />
+
+      <div style={{
+        display: "flex",
+        alignItems: "center",
+        gap: ADMIN.space.lg,
+        flex: 1,
+        minWidth: 0,
+        position: "relative",
+        zIndex: 1,
+      }}>
         {icon && (
           <div style={{
-            width: 44, height: 44,
-            borderRadius: ADMIN.radius.md,
+            width: 56, height: 56,
+            borderRadius: ADMIN.radius.lg,
             background: iconGradient,
             display: "flex", alignItems: "center", justifyContent: "center",
-            fontSize: 22, flexShrink: 0,
-            boxShadow: ADMIN.shadow.card,
+            fontSize: 28, flexShrink: 0,
+            // Stronger icon shadow
+            boxShadow: "0 6px 16px " + accentColor + "55, 0 2px 4px " + accentColor + "30, inset 0 1px 0 rgba(255,255,255,0.25)",
           }}>{icon}</div>
         )}
         <div style={{ minWidth: 0, flex: 1 }}>
           <div style={{
-            fontSize: ADMIN.font.xl,
-            fontWeight: ADMIN.weight.heavy,
+            fontSize: ADMIN.font.xl + 2,
+            fontWeight: ADMIN.weight.black,
             color: t.tx,
-            lineHeight: 1.3,
+            lineHeight: 1.25,
+            letterSpacing: -0.4,
+            marginBottom: subtitle ? 5 : 0,
           }}>{title}</div>
           {subtitle && (
             <div style={{
-              fontSize: ADMIN.font.xs,
+              fontSize: ADMIN.font.sm,
               color: t.txM,
-              marginTop: 3,
               lineHeight: 1.5,
+              fontWeight: ADMIN.weight.medium,
             }}>{subtitle}</div>
           )}
         </div>
       </div>
-      {action && <div style={{ flexShrink: 0 }}>{action}</div>}
+      {action && (
+        <div style={{
+          flexShrink: 0,
+          display: "flex",
+          alignItems: "center",
+          gap: ADMIN.space.sm,
+          position: "relative",
+          zIndex: 1,
+        }}>{action}</div>
+      )}
     </div>
   );
 }
 
-/* 📊 StatCard — unified stat display */
-function StatCard({ icon, label, value, sub, color, trend, onClick, delay, t }) {
+/* 📊 StatCard — unified stat display (v7.118 — enhanced shadow + padding + mobile) */
+function StatCard({ icon, label, value, sub, color, trend, onClick, delay, t, compact }) {
   var c = color || "#2B5EA7";
   var delayClass = delay ? "admin-fade-up-d" + Math.min(delay, 4) : "admin-fade-up";
   var Wrapper = onClick ? "button" : "div";
   var clickable = !!onClick;
+  var isCompact = compact === true;
   return (
     <Wrapper
       onClick={clickable ? adminRipple(onClick) : undefined}
@@ -221,103 +259,137 @@ function StatCard({ icon, label, value, sub, color, trend, onClick, delay, t }) 
       style={{
         background: t.card,
         borderRadius: ADMIN.radius.lg,
-        padding: ADMIN.space.lg,
+        padding: isCompact ? ADMIN.space.md : ADMIN.space.lg,
         border: "1px solid " + t.sep,
-        boxShadow: ADMIN.shadow.card,
+        // Stronger, more visible shadows
+        boxShadow: "0 2px 6px rgba(0,0,0,0.06), 0 8px 20px rgba(0,0,0,0.05), 0 1px 2px rgba(0,0,0,0.04)",
         cursor: clickable ? "pointer" : "default",
         width: "100%",
         textAlign: "right",
         fontFamily: "inherit",
         display: "block",
+        minHeight: isCompact ? 100 : 120,
+        position: "relative",
+        overflow: "hidden",
       }}>
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: ADMIN.space.sm }}>
-        <div style={{ flex: 1, minWidth: 0 }}>
-          <div style={{
-            fontSize: ADMIN.font.xs,
-            color: t.txM,
-            fontWeight: ADMIN.weight.medium,
-            marginBottom: 4,
-          }}>{label}</div>
-          <div style={{
-            fontSize: ADMIN.font.xxl + 6,
-            fontWeight: ADMIN.weight.black,
-            color: c,
-            lineHeight: 1,
-            marginBottom: sub || trend ? 4 : 0,
-          }}>
-            <AdminAnimatedNumber value={value} duration={900} />
-          </div>
-          {sub && (
-            <div style={{
-              fontSize: ADMIN.font.tiny,
-              color: t.txM,
-            }}>{sub}</div>
-          )}
-          {trend && (
-            <div style={{
-              display: "inline-flex", alignItems: "center", gap: 3,
-              fontSize: ADMIN.font.tiny,
-              fontWeight: ADMIN.weight.bold,
-              color: trend.direction === "up" ? "#10b981" : trend.direction === "down" ? "#ef4444" : t.txM,
-              padding: "2px 6px",
-              background: (trend.direction === "up" ? "#10b981" : trend.direction === "down" ? "#ef4444" : t.txM) + "15",
-              borderRadius: ADMIN.radius.sm,
-              marginTop: 4,
-            }}>
-              {trend.direction === "up" ? "▲" : trend.direction === "down" ? "▼" : "—"} {trend.value}
-            </div>
-          )}
-        </div>
-        {icon && (
-          <div style={{
-            width: 42, height: 42,
-            borderRadius: ADMIN.radius.md,
-            background: c + "15",
-            display: "flex", alignItems: "center", justifyContent: "center",
-            fontSize: 22, flexShrink: 0,
-          }}>{icon}</div>
-        )}
+      {/* Colored top accent bar */}
+      <div style={{
+        position: "absolute",
+        top: 0, right: 0, left: 0,
+        height: 3,
+        background: "linear-gradient(90deg, " + c + ", " + c + "80)",
+      }} />
+
+      {/* Icon at top */}
+      {icon && (
+        <div style={{
+          width: isCompact ? 40 : 48,
+          height: isCompact ? 40 : 48,
+          borderRadius: ADMIN.radius.md,
+          background: "linear-gradient(135deg, " + c + "20, " + c + "10)",
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "center",
+          fontSize: isCompact ? 20 : 24,
+          border: "1px solid " + c + "30",
+          marginBottom: ADMIN.space.sm + 2,
+          boxShadow: "0 2px 8px " + c + "20",
+        }}>{icon}</div>
+      )}
+
+      {/* Label */}
+      <div style={{
+        fontSize: isCompact ? ADMIN.font.tiny : ADMIN.font.xs,
+        color: t.txM,
+        fontWeight: ADMIN.weight.bold,
+        marginBottom: 6,
+        lineHeight: 1.3,
+        letterSpacing: 0.3,
+        textTransform: "uppercase",
+      }}>{label}</div>
+
+      {/* Main value */}
+      <div style={{
+        fontSize: isCompact ? 24 : 32,
+        fontWeight: ADMIN.weight.black,
+        color: c,
+        lineHeight: 1,
+        marginBottom: sub || trend ? 8 : 0,
+        letterSpacing: -0.5,
+      }}>
+        <AdminAnimatedNumber value={value} duration={900} />
       </div>
+
+      {sub && (
+        <div style={{
+          fontSize: ADMIN.font.tiny,
+          color: t.txM,
+          fontWeight: ADMIN.weight.medium,
+        }}>{sub}</div>
+      )}
+
+      {trend && (
+        <div style={{
+          display: "inline-flex",
+          alignItems: "center",
+          gap: 3,
+          fontSize: ADMIN.font.tiny,
+          fontWeight: ADMIN.weight.bold,
+          color: trend.direction === "up" ? "#10b981" : trend.direction === "down" ? "#ef4444" : t.txM,
+          padding: "3px 8px",
+          background: (trend.direction === "up" ? "#10b981" : trend.direction === "down" ? "#ef4444" : t.txM) + "15",
+          borderRadius: ADMIN.radius.sm,
+          marginTop: 6,
+        }}>
+          {trend.direction === "up" ? "▲" : trend.direction === "down" ? "▼" : "—"} {trend.value}
+        </div>
+      )}
     </Wrapper>
   );
 }
 
-/* 🔘 ActionButton — unified button with variants */
+/* 🔘 ActionButton — unified button with variants (v7.118 — enhanced shadows) */
 function ActionButton({ variant, size, icon, label, onClick, disabled, loading, full, color, t, B }) {
-  var V = variant || "primary"; // primary | secondary | ghost | danger | success
-  var S = size || "md"; // sm | md | lg
+  var V = variant || "primary";
+  var S = size || "md";
   var sizes = {
-    sm: { padY: 6, padX: 12, font: ADMIN.font.xs },
-    md: { padY: 10, padX: 16, font: ADMIN.font.sm },
-    lg: { padY: 12, padX: 20, font: ADMIN.font.base },
+    sm: { padY: 8, padX: 14, font: ADMIN.font.xs, iconSize: 13 },
+    md: { padY: 11, padX: 20, font: ADMIN.font.sm, iconSize: 15 },
+    lg: { padY: 14, padX: 24, font: ADMIN.font.base, iconSize: 17 },
   };
   var sz = sizes[S];
 
-  var bg, textColor, border;
+  var bg, textColor, border, shadowColor, hoverBg;
   if (V === "primary") {
     bg = "linear-gradient(135deg, " + (B ? B.blue : "#2B5EA7") + ", " + (B ? B.blueDk : "#1E4478") + ")";
     textColor = "#fff";
     border = "none";
+    shadowColor = B ? B.blue : "#2B5EA7";
   } else if (V === "success") {
     bg = "linear-gradient(135deg, #10b981, #059669)";
     textColor = "#fff";
     border = "none";
+    shadowColor = "#10b981";
   } else if (V === "danger") {
     bg = "linear-gradient(135deg, #ef4444, #dc2626)";
     textColor = "#fff";
     border = "none";
+    shadowColor = "#ef4444";
   } else if (V === "gold") {
     bg = "linear-gradient(135deg, #f59e0b, #d97706)";
     textColor = "#fff";
     border = "none";
+    shadowColor = "#f59e0b";
   } else if (V === "secondary") {
-    bg = t ? t.bg : "#f2f2f7";
+    bg = t ? t.card : "#fff";
     textColor = t ? t.tx : "#000";
-    border = "1px solid " + (t ? t.sep : "#ccc");
+    border = "1.5px solid " + (t ? t.sep : "#ccc");
+    shadowColor = null;
   } else {
     bg = "transparent";
     textColor = t ? t.tx : "#000";
-    border = "1px solid " + (t ? t.sep : "#ccc");
+    border = "1.5px solid " + (t ? t.sep : "#ccc");
+    shadowColor = null;
   }
 
   return (
@@ -325,6 +397,27 @@ function ActionButton({ variant, size, icon, label, onClick, disabled, loading, 
       onClick={disabled || loading ? undefined : adminRipple(onClick)}
       disabled={disabled || loading}
       className="admin-ripple admin-smooth"
+      onMouseEnter={function(e){
+        if (disabled || loading) return;
+        if (shadowColor) {
+          e.currentTarget.style.boxShadow = "0 6px 20px " + shadowColor + "60, 0 3px 8px " + shadowColor + "35, inset 0 1px 0 rgba(255,255,255,0.3)";
+          e.currentTarget.style.transform = "translateY(-2px)";
+        } else {
+          e.currentTarget.style.boxShadow = "0 4px 10px rgba(0,0,0,0.12), 0 6px 16px rgba(0,0,0,0.08)";
+          e.currentTarget.style.transform = "translateY(-2px)";
+          e.currentTarget.style.background = t ? t.bg : "#f5f5f5";
+        }
+      }}
+      onMouseLeave={function(e){
+        if (disabled || loading) return;
+        if (shadowColor) {
+          e.currentTarget.style.boxShadow = "0 4px 14px " + shadowColor + "55, 0 2px 4px " + shadowColor + "30, inset 0 1px 0 rgba(255,255,255,0.25)";
+        } else {
+          e.currentTarget.style.boxShadow = "0 2px 4px rgba(0,0,0,0.08), 0 3px 8px rgba(0,0,0,0.05)";
+          e.currentTarget.style.background = bg;
+        }
+        e.currentTarget.style.transform = "translateY(0)";
+      }}
       style={{
         padding: sz.padY + "px " + sz.padX + "px",
         borderRadius: ADMIN.radius.md,
@@ -332,19 +425,24 @@ function ActionButton({ variant, size, icon, label, onClick, disabled, loading, 
         color: textColor,
         border: border,
         fontSize: sz.font,
-        fontWeight: ADMIN.weight.heavy,
+        fontWeight: ADMIN.weight.black,
         fontFamily: "inherit",
         cursor: disabled || loading ? "not-allowed" : "pointer",
-        display: "inline-flex", alignItems: "center", justifyContent: "center",
-        gap: 6,
+        display: "inline-flex",
+        alignItems: "center",
+        justifyContent: "center",
+        gap: 7,
         width: full ? "100%" : "auto",
-        opacity: disabled ? 0.6 : 1,
-        boxShadow: V === "primary" || V === "success" || V === "danger" || V === "gold"
-          ? ADMIN.shadow.colored(V === "primary" ? (B ? B.blue : "#2B5EA7") : V === "success" ? "#10b981" : V === "danger" ? "#ef4444" : "#f59e0b")
-          : ADMIN.shadow.card,
+        opacity: disabled ? 0.5 : 1,
+        letterSpacing: 0.2,
+        boxShadow: shadowColor
+          ? "0 4px 14px " + shadowColor + "55, 0 2px 4px " + shadowColor + "30, inset 0 1px 0 rgba(255,255,255,0.25)"
+          : "0 2px 4px rgba(0,0,0,0.08), 0 3px 8px rgba(0,0,0,0.05)",
+        textShadow: shadowColor ? "0 1px 1px rgba(0,0,0,0.2)" : "none",
+        whiteSpace: "nowrap",
       }}
     >
-      {loading ? <span style={{ fontSize: 14 }}>⏳</span> : icon && <span style={{ fontSize: 14 }}>{icon}</span>}
+      {loading ? <span style={{ fontSize: sz.iconSize }}>⏳</span> : icon && <span style={{ fontSize: sz.iconSize }}>{icon}</span>}
       {label}
     </button>
   );
@@ -389,7 +487,7 @@ function FilterBar({ children, t }) {
   );
 }
 
-/* 📇 DataCard — unified list item card */
+/* 📇 DataCard — unified list item card (v7.118 — stronger shadow) */
 function DataCard({ children, highlight, onClick, delay, t }) {
   var delayClass = delay ? "admin-fade-up-d" + Math.min(delay, 4) : "admin-fade-up";
   return (
@@ -401,8 +499,8 @@ function DataCard({ children, highlight, onClick, delay, t }) {
         borderRadius: ADMIN.radius.md,
         padding: ADMIN.space.md + "px " + ADMIN.space.lg + "px",
         border: "1px solid " + t.sep,
-        borderRight: highlight ? "3px solid " + highlight : "1px solid " + t.sep,
-        boxShadow: ADMIN.shadow.card,
+        borderRight: highlight ? "4px solid " + highlight : "1px solid " + t.sep,
+        boxShadow: "0 1px 3px rgba(0,0,0,0.06), 0 3px 8px rgba(0,0,0,0.04)",
         marginBottom: ADMIN.space.sm,
         cursor: onClick ? "pointer" : "default",
       }}
@@ -493,11 +591,12 @@ function useIsMobile() {
 // ── Bottom Nav for mobile (Material style: icon-only, active expands with label) ──
 function AdminBottomNav({ tab, setTab, badges }) {
   badges = badges || {};
+  // v7.122 — رسائل الموظفين صارت جزء من requests_hub
   var items = [
-    { id: "more",        icon: "☰",  label: "المزيد",         badge: badges.more || 0 },
-    { id: "leaves_hub",  icon: "🏖️", label: "الإجازات",       badge: badges.leaves || 0 },
-    { id: "hr_tickets",  icon: "📨", label: "رسائل الموظفين", badge: badges.tickets || 0 },
-    { id: "dashboard",   icon: "📊", label: "الرئيسية",        badge: 0 },
+    { id: "more",         icon: "☰",  label: "المزيد",         badge: badges.more || 0 },
+    { id: "leaves_hub",   icon: "🏖️", label: "الإجازات",       badge: badges.leaves || 0 },
+    { id: "requests_hub", icon: "📝", label: "الطلبات",        badge: (badges.tickets || 0) + (badges.requests || 0) },
+    { id: "dashboard",    icon: "📊", label: "الرئيسية",        badge: 0 },
   ];
 
   return (
@@ -599,6 +698,15 @@ function SmartDashboard({ t, B, safeEmps, leaves, present, absent, late, pending
   // v7.102 — Smart alerts
   var [alerts, setAlerts] = useState(null);
   var [alertsLoading, setAlertsLoading] = useState(true);
+  // v7.118 — Mobile detection
+  var [isMobile, setIsMobile] = useState(function(){
+    return typeof window !== "undefined" && window.innerWidth < 768;
+  });
+  useEffect(function(){
+    function onResize(){ setIsMobile(window.innerWidth < 768); }
+    window.addEventListener("resize", onResize);
+    return function(){ window.removeEventListener("resize", onResize); };
+  }, []);
 
   // Greeting based on time
   var greet = (function(){
@@ -780,55 +888,66 @@ function SmartDashboard({ t, B, safeEmps, leaves, present, absent, late, pending
   }
 
   return (
-    <div>
-      {/* ─── Smart Greeting Header — v7.115 unified ─── */}
+    <div style={{ maxWidth: "100%", overflowX: "hidden" }}>
+      {/* ─── Smart Greeting Header — v7.121 mobile-stacked + overflow-safe ─── */}
       <div className="admin-fade-up" style={{
-        background: "linear-gradient(135deg, " + B.blue + "10 0%, " + B.gold + "08 100%)",
+        background: "linear-gradient(135deg, " + B.blue + "12 0%, " + B.gold + "08 100%)",
         borderRadius: ADMIN.radius.lg,
-        padding: ADMIN.space.xl + "px " + ADMIN.space.xxl + "px",
-        marginBottom: ADMIN.space.lg,
+        padding: isMobile ? (ADMIN.space.md + "px") : (ADMIN.space.xl + "px " + ADMIN.space.xxl + "px"),
+        marginBottom: ADMIN.space.md,
         border: "1px solid " + t.sep,
-        boxShadow: ADMIN.shadow.card,
+        boxShadow: "0 2px 12px rgba(43,94,167,0.08), 0 1px 4px rgba(0,0,0,0.04)",
         display: "flex",
+        flexDirection: isMobile ? "column" : "row",
         justifyContent: "space-between",
-        alignItems: "center",
-        gap: ADMIN.space.lg,
-        flexWrap: "wrap"
+        alignItems: isMobile ? "stretch" : "center",
+        gap: ADMIN.space.sm,
       }}>
-        <div>
+        <div style={{ minWidth: 0 }}>
           <div style={{
-            fontSize: ADMIN.font.xl,
-            fontWeight: ADMIN.weight.heavy,
+            fontSize: isMobile ? ADMIN.font.md : ADMIN.font.xl,
+            fontWeight: ADMIN.weight.black,
             color: t.tx,
-            marginBottom: 2,
+            marginBottom: 4,
+            letterSpacing: -0.3,
+            whiteSpace: "nowrap",
+            overflow: "hidden",
+            textOverflow: "ellipsis",
           }}>{greet} 👋</div>
           <div style={{
-            fontSize: ADMIN.font.xs,
+            fontSize: ADMIN.font.tiny,
             color: t.txM,
+            fontWeight: ADMIN.weight.medium,
           }}>{dateStr}</div>
         </div>
-        <div style={{ display: "flex", gap: ADMIN.space.sm, flexWrap: "wrap" }}>
+        <div style={{ display: "flex", gap: ADMIN.space.xs, flexWrap: "wrap" }}>
           <div className="admin-fade-up-d1 admin-smooth" style={{
-            padding: ADMIN.space.sm + "px " + ADMIN.space.md + "px",
+            padding: "6px 10px",
             borderRadius: ADMIN.radius.md,
             background: t.card,
             border: "1px solid " + t.sep,
-            fontSize: ADMIN.font.xs,
+            fontSize: ADMIN.font.tiny,
+            boxShadow: "0 1px 3px rgba(0,0,0,0.06)",
+            fontWeight: ADMIN.weight.medium,
+            whiteSpace: "nowrap",
           }}>
             <span style={{ color: t.txM }}>{tr("الموظفون: ")}</span>
-            <strong style={{ color: B.blue, fontSize: ADMIN.font.sm, fontWeight: ADMIN.weight.heavy }}>
+            <strong style={{ color: B.blue, fontSize: ADMIN.font.xs, fontWeight: ADMIN.weight.black }}>
               <AdminAnimatedNumber value={safeEmps.length} duration={900} />
             </strong>
           </div>
           <div className="admin-fade-up-d2 admin-smooth" style={{
-            padding: ADMIN.space.sm + "px " + ADMIN.space.md + "px",
+            padding: "6px 10px",
             borderRadius: ADMIN.radius.md,
             background: t.card,
             border: "1px solid " + t.sep,
-            fontSize: ADMIN.font.xs,
+            fontSize: ADMIN.font.tiny,
+            boxShadow: "0 1px 3px rgba(0,0,0,0.06)",
+            fontWeight: ADMIN.weight.medium,
+            whiteSpace: "nowrap",
           }}>
             <span style={{ color: t.txM }}>{tr("الحضور اليوم: ")}</span>
-            <strong style={{ color: t.ok, fontSize: ADMIN.font.sm, fontWeight: ADMIN.weight.heavy }}>
+            <strong style={{ color: t.ok, fontSize: ADMIN.font.xs, fontWeight: ADMIN.weight.black }}>
               <AdminAnimatedNumber value={present} duration={900} />/{safeEmps.length}
             </strong>
             <span style={{ color: t.txM, marginRight: 4 }}> ({safeEmps.length > 0 ? Math.round((present / safeEmps.length) * 100) : 0}%)</span>
@@ -836,15 +955,19 @@ function SmartDashboard({ t, B, safeEmps, leaves, present, absent, late, pending
         </div>
       </div>
 
-      {/* v7.102 — Smart Alerts Panel */}
+      {/* v7.121 — Smart Alerts Panel (fixed: no bleeding glow, mobile-friendly) */}
       {alerts && alerts.counts.total > 0 && (
-        <div className={"admin-fade-up-d1 " + (alerts.counts.high > 0 ? "admin-glow-critical" : "")} style={{
+        <div className="admin-fade-up-d1" style={{
           background: t.card,
           borderRadius: ADMIN.radius.lg,
-          padding: ADMIN.space.lg,
-          border: "1px solid " + (alerts.counts.high > 0 ? t.bad + "40" : "#F59E0B40"),
-          boxShadow: ADMIN.shadow.card,
+          padding: isMobile ? ADMIN.space.md : ADMIN.space.lg,
+          border: "1px solid " + (alerts.counts.high > 0 ? t.bad + "50" : "#F59E0B50"),
+          borderRight: "4px solid " + (alerts.counts.high > 0 ? t.bad : "#F59E0B"),
+          boxShadow: alerts.counts.high > 0
+            ? "0 2px 8px rgba(239,68,68,0.1), 0 1px 3px rgba(0,0,0,0.05)"
+            : "0 2px 8px rgba(245,158,11,0.1), 0 1px 3px rgba(0,0,0,0.05)",
           marginBottom: ADMIN.space.lg,
+          overflow: "hidden",
         }}>
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12, flexWrap: "wrap", gap: 8 }}>
             <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
@@ -904,40 +1027,68 @@ function SmartDashboard({ t, B, safeEmps, leaves, present, absent, late, pending
         </div>
       )}
 
-      {/* ─── v7.83 — Quick Actions (shortcuts للمدير) ─── */}
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(6, 1fr)", gap: 10, marginBottom: 14 }}>
+      {/* ─── v7.118 — Quick Actions (responsive + enhanced shadow) ─── */}
+      <div style={{
+        display: "grid",
+        gridTemplateColumns: isMobile ? "repeat(3, 1fr)" : "repeat(6, 1fr)",
+        gap: isMobile ? ADMIN.space.sm : ADMIN.space.md,
+        marginBottom: ADMIN.space.lg,
+      }}>
         {[
-          { id: "employees",     label: tr("الموظفين"),        icon: "👥", color: B.blue },
-          { id: "leaves_hub",    label: tr("الإجازات"),         icon: "🏖️", color: "#0891B2" },
-          { id: "admin_requests", label: tr("الطلبات"),         icon: "📨", color: "#8b5cf6" },
+          { id: "employees",      label: tr("الموظفين"),        icon: "👥", color: B.blue },
+          { id: "leaves_hub",     label: tr("الإجازات"),         icon: "🏖️", color: "#0891B2" },
+          { id: "requests_hub",   label: tr("الطلبات"),          icon: "📝", color: "#8b5cf6" },
           { id: "attendance_hub", label: tr("الحضور والتنظيم"), icon: "⏰", color: "#10b981" },
           { id: "discipline_hub", label: tr("النظام التأديبي"), icon: "⚖️", color: t.bad },
           { id: "reports",        label: tr("التقارير"),        icon: "📊", color: B.gold },
-        ].map(function(qa){
-          return <button key={qa.id} onClick={function(){ setTab(qa.id); }} style={{
-            padding: "14px 10px", borderRadius: 12,
-            background: t.card,
-            border: "1px solid " + t.sep,
-            cursor: "pointer",
-            display: "flex", flexDirection: "column", alignItems: "center", gap: 6,
-            fontFamily: "inherit",
-            transition: "all .15s",
-          }}
-          onMouseEnter={function(e){ e.currentTarget.style.borderColor = qa.color; }}
-          onMouseLeave={function(e){ e.currentTarget.style.borderColor = t.sep; }}>
+        ].map(function(qa, i){
+          return <button key={qa.id} onClick={adminRipple(function(){ setTab(qa.id); })}
+            className={"admin-ripple admin-smooth admin-hover-lift admin-fade-up-d" + Math.min(i % 4 + 1, 4)}
+            style={{
+              padding: ADMIN.space.md + "px " + ADMIN.space.sm + "px",
+              borderRadius: ADMIN.radius.lg,
+              background: t.card,
+              border: "1px solid " + t.sep,
+              // v7.118 — Enhanced shadow with colored accent
+              boxShadow: "0 2px 8px rgba(0,0,0,0.06), 0 1px 3px rgba(0,0,0,0.04), inset 0 2px 0 " + qa.color + "25",
+              cursor: "pointer",
+              display: "flex", flexDirection: "column", alignItems: "center", gap: 8,
+              fontFamily: "inherit",
+              minHeight: 80,
+            }}
+            onMouseEnter={function(e){
+              e.currentTarget.style.borderColor = qa.color;
+              e.currentTarget.style.boxShadow = "0 4px 12px " + qa.color + "25, 0 2px 4px rgba(0,0,0,0.06), inset 0 2px 0 " + qa.color + "40";
+            }}
+            onMouseLeave={function(e){
+              e.currentTarget.style.borderColor = t.sep;
+              e.currentTarget.style.boxShadow = "0 2px 8px rgba(0,0,0,0.06), 0 1px 3px rgba(0,0,0,0.04), inset 0 2px 0 " + qa.color + "25";
+            }}>
             <div style={{
-              width: 36, height: 36, borderRadius: 10,
-              background: qa.color + "20",
+              width: 40, height: 40,
+              borderRadius: ADMIN.radius.md,
+              background: "linear-gradient(135deg, " + qa.color + "25, " + qa.color + "15)",
               display: "flex", alignItems: "center", justifyContent: "center",
-              fontSize: 18
+              fontSize: 20,
+              border: "1px solid " + qa.color + "30",
             }}>{qa.icon}</div>
-            <div style={{ fontSize: 10, fontWeight: 700, color: t.tx, textAlign: "center" }}>{qa.label}</div>
+            <div style={{
+              fontSize: ADMIN.font.xs,
+              fontWeight: ADMIN.weight.heavy,
+              color: t.tx,
+              textAlign: "center",
+            }}>{qa.label}</div>
           </button>;
         })}
       </div>
 
-      {/* ─── Today Stats (4 cards) — v7.115 using StatCard ─── */}
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))", gap: ADMIN.space.md, marginBottom: ADMIN.space.lg }}>
+      {/* ─── Today Stats (4 cards) — v7.118 responsive + compact on mobile ─── */}
+      <div style={{
+        display: "grid",
+        gridTemplateColumns: isMobile ? "repeat(2, 1fr)" : "repeat(auto-fit, minmax(180px, 1fr))",
+        gap: isMobile ? ADMIN.space.sm : ADMIN.space.md,
+        marginBottom: ADMIN.space.lg,
+      }}>
         <StatCard
           icon="✅"
           label={tr("حاضر")}
@@ -945,6 +1096,7 @@ function SmartDashboard({ t, B, safeEmps, leaves, present, absent, late, pending
           sub={tr("من ") + safeEmps.length}
           color={t.ok}
           delay={1}
+          compact={isMobile}
           t={t}
         />
         <StatCard
@@ -953,6 +1105,7 @@ function SmartDashboard({ t, B, safeEmps, leaves, present, absent, late, pending
           value={absent}
           color={t.bad}
           delay={2}
+          compact={isMobile}
           t={t}
         />
         <StatCard
@@ -961,6 +1114,7 @@ function SmartDashboard({ t, B, safeEmps, leaves, present, absent, late, pending
           value={late}
           color={t.warn}
           delay={3}
+          compact={isMobile}
           t={t}
         />
         <StatCard
@@ -969,6 +1123,7 @@ function SmartDashboard({ t, B, safeEmps, leaves, present, absent, late, pending
           value={pending}
           color={B.blue}
           delay={4}
+          compact={isMobile}
           t={t}
           onClick={pending > 0 ? function(){ setTab("leaves_hub"); } : null}
         />
@@ -976,21 +1131,61 @@ function SmartDashboard({ t, B, safeEmps, leaves, present, absent, late, pending
 
       {/* ─── Smart Insights (3 cards) ─── */}
       {insights.length > 0 && (
-        <div style={{ marginBottom: 16 }}>
-          <div style={{ fontSize: 14, fontWeight: 800, color: t.tx, marginBottom: 10 }}>{tr("💡 رؤى ذكية")}</div>
-          <div style={{ display: "grid", gridTemplateColumns: "repeat(" + insights.length + ",1fr)", gap: 12 }}>
+        <div style={{ marginBottom: ADMIN.space.lg }}>
+          <div style={{
+            fontSize: ADMIN.font.md,
+            fontWeight: ADMIN.weight.black,
+            color: t.tx,
+            marginBottom: ADMIN.space.sm,
+            letterSpacing: -0.2,
+          }}>{tr("💡 رؤى ذكية")}</div>
+          <div style={{
+            display: "grid",
+            gridTemplateColumns: isMobile ? "1fr" : "repeat(" + insights.length + ",1fr)",
+            gap: ADMIN.space.md,
+          }}>
             {insights.map(function(ins, i){
               return <div key={i} className={"admin-fade-up-d" + Math.min(i+2, 4) + " admin-hover-lift admin-smooth"} style={{
-                background: t.card, borderRadius: 14, padding: 16,
+                background: t.card,
+                borderRadius: ADMIN.radius.lg,
+                padding: ADMIN.space.lg,
                 border: "1px solid " + t.sep,
-                borderRight: "3px solid " + ins.color,
+                borderRight: "4px solid " + ins.color,
+                boxShadow: "0 2px 8px rgba(0,0,0,0.04), 0 1px 3px rgba(0,0,0,0.06)",
               }}>
-                <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-                  <div style={{ fontSize: 28 }}>{ins.icon}</div>
-                  <div style={{ flex: 1 }}>
-                    <div style={{ fontSize: 10, color: t.txM, marginBottom: 4, lineHeight: 1.3 }}>{ins.label}</div>
-                    <div style={{ fontSize: 20, fontWeight: 800, color: ins.color, lineHeight: 1 }}>{ins.value}</div>
-                    <div style={{ fontSize: 10, color: t.txM, marginTop: 2 }}>{ins.sub}</div>
+                <div style={{ display: "flex", alignItems: "center", gap: ADMIN.space.sm }}>
+                  <div style={{
+                    fontSize: 32,
+                    width: 48,
+                    height: 48,
+                    borderRadius: ADMIN.radius.md,
+                    background: ins.color + "15",
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "center",
+                    flexShrink: 0,
+                  }}>{ins.icon}</div>
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div style={{
+                      fontSize: ADMIN.font.xs,
+                      color: t.txM,
+                      marginBottom: 4,
+                      lineHeight: 1.3,
+                      fontWeight: ADMIN.weight.medium,
+                    }}>{ins.label}</div>
+                    <div style={{
+                      fontSize: 22,
+                      fontWeight: ADMIN.weight.black,
+                      color: ins.color,
+                      lineHeight: 1,
+                      letterSpacing: -0.5,
+                    }}>{ins.value}</div>
+                    <div style={{
+                      fontSize: ADMIN.font.tiny,
+                      color: t.txM,
+                      marginTop: 3,
+                      fontWeight: ADMIN.weight.medium,
+                    }}>{ins.sub}</div>
                   </div>
                 </div>
               </div>;
@@ -999,44 +1194,66 @@ function SmartDashboard({ t, B, safeEmps, leaves, present, absent, late, pending
         </div>
       )}
 
-      {/* ─── Action Items ─── */}
-      <div style={{ background: t.card, borderRadius: 14, padding: 16, border: "1px solid " + t.sep, marginBottom: 16 }}>
-        <div style={{ fontSize: 14, fontWeight: 800, color: t.tx, marginBottom: 12 }}>{tr("🎯 إجراءات مطلوبة")}</div>
+      {/* ─── Action Items — v7.118 enhanced ─── */}
+      <div style={{
+        background: t.card,
+        borderRadius: ADMIN.radius.lg,
+        padding: ADMIN.space.lg,
+        border: "1px solid " + t.sep,
+        boxShadow: "0 2px 8px rgba(0,0,0,0.04), 0 1px 3px rgba(0,0,0,0.06)",
+        marginBottom: ADMIN.space.lg,
+      }}>
+        <div style={{
+          fontSize: ADMIN.font.md,
+          fontWeight: ADMIN.weight.black,
+          color: t.tx,
+          marginBottom: ADMIN.space.md,
+          letterSpacing: -0.2,
+        }}>{tr("🎯 إجراءات مطلوبة")}</div>
         {actionItems.length === 0 ? (
-          <div style={{ textAlign: "center", padding: 24, color: t.txM, fontSize: 12 }}>
-            <div style={{ fontSize: 28, marginBottom: 8 }}>✨</div>
-            <div style={{ fontWeight: 700, marginBottom: 4 }}>{tr("لا توجد إجراءات مطلوبة حالياً")}</div>
-            <div style={{ fontSize: 11 }}>{tr("كل شيء تحت السيطرة ✨")}</div>
+          <div style={{ textAlign: "center", padding: ADMIN.space.xl, color: t.txM, fontSize: ADMIN.font.sm }}>
+            <div style={{ fontSize: 36, marginBottom: ADMIN.space.sm, opacity: 0.6 }}>✨</div>
+            <div style={{ fontWeight: ADMIN.weight.bold, marginBottom: 4, color: t.tx }}>{tr("لا توجد إجراءات مطلوبة حالياً")}</div>
+            <div style={{ fontSize: ADMIN.font.xs }}>{tr("كل شيء تحت السيطرة ✨")}</div>
           </div>
         ) : (
-          <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+          <div style={{ display: "flex", flexDirection: "column", gap: ADMIN.space.sm }}>
             {actionItems.map(function(a, i){
-              return <div key={i} onClick={a.onClick} style={{
-                display: "flex", alignItems: "center", gap: 12,
-                padding: "12px 14px", borderRadius: 10,
+              return <div key={i} onClick={adminRipple(a.onClick)} className={"admin-ripple admin-smooth admin-hover-lift admin-fade-up-d" + Math.min(i + 1, 4)} style={{
+                display: "flex", alignItems: "center", gap: ADMIN.space.md,
+                padding: ADMIN.space.md + "px " + ADMIN.space.lg + "px",
+                borderRadius: ADMIN.radius.md,
                 background: a.color + "08",
                 border: "1px solid " + a.color + "30",
+                borderRight: "4px solid " + a.color,
                 cursor: "pointer",
-                transition: "all .15s",
+                boxShadow: "0 1px 3px rgba(0,0,0,0.04)",
               }}>
                 <div style={{
-                  width: 40, height: 40, borderRadius: 10,
-                  background: a.color + "15",
+                  width: 44, height: 44,
+                  borderRadius: ADMIN.radius.md,
+                  background: "linear-gradient(135deg, " + a.color + "25, " + a.color + "15)",
                   display: "flex", alignItems: "center", justifyContent: "center",
-                  fontSize: 20,
+                  fontSize: 22,
+                  border: "1px solid " + a.color + "30",
+                  flexShrink: 0,
                 }}>{a.icon}</div>
-                <div style={{ flex: 1 }}>
-                  <div style={{ fontSize: 13, fontWeight: 700, color: t.tx, marginBottom: 2 }}>{a.title}</div>
-                  <div style={{ fontSize: 11, color: t.txM }}>{a.sub}</div>
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div style={{ fontSize: ADMIN.font.base, fontWeight: ADMIN.weight.heavy, color: t.tx, marginBottom: 2 }}>{a.title}</div>
+                  <div style={{ fontSize: ADMIN.font.xs, color: t.txM }}>{a.sub}</div>
                 </div>
                 <div style={{
-                  padding: "4px 10px", borderRadius: 14,
+                  padding: "5px 12px",
+                  borderRadius: ADMIN.radius.full,
                   background: a.color,
                   color: "#fff",
-                  fontSize: 12, fontWeight: 800,
-                  minWidth: 28, textAlign: "center",
+                  fontSize: ADMIN.font.sm,
+                  fontWeight: ADMIN.weight.black,
+                  minWidth: 28,
+                  textAlign: "center",
+                  boxShadow: "0 2px 6px " + a.color + "50",
                 }}>{a.count}</div>
-                <div style={{ fontSize: 16, color: a.color, fontWeight: 800 }}>›</div>
+                <div style={{ fontSize: 18, color: a.color, fontWeight: ADMIN.weight.black }}>›</div>
               </div>;
             })}
           </div>
@@ -4190,38 +4407,36 @@ function AuditLogPanel({ t, B, emps }) {
 
 // ── More Menu Page (full page Instagram Settings style) ──
 function MoreMenuPage({ setTab, badges, sideGroups, onSwitchToEmployee, onLogout, onToggleTheme, darkMode, role }) {
-  // Use the EXACT same sideGroups from the sidebar so we have one source of truth
-  // (excludes the 4 main bottom nav items)
-  var bottomNavIds = ["dashboard", "hr_tickets", "leaves_hub", "more"];
+  // v7.122 — Updated bottom nav IDs to match new structure
+  var bottomNavIds = ["dashboard", "requests_hub", "leaves_hub", "more"];
 
-  // Map group id → color
+  // Map group id → color (v7.122 new groups)
   var groupColors = {
     main: LN.ac,
-    hr: LN.hr,
+    people: LN.hr,
+    finance: "#F59E0B",
     ops: LN.ops,
     comm: LN.comm,
     config: LN.config,
   };
 
-  // Map item id → short description (Arabic)
+  // Map item id → short description (Arabic) — v7.122 updated
   var itemDescriptions = {
-    employees: "إدارة بيانات الموظفين",
-    org_hierarchy: "هيكل الإدارات والمدراء المباشرون",
-    payroll: "الرواتب الشهرية والكشوف",
-    salary_changes: "اعتماد تعديلات الرواتب",
-    letters: "الإفادات الرسمية",
-    surveys: "استطلاعات الموظفين",
-    evaluations_hr: "تقييم أداء الموظفين",
-    admin_requests: "الطلبات المختلفة",
+    employees: "إدارة بيانات الموظفين + الهيكل التنظيمي",
+    leaves_hub: "طلبات الإجازة والموافقات",
+    requests_hub: "الطلبات + رسائل HR + الإفادات",
+    performance_hub: "التقييمات والتكريم",
     discipline_hub: "المخالفات والشكاوى والتظلمات",
     termination: "إنهاء الخدمة",
-    tawasul: "إدارة المهام والمتابعة",
-    attendance_hub: "متابعة الحضور والانصراف",
+    payroll_hub: "إدارة الرواتب + تعديلات + مسيرات",
+    tawasul: "المهام الإدارية والمتابعة",
+    attendance_hub: "الحضور والانصراف + أنواع الدوام",
     custody_hub: "العُهَد والأصول",
     reports: "تقارير PDF",
-    content_hub: "تعاميم وبنرات ومناسبات وأسئلة",
-    settings_hub: "الإعدادات العامة",
-    kadwar_sync: "ربط مع منصة كوادر",
+    content_hub: "تعاميم + بنرات + مناسبات + استطلاعات",
+    challenges_hub: "التحديات والأسئلة اليومية",
+    push: "إشعارات Push للموظفين",
+    settings_hub: "إعدادات النظام الكاملة",
   };
 
   return (
@@ -4479,7 +4694,7 @@ function MoreMenuPage({ setTab, badges, sideGroups, onSwitchToEmployee, onLogout
 // ── Floating Back Button — v7.28 (shows on ALL screens, not just mobile) ──
 function FloatingBackButton({ tab, onBack }) {
   // Only show on non-root tabs
-  var rootTabs = ["dashboard", "hr_tickets", "leaves_hub", "more"];
+  var rootTabs = ["dashboard", "requests_hub", "leaves_hub", "more"];
   if (rootTabs.indexOf(tab) !== -1) return null;
 
   return (
@@ -4517,7 +4732,7 @@ function FloatingBackButton({ tab, onBack }) {
 // ── Mobile Top Bar (back button + page title) — v7.25/7.26 ──
 function MobileTopBar({ tab, sideItems, onBack, selEmp }) {
   // The 4 main bottom-nav tabs are "root" — they don't show a back button
-  var rootTabs = ["dashboard", "hr_tickets", "leaves_hub", "more"];
+  var rootTabs = ["dashboard", "requests_hub", "leaves_hub", "more"];
   var isRoot = rootTabs.indexOf(tab) !== -1;
 
   // Find the current item meta
@@ -4545,12 +4760,12 @@ function MobileTopBar({ tab, sideItems, onBack, selEmp }) {
       zIndex: 90,
       background: LN.card,
       borderBottom: "1px solid " + LN.cardBrd,
-      padding: "10px 12px",
-      margin: "-12px -14px 14px",
+      padding: "8px 10px",
+      margin: "-12px -14px 12px",
       display: "flex",
       alignItems: "center",
-      gap: 10,
-      minHeight: 54,
+      gap: 8,
+      minHeight: 48,
       boxShadow: "0 2px 6px rgba(0,0,0,0.06)",
     }}>
       {!isRoot ? (
@@ -4558,12 +4773,12 @@ function MobileTopBar({ tab, sideItems, onBack, selEmp }) {
           onClick={onBack}
           aria-label="رجوع"
           style={{
-            width: 40, height: 40,
+            width: 36, height: 36,
             borderRadius: 10,
             border: "1px solid " + LN.cardBrd,
             background: LN.card,
             color: LN.tx,
-            fontSize: 24,
+            fontSize: 22,
             fontWeight: 700,
             cursor: "pointer",
             display: "flex",
@@ -4577,13 +4792,13 @@ function MobileTopBar({ tab, sideItems, onBack, selEmp }) {
           ›
         </button>
       ) : (
-        <div style={{ width: 40, flexShrink: 0 }} />
+        <div style={{ width: 0, flexShrink: 0 }} />
       )}
 
       <div style={{ flex: 1, minWidth: 0, display: "flex", alignItems: "center", gap: 8 }}>
-        <span style={{ fontSize: 22, flexShrink: 0 }}>{icon}</span>
+        <span style={{ fontSize: 20, flexShrink: 0 }}>{icon}</span>
         <div style={{
-          fontSize: 17,
+          fontSize: 16,
           fontWeight: 800,
           color: LN.tx,
           fontFamily: "inherit",
@@ -4722,11 +4937,14 @@ function Login({ onLogin }) {
         body: JSON.stringify({ email: email.toLowerCase().trim(), password: password }),
       });
       var d = await r.json();
-      if (d.ok && d.employee && (d.employee.isGeneralManager || d.employee.isAdmin)) {
+      // v7.120 — HR manager (role: "hr" or "hr_manager") can also access AdminApp
+      var isHR = d.employee && (d.employee.role === "hr" || d.employee.role === "hr_manager" || d.employee.accountRole === "hr_manager");
+      if (d.ok && d.employee && (d.employee.isGeneralManager || d.employee.isAdmin || isHR)) {
         localStorage.setItem("basma_admin_email", email.toLowerCase().trim());
-        onLogin("manager");
+        // v7.120 — Pass the role so AdminApp knows if it's HR (limited) or Admin (full)
+        onLogin(isHR && !d.employee.isAdmin && !d.employee.isGeneralManager ? "hr" : "manager");
       } else if (d.ok) {
-        setErr("هذا الحساب ليس مدير عام");
+        setErr("هذا الحساب ليس له صلاحيات إدارية");
       } else {
         setErr(d.error || "خطأ في الدخول");
       }
@@ -4857,7 +5075,28 @@ export default function AdminApp() {
   const [navStack, setNavStack] = useState([]);
   function setTab(newTab) {
     if (newTab === tab) return;
-    var rootTabs = ["dashboard", "hr_tickets", "leaves_hub", "more"];
+
+    // v7.122 — Backward compatibility: خريطة الـ redirects للـ tabs القديمة
+    var TAB_REDIRECTS = {
+      "payroll":           { tab: "payroll_hub",    sub: "manage" },
+      "salary_changes":    { tab: "payroll_hub",    sub: "changes" },
+      "salary_sheets":     { tab: "payroll_hub",    sub: "sheets" },
+      "admin_requests":    { tab: "requests_hub",   sub: "requests" },
+      "hr_tickets":        { tab: "requests_hub",   sub: "tickets" },
+      "letters":           { tab: "requests_hub",   sub: "letters" },
+      "evaluations_hr":    { tab: "performance_hub", sub: "evaluations" },
+      "recognition":       { tab: "performance_hub", sub: "recognition" },
+      "surveys":           { tab: "content_hub",    sub: "surveys" },
+      "kadwar_sync":       { tab: "settings_hub",   sub: "integration" },
+    };
+    var redirect = TAB_REDIRECTS[newTab];
+    if (redirect) {
+      try { sessionStorage.setItem("basma_hub_sub_" + redirect.tab, redirect.sub); } catch(e) {}
+      newTab = redirect.tab;
+      if (newTab === tab) return;
+    }
+
+    var rootTabs = ["dashboard", "requests_hub", "leaves_hub", "more"];
     if (rootTabs.indexOf(newTab) !== -1) {
       // Navigating to a root tab clears the stack (fresh start)
       setNavStack([]);
@@ -4876,7 +5115,7 @@ export default function AdminApp() {
     setNavStack(function(prev){
       if (prev.length === 0) {
         // Fallback: go to "more" if current is non-root, otherwise dashboard
-        var rootTabs = ["dashboard", "hr_tickets", "leaves_hub", "more"];
+        var rootTabs = ["dashboard", "requests_hub", "leaves_hub", "more"];
         _setTabRaw(rootTabs.indexOf(tab) === -1 ? "more" : "dashboard");
         return [];
       }
@@ -4890,7 +5129,7 @@ export default function AdminApp() {
   // v7.25 — Android hardware back button support (mobile only)
   useEffect(function(){
     if (!isMobile) return;
-    var rootTabs = ["dashboard", "hr_tickets", "leaves_hub", "more"];
+    var rootTabs = ["dashboard", "requests_hub", "leaves_hub", "more"];
     function onPopState(e){
       if (rootTabs.indexOf(tab) === -1) {
         e.preventDefault && e.preventDefault();
@@ -5122,6 +5361,10 @@ export default function AdminApp() {
     return true;
   });
 
+  // ═══════════════════════════════════════════════════════════
+  // v7.122 — إعادة هيكلة كاملة: 6 مجموعات منطقية بدلاً من 5 مع ازدحام
+  // دراسة UX شاملة لإزالة التكرار وتجميع الوظائف المتشابهة
+  // ═══════════════════════════════════════════════════════════
   const sideGroups = [
     {
       id: "main",
@@ -5131,48 +5374,48 @@ export default function AdminApp() {
       ],
     },
     {
-      id: "hr",
-      label: "الموارد البشرية",
+      id: "people",
+      label: "شؤون الموظفين",
       items: [
-        { id: "employees", icon: "👥", label: "الموظفين" },
-        { id: "org_hierarchy", icon: "🏢", label: "الهيكل التنظيمي" },
+        { id: "employees", icon: "👥", label: "الموظفون" },
         { id: "leaves_hub", icon: "🏖️", label: "الإجازات", badge: pending },
-        { id: "payroll", icon: "💰", label: "الرواتب 🔒" },
-        { id: "salary_changes", icon: "📈", label: "تعديلات الرواتب" },
-        { id: "letters", icon: "📄", label: "الإفادات" },
-        { id: "surveys", icon: "📊", label: "الاستطلاعات" },
-        { id: "hr_tickets", icon: "📨", label: "رسائل الموظفين" },
-        { id: "evaluations_hr", icon: "⭐", label: "التقييمات" },
-        { id: "recognition", icon: "🏆", label: "التكريم" },
-        { id: "admin_requests", icon: "📝", label: "الطلبات" },
+        { id: "requests_hub", icon: "📝", label: "طلبات الموظفين", badge: (badgeCounts.requests || 0) + (badgeCounts.tickets || 0) || null },
+        { id: "performance_hub", icon: "⭐", label: "التقييم والتكريم" },
         { id: "discipline_hub", icon: "⚖️", label: "النظام التأديبي", badge: (badgeCounts.complaints || 0) + (badgeCounts.investigations || 0) + (badgeCounts.violations || 0) + (badgeCounts.appeals || 0) || null },
         { id: "termination", icon: "🚪", label: "إنهاء الخدمات" },
       ],
     },
     {
-      id: "ops",
-      label: "العمليات والمتابعة",
+      id: "finance",
+      label: "الرواتب والمالية",
       items: [
-        { id: "tawasul", icon: "🤝", label: "نظام تواصل" },
+        { id: "payroll_hub", icon: "💰", label: "الرواتب والمالية 🔒" },
+      ],
+    },
+    {
+      id: "ops",
+      label: "العمليات اليومية",
+      items: [
         { id: "attendance_hub", icon: "⏰", label: "الحضور والتنظيم" },
-        { id: "custody_hub", icon: "📦", label: "العهد والأصول" },
+        { id: "tawasul", icon: "🤝", label: "المهام الإدارية" },
+        { id: "custody_hub", icon: "📦", label: "العُهَد والأصول" },
         { id: "reports", icon: "📄", label: "التقارير" },
       ],
     },
     {
       id: "comm",
-      label: "التواصل والمحتوى",
+      label: "التواصل والتفاعل",
       items: [
-        { id: "content_hub", icon: "📣", label: "المحتوى (تعاميم + بنرات + مناسبات)" },
+        { id: "content_hub", icon: "📣", label: "المحتوى" },
         { id: "challenges_hub", icon: "🎯", label: "التحديات والأسئلة" },
+        { id: "push", icon: "🔔", label: "إشعارات الجوال" },
       ],
     },
     {
       id: "config",
-      label: "الإعدادات والتكامل",
+      label: "النظام",
       items: [
-        { id: "settings_hub", icon: "⚙️", label: "الإعدادات" },
-        { id: "kadwar_sync", icon: "🔗", label: "كوادر — التكامل" },
+        { id: "settings_hub", icon: "⚙️", label: "إعدادات النظام" },
       ],
     },
   ];
@@ -5210,7 +5453,7 @@ export default function AdminApp() {
       .admin-bounce { animation: admin-bounce 2s ease-in-out infinite; }
       .admin-smooth { transition: all 0.25s cubic-bezier(0.4,0,0.2,1); }
       .admin-smooth-slow { transition: all 0.4s cubic-bezier(0.4,0,0.2,1); }
-      .admin-hover-lift:hover { transform: translateY(-2px); box-shadow: 0 4px 12px rgba(0,0,0,0.12); }
+      .admin-hover-lift:hover { transform: translateY(-3px); box-shadow: 0 6px 16px rgba(0,0,0,0.10), 0 12px 28px rgba(0,0,0,0.08), 0 2px 4px rgba(0,0,0,0.06); }
       /* Ripple */
       .admin-ripple { position: relative; overflow: hidden; }
       .admin-ripple-wave { position: absolute; border-radius: 50%; background: rgba(255,255,255,0.4); pointer-events: none; animation: admin-ripple-grow 0.6s ease-out forwards; }
@@ -6228,6 +6471,16 @@ export default function AdminApp() {
           • SettingsHub:    system_settings, backup, benefits, test_panel, system_check, storage, admin_profile
           • CustodyHub:     (custody_admin, asset_management حُذفتا سابقاً)
       */}
+
+      {/* v7.122 — NEW UNIFIED HUBS (إعادة توزيع كاملة) */}
+      {tab === "payroll_hub" && <PayrollHub t={t} B={B} emps={safeEmps} role={role} />}
+      {tab === "requests_hub" && <RequestsHub t={t} B={B} emps={safeEmps} />}
+      {tab === "performance_hub" && <PerformanceHub t={t} B={B} emps={safeEmps} />}
+
+      {/* v7.122 — Fallback لـ tabs قديمة قد تُستدعى مباشرة */}
+      {tab === "emp_edits" && <EmployeeEditsPanel t={t} B={B} actorName="HR" />}
+
+      {/* v7.122 — Legacy tab supports (يعمل أيضاً إذا استُدعي مباشرة) */}
       {tab === "letters" && <LettersPanel t={t} B={B} emps={safeEmps} />}
       {tab === "surveys" && <SurveysPanel t={t} B={B} emps={safeEmps} />}
       {tab === "hr_tickets" && <HRTicketsPanel t={t} B={B} emps={safeEmps} />}
@@ -6239,6 +6492,8 @@ export default function AdminApp() {
       {tab === "salary_changes" && <SalaryChangeApprovalsPanel t={t} B={B} role={role} />}
       {tab === "tawasul" && <TawasulAdminPanel t={t} B={B} />}
       {tab === "org_hierarchy" && <OrgHierarchyPanel t={t} B={B} />}
+      {/* v7.122 — Push notifications promoted to top-level nav */}
+      {tab === "push" && <PushBroadcastPanel t={t} B={B} emps={safeEmps} />}
     </div>
 
     {/* v7.24 — Mobile Bottom Nav (only visible on mobile) */}
@@ -19809,39 +20064,46 @@ function SubTabBar({ tabs, active, onChange, t, B, badges }) {
     gap: ADMIN.space.xs,
     marginBottom: ADMIN.space.lg,
     flexWrap: "wrap",
-    padding: ADMIN.space.xs,
+    padding: ADMIN.space.xs + 2,
     background: t.bg,
     borderRadius: ADMIN.radius.md,
     border: "1px solid " + t.sep,
+    boxShadow: "inset 0 1px 3px rgba(0,0,0,0.05)",
   }}>
     {tabs.map(function(tb){
       var a = active === tb.id;
       var badge = badges[tb.id];
       return <button key={tb.id} onClick={adminRipple(function(){ onChange(tb.id); })} className="admin-ripple admin-smooth" style={{
-        padding: ADMIN.space.sm + "px " + ADMIN.space.md + "px",
+        padding: ADMIN.space.sm + 2 + "px " + (ADMIN.space.md + 2) + "px",
         borderRadius: ADMIN.radius.sm,
-        background: a ? B.blue : "transparent",
+        background: a ? "linear-gradient(135deg, " + B.blue + ", " + B.blueDk + ")" : "transparent",
         color: a ? "#fff" : t.tx,
         border: "none",
         fontSize: ADMIN.font.sm,
-        fontWeight: a ? ADMIN.weight.heavy : ADMIN.weight.bold,
+        fontWeight: a ? ADMIN.weight.black : ADMIN.weight.bold,
         cursor: "pointer",
         display: "flex",
         alignItems: "center",
-        gap: 6,
+        gap: 7,
         fontFamily: "inherit",
-        boxShadow: a ? ADMIN.shadow.colored(B.blue) : "none",
+        boxShadow: a
+          ? "0 4px 12px " + B.blue + "50, 0 2px 4px " + B.blue + "30, inset 0 1px 0 rgba(255,255,255,0.2)"
+          : "none",
         transform: a ? "translateY(-1px)" : "translateY(0)",
+        letterSpacing: 0.2,
       }}>
-        <span style={{ fontSize: ADMIN.font.md }}>{tb.icon}</span>
+        <span style={{ fontSize: ADMIN.font.md + 1 }}>{tb.icon}</span>
         <span>{tb.label}</span>
         {badge ? <span style={{
-          padding: "1px 7px",
+          padding: "2px 8px",
           borderRadius: ADMIN.radius.full,
           background: a ? "rgba(255,255,255,0.25)" : B.red,
           color: "#fff",
           fontSize: ADMIN.font.tiny,
-          fontWeight: ADMIN.weight.heavy,
+          fontWeight: ADMIN.weight.black,
+          minWidth: 20,
+          textAlign: "center",
+          boxShadow: a ? "none" : "0 2px 4px " + B.red + "40",
         }}>{badge}</span> : null}
       </button>;
     })}
@@ -19913,94 +20175,252 @@ function DisciplineHub({ t, B, emps, badgeCounts }) {
   </div>;
 }
 
-/* ────── SettingsHub — الإعدادات (8 تابات، منظمة في 3 مجموعات) ────── */
+/* ────── SettingsHub — v7.122: 4 أقسام مُنظمة (بدلاً من 16 تاب متراص) ────── */
 function SettingsHub({ t, B, emps, onLogout, onOpenOldSettings }) {
-  var [sub, setSub] = useState("work");
-  return <div>
-    <SubTabBar t={t} B={B} active={sub} onChange={setSub}
-      tabs={[
-        { id: "work",          icon: "⏰", label: tr("أنواع الدوام") },
-        { id: "holidays",      icon: "📅", label: tr("العطل الرسمية") },
-        { id: "benefits",      icon: "🏅", label: tr("الامتيازات") },
-        { id: "system",        icon: "🛠️", label: tr("إعدادات النظام") },
-        { id: "emp_edits",     icon: "✏️", label: tr("تعديلات موظفين") },
-        { id: "push",          icon: "🔔", label: tr("إشعارات الجوال") },
-        { id: "salary_sheets", icon: "💰", label: tr("مسيرات الرواتب") },
-        { id: "audit",         icon: "📜", label: tr("سجل العمليات") },
-        { id: "attach_queue",  icon: "📎", label: tr("مرفقات معلّقة") },
-        { id: "attachments",   icon: "🗂", label: tr("أنواع المرفقات") },
-        { id: "faces",         icon: "📸", label: tr("بصمات الوجه") },
-        { id: "cleanup",       icon: "🧹", label: tr("تنظيف البيانات") },
-        { id: "advanced",      icon: "📨", label: tr("إعدادات متقدمة") },
-        { id: "storage",       icon: "💾", label: tr("التخزين والنسخ") },
-        { id: "check",         icon: "🔍", label: tr("فحص + اختبار") },
-        { id: "admin",         icon: "🔐", label: tr("حساب المدير") },
-      ]} />
-    {sub === "work" && <WorkTypesPanel t={t} B={B} emps={emps} />}
-    {sub === "holidays" && <HolidaysPanel t={t} B={B} />}
-    {sub === "benefits" && <BenefitsPanel t={t} B={B} />}
-    {sub === "system" && <SystemSettingsPanel t={t} B={B} />}
-    {sub === "emp_edits" && <EmployeeEditsPanel t={t} B={B} actorName="HR" />}
-    {sub === "push" && <PushBroadcastPanel t={t} B={B} emps={emps} />}
-    {sub === "salary_sheets" && <SalarySheetsPanel t={t} B={B} emps={emps} />}
-    {sub === "audit" && <AuditLogPanel t={t} B={B} emps={emps} />}
-    {/* v7.10 — Pending attachments central queue */}
-    {sub === "attach_queue" && <PendingAttachmentsQueue t={t} B={B} />}
-    {/* v6.98 — مكوّنات يتيمة من tab "settings" القديم تم نقلها هنا */}
-    {sub === "attachments" && <AttachmentTypesManager t={t} B={B} />}
-    {sub === "faces" && <FacesManager t={t} B={B} emps={emps} />}
-    {sub === "cleanup" && <DataCleanupManager t={t} B={B} />}
-    {sub === "advanced" && <div>
-      <div style={{ padding: 14, background: t.card, borderRadius: 12, border: "1px solid " + t.sep, marginBottom: 12 }}>
-        <div style={{ fontSize: 14, fontWeight: 800, color: t.tx, marginBottom: 8 }}>📨 إعدادات متقدمة (في صفحتها الكاملة)</div>
-        <div style={{ fontSize: 11, color: t.txM, marginBottom: 14, lineHeight: 1.7 }}>
-          هذه الإعدادات تستخدم نماذج كبيرة وتعتمد على بيانات مشتركة — تُدار في صفحتها المنفصلة.
-        </div>
-        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
-          <button onClick={function(){ if (onOpenOldSettings) onOpenOldSettings("settings"); }} style={{ padding: "12px 14px", background: B.blue + "10", border: "1px solid " + B.blue + "40", color: B.blue, borderRadius: 10, fontSize: 12, fontWeight: 800, cursor: "pointer", textAlign: "right", fontFamily: "inherit" }}>
-            🕐 أوقات الدوام لكل فرع<br/>
-            <span style={{ fontSize: 10, fontWeight: 600, opacity: 0.85 }}>تعديل ساعات العمل والاستراحة</span>
-          </button>
-          <button onClick={function(){ if (onOpenOldSettings) onOpenOldSettings("settings"); }} style={{ padding: "12px 14px", background: "rgba(124,58,237,0.1)", border: "1px solid rgba(124,58,237,0.4)", color: "#7C3AED", borderRadius: 10, fontSize: 12, fontWeight: 800, cursor: "pointer", textAlign: "right", fontFamily: "inherit" }}>
-            📬 توجيه البريد والمراسلات<br/>
-            <span style={{ fontSize: 10, fontWeight: 600, opacity: 0.85 }}>قوائم التوزيع + تخصيص لموظف</span>
-          </button>
-          <button onClick={function(){ if (onOpenOldSettings) onOpenOldSettings("settings"); }} style={{ padding: "12px 14px", background: "rgba(217,119,6,0.1)", border: "1px solid rgba(217,119,6,0.4)", color: "#D97706", borderRadius: 10, fontSize: 12, fontWeight: 800, cursor: "pointer", textAlign: "right", fontFamily: "inherit" }}>
-            👁 الموظفون تحت الملاحظة<br/>
-            <span style={{ fontSize: 10, fontWeight: 600, opacity: 0.85 }}>إعدادات المتابعة المشددة</span>
-          </button>
-          <button onClick={function(){ if (onOpenOldSettings) onOpenOldSettings("settings"); }} style={{ padding: "12px 14px", background: "rgba(34,197,94,0.1)", border: "1px solid rgba(34,197,94,0.4)", color: "#16A34A", borderRadius: 10, fontSize: 12, fontWeight: 800, cursor: "pointer", textAlign: "right", fontFamily: "inherit" }}>
-            ⏱ البريك العشوائي<br/>
-            <span style={{ fontSize: 10, fontWeight: 600, opacity: 0.85 }}>وقت بصمة العودة عشوائي</span>
-          </button>
-        </div>
-      </div>
-    </div>}
-    {sub === "storage" && <div>
-      <div style={{ display: "grid", gridTemplateColumns: "1fr", gap: 14 }}>
-        <div style={{ padding: 14, background: t.card, borderRadius: 12, border: "1px solid " + t.sep }}>
-          <div style={{ fontSize: 13, fontWeight: 800, color: t.tx, marginBottom: 10 }}>💾 التخزين</div>
+  // v7.122 — القسم الرئيسي + الـ sub-tab داخله
+  var initialSection = "company";
+  var initialSub = null;
+  try {
+    var saved = sessionStorage.getItem("basma_hub_sub_settings_hub");
+    // Map redirects to sections
+    var SUB_TO_SECTION = {
+      integration: { section: "integration", sub: "kadwar" },
+      company: { section: "company", sub: "holidays" },
+      monitoring: { section: "monitoring", sub: "audit" },
+      maintenance: { section: "maintenance", sub: "cleanup" },
+    };
+    if (saved && SUB_TO_SECTION[saved]) {
+      initialSection = SUB_TO_SECTION[saved].section;
+      initialSub = SUB_TO_SECTION[saved].sub;
+      sessionStorage.removeItem("basma_hub_sub_settings_hub");
+    }
+  } catch(e) {}
+
+  var [section, setSection] = useState(initialSection);
+
+  // 4 أقسام رئيسية مع أيقونات ملوّنة
+  var SECTIONS = [
+    { id: "company", icon: "🏢", label: tr("الشركة"), color: "#2B5EA7", desc: tr("البيانات الأساسية للشركة") },
+    { id: "integration", icon: "🔗", label: tr("التكامل"), color: "#7C3AED", desc: tr("كوادر والتخزين والإعدادات المتقدمة") },
+    { id: "monitoring", icon: "📊", label: tr("المراقبة"), color: "#10B981", desc: tr("سجل العمليات وفحص النظام") },
+    { id: "maintenance", icon: "🧹", label: tr("الصيانة"), color: "#F59E0B", desc: tr("تنظيف البيانات والمرفقات") },
+  ];
+
+  // Sub-tabs لكل قسم
+  var SUB_TABS = {
+    company: [
+      { id: "holidays", icon: "📅", label: tr("العطل الرسمية") },
+      { id: "benefits", icon: "🏅", label: tr("الامتيازات") },
+      { id: "admin",    icon: "🔐", label: tr("حساب المدير") },
+    ],
+    integration: [
+      { id: "kadwar",   icon: "🔗", label: tr("كوادر") },
+      { id: "storage",  icon: "💾", label: tr("التخزين والنسخ") },
+      { id: "advanced", icon: "📨", label: tr("إعدادات متقدمة") },
+    ],
+    monitoring: [
+      { id: "audit",  icon: "📜", label: tr("سجل العمليات") },
+      { id: "check",  icon: "🔍", label: tr("فحص + اختبار") },
+    ],
+    maintenance: [
+      { id: "cleanup",      icon: "🧹", label: tr("تنظيف البيانات") },
+      { id: "faces",        icon: "📸", label: tr("بصمات الوجه") },
+      { id: "attach_queue", icon: "📎", label: tr("مرفقات معلّقة") },
+      { id: "attachments",  icon: "🗂", label: tr("أنواع المرفقات") },
+    ],
+  };
+
+  // أول sub-tab في كل قسم (default)
+  var defaultSubs = { company: "holidays", integration: "kadwar", monitoring: "audit", maintenance: "cleanup" };
+  var [sub, setSub] = useState(initialSub || defaultSubs[initialSection]);
+
+  // عند تغيير القسم → اضبط sub-tab على الأول في القسم الجديد
+  function handleSectionChange(newSec) {
+    setSection(newSec);
+    setSub(defaultSubs[newSec]);
+  }
+
+  var activeSection = SECTIONS.find(function(s){ return s.id === section; }) || SECTIONS[0];
+
+  return <div style={{ maxWidth: "100%", overflowX: "hidden" }}>
+    {/* 🎨 Section Selector — 4 بطاقات ملوّنة */}
+    <div style={{
+      display: "grid",
+      gridTemplateColumns: "repeat(auto-fit, minmax(160px, 1fr))",
+      gap: ADMIN.space.sm,
+      marginBottom: ADMIN.space.lg,
+    }}>
+      {SECTIONS.map(function(s){
+        var active = section === s.id;
+        return <button key={s.id} onClick={adminRipple(function(){ handleSectionChange(s.id); })}
+          className="admin-ripple admin-smooth admin-hover-lift"
+          style={{
+            padding: ADMIN.space.md + "px " + ADMIN.space.sm + "px",
+            borderRadius: ADMIN.radius.lg,
+            background: active ? s.color : t.card,
+            border: "2px solid " + (active ? s.color : t.sep),
+            color: active ? "#fff" : t.tx,
+            cursor: "pointer",
+            fontFamily: "inherit",
+            textAlign: "center",
+            boxShadow: active
+              ? "0 4px 12px " + s.color + "50, 0 2px 4px rgba(0,0,0,0.1)"
+              : "0 1px 3px rgba(0,0,0,0.06)",
+          }}>
+          <div style={{ fontSize: 28, marginBottom: 4 }}>{s.icon}</div>
+          <div style={{ fontSize: ADMIN.font.sm, fontWeight: ADMIN.weight.black, marginBottom: 2 }}>{s.label}</div>
+          <div style={{ fontSize: ADMIN.font.tiny, opacity: active ? 0.9 : 0.6, fontWeight: ADMIN.weight.medium }}>
+            {s.desc}
+          </div>
+        </button>;
+      })}
+    </div>
+
+    {/* Sub-tabs للقسم الحالي */}
+    <div style={{ marginBottom: ADMIN.space.md }}>
+      <SubTabBar t={t} B={B} active={sub} onChange={setSub} tabs={SUB_TABS[section]} />
+    </div>
+
+    {/* ═══ القسم: الشركة ═══ */}
+    {section === "company" && sub === "holidays" && <HolidaysPanel t={t} B={B} />}
+    {section === "company" && sub === "benefits" && <BenefitsPanel t={t} B={B} />}
+    {section === "company" && sub === "admin" && <AdminProfile t={t} B={B} onLogout={onLogout} />}
+
+    {/* ═══ القسم: التكامل ═══ */}
+    {section === "integration" && sub === "kadwar" && <KadwarSyncPanel t={t} B={B} emps={emps} />}
+    {section === "integration" && sub === "storage" && <div>
+      <div style={{ display: "grid", gridTemplateColumns: "1fr", gap: ADMIN.space.md }}>
+        <div style={{ padding: ADMIN.space.md, background: t.card, borderRadius: ADMIN.radius.lg, border: "1px solid " + t.sep }}>
           <StoragePanel t={t} B={B} />
         </div>
-        <div style={{ padding: 14, background: t.card, borderRadius: 12, border: "1px solid " + t.sep }}>
-          <div style={{ fontSize: 13, fontWeight: 800, color: t.tx, marginBottom: 10 }}>🛡️ النسخ الاحتياطي</div>
+        <div style={{ padding: ADMIN.space.md, background: t.card, borderRadius: ADMIN.radius.lg, border: "1px solid " + t.sep }}>
           <BackupPanel t={t} B={B} />
         </div>
       </div>
     </div>}
-    {sub === "check" && <div>
-      <div style={{ display: "grid", gridTemplateColumns: "1fr", gap: 14 }}>
-        <div style={{ padding: 14, background: t.card, borderRadius: 12, border: "1px solid " + t.sep }}>
-          <div style={{ fontSize: 13, fontWeight: 800, color: t.tx, marginBottom: 10 }}>🔍 فحص النظام</div>
+    {section === "integration" && sub === "advanced" && <div>
+      <div style={{ padding: ADMIN.space.md, background: t.card, borderRadius: ADMIN.radius.lg, border: "1px solid " + t.sep }}>
+        <div style={{ fontSize: ADMIN.font.md, fontWeight: ADMIN.weight.black, color: t.tx, marginBottom: 8 }}>📨 {tr("إعدادات متقدمة")}</div>
+        <div style={{ fontSize: ADMIN.font.xs, color: t.txM, marginBottom: ADMIN.space.md, lineHeight: 1.7 }}>
+          {tr("هذه الإعدادات تستخدم نماذج كبيرة وتعتمد على بيانات مشتركة — تُدار في صفحتها المنفصلة")}
+        </div>
+        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: ADMIN.space.sm }}>
+          <button onClick={function(){ if (onOpenOldSettings) onOpenOldSettings("settings"); }} style={{ padding: "12px 14px", background: B.blue + "10", border: "1px solid " + B.blue + "40", color: B.blue, borderRadius: 10, fontSize: 12, fontWeight: 800, cursor: "pointer", textAlign: "right", fontFamily: "inherit" }}>
+            🕐 {tr("أوقات الدوام لكل فرع")}<br/>
+            <span style={{ fontSize: 10, fontWeight: 600, opacity: 0.85 }}>{tr("تعديل ساعات العمل والاستراحة")}</span>
+          </button>
+          <button onClick={function(){ if (onOpenOldSettings) onOpenOldSettings("settings"); }} style={{ padding: "12px 14px", background: "rgba(124,58,237,0.1)", border: "1px solid rgba(124,58,237,0.4)", color: "#7C3AED", borderRadius: 10, fontSize: 12, fontWeight: 800, cursor: "pointer", textAlign: "right", fontFamily: "inherit" }}>
+            📬 {tr("توجيه البريد والمراسلات")}<br/>
+            <span style={{ fontSize: 10, fontWeight: 600, opacity: 0.85 }}>{tr("قوائم التوزيع + تخصيص لموظف")}</span>
+          </button>
+          <button onClick={function(){ if (onOpenOldSettings) onOpenOldSettings("settings"); }} style={{ padding: "12px 14px", background: "rgba(217,119,6,0.1)", border: "1px solid rgba(217,119,6,0.4)", color: "#D97706", borderRadius: 10, fontSize: 12, fontWeight: 800, cursor: "pointer", textAlign: "right", fontFamily: "inherit" }}>
+            👁 {tr("الموظفون تحت الملاحظة")}<br/>
+            <span style={{ fontSize: 10, fontWeight: 600, opacity: 0.85 }}>{tr("إعدادات المتابعة المشددة")}</span>
+          </button>
+          <button onClick={function(){ if (onOpenOldSettings) onOpenOldSettings("settings"); }} style={{ padding: "12px 14px", background: "rgba(34,197,94,0.1)", border: "1px solid rgba(34,197,94,0.4)", color: "#16A34A", borderRadius: 10, fontSize: 12, fontWeight: 800, cursor: "pointer", textAlign: "right", fontFamily: "inherit" }}>
+            ⏱ {tr("البريك العشوائي")}<br/>
+            <span style={{ fontSize: 10, fontWeight: 600, opacity: 0.85 }}>{tr("وقت بصمة العودة عشوائي")}</span>
+          </button>
+        </div>
+      </div>
+    </div>}
+
+    {/* ═══ القسم: المراقبة ═══ */}
+    {section === "monitoring" && sub === "audit" && <AuditLogPanel t={t} B={B} emps={emps} />}
+    {section === "monitoring" && sub === "check" && <div>
+      <div style={{ display: "grid", gridTemplateColumns: "1fr", gap: ADMIN.space.md }}>
+        <div style={{ padding: ADMIN.space.md, background: t.card, borderRadius: ADMIN.radius.lg, border: "1px solid " + t.sep }}>
           <SystemCheckPanel t={t} B={B} />
         </div>
-        <div style={{ padding: 14, background: t.card, borderRadius: 12, border: "1px solid " + t.sep }}>
-          <div style={{ fontSize: 13, fontWeight: 800, color: t.tx, marginBottom: 10 }}>🧪 اختبار النظام</div>
+        <div style={{ padding: ADMIN.space.md, background: t.card, borderRadius: ADMIN.radius.lg, border: "1px solid " + t.sep }}>
           <TestPanel t={t} B={B} emps={emps} />
         </div>
       </div>
     </div>}
-    {sub === "admin" && <AdminProfile t={t} B={B} onLogout={onLogout} />}
+
+    {/* ═══ القسم: الصيانة ═══ */}
+    {section === "maintenance" && sub === "cleanup" && <DataCleanupManager t={t} B={B} />}
+    {section === "maintenance" && sub === "faces" && <FacesManager t={t} B={B} emps={emps} />}
+    {section === "maintenance" && sub === "attach_queue" && <PendingAttachmentsQueue t={t} B={B} />}
+    {section === "maintenance" && sub === "attachments" && <AttachmentTypesManager t={t} B={B} />}
+  </div>;
+}
+
+/* ═══════════════════════════════════════════════════════════════════
+ * v7.122 — 3 Unified Hubs جديدة (إعادة هيكلة كاملة)
+ *   PayrollHub:     الرواتب الموحّد (manage + changes + sheets)
+ *   RequestsHub:    طلبات الموظفين (requests + tickets + letters)
+ *   PerformanceHub: التقييم والتكريم (evaluations + recognition)
+ * ═══════════════════════════════════════════════════════════════════ */
+
+/* 💰 PayrollHub — الرواتب والمالية الموحّدة */
+function PayrollHub({ t, B, emps, role }) {
+  // v7.122 — فتح على sub-tab مطلوب (من redirect)
+  var initialSub = "manage";
+  try {
+    var saved = sessionStorage.getItem("basma_hub_sub_payroll_hub");
+    if (saved === "manage" || saved === "changes" || saved === "sheets") {
+      initialSub = saved;
+      sessionStorage.removeItem("basma_hub_sub_payroll_hub");
+    }
+  } catch(e) {}
+  var [sub, setSub] = useState(initialSub);
+  return <div style={{ maxWidth: "100%", overflowX: "hidden" }}>
+    <SubTabBar t={t} B={B} active={sub} onChange={setSub}
+      tabs={[
+        { id: "manage",  icon: "💰", label: tr("إدارة الرواتب") },
+        { id: "changes", icon: "📈", label: tr("تعديلات الرواتب") },
+        { id: "sheets",  icon: "📄", label: tr("مسيرات الرواتب") },
+      ]} />
+    {sub === "manage" && <PayrollPanel t={t} B={B} emps={emps} />}
+    {sub === "changes" && <SalaryChangeApprovalsPanel t={t} B={B} role={role} />}
+    {sub === "sheets" && <SalarySheetsPanel t={t} B={B} emps={emps} />}
+  </div>;
+}
+
+/* 📝 RequestsHub — كل تواصل الموظفين مع HR */
+function RequestsHub({ t, B, emps }) {
+  var initialSub = "requests";
+  try {
+    var saved = sessionStorage.getItem("basma_hub_sub_requests_hub");
+    if (saved === "requests" || saved === "tickets" || saved === "letters") {
+      initialSub = saved;
+      sessionStorage.removeItem("basma_hub_sub_requests_hub");
+    }
+  } catch(e) {}
+  var [sub, setSub] = useState(initialSub);
+  return <div style={{ maxWidth: "100%", overflowX: "hidden" }}>
+    <SubTabBar t={t} B={B} active={sub} onChange={setSub}
+      tabs={[
+        { id: "requests", icon: "📝", label: tr("الطلبات الإدارية") },
+        { id: "tickets",  icon: "📨", label: tr("رسائل HR") },
+        { id: "letters",  icon: "📄", label: tr("الإفادات") },
+      ]} />
+    {sub === "requests" && <HRRequestsAdminPanel t={t} B={B} emps={emps} />}
+    {sub === "tickets" && <HRTicketsPanel t={t} B={B} emps={emps} />}
+    {sub === "letters" && <LettersPanel t={t} B={B} emps={emps} />}
+  </div>;
+}
+
+/* ⭐ PerformanceHub — الأداء والتكريم */
+function PerformanceHub({ t, B, emps }) {
+  var initialSub = "evaluations";
+  try {
+    var saved = sessionStorage.getItem("basma_hub_sub_performance_hub");
+    if (saved === "evaluations" || saved === "recognition") {
+      initialSub = saved;
+      sessionStorage.removeItem("basma_hub_sub_performance_hub");
+    }
+  } catch(e) {}
+  var [sub, setSub] = useState(initialSub);
+  return <div style={{ maxWidth: "100%", overflowX: "hidden" }}>
+    <SubTabBar t={t} B={B} active={sub} onChange={setSub}
+      tabs={[
+        { id: "evaluations", icon: "⭐", label: tr("التقييمات") },
+        { id: "recognition", icon: "🏆", label: tr("التكريم") },
+      ]} />
+    {sub === "evaluations" && <EvaluationsHRPanel t={t} B={B} emps={emps} />}
+    {sub === "recognition" && <RecognitionAdminPanel t={t} B={B} emps={emps} />}
   </div>;
 }
 
@@ -20743,19 +21163,29 @@ function ChallengesUnifiedSettingsPanel({ t, B }) {
   );
 }
 
-/* ContentHub */
+/* ContentHub — v7.122: يشمل الاستطلاعات الآن */
 function ContentHub({ t, B, emps, branches, events, setEvents, hrQuestions, setHrQuestions, saveSettings, newQ, setNewQ, Fn, Toggle }) {
-  var [sub, setSub] = useState("announcements");
-  return <div>
+  var initialSub = "announcements";
+  try {
+    var saved = sessionStorage.getItem("basma_hub_sub_content_hub");
+    if (saved) {
+      initialSub = saved;
+      sessionStorage.removeItem("basma_hub_sub_content_hub");
+    }
+  } catch(e) {}
+  var [sub, setSub] = useState(initialSub);
+  return <div style={{ maxWidth: "100%", overflowX: "hidden" }}>
     <SubTabBar t={t} B={B} active={sub} onChange={setSub}
       tabs={[
         { id: "announcements", icon: "📢", label: "التعاميم" },
         { id: "banners",       icon: "🎨", label: "البنرات" },
         { id: "events",        icon: "🎉", label: "المناسبات" },
+        { id: "surveys",       icon: "📊", label: "الاستطلاعات" },
       ]} />
     {sub === "announcements" && <AnnouncementsPanel t={t} B={B} emps={emps} branches={branches} />}
     {sub === "banners" && <BannersPanel t={t} B={B} />}
     {sub === "events" && <EventsPanel events={events} setEvents={setEvents} t={t} B={B} Fn={Fn} Toggle={Toggle} />}
+    {sub === "surveys" && <SurveysPanel t={t} B={B} emps={emps} />}
   </div>;
 }
 

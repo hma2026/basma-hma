@@ -12,7 +12,7 @@ import { t as tr, setLang, getLang, getDir, isRTL, subscribeLangChange } from ".
 
 /* ═══════════ APP CONFIG (إعدادات التطبيق) ═══════════ */
 const APP_CONFIG = {
-  VER: "7.117",
+  VER: "7.122",
   NAME: "بصمة HMA",
   FULL_NAME: "نظام الحضور والانصراف الذكي",
   COMPANY: "هاني محمد عسيري للاستشارات الهندسية",
@@ -960,7 +960,7 @@ function MobileAppInner() {
   function startTawasulPolling(emp) {
     if (tawasulPollRef.current.interval) clearInterval(tawasulPollRef.current.interval);
     var pollMyId = emp && (emp.id || emp.username);
-    var pollIsAdmin = emp && (emp.role === "admin" || emp.isAdmin || emp.username === "admin");
+    var pollIsAdmin = emp && (emp.role === "admin" || emp.role === "hr_manager" || emp.isAdmin || emp.username === "admin");
     // Request browser notification permission
     if (typeof Notification !== "undefined" && Notification.permission === "default" && !tawasulPollRef.current.requested) {
       tawasulPollRef.current.requested = true;
@@ -2314,41 +2314,80 @@ function HRMessagesBanner({ user, onOpenProfile }) {
 }
 
 function SurveyBanner({ user }) {
-  var [surveys, setSurveys] = useState([]);
-  var [votedMap, setVotedMap] = useState({});
+  // v7.121 — Atomic state + localStorage dismissal
+  var [data, setData] = useState({ loaded: false, pending: [] });
   var [selected, setSelected] = useState(null);
   var [selectedOpts, setSelectedOpts] = useState([]);
   var [submitting, setSubmitting] = useState(false);
   var [justVotedId, setJustVotedId] = useState(null);
+  // v7.121 — track locally dismissed/voted surveys (survives server lag)
+  var [dismissedLocally, setDismissedLocally] = useState(function(){
+    try {
+      var raw = localStorage.getItem("basma_survey_dismissed_" + (user && user.id || ""));
+      if (raw) return JSON.parse(raw) || {};
+    } catch(e) {}
+    return {};
+  });
+
+  function markDismissed(surveyId) {
+    setDismissedLocally(function(prev){
+      var next = Object.assign({}, prev);
+      next[surveyId] = Date.now();
+      try {
+        localStorage.setItem("basma_survey_dismissed_" + (user && user.id || ""), JSON.stringify(next));
+      } catch(e) {}
+      return next;
+    });
+  }
 
   async function load() {
     try {
       var r = await fetch("/api/data?action=surveys&status=active&empId=" + encodeURIComponent(user.id));
       var d = await r.json();
       var list = Array.isArray(d) ? d : [];
-      setSurveys(list);
-      // v7.110 — Debug log for troubleshooting
+
+      // v7.121 — Filter out expired surveys client-side (stricter: include end-of-day boundary)
+      var nowTs = Date.now();
+      list = list.filter(function(s){
+        if (!s.endDate) return true;
+        try {
+          // endDate is "YYYY-MM-DD"; expire at end of that day (23:59:59)
+          var endOfDay = new Date(s.endDate + "T23:59:59").getTime();
+          return endOfDay > nowTs;
+        } catch(e) { return true; }
+      });
+
       if (typeof window !== "undefined" && window.localStorage && window.localStorage.getItem("basma_debug") === "1") {
         console.log("[SurveyBanner]", { count: list.length, list: list, userId: user.id });
       }
+
       // Check voted status for each
-      var map = {};
-      await Promise.all(list.map(async function(s){
+      var votedResults = await Promise.all(list.map(async function(s){
         try {
           var vr = await fetch("/api/data?action=survey-has-voted&surveyId=" + encodeURIComponent(s.id) + "&empId=" + encodeURIComponent(user.id));
           var vd = await vr.json();
-          map[s.id] = vd.voted;
-        } catch(e) { map[s.id] = false; }
+          return { id: s.id, voted: !!vd.voted };
+        } catch(e) { return { id: s.id, voted: false }; }
       }));
-      setVotedMap(map);
-    } catch(e) {}
+      var voted = {};
+      votedResults.forEach(function(r){ voted[r.id] = r.voted; });
+
+      // v7.121 — Atomic update: filter both voted AND locally dismissed
+      var pending = list.filter(function(s){ return !voted[s.id] && !dismissedLocally[s.id]; });
+      setData({ loaded: true, pending: pending });
+    } catch(e) {
+      setData({ loaded: true, pending: [] });
+    }
   }
 
   useEffect(function(){ if (user && user.id) load(); }, [user && user.id]);
 
-  var pending = surveys.filter(function(s){ return !votedMap[s.id]; });
-  if (pending.length === 0) return null;
-  var survey = pending[0]; // Show first unvoted
+  // v7.119 — Don't render anything until fully loaded (prevents flash)
+  if (!data.loaded) return null;
+  if (data.pending.length === 0) return null;
+  var survey = data.pending[0]; // Show first unvoted
+  // v7.121 — extra safety: also hide if current survey was just dismissed
+  if (dismissedLocally[survey.id]) return null;
 
   function toggleOption(optId) {
     if (survey.multipleChoice) {
@@ -2371,6 +2410,8 @@ function SurveyBanner({ user }) {
       var d = await r.json();
       if (d.ok) {
         setJustVotedId(survey.id);
+        // v7.121 — mark as dismissed locally immediately (so banner never flashes again)
+        markDismissed(survey.id);
         setTimeout(function(){
           setSelected(null);
           setSelectedOpts([]);
@@ -2539,11 +2580,11 @@ function HomePage({ user, branch, workType, now, todayAtt, allAtt, gps, gpsDist,
   var [showAnswerToast, setShowAnswerToast] = useState(false);
   var challengeDoneToday = localStorage.getItem("basma_challenge_" + todayStr()) === "1";
   var hasCheckedIn = (todayAtt || []).some(function(r){ return r.type === "checkin"; });
-  // v7.91 — نافذة التحدي موسَّعة أكثر: من الفجر (4 صباحاً) إلى 30 دقيقة قبل الدوام
-  // السبب: الموظفون في فترات مختلفة، والنافذة القديمة (ساعتين-نصف ساعة) ضيقة جداً
+  // v7.120 — نافذة التحدي: من الفجر (4 صباحاً) إلى نهاية اليوم — طالما الموظف لم يسجل حضوره
+  // الشرط: hasCheckedIn يحمي من ظهور التحدي بعد تسجيل الحضور
+  // السبب: بعض الموظفين في فترات مختلفة (مساء، ليلي)، والنافذة القديمة (حتى 30د قبل الدوام) كانت ضيقة
   var nowMinC = new Date().getHours() * 60 + new Date().getMinutes();
-  var shiftStartMinC = branch ? timeToMin(branch.start) : 480;
-  var challengeWindowOpen = nowMinC >= 240 /* 4 AM */ && nowMinC <= (shiftStartMinC - 30);
+  var challengeWindowOpen = nowMinC >= 240; /* من 4 صباحاً فما فوق */
   var showChallenge = !!challengeQ && !hasCheckedIn && !challengeDoneToday && challengeAnswer === null && !challengeDismissed && challengeWindowOpen;
 
   function answerChallenge(idx) {
@@ -2778,11 +2819,7 @@ function HomePage({ user, branch, workType, now, todayAtt, allAtt, gps, gpsDist,
               {tr("تحدي الصباح يبدأ في الفجر")}
             </div>;
           }
-          if (nowMins > (shiftStart - 30)) {
-            return <div style={{ marginTop: SPACING.sm, ...TYPOGRAPHY.caption, color: COLORS.textSecondary }}>
-              {tr("انتهى وقت التحدي — سجل حضورك")}
-            </div>;
-          }
+          // v7.120 — لا نعرض رسالة "انتهى وقت التحدي" لأن النافذة أصبحت طول اليوم حتى تسجيل الحضور
           return null;
         })()}
       </div>
@@ -5722,7 +5759,7 @@ function saveFavs(username, favs) {
 function TawasulCreateModal({ user, allEmps, categories, projects, onClose, onSaved, existing }) {
   var myId = user && (user.id || user.username);
   var myEmail = user && user.email;
-  var isAdminUser = user && (user.role === "admin" || user.isAdmin || user.username === "admin");
+  var isAdminUser = user && (user.role === "admin" || user.role === "hr_manager" || user.isAdmin || user.username === "admin");
   var isEdit = !!existing;
   var cats = (categories && categories.length > 0) ? categories : TAWASUL_CATEGORIES_DEFAULT;
 
@@ -14929,6 +14966,18 @@ function NotificationsInlineView({ user }) {
   var [notifications, setNotifications] = useState([]);
   var [loading, setLoading] = useState(true);
   var [shownCount, setShownCount] = useState(5);
+  // v7.120 — تتبّع الإشعارات الموسَّعة
+  var [expandedIds, setExpandedIds] = useState({});
+  // v7.121 — قائمة الإشعارات المخفيّة (محليّاً في localStorage)
+  var [hiddenIds, setHiddenIds] = useState(function(){
+    try {
+      var raw = localStorage.getItem("basma_notif_hidden_" + (user && user.id || ""));
+      if (raw) return JSON.parse(raw) || {};
+    } catch(e) {}
+    return {};
+  });
+  // v7.121 — فتح/إغلاق قسم الأرشيف
+  var [archiveOpen, setArchiveOpen] = useState(false);
 
   useEffect(function(){
     async function load() {
@@ -14941,11 +14990,54 @@ function NotificationsInlineView({ user }) {
     if (user && user.id) load();
   }, [user && user.id]);
 
+  // v7.121 — حفظ قائمة الإخفاء في localStorage عند أي تعديل
+  function persistHidden(next) {
+    try {
+      localStorage.setItem("basma_notif_hidden_" + (user && user.id || ""), JSON.stringify(next));
+    } catch(e) {}
+  }
+
   async function markAllRead() {
     try {
       await api("notifications", { method: "PUT", body: { markAllRead: true, empId: user.id } });
       setNotifications(function(prev){ return prev.map(function(n){ return {...n, read: true}; }); });
     } catch(e) {}
+  }
+
+  // v7.121 — إخفاء إشعار (ينقله للأرشيف، لا يحذفه)
+  function hideNotification(id, evt) {
+    if (evt) { evt.stopPropagation(); evt.preventDefault(); }
+    if (!id) return;
+    setHiddenIds(function(prev){
+      var next = Object.assign({}, prev, {});
+      next[id] = Date.now();
+      persistHidden(next);
+      return next;
+    });
+    // تحديث حالة القراءة في الخادم (اختياري)
+    api("notifications", { method: "PUT", body: { id: id, read: true, empId: user.id } }).catch(function(){});
+  }
+
+  // v7.121 — استعادة إشعار من الأرشيف
+  function restoreNotification(id, evt) {
+    if (evt) { evt.stopPropagation(); evt.preventDefault(); }
+    if (!id) return;
+    setHiddenIds(function(prev){
+      var next = Object.assign({}, prev);
+      delete next[id];
+      persistHidden(next);
+      return next;
+    });
+  }
+
+  // v7.120 — تبديل حالة التوسّع
+  function toggleExpand(id) {
+    setExpandedIds(function(prev){
+      var next = Object.assign({}, prev);
+      if (next[id]) delete next[id];
+      else next[id] = true;
+      return next;
+    });
   }
 
   var typeIcons = {
@@ -14958,6 +15050,10 @@ function NotificationsInlineView({ user }) {
     return <EmptyState text="جارِ التحميل..." />;
   }
 
+  // v7.121 — فصل الإشعارات: مرئية (ليست في قائمة الإخفاء) + مؤرشفة (مخفيّة)
+  var visibleList = notifications.filter(function(n){ return !hiddenIds[n.id]; });
+  var archivedList = notifications.filter(function(n){ return hiddenIds[n.id]; });
+
   if (notifications.length === 0) {
     return (
       <div style={{ padding: SPACING.lg, textAlign: "center" }}>
@@ -14967,10 +15063,10 @@ function NotificationsInlineView({ user }) {
     );
   }
 
-  var unreadCount = notifications.filter(function(n){ return !n.read; }).length;
-  var shown = notifications.slice(0, shownCount);
-  var hasMore = notifications.length > shownCount;
-  var remaining = notifications.length - shownCount;
+  var unreadCount = visibleList.filter(function(n){ return !n.read; }).length;
+  var shown = visibleList.slice(0, shownCount);
+  var hasMore = visibleList.length > shownCount;
+  var remaining = visibleList.length - shownCount;
 
   return (
     <div>
@@ -14978,7 +15074,9 @@ function NotificationsInlineView({ user }) {
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: SPACING.md }}>
         <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
           <span style={{ fontSize: 12, color: COLORS.textMuted, fontFamily: TYPOGRAPHY.fontTajawal }}>
-            إجمالي: {notifications.length}
+            {visibleList.length === 0 && archivedList.length > 0
+              ? "لا توجد إشعارات نشطة"
+              : "النشطة: " + visibleList.length}
           </span>
           {unreadCount > 0 && (
             <span style={{ fontSize: 10, fontWeight: 800, padding: "2px 8px", borderRadius: 10, background: COLORS.textDanger + "20", color: COLORS.textDanger }}>
@@ -14993,29 +15091,108 @@ function NotificationsInlineView({ user }) {
         )}
       </div>
 
-      {/* Notifications list */}
+      {/* Notifications list — v7.121 — نقطة ذهبية/خضراء للإخفاء + توسيع */}
       <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
         {shown.map(function(n){
+          var nid = n.id || ("idx_" + Math.random());
+          var isExpanded = !!expandedIds[nid];
+          var hasLongBody = n.body && n.body.length > 80;
           return (
-            <div key={n.id || Math.random()} style={{
-              display: "flex", gap: 10, padding: 10,
-              background: n.read ? COLORS.bgSecondary : "rgba(201,168,76,0.08)",
-              border: "1px solid " + (n.read ? COLORS.cardBorder : COLORS.goldLight + "50"),
-              borderRadius: 10
-            }}>
+            <div key={nid}
+              onClick={function(){ if (n.id) toggleExpand(n.id); }}
+              style={{
+                display: "flex", gap: 10, padding: 10,
+                background: n.read ? COLORS.bgSecondary : "rgba(201,168,76,0.08)",
+                border: "1px solid " + (n.read ? COLORS.cardBorder : COLORS.goldLight + "50"),
+                borderRadius: 10,
+                cursor: n.id ? "pointer" : "default",
+                transition: "all 0.2s",
+                WebkitTapHighlightColor: "transparent",
+                position: "relative",
+              }}>
               <div style={{ fontSize: 18, width: 28, textAlign: "center", flexShrink: 0 }}>
                 {typeIcons[n.type] || "📌"}
               </div>
               <div style={{ flex: 1, minWidth: 0 }}>
                 <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 6, marginBottom: 3 }}>
-                  <div style={{ fontSize: 12, fontWeight: 800, color: n.read ? COLORS.textSecondary : COLORS.textPrimary, flex: 1, minWidth: 0 }}>
+                  <div style={{ fontSize: 12, fontWeight: 800, color: n.read ? COLORS.textSecondary : COLORS.textPrimary, flex: 1, minWidth: 0, paddingInlineEnd: 22 }}>
                     {n.title || "إشعار"}
                   </div>
-                  {!n.read && <div style={{ width: 8, height: 8, borderRadius: 4, background: COLORS.textDanger, flexShrink: 0, marginTop: 4 }} />}
+                  {/* v7.121 — النقطة الذهبية في الزاوية: اضغط لإخفاء الإشعار (ينتقل للأرشيف) */}
+                  <button
+                    onClick={function(e){ hideNotification(n.id, e); }}
+                    aria-label="إخفاء الإشعار"
+                    title="اضغط لإخفاء الإشعار"
+                    style={{
+                      position: "absolute",
+                      top: 10,
+                      insetInlineStart: 10,
+                      width: 22,
+                      height: 22,
+                      borderRadius: "50%",
+                      border: "1.5px solid " + COLORS.goldLight,
+                      background: !n.read ? COLORS.goldLight : "transparent",
+                      cursor: "pointer",
+                      display: "flex",
+                      alignItems: "center",
+                      justifyContent: "center",
+                      padding: 0,
+                      boxShadow: !n.read ? "0 0 8px " + COLORS.goldLight + "80" : "none",
+                      WebkitTapHighlightColor: "transparent",
+                      flexShrink: 0,
+                    }}>
+                    <span style={{
+                      width: 10,
+                      height: 10,
+                      borderRadius: "50%",
+                      background: !n.read ? "#fff" : COLORS.goldLight,
+                      display: "block",
+                    }} />
+                  </button>
                 </div>
-                {n.body && <div style={{ fontSize: 10.5, color: COLORS.textMuted, lineHeight: 1.5 }}>{n.body}</div>}
-                <div style={{ fontSize: 9, color: COLORS.goldLight, marginTop: 4, fontFamily: TYPOGRAPHY.fontTajawal }}>
-                  {n.createdAt ? new Date(n.createdAt).toLocaleString("ar-SA") : ""}
+                {n.body && (
+                  <div style={{
+                    fontSize: 10.5,
+                    color: COLORS.textMuted,
+                    lineHeight: 1.5,
+                    whiteSpace: isExpanded ? "pre-wrap" : "normal",
+                    display: isExpanded ? "block" : "-webkit-box",
+                    WebkitLineClamp: isExpanded ? "none" : 2,
+                    WebkitBoxOrient: "vertical",
+                    overflow: isExpanded ? "visible" : "hidden",
+                    wordBreak: "break-word",
+                  }}>{n.body}</div>
+                )}
+                <div style={{
+                  display: "flex",
+                  justifyContent: "space-between",
+                  alignItems: "center",
+                  marginTop: 6,
+                  gap: 8,
+                  flexWrap: "wrap",
+                }}>
+                  <div style={{ fontSize: 9, color: COLORS.goldLight, fontFamily: TYPOGRAPHY.fontTajawal }}>
+                    {n.createdAt ? new Date(n.createdAt).toLocaleString("ar-SA") : ""}
+                  </div>
+                  {/* زر التوسيع/الطي — يظهر فقط إذا كان النص طويلاً */}
+                  {hasLongBody && (
+                    <button
+                      onClick={function(e){ e.stopPropagation(); if (n.id) toggleExpand(n.id); }}
+                      style={{
+                        padding: "3px 12px",
+                        borderRadius: 12,
+                        background: "rgba(201,168,76,0.15)",
+                        border: "1px solid " + COLORS.goldLight + "60",
+                        color: COLORS.goldLight,
+                        fontSize: 10,
+                        fontWeight: 800,
+                        cursor: "pointer",
+                        fontFamily: TYPOGRAPHY.fontTajawal,
+                        WebkitTapHighlightColor: "transparent",
+                      }}>
+                      {isExpanded ? "▲ طي" : "▼ عرض الكل"}
+                    </button>
+                  )}
                 </div>
               </div>
             </div>
@@ -15042,6 +15219,110 @@ function NotificationsInlineView({ user }) {
         >
           ⬇️ إظهار المزيد ({remaining})
         </button>
+      )}
+
+      {/* v7.121 — قسم الأرشيف المطوي */}
+      {archivedList.length > 0 && (
+        <div style={{ marginTop: SPACING.md }}>
+          <button
+            onClick={function(){ setArchiveOpen(function(v){ return !v; }); }}
+            style={{
+              width: "100%",
+              padding: "10px 14px",
+              borderRadius: RADIUS.md,
+              background: "rgba(100,116,139,0.12)",
+              border: "1px solid " + COLORS.cardBorder,
+              color: COLORS.textSecondary,
+              fontSize: 12,
+              fontWeight: 800,
+              cursor: "pointer",
+              fontFamily: TYPOGRAPHY.fontTajawal,
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "space-between",
+              gap: 8,
+              WebkitTapHighlightColor: "transparent",
+            }}>
+            <span style={{ display: "flex", alignItems: "center", gap: 8 }}>
+              <span>📦</span>
+              <span>الأرشيف</span>
+              <span style={{
+                padding: "1px 8px",
+                borderRadius: 10,
+                background: COLORS.bgSecondary,
+                fontSize: 10,
+                fontWeight: 800,
+                color: COLORS.textMuted,
+              }}>{archivedList.length}</span>
+            </span>
+            <span style={{ fontSize: 14, color: COLORS.textMuted }}>{archiveOpen ? "▲" : "▼"}</span>
+          </button>
+
+          {archiveOpen && (
+            <div style={{ display: "flex", flexDirection: "column", gap: 6, marginTop: SPACING.sm }}>
+              {archivedList.map(function(n){
+                var nid = n.id || ("arc_" + Math.random());
+                return (
+                  <div key={nid} style={{
+                    display: "flex", gap: 10, padding: 10,
+                    background: COLORS.bgSecondary,
+                    border: "1px dashed " + COLORS.cardBorder,
+                    borderRadius: 10,
+                    opacity: 0.85,
+                    position: "relative",
+                  }}>
+                    <div style={{ fontSize: 16, width: 28, textAlign: "center", flexShrink: 0, opacity: 0.7 }}>
+                      {typeIcons[n.type] || "📌"}
+                    </div>
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <div style={{ fontSize: 11, fontWeight: 700, color: COLORS.textSecondary, marginBottom: 3 }}>
+                        {n.title || "إشعار"}
+                      </div>
+                      {n.body && (
+                        <div style={{
+                          fontSize: 10,
+                          color: COLORS.textMuted,
+                          lineHeight: 1.4,
+                          display: "-webkit-box",
+                          WebkitLineClamp: 1,
+                          WebkitBoxOrient: "vertical",
+                          overflow: "hidden",
+                        }}>{n.body}</div>
+                      )}
+                      <div style={{
+                        display: "flex",
+                        justifyContent: "space-between",
+                        alignItems: "center",
+                        marginTop: 4,
+                        gap: 6,
+                      }}>
+                        <div style={{ fontSize: 9, color: COLORS.textMuted, fontFamily: TYPOGRAPHY.fontTajawal }}>
+                          {n.createdAt ? new Date(n.createdAt).toLocaleString("ar-SA") : ""}
+                        </div>
+                        <button
+                          onClick={function(e){ restoreNotification(n.id, e); }}
+                          style={{
+                            padding: "3px 10px",
+                            borderRadius: 10,
+                            background: "rgba(48,209,88,0.12)",
+                            border: "1px solid rgba(48,209,88,0.4)",
+                            color: "#30D158",
+                            fontSize: 10,
+                            fontWeight: 800,
+                            cursor: "pointer",
+                            fontFamily: TYPOGRAPHY.fontTajawal,
+                            WebkitTapHighlightColor: "transparent",
+                          }}>
+                          ↩︎ استعادة
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </div>
       )}
     </div>
   );
@@ -15346,7 +15627,7 @@ function MyTeamPage({ user, allEmps }) {
   var [aiLoading, setAiLoading] = useState(false);
 
   var myId = user && (user.id || user.username);
-  var isAdmin = user && (user.isAdmin || user.isGeneralManager || user.role === "admin");
+  var isAdmin = user && (user.isAdmin || user.isGeneralManager || user.role === "admin" || user.role === "hr_manager");
 
   // Collect user's aliases
   var myAliases = React.useMemo(function(){
