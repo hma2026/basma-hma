@@ -153,6 +153,18 @@ var EN_TRANSLATIONS = {
   // ────── v7.90 — Holidays Management ──────
   "العطل الرسمية": "Official Holidays",
   "العطل الرسمية وأيام الراحة": "Official Holidays & Weekends",
+
+  // ────── v7.93 — Holidays Mobile Integration ──────
+  "العطل القادمة": "Upcoming Holidays",
+  "أيام العطل الرسمية خلال الأشهر القادمة": "Official holidays in the coming months",
+  "استمتع بإجازتك": "Enjoy your holiday",
+  "عطلة رسمية": "Official Holiday",
+  "اليوم!": "Today!",
+  "غداً": "Tomorrow",
+  "مضت": "Past",
+  "لا توجد عطل مسجلة حالياً": "No holidays scheduled yet",
+  "ستظهر هنا عند إضافتها من الإدارة": "They will appear here when added by admin",
+  "لا توجد بيانات": "No data",
   "عطلة مسجلة": "holidays recorded",
   "يوم راحة أسبوعي": "weekly day-off",
   "أيام نهاية الأسبوع": "Weekend Days",

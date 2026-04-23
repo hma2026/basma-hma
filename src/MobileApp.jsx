@@ -12,7 +12,7 @@ import { t as tr, setLang, getLang, getDir, isRTL, subscribeLangChange } from ".
 
 /* ═══════════ APP CONFIG (إعدادات التطبيق) ═══════════ */
 const APP_CONFIG = {
-  VER: "7.92",
+  VER: "7.93",
   NAME: "بصمة HMA",
   FULL_NAME: "نظام الحضور والانصراف الذكي",
   COMPANY: "هاني محمد عسيري للاستشارات الهندسية",
@@ -3376,6 +3376,11 @@ function RecordsHub({ user, onTicket, myTickets }) {
         <SectionHeader emoji="🙋" title="استئذان وإفادات الغياب" />
         <MyRequestsTab user={user} />
       </div>
+
+      {/* v7.93 — Section: العطل القادمة (يعرض من HolidaysPanel) */}
+      <ProfileAccordion emoji="📅" title={tr("العطل القادمة")} subtitle={tr("أيام العطل الرسمية خلال الأشهر القادمة")}>
+        <UpcomingHolidaysCard />
+      </ProfileAccordion>
 
       {/* v7.43 — Section 2: إجازاتي (accordion, default open) */}
       <ProfileAccordion emoji="🏖️" title={tr("إجازاتي")} subtitle={tr("الطلبات · التسليم · الرصيد")} defaultOpen={true}>
@@ -16097,30 +16102,213 @@ function MembershipFreezeNotice({ user }) {
 }
 
 /* ═══════════ BRANCH HOLIDAYS (الإجازات الرسمية لكل فرع) ═══════════ */
-function BranchHolidayBanner({ branch }) {
-  if (!branch) return null;
-  var holidays_sa = [
-    { name: "اليوم الوطني", date: "09-23" },
-    { name: "يوم التأسيس", date: "02-22" },
-    { name: "عيد الفطر", date: "03-30" },
-    { name: "عيد الأضحى", date: "06-07" },
-  ];
-  var holidays_tr = [
-    { name: "يوم الجمهورية", date: "10-29" },
-    { name: "عيد الطفولة", date: "04-23" },
-    { name: "يوم النصر", date: "08-30" },
-  ];
-  var holidays = (branch.tz && branch.tz.includes("Istanbul")) ? holidays_tr : holidays_sa;
-  var today = todayStr();
-  var todayMD = today.slice(5);
-  var holiday = holidays.find(function(h){ return h.date === todayMD; });
+/* ═════════════════════════════════════════════════════════════════
+ * v7.93 — UpcomingHolidaysCard — عرض العطل القادمة للموظف
+ * ═════════════════════════════════════════════════════════════════
+ * يعرض آخر 6 عطل قادمة من الـ API (holidays endpoint)
+ * يحسب "كم يوم متبقٍ" لكل عطلة
+ * ═════════════════════════════════════════════════════════════════ */
+function UpcomingHolidaysCard() {
+  var [holidays, setHolidays] = useState([]);
+  var [loading, setLoading] = useState(true);
+  var [error, setError] = useState(null);
 
-  if (!holiday) return null;
+  useEffect(function(){
+    setLoading(true);
+    fetch("/api/data?action=holidays")
+      .then(function(r){ return r.json(); })
+      .then(function(d){
+        if (d.ok && Array.isArray(d.list)) {
+          var today = new Date().toISOString().slice(0, 10);
+          var thisYear = new Date().getFullYear();
+          var nextYear = thisYear + 1;
+
+          // Expand recurring holidays to next 2 years
+          var expanded = [];
+          d.list.forEach(function(h){
+            if (!h.date) return;
+            if (h.recurring) {
+              // Include this year + next year
+              [thisYear, nextYear].forEach(function(yr){
+                var dateThisYear = yr + "-" + h.date.slice(5);
+                if (dateThisYear >= today) {
+                  expanded.push({ ...h, date: dateThisYear });
+                }
+              });
+            } else {
+              if (h.date >= today) expanded.push(h);
+            }
+          });
+
+          // Sort by date ascending, take 6
+          expanded.sort(function(a, b){ return a.date.localeCompare(b.date); });
+          setHolidays(expanded.slice(0, 6));
+        } else {
+          setError(tr("لا توجد بيانات"));
+        }
+        setLoading(false);
+      })
+      .catch(function(e){
+        setError(tr("فشل الاتصال"));
+        setLoading(false);
+      });
+  }, []);
+
+  // Days until
+  function daysUntil(dateStr) {
+    var today = new Date();
+    today.setHours(0, 0, 0, 0);
+    var target = new Date(dateStr);
+    target.setHours(0, 0, 0, 0);
+    var diff = Math.ceil((target - today) / (1000 * 60 * 60 * 24));
+    return diff;
+  }
+
+  // Format date
+  function fmtDate(dateStr) {
+    try {
+      var d = new Date(dateStr);
+      var lang = getLang() === "ar" ? "ar-SA" : "en-US";
+      return d.toLocaleDateString(lang, { weekday: "short", day: "numeric", month: "short" });
+    } catch(e) { return dateStr; }
+  }
+
+  // Type meta
+  var TYPE_META = {
+    official:  { icon: "🇸🇦", color: "#0F766E", bg: "rgba(15,118,110,0.12)" },
+    national:  { icon: "🎉", color: "#DC2626", bg: "rgba(220,38,38,0.12)" },
+    religious: { icon: "🕌", color: "#7C3AED", bg: "rgba(124,58,237,0.12)" },
+    company:   { icon: "🏢", color: "#2B5EA7", bg: "rgba(43,94,167,0.12)" },
+  };
+
+  if (loading) {
+    return <div style={{ padding: 20, textAlign: "center", color: COLORS.textMuted, fontSize: 11 }}>⏳ {tr("جاري التحميل...")}</div>;
+  }
+
+  if (error) {
+    return <div style={{ padding: 14, background: "rgba(239,68,68,0.08)", borderRadius: 10, color: "#ef4444", fontSize: 11, textAlign: "center" }}>⚠️ {error}</div>;
+  }
+
+  if (holidays.length === 0) {
+    return (
+      <div style={{ padding: 20, textAlign: "center", color: COLORS.textMuted, fontSize: 11, lineHeight: 1.7 }}>
+        <div style={{ fontSize: 32, marginBottom: 8 }}>📅</div>
+        <div>{tr("لا توجد عطل مسجلة حالياً")}</div>
+        <div style={{ fontSize: 9, marginTop: 4, opacity: 0.7 }}>{tr("ستظهر هنا عند إضافتها من الإدارة")}</div>
+      </div>
+    );
+  }
+
+  // Days-until color
+  function daysColor(d) {
+    if (d === 0) return "#EF4444";   // Today = red
+    if (d <= 3) return "#F59E0B";    // 1-3 days = orange
+    if (d <= 14) return "#10B981";   // Week/2 = green
+    return COLORS.textMuted;          // Later = muted
+  }
+
   return (
-    <div style={{ background: "linear-gradient(135deg, #FF6B9D, #C850C0)", borderRadius: 16, padding: 14, marginBottom: 12, textAlign: "center", color: "#fff" }} className="basma-fadein">
-      <div style={{ fontSize: 24, marginBottom: 4 }}>🎉</div>
-      <div style={{ fontSize: 14, fontWeight: 800 }}>{"إجازة رسمية — " + holiday.name}</div>
-      <div style={{ fontSize: 10, opacity: .8, marginTop: 2 }}>{branch.name + " — يوم عطلة رسمية"}</div>
+    <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+      {holidays.map(function(h, i){
+        var meta = TYPE_META[h.type] || TYPE_META.official;
+        var days = daysUntil(h.date);
+        var daysLabel = days === 0
+          ? tr("اليوم!")
+          : days === 1
+            ? tr("غداً")
+            : days < 0
+              ? tr("مضت")
+              : days + " " + tr("يوم");
+
+        return (
+          <div key={h.id + "_" + i} style={{
+            display: "flex", alignItems: "center", gap: 12,
+            padding: "12px 14px", borderRadius: 12,
+            background: meta.bg,
+            border: "1px solid " + meta.color + "40",
+          }}>
+            {/* Icon */}
+            <div style={{
+              width: 42, height: 42, borderRadius: 10,
+              background: meta.color + "30",
+              display: "flex", alignItems: "center", justifyContent: "center",
+              fontSize: 20, flexShrink: 0,
+            }}>{meta.icon}</div>
+
+            {/* Content */}
+            <div style={{ flex: 1, minWidth: 0 }}>
+              <div style={{ fontSize: 13, fontWeight: 800, color: COLORS.textPrimary, marginBottom: 2 }}>
+                {getLang() === "en" && h.nameEn ? h.nameEn : h.name}
+              </div>
+              <div style={{ fontSize: 10, color: COLORS.textMuted, display: "flex", alignItems: "center", gap: 6 }}>
+                <span>📅 {fmtDate(h.date)}</span>
+                {h.endDate && <span>→ {fmtDate(h.endDate)}</span>}
+              </div>
+            </div>
+
+            {/* Days */}
+            <div style={{
+              padding: "5px 12px", borderRadius: 14,
+              background: daysColor(days) + "20",
+              color: daysColor(days),
+              fontSize: 11, fontWeight: 800,
+              flexShrink: 0,
+            }}>{daysLabel}</div>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+/* ═════════════════════════════════════════════════════════════════
+ * v7.93 — BranchHolidayBanner (مُعاد بناؤه) — يعرض عطلة اليوم من HolidaysPanel
+ * ═════════════════════════════════════════════════════════════════
+ * المصدر: /api/data?action=holidays (v7.90) — بدل hardcoded list
+ * يظهر فقط إذا:
+ *   - اليوم عطلة رسمية من القائمة
+ *   - أو اليوم يوم نهاية أسبوع (من weekendDays)
+ * ═════════════════════════════════════════════════════════════════ */
+function BranchHolidayBanner({ branch }) {
+  var [holidayToday, setHolidayToday] = useState(null);
+  var [loading, setLoading] = useState(true);
+
+  useEffect(function(){
+    var ts = todayStr();
+    fetch("/api/data?action=is-holiday&date=" + ts)
+      .then(function(r){ return r.json(); })
+      .then(function(d){
+        if (d.ok && d.isHoliday) {
+          setHolidayToday({
+            name: d.name,
+            type: d.type || "official",
+          });
+        }
+        setLoading(false);
+      })
+      .catch(function(){ setLoading(false); });
+  }, []);
+
+  if (loading || !holidayToday) return null;
+
+  var isWeekend = holidayToday.type === "weekend";
+  var gradient = isWeekend
+    ? "linear-gradient(135deg, #F59E0B, #FBBF24)"  // Gold for weekends
+    : "linear-gradient(135deg, #FF6B9D, #C850C0)"; // Pink/Purple for official
+  var emoji = isWeekend ? "🌴" : "🎉";
+  var lbl = isWeekend ? "يوم راحة أسبوعي" : "عطلة رسمية";
+
+  return (
+    <div style={{
+      background: gradient,
+      borderRadius: 16, padding: 14, marginBottom: 12,
+      textAlign: "center", color: "#fff",
+    }} className="basma-fadein">
+      <div style={{ fontSize: 24, marginBottom: 4 }}>{emoji}</div>
+      <div style={{ fontSize: 14, fontWeight: 800 }}>{tr(lbl) + " — " + holidayToday.name}</div>
+      <div style={{ fontSize: 10, opacity: .85, marginTop: 2 }}>
+        {branch ? (branch.name + " — " + tr("استمتع بإجازتك")) : tr("استمتع بإجازتك")}
+      </div>
     </div>
   );
 }
