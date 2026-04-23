@@ -4,7 +4,7 @@ import { generateAttendanceReport, generateEmployeeReport, generateMonthlySummar
 import { exportFormalWarning, exportInvestigationRecord, exportAffidavit, exportEmploymentLetter, exportSalaryLetter, exportLeaveLetter } from "./formalPdfs";
 
 const APP = "بصمة HMA";
-const VER = "7.67";
+const VER = "7.69";
 const CO = "هاني محمد عسيري للإستشارات الهندسية";
 const B = { blue: "#2B5EA7", yellow: "#FDD800", red: "#E2192C", black: "#1A1A1A", blueDk: "#1E4478", blueLt: "#EDF3FB", gold: "#D4A017" };
 
@@ -6906,6 +6906,66 @@ function TestPanel({ t, B, emps }) {
         </div>
       </div>
 
+      {/* v7.69 — تشخيص سريع للتحدي الصباحي + استيراد الأسئلة الافتراضية */}
+      <div style={{ background: t.card, borderRadius: 12, padding: 16, border: "1px solid " + t.sep, marginBottom: 14 }}>
+        <div style={{ fontSize: 13, fontWeight: 800, color: t.tx, marginBottom: 10 }}>
+          ⚡ التحدي الصباحي — تشخيص وإدارة
+        </div>
+        <div style={{ fontSize: 11, color: t.txM, marginBottom: 12, lineHeight: 1.6 }}>
+          اختبر حالة نظام الأسئلة الصباحية أو استورد 30 سؤال افتراضي لبدء استخدام النظام.
+        </div>
+        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
+          <button
+            onClick={async function(){
+              setBusy(true);
+              try {
+                var r = await fetch("/api/data?action=settings");
+                var d = await r.json();
+                var qCount = (d && Array.isArray(d.questions)) ? d.questions.length : 0;
+                if (qCount === 0) {
+                  addLog("⚡ تشخيص التحدي: ❌ بنك الأسئلة فارغ — لن يظهر التحدي للموظفين", "error", "الحل: اضغط 'استيراد 30 سؤال افتراضي' أدناه");
+                } else {
+                  addLog("⚡ تشخيص التحدي: ✓ البنك يحوي " + qCount + " سؤال", "ok", "الأسئلة ستظهر للموظفين في نافذة 90 دقيقة قبل بداية الدوام (من ساعتين إلى 30 دقيقة قبل)");
+                }
+              } catch(e) {
+                addLog("⚡ تشخيص التحدي: ❌ فشل في الاتصال", "error", e.message);
+              }
+              setBusy(false);
+            }}
+            disabled={busy}
+            style={{ padding: "12px 10px", borderRadius: 10, background: busy ? t.sep : "#3B82F6", color: "#fff", border: "none", fontSize: 12, fontWeight: 700, cursor: busy ? "default" : "pointer", opacity: busy ? 0.5 : 1 }}
+          >
+            🔍 تشخيص الحالة
+          </button>
+          <button
+            onClick={async function(){
+              if (!confirm("استيراد 30 سؤال افتراضي؟\n\n• إذا البنك فارغ: ستُضاف جميعها\n• إذا البنك فيه أسئلة: ستُدمج (بدون تكرار)")) return;
+              setBusy(true);
+              try {
+                var r = await fetch("/api/data?action=seed_questions", {
+                  method: "POST",
+                  headers: { "Content-Type": "application/json" },
+                  body: JSON.stringify({ mode: "append" }),
+                });
+                var d = await r.json();
+                if (d.ok) {
+                  addLog("⚡ استيراد الأسئلة: ✓ تم بنجاح", "ok", "الإجمالي الآن: " + d.total + " سؤال (أضيف: " + d.added + ")");
+                } else {
+                  addLog("⚡ استيراد الأسئلة: ❌ فشل", "error", d.error || "خطأ غير معروف");
+                }
+              } catch(e) {
+                addLog("⚡ استيراد الأسئلة: ❌ فشل", "error", e.message);
+              }
+              setBusy(false);
+            }}
+            disabled={busy}
+            style={{ padding: "12px 10px", borderRadius: 10, background: busy ? t.sep : "#10B981", color: "#fff", border: "none", fontSize: 12, fontWeight: 700, cursor: busy ? "default" : "pointer", opacity: busy ? 0.5 : 1 }}
+          >
+            📦 استيراد 30 سؤال
+          </button>
+        </div>
+      </div>
+
       <div style={{ background: t.card, borderRadius: 12, padding: 16, border: "1px solid " + t.sep }}>
         <div style={{ fontSize: 12, fontWeight: 700, color: t.tx, marginBottom: 8, display: "flex", justifyContent: "space-between" }}>
           <span>📋 سجل الاختبارات</span>
@@ -13519,6 +13579,14 @@ function QuestionsPanel({ hrQuestions, setHrQuestions, saveSettings, newQ, setNe
       <div style={{ fontWeight: 800, marginBottom: 4, color: B.blue }}>ℹ️ كيف يعمل بنك الأسئلة</div>
       التحدي الصباحي يظهر للموظفين <b>فقط</b> من الأسئلة التي تحفظها أنت هنا. لا أسئلة افتراضية — إذا البنك فارغ، لا يظهر تحدي.<br/>
       الإجابة الأولى (الخضراء) دائماً هي الصحيحة — الخيارات تُخلط تلقائياً عند العرض للموظف.
+    </div>
+    {/* v7.69 — شرح نافذة الظهور */}
+    <div style={{ fontSize: 11, color: t.tx, marginBottom: 14, padding: 12, borderRadius: 10, background: "rgba(201,168,76,0.08)", border: "1px solid rgba(201,168,76,0.3)", lineHeight: 1.7 }}>
+      <div style={{ fontWeight: 800, marginBottom: 6, color: "#c9a84c" }}>⏰ متى يظهر التحدي للموظف؟</div>
+      <div>• يظهر <b>من ساعتين قبل بداية الدوام إلى 30 دقيقة قبله</b> (نافذة 90 دقيقة)</div>
+      <div>• مثال: لو بداية الدوام 8:30 → يظهر بين <b>6:30 و 8:00 صباحاً</b></div>
+      <div>• لا يظهر إذا سجّل الحضور بالفعل</div>
+      <div>• مرة واحدة في اليوم لكل موظف (+25 نقطة للإجابة الصحيحة)</div>
     </div>
     {hrQuestions.length < 10 && (
       <div style={{ background: "rgba(16,185,129,0.08)", borderRadius: 12, padding: 14, border: "1px solid rgba(16,185,129,0.3)", marginBottom: 14 }}>

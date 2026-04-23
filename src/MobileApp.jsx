@@ -11,7 +11,7 @@ import { exportEmploymentLetter, exportLeaveLetter } from "./formalPdfs";
 
 /* ═══════════ APP CONFIG (إعدادات التطبيق) ═══════════ */
 const APP_CONFIG = {
-  VER: "7.67",
+  VER: "7.69",
   NAME: "بصمة HMA",
   FULL_NAME: "نظام الحضور والانصراف الذكي",
   COMPANY: "هاني محمد عسيري للاستشارات الهندسية",
@@ -716,7 +716,7 @@ function MobileAppInner() {
   const [legalAlerts, setLegalAlerts] = useState(0);
   const [notifications, setNotifications] = useState([]);
   const [unreadCount, setUnreadCount] = useState(0);
-  const [showNotifs, setShowNotifs] = useState(false);
+  // v7.68 — showNotifs حُذف (الجرس العائم + Modal حُذفا في v7.65)
   const [pwaPrompt, setPwaPrompt] = useState(null);
   const [callBanner, setCallBanner] = useState(null); // { type, msg }
   const [fakeCall, setFakeCall] = useState(null); // { type, label } — fake incoming call screen
@@ -1574,7 +1574,7 @@ function MobileAppInner() {
       {faceModal && <FaceModal empId={user.id} onVerified={(photo) => doCheckin(faceModal.type, photo)} onSkip={() => doCheckin(faceModal.type)} onCancel={() => setFaceModal(null)} />}
       {challengeOpen && <ChallengeModal user={user} onClose={() => setChallengeOpen(false)} onPoints={(pts) => { const u = { ...user, points: (user.points||0)+pts }; setUser(u); localStorage.setItem("basma_user", JSON.stringify(u)); showToast("🎉 +" + pts + " نقطة!"); }} />}
       {/* v7.00 — LeaveModal render removed (موحَّد مع تبويب "إجازاتي") */}
-      {ticketModal && <TicketModal user={user} onClose={() => setTicketModal(false)} onSubmit={async (data) => { try { var r = await apiWithQueue("tickets", { method: "POST", body: { action: "create", empId: user.id, empName: user.name, initiatedBy: "employee", createdBy: user.name || user.id, createdByRole: "employee", subject: data.subject, message: data.message, priority: data.priority, category: "استفسار", requiresReply: false } }); setTicketModal(false); showToast(r._queued ? "💾 التذكرة محفوظة محلياً" : "تم إرسال التذكرة ✓"); } catch { showToast("خطأ في الإرسال", "error"); } }} />}
+      {ticketModal && <TicketModal user={user} onClose={() => setTicketModal(false)} onSubmit={async (data) => { try { var r = await apiWithQueue("tickets", { method: "POST", body: { action: "create", empId: user.id, empName: user.name, initiatedBy: "employee", createdBy: user.name || user.id, createdByRole: "employee", subject: data.subject, message: data.message, priority: data.priority, category: data.category || "general", requiresReply: false } }); setTicketModal(false); showToast(r._queued ? "💾 التذكرة محفوظة محلياً" : "تم إرسال التذكرة ✓"); } catch { showToast("خطأ في الإرسال", "error"); } }} />}
       {daySummary && <DaySummaryModal todayAtt={todayAtt} branch={branch} user={user} onClose={() => setDaySummary(false)} />}
       {preAbsModal && <PreAbsenceModal allEmps={allEmps} user={user} onClose={function(){ setPreAbsModal(false); }} onSubmit={async function(data) { try { var r = await apiWithQueue("pre_absence", { method: "POST", body: { ...data, reportedBy: user.id } }); setPreAbsModal(false); showToast(r._queued ? "💾 إفادة الغياب محفوظة محلياً" : "✅ تم تسجيل الإفادة المسبقة"); } catch(e) { showToast("خطأ في الإرسال", "error"); } }} />}
       {manualAttModal && <ManualAttModal allEmps={allEmps} user={user} onClose={function(){ setManualAttModal(false); }} onSubmit={async function(data) { try { await api("manual_checkin", { method: "POST", body: { ...data, adminId: user.id } }); setManualAttModal(false); showToast("✅ تم التحضير اليدوي"); loadData(user); } catch(e) { showToast("خطأ", "error"); } }} />}
@@ -2185,10 +2185,10 @@ function HomePage({ user, branch, workType, now, todayAtt, allAtt, gps, gpsDist,
   var [showAnswerToast, setShowAnswerToast] = useState(false);
   var challengeDoneToday = localStorage.getItem("basma_challenge_" + todayStr()) === "1";
   var hasCheckedIn = (todayAtt || []).some(function(r){ return r.type === "checkin"; });
-  // v7.36 — Challenge visible only 1 hour to 15 min before shift start
+  // v7.69 — نافذة التحدي موسَّعة: من ساعتين قبل الدوام إلى 30 دقيقة قبله (بدل 60 إلى 15)
   var nowMinC = new Date().getHours() * 60 + new Date().getMinutes();
   var shiftStartMinC = branch ? timeToMin(branch.start) : 480;
-  var challengeWindowOpen = nowMinC >= (shiftStartMinC - 60) && nowMinC <= (shiftStartMinC - 15);
+  var challengeWindowOpen = nowMinC >= (shiftStartMinC - 120) && nowMinC <= (shiftStartMinC - 30);
   var showChallenge = !!challengeQ && !hasCheckedIn && !challengeDoneToday && challengeAnswer === null && !challengeDismissed && challengeWindowOpen;
 
   function answerChallenge(idx) {
@@ -12409,43 +12409,98 @@ function TicketModal({ user, onClose, onSubmit }) {
   var [subject, setSubject] = useState("");
   var [message, setMessage] = useState("");
   var [priority, setPriority] = useState("normal");
+  var [category, setCategory] = useState("technical"); // v7.69 — تصنيف
   var [submitting, setSubmitting] = useState(false);
 
   async function submit() {
     if (!subject || !message) return;
     setSubmitting(true);
-    await onSubmit({ subject: subject, message: message, priority: priority });
+    await onSubmit({ subject: subject, message: message, priority: priority, category: category });
     setSubmitting(false);
   }
+
+  // v7.69 — تصنيفات التذكرة (للفرز في AdminApp)
+  var categories = [
+    { id: "technical", label: "🔧 تقني", desc: "مشكلة في التطبيق" },
+    { id: "account",   label: "👤 حساب", desc: "بيانات/كلمة سر" },
+    { id: "general",   label: "❓ عام", desc: "استفسار أو شكوى" },
+  ];
 
   return (
     <div style={S.overlay} onClick={onClose}>
       <div className="basma-slideup" style={{ ...S.modal, ...MODAL_BODY }} onClick={function(e){ e.stopPropagation(); }}>
-        <div style={{ ...ADMIN_MODAL_TITLE, marginBottom: 16 }}>🎫 طلب دعم فني جديد</div>
+        <div style={{ ...ADMIN_MODAL_TITLE, marginBottom: 16, color: COLORS.textPrimary }}>🎫 طلب دعم فني جديد</div>
 
-        <div style={{ display: "flex", gap: 6, marginBottom: 14 }}>
-          {[{id:"low",label:"منخفض",c:C.green},{id:"normal",label:"عادي",c:C.blue},{id:"high",label:"عاجل",c:C.red}].map(function(p) {
-            var active = priority === p.id;
-            return (
-              <button key={p.id} onClick={function(){ setPriority(p.id); }} style={{ flex: 1, padding: "8px 4px", borderRadius: 10, background: active ? p.c + "15" : "#f5f5f5", border: active ? "2px solid " + p.c : "2px solid transparent", fontSize: 11, fontWeight: 700, color: active ? p.c : C.sub, cursor: "pointer" }}>
-                {p.label}
-              </button>
-            );
-          })}
+        {/* v7.69 — تصنيف التذكرة */}
+        <div style={{ marginBottom: 14 }}>
+          <label style={FORM_LABEL}>نوع الطلب</label>
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 6 }}>
+            {categories.map(function(c){
+              var active = category === c.id;
+              return (
+                <button key={c.id} onClick={function(){ setCategory(c.id); }} style={{
+                  padding: "10px 6px",
+                  borderRadius: 10,
+                  background: COLORS.bgSecondary,
+                  border: active ? "2px solid " + COLORS.goldLight : "1px solid " + COLORS.cardBorder,
+                  color: COLORS.textPrimary,
+                  fontSize: 11, fontWeight: 700,
+                  cursor: "pointer",
+                  textAlign: "center",
+                  fontFamily: TYPOGRAPHY.fontTajawal,
+                }}>
+                  <div style={{ marginBottom: 2 }}>{c.label}</div>
+                  <div style={{ fontSize: 9, color: COLORS.textMuted }}>{c.desc}</div>
+                </button>
+              );
+            })}
+          </div>
         </div>
 
-        <div style={{ marginBottom: 10 }}>
-          <input value={subject} onChange={function(e){ setSubject(e.target.value); }} placeholder="الموضوع" style={{ width: "100%", padding: 12, borderRadius: 10, border: "1px solid " + C.bg, fontSize: 14, fontFamily: "'Tajawal',sans-serif" }} />
+        {/* الأولوية */}
+        <div style={{ marginBottom: 14 }}>
+          <label style={FORM_LABEL}>الأولوية</label>
+          <div style={{ display: "flex", gap: 6 }}>
+            {[{id:"low",label:"منخفض",c:"#10b981"},{id:"normal",label:"عادي",c:"#2b5ea7"},{id:"high",label:"عاجل",c:"#ef4444"}].map(function(p) {
+              var active = priority === p.id;
+              return (
+                <button key={p.id} onClick={function(){ setPriority(p.id); }} style={{
+                  flex: 1, padding: "10px 4px", borderRadius: 10,
+                  background: active ? p.c + "20" : COLORS.bgSecondary,
+                  border: active ? "2px solid " + p.c : "1px solid " + COLORS.cardBorder,
+                  fontSize: 11, fontWeight: 700,
+                  color: active ? p.c : COLORS.textPrimary,
+                  cursor: "pointer",
+                  fontFamily: TYPOGRAPHY.fontTajawal,
+                }}>
+                  {p.label}
+                </button>
+              );
+            })}
+          </div>
         </div>
 
         <div style={{ marginBottom: 14 }}>
-          <textarea value={message} onChange={function(e){ setMessage(e.target.value); }} placeholder="اكتب رسالتك هنا..." rows={3} style={{ width: "100%", padding: 12, borderRadius: 10, border: "1px solid " + C.bg, fontSize: 13, fontFamily: "'Tajawal',sans-serif", resize: "none", background: C.card, color: C.text }} />
+          <label style={FORM_LABEL}>الموضوع</label>
+          <input value={subject} onChange={function(e){ setSubject(e.target.value); }} placeholder="مثال: التطبيق لا يسجل حضوري" style={ADMIN_INPUT} />
         </div>
 
-        <div style={{ display: "flex", gap: 8 }}>
+        <div style={{ marginBottom: 16 }}>
+          <label style={FORM_LABEL}>الرسالة</label>
+          <textarea value={message} onChange={function(e){ setMessage(e.target.value); }} placeholder="اشرح المشكلة بالتفصيل..." rows={4} style={{ ...ADMIN_INPUT, resize: "none" }} />
+        </div>
+
+        <div style={{ display: "flex", gap: 10 }}>
           <button onClick={onClose} style={MODAL_CANCEL}>إلغاء</button>
-          <button onClick={submit} disabled={submitting || !subject || !message} style={{ flex: 1, padding: 12, borderRadius: 14, border: "none", background: "linear-gradient(135deg,"+C.orange+",#FF8021)", color: "#fff", fontSize: 14, fontWeight: 700, cursor: "pointer", opacity: (submitting || !subject || !message) ? .6 : 1 }}>
-            {submitting ? "جارِ الإرسال..." : "إرسال"}
+          <button onClick={submit} disabled={submitting || !subject || !message} style={{
+            flex: 1, padding: 14, borderRadius: 12, border: "none",
+            background: (submitting || !subject || !message) ? COLORS.bgSecondary : "linear-gradient(135deg, " + COLORS.goldLight + ", " + COLORS.goldDark + ")",
+            color: (submitting || !subject || !message) ? COLORS.textMuted : COLORS.textOnGold,
+            fontSize: 14, fontWeight: 800,
+            cursor: (submitting || !subject || !message) ? "default" : "pointer",
+            fontFamily: TYPOGRAPHY.fontTajawal,
+          }}>
+            {submitting ? "جارِ الإرسال..." : "📤 إرسال"}
           </button>
         </div>
       </div>
