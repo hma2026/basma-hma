@@ -427,3 +427,79 @@ export function exportLeaveLetter(employee, leave, options) {
 
   openPrintWindow("إفادة إجازة — " + (e.name || ''), body);
 }
+
+/* ════════════ 7. شهادة خبرة (experience certificate) v7.71 ════════════ */
+export function exportExperienceLetter(employee, options) {
+  var e = employee || {};
+  var opt = options || {};
+  var ref = "EXP-" + (e.id || Date.now());
+  var toEntity = opt.toEntity || 'لمن يهمه الأمر';
+
+  // حساب مدة الخدمة
+  var durationText = '';
+  if (e.joinDate) {
+    try {
+      var start = new Date(e.joinDate);
+      var end = opt.endDate ? new Date(opt.endDate) : new Date();
+      var diffMs = end - start;
+      var years = Math.floor(diffMs / (365.25 * 24 * 3600 * 1000));
+      var months = Math.floor((diffMs % (365.25 * 24 * 3600 * 1000)) / (30.44 * 24 * 3600 * 1000));
+      if (years > 0) durationText = years + ' سنة';
+      if (years > 0 && months > 0) durationText += ' و ';
+      if (months > 0) durationText += months + ' شهر';
+      if (!durationText) durationText = 'أقل من شهر';
+    } catch(err) {
+      durationText = '—';
+    }
+  }
+
+  var body =
+    '<div class="doc-ref">' +
+      '<div><strong>رقم المستند:</strong> ' + ref + '</div>' +
+      '<div><strong>التاريخ:</strong> ' + fmtDateAr(new Date()) + '</div>' +
+    '</div>' +
+
+    '<div class="doc-title">🪪 شهادة خبرة</div>' +
+    '<div class="doc-subtitle">' + toEntity + '</div>' +
+
+    '<div class="emp-box"><h3>بيانات الموظف</h3>' +
+      '<div class="emp-grid">' +
+        '<div class="label">الاسم:</div><div class="value">' + (e.name || '—') + '</div>' +
+        '<div class="label">الرقم الوظيفي:</div><div class="value">' + (e.id || '—') + '</div>' +
+        '<div class="label">المسمى الوظيفي:</div><div class="value">' + (e.role || '—') + '</div>' +
+        (e.department ? '<div class="label">الإدارة:</div><div class="value">' + e.department + '</div>' : '') +
+        '<div class="label">تاريخ المباشرة:</div><div class="value">' + fmtDateAr(e.joinDate) + '</div>' +
+        (opt.endDate ? '<div class="label">تاريخ انتهاء الخدمة:</div><div class="value">' + fmtDateAr(opt.endDate) + '</div>' : '<div class="label">حالة العمل:</div><div class="value">على رأس العمل</div>') +
+        (durationText ? '<div class="label">مدة الخدمة:</div><div class="value"><strong>' + durationText + '</strong></div>' : '') +
+      '</div>' +
+    '</div>' +
+
+    '<div class="section"><h3>نص الشهادة</h3>' +
+      '<div class="statement">' +
+        'تشهد إدارة الموارد البشرية بمكتب هاني محمد عسيري للاستشارات الهندسية بأن:<br/><br/>' +
+        '<strong>' + (e.name || '—') + '</strong>' +
+        ' يحمل الرقم الوظيفي <strong>' + (e.id || '—') + '</strong>' +
+        '، قد عمل لدينا بوظيفة <strong>' + (e.role || '—') + '</strong>' +
+        (e.department ? ' بإدارة <strong>' + e.department + '</strong>' : '') +
+        (e.joinDate ? ' منذ تاريخ <strong>' + fmtDateAr(e.joinDate) + '</strong>' : '') +
+        (opt.endDate ? ' حتى تاريخ <strong>' + fmtDateAr(opt.endDate) + '</strong>' : ' وما زال على رأس العمل حتى تاريخه') +
+        (durationText ? '، بمدة إجمالية قدرها <strong>' + durationText + '</strong>' : '') +
+        '.<br/><br/>' +
+        'وقد أثبت خلال مدة عمله الكفاءة المهنية والالتزام في أداء المهام الموكلة إليه.<br/><br/>' +
+        'وقد أُعطيت له هذه الشهادة بناءً على طلبه لاستخدامها في الأغراض النظامية، دون أدنى مسؤولية على المكتب.<br/><br/>' +
+        'تحريراً في: ' + fmtDateAr(new Date()) +
+      '</div>' +
+    '</div>' +
+
+    '<div class="sig-section">' +
+      '<div class="sig-box"><div class="title">ختم وتوقيع المكتب</div><div class="name">إدارة الموارد البشرية</div><div class="date">التاريخ: ' + fmtDateAr(new Date()) + '</div></div>' +
+      '<div class="sig-box"><div class="title">المسؤول</div><div class="name">' + (opt.signedBy || 'مدير الموارد البشرية') + '</div><div class="date">ختم رسمي: ............</div></div>' +
+    '</div>' +
+
+    '<div class="doc-footer">' +
+      '<div>مكتب هاني محمد عسيري للاستشارات الهندسية</div>' +
+      '<div>شهادة خبرة رسمية — جدة، المملكة العربية السعودية</div>' +
+    '</div>';
+
+  openPrintWindow("شهادة خبرة — " + (e.name || ''), body);
+}

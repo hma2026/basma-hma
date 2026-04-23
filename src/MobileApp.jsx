@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef, useCallback } from "react";
 import { COLORS, SPACING, TYPOGRAPHY, RADIUS, SHADOWS, Button, Card, Section, Icons, setTheme } from "./theme";
 import { ALL_VIOLATIONS_DEFAULT, PENALTY_TYPES, LAIHA_INFO, COMPLAINT_STATUS, VIOLATION_STATUS } from "./laiha";
-import { exportEmploymentLetter, exportLeaveLetter, exportSalaryLetter } from "./formalPdfs";
+import { exportEmploymentLetter, exportLeaveLetter, exportSalaryLetter, exportExperienceLetter } from "./formalPdfs";
 
 /* ═══════════════════════════════════════════
    بصمة HMA v4.51 — Mobile App
@@ -11,7 +11,7 @@ import { exportEmploymentLetter, exportLeaveLetter, exportSalaryLetter } from ".
 
 /* ═══════════ APP CONFIG (إعدادات التطبيق) ═══════════ */
 const APP_CONFIG = {
-  VER: "7.70",
+  VER: "7.72",
   NAME: "بصمة HMA",
   FULL_NAME: "نظام الحضور والانصراف الذكي",
   COMPANY: "هاني محمد عسيري للاستشارات الهندسية",
@@ -12083,16 +12083,16 @@ function HRRequestsHub({ user, onTicket, myTickets }) {
   var [activeTemplate, setActiveTemplate] = useState(null);   // id of template being filled
   var [comingSoonMsg, setComingSoonMsg] = useState(null);     // "قريباً" toast for unbuilt templates
 
-  // v7.70 — 10 قوالب طلبات HR (2 مُفعّلة: تعديل بيانات + شهادة راتب)
+  // v7.72 — 10 قوالب طلبات HR (7 مُفعّلة: 4 شهادات + 3 طلبات داخلية)
   var templates = [
     { id: "edit_data",     emoji: "✏️", label: "تعديل بياناتي",       color: "#6366F1", enabled: true,  desc: "تحديث الهاتف/العنوان/..." },
     { id: "salary_cert",   emoji: "📄", label: "شهادة راتب",          color: "#059669", enabled: true,  desc: "للبنوك والتأشيرات" },
-    { id: "experience_cert", emoji: "🪪", label: "شهادة خبرة",         color: "#0891B2", enabled: false, desc: "لأغراض التوظيف والهجرة" },
-    { id: "intro_letter",  emoji: "🏢", label: "خطاب تعريف",          color: "#7C3AED", enabled: false, desc: "تعريف بجهة العمل" },
+    { id: "experience_cert", emoji: "🪪", label: "شهادة خبرة",         color: "#0891B2", enabled: true,  desc: "لأغراض التوظيف والهجرة" },
+    { id: "intro_letter",  emoji: "🏢", label: "خطاب تعريف",          color: "#7C3AED", enabled: true,  desc: "تعريف بجهة العمل" },
     { id: "promotion",     emoji: "🚀", label: "طلب ترقية",            color: "#DC2626", enabled: false, desc: "طلب ترقية وظيفية" },
-    { id: "advance",       emoji: "💵", label: "سلفة على الراتب",      color: "#EA580C", enabled: false, desc: "طلب سلفة مقدمة من الراتب" },
-    { id: "transfer",      emoji: "🏠", label: "تحويل فرع",            color: "#0284C7", enabled: false, desc: "نقل لفرع آخر" },
-    { id: "hours_adjust",  emoji: "🕐", label: "تعديل ساعات الدوام",   color: "#9333EA", enabled: false, desc: "تعديل وقت البداية/النهاية" },
+    { id: "advance",       emoji: "💵", label: "سلفة على الراتب",      color: "#EA580C", enabled: true,  desc: "طلب سلفة مقدمة من الراتب" },
+    { id: "transfer",      emoji: "🏠", label: "تحويل فرع",            color: "#0284C7", enabled: true,  desc: "نقل لفرع آخر" },
+    { id: "hours_adjust",  emoji: "🕐", label: "تعديل ساعات الدوام",   color: "#9333EA", enabled: true,  desc: "تعديل وقت البداية/النهاية" },
     { id: "medical_ins",   emoji: "🏥", label: "تأمين طبي",            color: "#16A34A", enabled: false, desc: "استفسار أو تعديل" },
     { id: "other",         emoji: "❓", label: "طلب آخر",              color: "#64748B", enabled: false, desc: "نص حر لأي طلب" },
   ];
@@ -12177,20 +12177,45 @@ function HRRequestsHub({ user, onTicket, myTickets }) {
           </div>
         )}
 
-        {/* v7.70 — Salary Certificate Form */}
-        {activeTemplate === "salary_cert" && (
-          <div style={{ marginTop: SPACING.md, padding: 12, borderRadius: 10, background: "rgba(5,150,105,0.05)", border: "1px solid rgba(5,150,105,0.3)" }}>
-            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 10 }}>
-              <div style={{ fontSize: 12, fontWeight: 800, color: COLORS.textPrimary, display: "flex", alignItems: "center", gap: 6 }}>
-                📄 طلب شهادة راتب
+        {/* v7.70-v7.72 — نموذج موحَّد لطلبات HR (شهادات + نقل + ساعات دوام) */}
+        {(activeTemplate === "salary_cert" || activeTemplate === "experience_cert" || activeTemplate === "intro_letter") && (() => {
+          var tmpl = templates.find(function(x){ return x.id === activeTemplate; });
+          if (!tmpl) return null;
+          return (
+            <div style={{ marginTop: SPACING.md, padding: 12, borderRadius: 10, background: tmpl.color + "0D", border: "1px solid " + tmpl.color + "4D" }}>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 10 }}>
+                <div style={{ fontSize: 12, fontWeight: 800, color: COLORS.textPrimary, display: "flex", alignItems: "center", gap: 6 }}>
+                  {tmpl.emoji} طلب {tmpl.label}
+                </div>
+                <button onClick={function(){ setActiveTemplate(null); }} style={{ padding: "4px 10px", borderRadius: 8, background: COLORS.bgSecondary, border: "1px solid " + COLORS.cardBorder, color: COLORS.textSecondary, fontSize: 10, fontWeight: 700, cursor: "pointer", fontFamily: TYPOGRAPHY.fontTajawal }}>
+                  ✕ إغلاق
+                </button>
               </div>
-              <button onClick={function(){ setActiveTemplate(null); }} style={{ padding: "4px 10px", borderRadius: 8, background: COLORS.bgSecondary, border: "1px solid " + COLORS.cardBorder, color: COLORS.textSecondary, fontSize: 10, fontWeight: 700, cursor: "pointer", fontFamily: TYPOGRAPHY.fontTajawal }}>
-                ✕ إغلاق
-              </button>
+              <HRCertificateForm user={user} templateId={activeTemplate} templateLabel={tmpl.label} accentColor={tmpl.color} onSubmitted={function(){ setActiveTemplate(null); }} />
             </div>
-            <SalaryCertForm user={user} onSubmitted={function(){ setActiveTemplate(null); }} />
-          </div>
-        )}
+          );
+        })()}
+
+        {/* v7.72 — Internal requests: Transfer + Hours Adjust + Advance */}
+        {(activeTemplate === "transfer" || activeTemplate === "hours_adjust" || activeTemplate === "advance") && (() => {
+          var tmpl = templates.find(function(x){ return x.id === activeTemplate; });
+          if (!tmpl) return null;
+          return (
+            <div style={{ marginTop: SPACING.md, padding: 12, borderRadius: 10, background: tmpl.color + "0D", border: "1px solid " + tmpl.color + "4D" }}>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 10 }}>
+                <div style={{ fontSize: 12, fontWeight: 800, color: COLORS.textPrimary, display: "flex", alignItems: "center", gap: 6 }}>
+                  {tmpl.emoji} طلب {tmpl.label}
+                </div>
+                <button onClick={function(){ setActiveTemplate(null); }} style={{ padding: "4px 10px", borderRadius: 8, background: COLORS.bgSecondary, border: "1px solid " + COLORS.cardBorder, color: COLORS.textSecondary, fontSize: 10, fontWeight: 700, cursor: "pointer", fontFamily: TYPOGRAPHY.fontTajawal }}>
+                  ✕ إغلاق
+                </button>
+              </div>
+              {activeTemplate === "transfer" && <TransferRequestForm user={user} accentColor={tmpl.color} onSubmitted={function(){ setActiveTemplate(null); }} />}
+              {activeTemplate === "hours_adjust" && <HoursAdjustForm user={user} accentColor={tmpl.color} onSubmitted={function(){ setActiveTemplate(null); }} />}
+              {activeTemplate === "advance" && <AdvanceRequestForm user={user} accentColor={tmpl.color} onSubmitted={function(){ setActiveTemplate(null); }} />}
+            </div>
+          );
+        })()}
 
         {/* v7.70 — My HR Requests History */}
         <div style={{ marginTop: SPACING.lg }}>
@@ -12215,8 +12240,9 @@ function HRRequestsHub({ user, onTicket, myTickets }) {
   );
 }
 
-/* v7.70 — SalaryCertForm: نموذج طلب شهادة راتب */
-function SalaryCertForm({ user, onSubmitted }) {
+/* v7.71 — HRCertificateForm: نموذج موحَّد لطلبات HR (شهادة راتب + خبرة + خطاب تعريف)
+   يدعم الحقول الأساسية المشتركة + حقول مخصصة لكل نوع */
+function HRCertificateForm({ user, templateId, templateLabel, accentColor, onSubmitted }) {
   var [purpose, setPurpose] = useState("");
   var [purposeOther, setPurposeOther] = useState("");
   var [language, setLanguage] = useState("ar");
@@ -12225,16 +12251,36 @@ function SalaryCertForm({ user, onSubmitted }) {
   var [submitting, setSubmitting] = useState(false);
   var [msg, setMsg] = useState(null);
 
-  var purposeOptions = [
-    { value: "bank", label: "🏦 للبنك (قرض/تمويل)" },
-    { value: "visa", label: "🛂 للتأشيرة/السفارة" },
-    { value: "real_estate", label: "🏠 للعقار/الإيجار" },
-    { value: "gov", label: "🏛️ لجهة حكومية" },
-    { value: "other", label: "❓ غرض آخر (اكتبه)" },
-  ];
+  // v7.71 — خيارات الغرض مخصَّصة لكل نوع
+  var purposeOptionsByType = {
+    salary_cert: [
+      { value: "bank", label: "🏦 للبنك (قرض/تمويل)" },
+      { value: "visa", label: "🛂 للتأشيرة/السفارة" },
+      { value: "real_estate", label: "🏠 للعقار/الإيجار" },
+      { value: "gov", label: "🏛️ لجهة حكومية" },
+      { value: "other", label: "❓ غرض آخر (اكتبه)" },
+    ],
+    experience_cert: [
+      { value: "job_apply", label: "💼 للتقديم على وظيفة" },
+      { value: "visa", label: "🛂 للتأشيرة/الهجرة" },
+      { value: "scholarship", label: "🎓 للمنح الدراسية" },
+      { value: "sce", label: "🏛️ للهيئة السعودية للمهندسين" },
+      { value: "other", label: "❓ غرض آخر (اكتبه)" },
+    ],
+    intro_letter: [
+      { value: "bank_open", label: "🏦 لفتح حساب بنكي" },
+      { value: "visa", label: "🛂 للتأشيرة/السفارة" },
+      { value: "real_estate", label: "🏠 للعقار/الإيجار" },
+      { value: "gov", label: "🏛️ لجهة حكومية" },
+      { value: "telecom", label: "📱 للاتصالات (شريحة/اشتراك)" },
+      { value: "other", label: "❓ غرض آخر (اكتبه)" },
+    ],
+  };
+
+  var purposeOptions = purposeOptionsByType[templateId] || purposeOptionsByType.salary_cert;
 
   async function submit() {
-    if (!purpose) { setMsg({ type: "error", text: "اختر الغرض من الشهادة" }); return; }
+    if (!purpose) { setMsg({ type: "error", text: "اختر الغرض من الطلب" }); return; }
     if (purpose === "other" && !purposeOther.trim()) { setMsg({ type: "error", text: "اكتب الغرض" }); return; }
     setSubmitting(true);
     setMsg(null);
@@ -12246,8 +12292,8 @@ function SalaryCertForm({ user, onSubmitted }) {
         body: JSON.stringify({
           empId: user.id,
           empName: user.name,
-          type: "salary_cert",
-          typeLabel: "شهادة راتب",
+          type: templateId,
+          typeLabel: templateLabel,
           purpose: finalPurpose,
           language: language,
           copies: copies,
@@ -12269,10 +12315,12 @@ function SalaryCertForm({ user, onSubmitted }) {
     setSubmitting(false);
   }
 
+  var buttonGradient = "linear-gradient(135deg, " + accentColor + ", " + accentColor + "CC)";
+
   return (
     <div>
       <div style={{ marginBottom: 12 }}>
-        <label style={FORM_LABEL}>الغرض من الشهادة</label>
+        <label style={FORM_LABEL}>الغرض من الطلب</label>
         <select value={purpose} onChange={function(e){ setPurpose(e.target.value); }} style={FORM_INPUT}>
           <option value="">— اختر الغرض —</option>
           {purposeOptions.map(function(o){ return <option key={o.value} value={o.value}>{o.label}</option>; })}
@@ -12287,7 +12335,7 @@ function SalaryCertForm({ user, onSubmitted }) {
       )}
 
       <div style={{ marginBottom: 12 }}>
-        <label style={FORM_LABEL}>لغة الشهادة</label>
+        <label style={FORM_LABEL}>لغة الوثيقة</label>
         <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 6 }}>
           {[
             { v: "ar", l: "🇸🇦 عربي" },
@@ -12298,8 +12346,8 @@ function SalaryCertForm({ user, onSubmitted }) {
             return <button key={o.v} onClick={function(){ setLanguage(o.v); }} style={{
               padding: "10px 6px",
               borderRadius: 10,
-              background: active ? "rgba(5,150,105,0.15)" : COLORS.bgSecondary,
-              border: "1px solid " + (active ? "#059669" : COLORS.cardBorder),
+              background: active ? accentColor + "26" : COLORS.bgSecondary,
+              border: "1px solid " + (active ? accentColor : COLORS.cardBorder),
               color: COLORS.textPrimary,
               fontSize: 11, fontWeight: 700,
               cursor: "pointer",
@@ -12316,7 +12364,7 @@ function SalaryCertForm({ user, onSubmitted }) {
 
       <div style={{ marginBottom: 12 }}>
         <label style={FORM_LABEL}>ملاحظات إضافية (اختياري)</label>
-        <textarea value={notes} onChange={function(e){ setNotes(e.target.value); }} rows={2} placeholder="أي تفاصيل تريد إبلاغها..." style={{ ...FORM_INPUT, resize: "none" }} />
+        <textarea value={notes} onChange={function(e){ setNotes(e.target.value); }} rows={2} placeholder="أي تفاصيل تريد إبلاغها للموارد البشرية..." style={{ ...FORM_INPUT, resize: "none" }} />
       </div>
 
       {msg && (
@@ -12333,13 +12381,512 @@ function SalaryCertForm({ user, onSubmitted }) {
 
       <button onClick={submit} disabled={submitting} style={{
         width: "100%", padding: 12, borderRadius: 12,
-        background: submitting ? COLORS.bgSecondary : "linear-gradient(135deg, #059669, #047857)",
+        background: submitting ? COLORS.bgSecondary : buttonGradient,
         color: "#fff", border: "none",
         fontSize: 13, fontWeight: 800,
         cursor: submitting ? "wait" : "pointer",
         fontFamily: TYPOGRAPHY.fontTajawal,
       }}>
         {submitting ? "جارٍ الإرسال..." : "📤 إرسال الطلب للموارد البشرية"}
+      </button>
+    </div>
+  );
+}
+
+/* v7.70 — SalaryCertForm: alias — يستخدم HRCertificateForm الجديد (محتفظ به للتوافق) */
+function SalaryCertForm({ user, onSubmitted }) {
+  return <HRCertificateForm user={user} templateId="salary_cert" templateLabel="شهادة راتب" accentColor="#059669" onSubmitted={onSubmitted} />;
+}
+
+/* v7.72 — TransferRequestForm: نموذج طلب تحويل فرع */
+function TransferRequestForm({ user, accentColor, onSubmitted }) {
+  var [branches, setBranches] = useState([]);
+  var [loadingBranches, setLoadingBranches] = useState(true);
+  var [targetBranch, setTargetBranch] = useState("");
+  var [targetBranchOther, setTargetBranchOther] = useState("");
+  var [preferredDate, setPreferredDate] = useState("");
+  var [reason, setReason] = useState("");
+  var [submitting, setSubmitting] = useState(false);
+  var [msg, setMsg] = useState(null);
+
+  useEffect(function(){
+    fetch("/api/data?action=branches")
+      .then(function(r){ return r.json(); })
+      .then(function(d){
+        setBranches(Array.isArray(d) ? d : []);
+        setLoadingBranches(false);
+      })
+      .catch(function(){ setLoadingBranches(false); });
+  }, []);
+
+  var currentBranchId = user.branchId || user.branch;
+  var currentBranchName = (branches.find(function(b){ return b.id === currentBranchId; }) || {}).name || currentBranchId || "غير محدد";
+  // Available branches excluding current
+  var targetOptions = branches.filter(function(b){ return b.id !== currentBranchId; });
+
+  async function submit() {
+    if (!targetBranch) { setMsg({ type: "error", text: "اختر الفرع المطلوب الانتقال إليه" }); return; }
+    if (targetBranch === "other" && !targetBranchOther.trim()) { setMsg({ type: "error", text: "اكتب اسم الفرع المطلوب" }); return; }
+    if (!reason.trim() || reason.trim().length < 10) { setMsg({ type: "error", text: "اكتب سبب الطلب بوضوح (10 أحرف على الأقل)" }); return; }
+    setSubmitting(true);
+    setMsg(null);
+    try {
+      var selectedBranch = targetOptions.find(function(b){ return b.id === targetBranch; });
+      var targetName = targetBranch === "other" ? targetBranchOther.trim() : (selectedBranch ? selectedBranch.name : targetBranch);
+      var r = await fetch("/api/data?action=hr-requests", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          empId: user.id,
+          empName: user.name,
+          type: "transfer",
+          typeLabel: "تحويل فرع",
+          purpose: "من " + currentBranchName + " → إلى " + targetName,
+          notes: reason.trim(),
+          extraData: {
+            fromBranchId: currentBranchId,
+            fromBranchName: currentBranchName,
+            toBranchId: targetBranch === "other" ? null : targetBranch,
+            toBranchName: targetName,
+            preferredDate: preferredDate || null,
+          },
+        }),
+      });
+      var d = await r.json();
+      if (d.ok) {
+        setMsg({ type: "success", text: "✓ تم إرسال طلبك للموارد البشرية — ستصلك إشعار عند الموافقة" });
+        setTimeout(function(){ if (onSubmitted) onSubmitted(); }, 1600);
+      } else {
+        setMsg({ type: "error", text: d.error || "فشل إرسال الطلب" });
+      }
+    } catch(e) {
+      setMsg({ type: "error", text: "فشل الاتصال: " + e.message });
+    }
+    setSubmitting(false);
+  }
+
+  return (
+    <div>
+      {/* الفرع الحالي (للعرض فقط) */}
+      <div style={{ marginBottom: 12, padding: "10px 12px", borderRadius: 10, background: COLORS.bgSecondary, border: "1px solid " + COLORS.cardBorder }}>
+        <div style={{ fontSize: 10, color: COLORS.textMuted, fontWeight: 700, marginBottom: 3 }}>🏢 فرعك الحالي</div>
+        <div style={{ fontSize: 14, fontWeight: 800, color: COLORS.textPrimary }}>{currentBranchName}</div>
+      </div>
+
+      <div style={{ marginBottom: 12 }}>
+        <label style={FORM_LABEL}>الفرع المطلوب الانتقال إليه</label>
+        {loadingBranches ? (
+          <div style={{ padding: 12, textAlign: "center", color: COLORS.textMuted, fontSize: 11 }}>جارِ تحميل الفروع...</div>
+        ) : (
+          <select value={targetBranch} onChange={function(e){ setTargetBranch(e.target.value); }} style={FORM_INPUT}>
+            <option value="">— اختر الفرع —</option>
+            {targetOptions.map(function(b){
+              return <option key={b.id} value={b.id}>🏢 {b.name}</option>;
+            })}
+            <option value="other">❓ فرع آخر (اكتبه)</option>
+          </select>
+        )}
+      </div>
+
+      {targetBranch === "other" && (
+        <div style={{ marginBottom: 12 }}>
+          <label style={FORM_LABEL}>اسم الفرع المطلوب</label>
+          <input type="text" value={targetBranchOther} onChange={function(e){ setTargetBranchOther(e.target.value); }} placeholder="مثلاً: فرع مدينة معيّنة..." style={FORM_INPUT} />
+        </div>
+      )}
+
+      <div style={{ marginBottom: 12 }}>
+        <label style={FORM_LABEL}>التاريخ المُفضَّل للنقل (اختياري)</label>
+        <input type="date" value={preferredDate} onChange={function(e){ setPreferredDate(e.target.value); }} min={new Date().toISOString().split("T")[0]} style={FORM_INPUT} />
+      </div>
+
+      <div style={{ marginBottom: 12 }}>
+        <label style={FORM_LABEL}>سبب طلب التحويل</label>
+        <textarea value={reason} onChange={function(e){ setReason(e.target.value); }} rows={4} placeholder="اذكر السبب بوضوح — ظروف عائلية، قرب السكن، فرصة مهنية..." style={{ ...FORM_INPUT, resize: "none" }} />
+      </div>
+
+      <div style={{ padding: "10px 12px", borderRadius: 10, background: COLORS.infoBg, border: "1px solid rgba(163,213,255,0.25)", fontSize: 10, color: COLORS.infoText, marginBottom: 10, lineHeight: 1.6, fontWeight: 500 }}>
+        ℹ️ قرار التحويل يخضع لحاجة العمل ومتطلبات كل فرع — قد يتطلب موافقة الإدارة العليا.
+      </div>
+
+      {msg && (
+        <div style={{
+          padding: "10px 12px", borderRadius: 10, marginBottom: 10,
+          background: msg.type === "error" ? "rgba(239,68,68,0.15)" : "rgba(16,185,129,0.15)",
+          border: "1px solid " + (msg.type === "error" ? "rgba(239,68,68,0.3)" : "rgba(16,185,129,0.3)"),
+          color: msg.type === "error" ? "#FCA5A5" : "#6EE7B7",
+          fontSize: 11, fontWeight: 700, textAlign: "center",
+        }}>
+          {msg.text}
+        </div>
+      )}
+
+      <button onClick={submit} disabled={submitting} style={{
+        width: "100%", padding: 12, borderRadius: 12,
+        background: submitting ? COLORS.bgSecondary : "linear-gradient(135deg, " + accentColor + ", " + accentColor + "CC)",
+        color: "#fff", border: "none",
+        fontSize: 13, fontWeight: 800,
+        cursor: submitting ? "wait" : "pointer",
+        fontFamily: TYPOGRAPHY.fontTajawal,
+      }}>
+        {submitting ? "جارٍ الإرسال..." : "📤 إرسال الطلب للموارد البشرية"}
+      </button>
+    </div>
+  );
+}
+
+/* v7.72 — HoursAdjustForm: نموذج طلب تعديل ساعات الدوام */
+function HoursAdjustForm({ user, accentColor, onSubmitted }) {
+  var [adjustType, setAdjustType] = useState("shift");   // shift | reduce | increase
+  var [currentStart, setCurrentStart] = useState(user.shiftStart || "08:30");
+  var [currentEnd, setCurrentEnd] = useState(user.shiftEnd || "17:00");
+  var [requestedStart, setRequestedStart] = useState("");
+  var [requestedEnd, setRequestedEnd] = useState("");
+  var [effectiveFrom, setEffectiveFrom] = useState("");
+  var [duration, setDuration] = useState("permanent");    // permanent | temporary
+  var [temporaryUntil, setTemporaryUntil] = useState("");
+  var [reason, setReason] = useState("");
+  var [submitting, setSubmitting] = useState(false);
+  var [msg, setMsg] = useState(null);
+
+  var adjustTypes = [
+    { id: "shift",    label: "🔄 تغيير وقت الدوام (نفس المدة)" },
+    { id: "reduce",   label: "⏬ تقليل الساعات" },
+    { id: "increase", label: "⏫ زيادة الساعات" },
+  ];
+
+  async function submit() {
+    if (!requestedStart || !requestedEnd) { setMsg({ type: "error", text: "حدد وقت البداية والنهاية المطلوبين" }); return; }
+    if (!effectiveFrom) { setMsg({ type: "error", text: "حدد تاريخ بدء العمل بالوقت الجديد" }); return; }
+    if (duration === "temporary" && !temporaryUntil) { setMsg({ type: "error", text: "حدد تاريخ انتهاء التعديل المؤقت" }); return; }
+    if (!reason.trim() || reason.trim().length < 10) { setMsg({ type: "error", text: "اكتب السبب بوضوح (10 أحرف على الأقل)" }); return; }
+    setSubmitting(true);
+    setMsg(null);
+    try {
+      var typeLabel = (adjustTypes.find(function(t){ return t.id === adjustType; }) || {}).label;
+      var durationText = duration === "permanent" ? "دائم" : "مؤقت حتى " + temporaryUntil;
+      var r = await fetch("/api/data?action=hr-requests", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          empId: user.id,
+          empName: user.name,
+          type: "hours_adjust",
+          typeLabel: "تعديل ساعات الدوام",
+          purpose: typeLabel + " — من " + currentStart + "-" + currentEnd + " إلى " + requestedStart + "-" + requestedEnd,
+          notes: reason.trim(),
+          extraData: {
+            adjustType: adjustType,
+            currentStart: currentStart,
+            currentEnd: currentEnd,
+            requestedStart: requestedStart,
+            requestedEnd: requestedEnd,
+            effectiveFrom: effectiveFrom,
+            duration: duration,
+            temporaryUntil: temporaryUntil || null,
+            durationText: durationText,
+          },
+        }),
+      });
+      var d = await r.json();
+      if (d.ok) {
+        setMsg({ type: "success", text: "✓ تم إرسال طلبك للموارد البشرية — ستصلك إشعار عند الموافقة" });
+        setTimeout(function(){ if (onSubmitted) onSubmitted(); }, 1600);
+      } else {
+        setMsg({ type: "error", text: d.error || "فشل إرسال الطلب" });
+      }
+    } catch(e) {
+      setMsg({ type: "error", text: "فشل الاتصال: " + e.message });
+    }
+    setSubmitting(false);
+  }
+
+  return (
+    <div>
+      <div style={{ marginBottom: 12 }}>
+        <label style={FORM_LABEL}>نوع التعديل</label>
+        <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+          {adjustTypes.map(function(at){
+            var active = adjustType === at.id;
+            return <button key={at.id} onClick={function(){ setAdjustType(at.id); }} style={{
+              padding: "10px 12px",
+              borderRadius: 10,
+              background: active ? accentColor + "26" : COLORS.bgSecondary,
+              border: "1px solid " + (active ? accentColor : COLORS.cardBorder),
+              color: COLORS.textPrimary,
+              fontSize: 12, fontWeight: 700,
+              cursor: "pointer",
+              fontFamily: TYPOGRAPHY.fontTajawal,
+              textAlign: "right",
+            }}>{at.label}</button>;
+          })}
+        </div>
+      </div>
+
+      {/* الحالي vs المطلوب */}
+      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10, marginBottom: 12 }}>
+        <div style={{ padding: 10, borderRadius: 10, background: COLORS.bgSecondary, border: "1px solid " + COLORS.cardBorder }}>
+          <div style={{ fontSize: 9, color: COLORS.textMuted, fontWeight: 700, marginBottom: 6 }}>🕘 الوقت الحالي</div>
+          <div style={{ display: "flex", gap: 4 }}>
+            <input type="time" value={currentStart} onChange={function(e){ setCurrentStart(e.target.value); }} style={{ ...FORM_INPUT, padding: 8, fontSize: 11 }} />
+            <input type="time" value={currentEnd} onChange={function(e){ setCurrentEnd(e.target.value); }} style={{ ...FORM_INPUT, padding: 8, fontSize: 11 }} />
+          </div>
+        </div>
+        <div style={{ padding: 10, borderRadius: 10, background: accentColor + "0D", border: "1px solid " + accentColor + "4D" }}>
+          <div style={{ fontSize: 9, color: accentColor, fontWeight: 800, marginBottom: 6 }}>🎯 الوقت المطلوب</div>
+          <div style={{ display: "flex", gap: 4 }}>
+            <input type="time" value={requestedStart} onChange={function(e){ setRequestedStart(e.target.value); }} style={{ ...FORM_INPUT, padding: 8, fontSize: 11 }} />
+            <input type="time" value={requestedEnd} onChange={function(e){ setRequestedEnd(e.target.value); }} style={{ ...FORM_INPUT, padding: 8, fontSize: 11 }} />
+          </div>
+        </div>
+      </div>
+
+      <div style={{ marginBottom: 12 }}>
+        <label style={FORM_LABEL}>تاريخ البدء بالوقت الجديد</label>
+        <input type="date" value={effectiveFrom} onChange={function(e){ setEffectiveFrom(e.target.value); }} min={new Date().toISOString().split("T")[0]} style={FORM_INPUT} />
+      </div>
+
+      <div style={{ marginBottom: 12 }}>
+        <label style={FORM_LABEL}>مدة التعديل</label>
+        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 6 }}>
+          {[
+            { v: "permanent", l: "♾️ دائم" },
+            { v: "temporary", l: "⏳ مؤقت" },
+          ].map(function(o){
+            var active = duration === o.v;
+            return <button key={o.v} onClick={function(){ setDuration(o.v); }} style={{
+              padding: "10px 6px",
+              borderRadius: 10,
+              background: active ? accentColor + "26" : COLORS.bgSecondary,
+              border: "1px solid " + (active ? accentColor : COLORS.cardBorder),
+              color: COLORS.textPrimary,
+              fontSize: 12, fontWeight: 700,
+              cursor: "pointer",
+              fontFamily: TYPOGRAPHY.fontTajawal,
+            }}>{o.l}</button>;
+          })}
+        </div>
+      </div>
+
+      {duration === "temporary" && (
+        <div style={{ marginBottom: 12 }}>
+          <label style={FORM_LABEL}>حتى تاريخ</label>
+          <input type="date" value={temporaryUntil} onChange={function(e){ setTemporaryUntil(e.target.value); }} min={effectiveFrom || new Date().toISOString().split("T")[0]} style={FORM_INPUT} />
+        </div>
+      )}
+
+      <div style={{ marginBottom: 12 }}>
+        <label style={FORM_LABEL}>سبب طلب التعديل</label>
+        <textarea value={reason} onChange={function(e){ setReason(e.target.value); }} rows={3} placeholder="مثلاً: ظرف عائلي، دراسة، مواصلات، صحي..." style={{ ...FORM_INPUT, resize: "none" }} />
+      </div>
+
+      <div style={{ padding: "10px 12px", borderRadius: 10, background: COLORS.warningBg, border: "1px solid rgba(251,191,36,0.3)", fontSize: 10, color: COLORS.warningText, marginBottom: 10, lineHeight: 1.6, fontWeight: 500 }}>
+        ⚠️ تعديل ساعات الدوام يخضع لحاجة العمل وقد يؤثر على احتساب الراتب — يرجى التأكد قبل الإرسال.
+      </div>
+
+      {msg && (
+        <div style={{
+          padding: "10px 12px", borderRadius: 10, marginBottom: 10,
+          background: msg.type === "error" ? "rgba(239,68,68,0.15)" : "rgba(16,185,129,0.15)",
+          border: "1px solid " + (msg.type === "error" ? "rgba(239,68,68,0.3)" : "rgba(16,185,129,0.3)"),
+          color: msg.type === "error" ? "#FCA5A5" : "#6EE7B7",
+          fontSize: 11, fontWeight: 700, textAlign: "center",
+        }}>
+          {msg.text}
+        </div>
+      )}
+
+      <button onClick={submit} disabled={submitting} style={{
+        width: "100%", padding: 12, borderRadius: 12,
+        background: submitting ? COLORS.bgSecondary : "linear-gradient(135deg, " + accentColor + ", " + accentColor + "CC)",
+        color: "#fff", border: "none",
+        fontSize: 13, fontWeight: 800,
+        cursor: submitting ? "wait" : "pointer",
+        fontFamily: TYPOGRAPHY.fontTajawal,
+      }}>
+        {submitting ? "جارٍ الإرسال..." : "📤 إرسال الطلب للموارد البشرية"}
+      </button>
+    </div>
+  );
+}
+
+/* v7.72 — AdvanceRequestForm: طلب سلفة على الراتب
+   يجمع: المبلغ المطلوب + عدد أشهر السداد + سبب الحاجة */
+function AdvanceRequestForm({ user, accentColor, onSubmitted }) {
+  var [amount, setAmount] = useState("");
+  var [installments, setInstallments] = useState(1);
+  var [reason, setReason] = useState("");
+  var [urgency, setUrgency] = useState("normal");
+  var [submitting, setSubmitting] = useState(false);
+  var [msg, setMsg] = useState(null);
+
+  var userSalary = Number(user.basicSalary || user.salary || 0);
+  // الحد الأقصى للسلفة: راتب 3 أشهر (حسب اللائحة السعودية)
+  var maxAdvance = userSalary * 3;
+  var monthlyDeduction = amount && installments ? Math.round(Number(amount) / installments) : 0;
+
+  var urgencyOptions = [
+    { v: "normal", l: "عادي", color: "#64748B" },
+    { v: "urgent", l: "عاجل", color: "#F59E0B" },
+    { v: "critical", l: "طارئ جداً", color: "#EF4444" },
+  ];
+
+  async function submit() {
+    var amt = Number(amount);
+    if (!amt || amt <= 0) { setMsg({ type: "error", text: "أدخل مبلغ السلفة" }); return; }
+    if (maxAdvance > 0 && amt > maxAdvance) {
+      setMsg({ type: "error", text: "الحد الأقصى للسلفة: " + maxAdvance.toLocaleString("en-US") + " ريال (راتب 3 أشهر)" });
+      return;
+    }
+    if (!installments || installments < 1 || installments > 12) {
+      setMsg({ type: "error", text: "عدد الأشهر بين 1 و 12" });
+      return;
+    }
+    if (!reason.trim() || reason.trim().length < 10) {
+      setMsg({ type: "error", text: "اكتب سبب الحاجة بوضوح (10 أحرف على الأقل)" });
+      return;
+    }
+    setSubmitting(true);
+    setMsg(null);
+    try {
+      var r = await fetch("/api/data?action=hr-requests", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          empId: user.id,
+          empName: user.name,
+          type: "advance",
+          typeLabel: "سلفة على الراتب",
+          purpose: "مبلغ " + amt.toLocaleString("en-US") + " ريال (سداد " + installments + " شهر)",
+          notes: reason.trim(),
+          extraData: {
+            amount: amt,
+            installments: installments,
+            monthlyDeduction: monthlyDeduction,
+            urgency: urgency,
+            currentSalary: userSalary || null,
+          },
+        }),
+      });
+      var d = await r.json();
+      if (d.ok) {
+        setMsg({ type: "success", text: "✓ تم إرسال طلبك للموارد البشرية — ستصلك إشعار عند الموافقة" });
+        setTimeout(function(){ if (onSubmitted) onSubmitted(); }, 1600);
+      } else {
+        setMsg({ type: "error", text: d.error || "فشل إرسال الطلب" });
+      }
+    } catch(e) {
+      setMsg({ type: "error", text: "فشل الاتصال: " + e.message });
+    }
+    setSubmitting(false);
+  }
+
+  var buttonGradient = "linear-gradient(135deg, " + accentColor + ", " + accentColor + "CC)";
+
+  return (
+    <div>
+      {/* معلومات الراتب (للسياق) */}
+      {userSalary > 0 && (
+        <div style={{ padding: 10, borderRadius: 8, background: COLORS.infoBg, border: "1px solid " + COLORS.infoText + "40", marginBottom: 12, fontSize: 10, color: COLORS.infoText, lineHeight: 1.6 }}>
+          💡 راتبك الأساسي: <b>{userSalary.toLocaleString("en-US")} ريال</b><br/>
+          الحد الأقصى للسلفة: <b>{maxAdvance.toLocaleString("en-US")} ريال</b> (راتب 3 أشهر)
+        </div>
+      )}
+
+      {/* المبلغ المطلوب */}
+      <div style={{ marginBottom: 12 }}>
+        <label style={FORM_LABEL}>مبلغ السلفة (بالريال)</label>
+        <input
+          type="number"
+          min="1"
+          max={maxAdvance || undefined}
+          value={amount}
+          onChange={function(e){ setAmount(e.target.value); }}
+          placeholder="مثلاً: 5000"
+          style={FORM_INPUT}
+        />
+      </div>
+
+      {/* عدد أشهر السداد */}
+      <div style={{ marginBottom: 12 }}>
+        <label style={FORM_LABEL}>عدد أشهر السداد</label>
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(6, 1fr)", gap: 4 }}>
+          {[1, 2, 3, 4, 6, 12].map(function(m){
+            var active = installments === m;
+            return <button key={m} onClick={function(){ setInstallments(m); }} style={{
+              padding: "8px 4px",
+              borderRadius: 8,
+              background: active ? accentColor + "26" : COLORS.bgSecondary,
+              border: "1px solid " + (active ? accentColor : COLORS.cardBorder),
+              color: COLORS.textPrimary,
+              fontSize: 11, fontWeight: 700,
+              cursor: "pointer",
+              fontFamily: TYPOGRAPHY.fontTajawal,
+            }}>{m}</button>;
+          })}
+        </div>
+      </div>
+
+      {/* ملخص الخصم الشهري */}
+      {monthlyDeduction > 0 && (
+        <div style={{ padding: 10, borderRadius: 8, background: accentColor + "15", border: "1px solid " + accentColor + "40", marginBottom: 12, fontSize: 11, color: COLORS.textPrimary, lineHeight: 1.6, textAlign: "center" }}>
+          🧾 سيُخصم <b style={{ color: accentColor }}>{monthlyDeduction.toLocaleString("en-US")} ريال</b> من راتبك شهرياً لمدة {installments} شهر
+        </div>
+      )}
+
+      {/* مستوى الطوارئ */}
+      <div style={{ marginBottom: 12 }}>
+        <label style={FORM_LABEL}>مستوى الأولوية</label>
+        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 6 }}>
+          {urgencyOptions.map(function(o){
+            var active = urgency === o.v;
+            return <button key={o.v} onClick={function(){ setUrgency(o.v); }} style={{
+              padding: "9px 4px",
+              borderRadius: 8,
+              background: active ? o.color + "26" : COLORS.bgSecondary,
+              border: "1px solid " + (active ? o.color : COLORS.cardBorder),
+              color: active ? o.color : COLORS.textPrimary,
+              fontSize: 11, fontWeight: 700,
+              cursor: "pointer",
+              fontFamily: TYPOGRAPHY.fontTajawal,
+            }}>{o.l}</button>;
+          })}
+        </div>
+      </div>
+
+      {/* سبب الحاجة */}
+      <div style={{ marginBottom: 12 }}>
+        <label style={FORM_LABEL}>سبب الحاجة للسلفة</label>
+        <textarea
+          value={reason}
+          onChange={function(e){ setReason(e.target.value); }}
+          rows={3}
+          placeholder="اشرح الغرض من السلفة بوضوح (مثل: نفقات طبية، ديون طارئة، ...)"
+          style={{ ...FORM_INPUT, resize: "none" }}
+        />
+      </div>
+
+      {msg && (
+        <div style={{
+          padding: "10px 12px", borderRadius: 10, marginBottom: 10,
+          background: msg.type === "error" ? "rgba(239,68,68,0.15)" : "rgba(16,185,129,0.15)",
+          border: "1px solid " + (msg.type === "error" ? "rgba(239,68,68,0.3)" : "rgba(16,185,129,0.3)"),
+          color: msg.type === "error" ? "#FCA5A5" : "#6EE7B7",
+          fontSize: 11, fontWeight: 700, textAlign: "center",
+        }}>
+          {msg.text}
+        </div>
+      )}
+
+      <button onClick={submit} disabled={submitting} style={{
+        width: "100%", padding: 12, borderRadius: 12,
+        background: submitting ? COLORS.bgSecondary : buttonGradient,
+        color: "#fff", border: "none",
+        fontSize: 13, fontWeight: 800,
+        cursor: submitting ? "wait" : "pointer",
+        fontFamily: TYPOGRAPHY.fontTajawal,
+      }}>
+        {submitting ? "جارٍ الإرسال..." : "📤 إرسال طلب السلفة"}
       </button>
     </div>
   );
@@ -12373,17 +12920,27 @@ function MyHRRequestsHistory({ user }) {
   }
 
   function downloadSalaryCert(req) {
-    // v7.70 — استخدام PDF generator الموجود + بيانات الموظف
+    // v7.71 — دعم 3 أنواع شهادات (راتب + خبرة + تعريف) + PDF generator لكل نوع
     try {
-      exportSalaryLetter(user, {
+      var commonOpts = {
         toEntity: req.purpose || "لمن يهمه الأمر",
-        salary: user.basicSalary || user.salary || "—",
-        allowances: user.allowances || "—",
-        total: user.totalSalary || "—",
         signedBy: req.decidedByName || "إدارة الموارد البشرية",
-      });
+      };
+      if (req.type === "salary_cert") {
+        exportSalaryLetter(user, Object.assign({}, commonOpts, {
+          salary: user.basicSalary || user.salary || "—",
+          allowances: user.allowances || "—",
+          total: user.totalSalary || "—",
+        }));
+      } else if (req.type === "experience_cert") {
+        exportExperienceLetter(user, commonOpts);
+      } else if (req.type === "intro_letter") {
+        exportEmploymentLetter(user, commonOpts);
+      } else {
+        alert("نوع الوثيقة غير مدعوم بعد للتحميل");
+      }
     } catch(e) {
-      alert("تعذّر فتح الشهادة: " + e.message);
+      alert("تعذّر فتح الوثيقة: " + e.message);
     }
   }
 
@@ -12402,7 +12959,9 @@ function MyHRRequestsHistory({ user }) {
       <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
         {shown.map(function(r){
           var s = statusMeta(r.status);
-          var canDownload = (r.type === "salary_cert") && (r.status === "ready" || r.status === "approved" || r.status === "delivered");
+          // v7.71 — دعم 3 أنواع للتحميل (راتب + خبرة + تعريف)
+          var downloadableTypes = ["salary_cert", "experience_cert", "intro_letter"];
+          var canDownload = downloadableTypes.indexOf(r.type) >= 0 && (r.status === "ready" || r.status === "approved" || r.status === "delivered");
           return (
             <div key={r.id} style={{ padding: 10, borderRadius: 8, background: COLORS.card, border: "1px solid " + COLORS.cardBorder }}>
               <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 8, marginBottom: 4 }}>
@@ -12429,7 +12988,7 @@ function MyHRRequestsHistory({ user }) {
                   background: "linear-gradient(135deg, #059669, #047857)", color: "#fff",
                   border: "none", fontSize: 11, fontWeight: 800, cursor: "pointer", fontFamily: TYPOGRAPHY.fontTajawal,
                 }}>
-                  📄 تحميل الشهادة / طباعة
+                  📄 تحميل {r.type === "salary_cert" ? "شهادة الراتب" : r.type === "experience_cert" ? "شهادة الخبرة" : r.type === "intro_letter" ? "خطاب التعريف" : "الوثيقة"} / طباعة
                 </button>
               )}
             </div>

@@ -268,7 +268,7 @@ function UpdateScreen() {
         )}
       </div>
       <div style={{ fontSize: 22, fontWeight: 700 }}>تحديث النظام</div>
-      <div style={{ fontSize: 13, color: "#6E6E73", marginTop: 6 }}>بصمة HMA v7.70 — Pipeline كامل لكل مكلَّف على حدة</div>
+      <div style={{ fontSize: 13, color: "#6E6E73", marginTop: 6 }}>بصمة HMA v7.72 — Pipeline كامل لكل مكلَّف على حدة</div>
       
       <div style={{ marginTop: 20, width: "100%", maxWidth: 400 }}>
         <div style={{ background: "#FFFFFF", borderRadius: 14, padding: 20, border: "1px solid rgba(0,0,0,0.05)", boxShadow: "0 1px 3px rgba(0,0,0,0.08)" }}>
@@ -326,7 +326,7 @@ function UpdateScreen() {
       </div>
 
       <button onClick={() => { window.location.hash = ""; window.location.search = ""; }} style={{ marginTop: 20, padding: "10px 24px", borderRadius: 12, background: "#FFFFFF", border: "1px solid #E5E5EA", color: "#0A84FF", fontSize: 15, fontWeight: 600, cursor: "pointer" }}>رجوع للتطبيق</button>
-      <div style={{ marginTop: 12, fontSize: 11, color: "#8E8E93" }}>v7.70 · basma-hma.vercel.app</div>
+      <div style={{ marginTop: 12, fontSize: 11, color: "#8E8E93" }}>v7.72 · basma-hma.vercel.app</div>
     </div>
   );
 }

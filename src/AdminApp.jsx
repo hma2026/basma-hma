@@ -4,7 +4,7 @@ import { generateAttendanceReport, generateEmployeeReport, generateMonthlySummar
 import { exportFormalWarning, exportInvestigationRecord, exportAffidavit, exportEmploymentLetter, exportSalaryLetter, exportLeaveLetter } from "./formalPdfs";
 
 const APP = "بصمة HMA";
-const VER = "7.70";
+const VER = "7.72";
 const CO = "هاني محمد عسيري للإستشارات الهندسية";
 const B = { blue: "#2B5EA7", yellow: "#FDD800", red: "#E2192C", black: "#1A1A1A", blueDk: "#1E4478", blueLt: "#EDF3FB", gold: "#D4A017" };
 
@@ -3611,11 +3611,60 @@ function HRRequestsAdminPanel({ t, B, safeEmps }) {
                 {r.purpose && <div style={{ fontSize: 11, color: t.tx2, marginTop: 2 }}>الغرض: <b>{r.purpose}</b></div>}
                 {(r.language || r.copies) && (
                   <div style={{ fontSize: 10, color: t.txM, marginTop: 2 }}>
-                    {r.language === "ar" ? "🇸🇦 عربي" : r.language === "en" ? "🇬🇧 إنجليزي" : "🌐 عربي + إنجليزي"}
+                    {r.language === "ar" ? "🇸🇦 عربي" : r.language === "en" ? "🇬🇧 إنجليزي" : r.language === "both" ? "🌐 عربي + إنجليزي" : ""}
                     {r.copies > 1 ? " · " + r.copies + " نسخ" : ""}
                   </div>
                 )}
-                {r.notes && <div style={{ fontSize: 10, color: t.tx2, marginTop: 4, fontStyle: "italic" }}>"{r.notes}"</div>}
+
+                {/* v7.72 — عرض تفاصيل transfer */}
+                {r.type === "transfer" && r.extraData && (
+                  <div style={{ marginTop: 8, padding: 8, borderRadius: 8, background: "rgba(2,132,199,0.1)", border: "1px solid rgba(2,132,199,0.3)" }}>
+                    <div style={{ fontSize: 10, color: "#0284C7", fontWeight: 800, marginBottom: 4 }}>🏠 تفاصيل طلب النقل</div>
+                    <div style={{ fontSize: 10, color: t.tx2, lineHeight: 1.7 }}>
+                      <div><b>من:</b> {r.extraData.fromBranchName || "—"}</div>
+                      <div><b>إلى:</b> {r.extraData.toBranchName || "—"}</div>
+                      {r.extraData.preferredDate && <div><b>التاريخ المفضَّل:</b> {r.extraData.preferredDate}</div>}
+                    </div>
+                  </div>
+                )}
+
+                {/* v7.72 — عرض تفاصيل hours_adjust */}
+                {r.type === "hours_adjust" && r.extraData && (
+                  <div style={{ marginTop: 8, padding: 8, borderRadius: 8, background: "rgba(147,51,234,0.1)", border: "1px solid rgba(147,51,234,0.3)" }}>
+                    <div style={{ fontSize: 10, color: "#9333EA", fontWeight: 800, marginBottom: 4 }}>🕐 تفاصيل تعديل الساعات</div>
+                    <div style={{ fontSize: 10, color: t.tx2, lineHeight: 1.7 }}>
+                      <div><b>الحالي:</b> {r.extraData.currentStart || "—"} → {r.extraData.currentEnd || "—"}</div>
+                      <div><b>المطلوب:</b> <span style={{ color: "#9333EA", fontWeight: 700 }}>{r.extraData.requestedStart || "—"} → {r.extraData.requestedEnd || "—"}</span></div>
+                      {r.extraData.effectiveFrom && <div><b>يبدأ من:</b> {r.extraData.effectiveFrom}</div>}
+                      <div><b>المدة:</b> {r.extraData.durationText || "—"}</div>
+                    </div>
+                  </div>
+                )}
+
+                {/* v7.72 — عرض تفاصيل advance (سلفة) */}
+                {r.type === "advance" && r.extraData && (
+                  <div style={{ marginTop: 8, padding: 8, borderRadius: 8, background: "rgba(234,88,12,0.1)", border: "1px solid rgba(234,88,12,0.3)" }}>
+                    <div style={{ fontSize: 10, color: "#EA580C", fontWeight: 800, marginBottom: 4, display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                      <span>💵 تفاصيل طلب السلفة</span>
+                      {r.extraData.urgency === "urgent" && <span style={{ padding: "1px 6px", borderRadius: 6, background: "#F59E0B", color: "#fff", fontSize: 9 }}>⚡ عاجل</span>}
+                      {r.extraData.urgency === "critical" && <span style={{ padding: "1px 6px", borderRadius: 6, background: "#EF4444", color: "#fff", fontSize: 9 }}>🚨 طارئ جداً</span>}
+                    </div>
+                    <div style={{ fontSize: 10, color: t.tx2, lineHeight: 1.7 }}>
+                      <div><b>المبلغ المطلوب:</b> <span style={{ color: "#EA580C", fontWeight: 800, fontSize: 12 }}>{(r.extraData.amount || 0).toLocaleString("en-US")} ريال</span></div>
+                      <div><b>عدد أشهر السداد:</b> {r.extraData.installments || "—"} شهر</div>
+                      <div><b>خصم شهري:</b> {(r.extraData.monthlyDeduction || 0).toLocaleString("en-US")} ريال</div>
+                      {r.extraData.currentSalary > 0 && (
+                        <div style={{ marginTop: 4, paddingTop: 4, borderTop: "1px dashed " + t.sep }}>
+                          <b>الراتب الحالي:</b> {r.extraData.currentSalary.toLocaleString("en-US")} ريال
+                          &nbsp;·&nbsp;
+                          <b>نسبة السلفة:</b> {Math.round((r.extraData.amount / r.extraData.currentSalary) * 100)}% من الراتب
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                )}
+
+                {r.notes && <div style={{ fontSize: 10, color: t.tx2, marginTop: 6, fontStyle: "italic", padding: 6, borderRadius: 6, background: "rgba(255,255,255,0.04)" }}>"{r.notes}"</div>}
                 <div style={{ fontSize: 9, color: t.txM, marginTop: 6 }}>
                   📅 قُدِّم: {r.ts ? new Date(r.ts).toLocaleString("ar-SA") : "—"}
                   {r.decidedAt && " · قُرِّر: " + new Date(r.decidedAt).toLocaleString("ar-SA")}
