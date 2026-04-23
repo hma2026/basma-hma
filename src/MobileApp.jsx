@@ -12,7 +12,7 @@ import { t as tr, setLang, getLang, getDir, isRTL, subscribeLangChange } from ".
 
 /* ═══════════ APP CONFIG (إعدادات التطبيق) ═══════════ */
 const APP_CONFIG = {
-  VER: "7.124",
+  VER: "7.125",
   NAME: "بصمة HMA",
   FULL_NAME: "نظام الحضور والانصراف الذكي",
   COMPANY: "هاني محمد عسيري للاستشارات الهندسية",
@@ -14978,6 +14978,8 @@ function NotificationsInlineView({ user }) {
   });
   // v7.121 — فتح/إغلاق قسم الأرشيف
   var [archiveOpen, setArchiveOpen] = useState(false);
+  // v7.125 — state للـ modal (نافذة منبثقة) — يجب أن يكون قبل أي early return!
+  var [openModal, setOpenModal] = useState(null);
 
   useEffect(function(){
     async function load() {
@@ -15049,9 +15051,6 @@ function NotificationsInlineView({ user }) {
   if (loading) {
     return <EmptyState text="جارِ التحميل..." />;
   }
-
-  // v7.123 — state للـ modal (نافذة منبثقة لقراءة الإشعار كاملاً)
-  var [openModal, setOpenModal] = useState(null);
 
   // v7.123 — فتح المودال + تأشير كمقروء
   function openNotification(n) {
