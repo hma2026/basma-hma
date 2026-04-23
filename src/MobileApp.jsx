@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef, useCallback } from "react";
 import { COLORS, SPACING, TYPOGRAPHY, RADIUS, SHADOWS, Button, Card, Section, Icons, setTheme } from "./theme";
 import { ALL_VIOLATIONS_DEFAULT, PENALTY_TYPES, LAIHA_INFO, COMPLAINT_STATUS, VIOLATION_STATUS } from "./laiha";
-import { exportEmploymentLetter, exportLeaveLetter } from "./formalPdfs";
+import { exportEmploymentLetter, exportLeaveLetter, exportSalaryLetter } from "./formalPdfs";
 
 /* ═══════════════════════════════════════════
    بصمة HMA v4.51 — Mobile App
@@ -11,7 +11,7 @@ import { exportEmploymentLetter, exportLeaveLetter } from "./formalPdfs";
 
 /* ═══════════ APP CONFIG (إعدادات التطبيق) ═══════════ */
 const APP_CONFIG = {
-  VER: "7.69",
+  VER: "7.70",
   NAME: "بصمة HMA",
   FULL_NAME: "نظام الحضور والانصراف الذكي",
   COMPANY: "هاني محمد عسيري للاستشارات الهندسية",
@@ -12083,10 +12083,10 @@ function HRRequestsHub({ user, onTicket, myTickets }) {
   var [activeTemplate, setActiveTemplate] = useState(null);   // id of template being filled
   var [comingSoonMsg, setComingSoonMsg] = useState(null);     // "قريباً" toast for unbuilt templates
 
-  // v7.67 — 10 قوالب طلبات HR (4 منها سيرها تلقائياً، 6 مشكلات بـ "قريباً")
+  // v7.70 — 10 قوالب طلبات HR (2 مُفعّلة: تعديل بيانات + شهادة راتب)
   var templates = [
     { id: "edit_data",     emoji: "✏️", label: "تعديل بياناتي",       color: "#6366F1", enabled: true,  desc: "تحديث الهاتف/العنوان/..." },
-    { id: "salary_cert",   emoji: "📄", label: "شهادة راتب",          color: "#059669", enabled: false, desc: "للبنوك والتأشيرات" },
+    { id: "salary_cert",   emoji: "📄", label: "شهادة راتب",          color: "#059669", enabled: true,  desc: "للبنوك والتأشيرات" },
     { id: "experience_cert", emoji: "🪪", label: "شهادة خبرة",         color: "#0891B2", enabled: false, desc: "لأغراض التوظيف والهجرة" },
     { id: "intro_letter",  emoji: "🏢", label: "خطاب تعريف",          color: "#7C3AED", enabled: false, desc: "تعريف بجهة العمل" },
     { id: "promotion",     emoji: "🚀", label: "طلب ترقية",            color: "#DC2626", enabled: false, desc: "طلب ترقية وظيفية" },
@@ -12176,6 +12176,26 @@ function HRRequestsHub({ user, onTicket, myTickets }) {
             <EditRequestCard user={user} />
           </div>
         )}
+
+        {/* v7.70 — Salary Certificate Form */}
+        {activeTemplate === "salary_cert" && (
+          <div style={{ marginTop: SPACING.md, padding: 12, borderRadius: 10, background: "rgba(5,150,105,0.05)", border: "1px solid rgba(5,150,105,0.3)" }}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 10 }}>
+              <div style={{ fontSize: 12, fontWeight: 800, color: COLORS.textPrimary, display: "flex", alignItems: "center", gap: 6 }}>
+                📄 طلب شهادة راتب
+              </div>
+              <button onClick={function(){ setActiveTemplate(null); }} style={{ padding: "4px 10px", borderRadius: 8, background: COLORS.bgSecondary, border: "1px solid " + COLORS.cardBorder, color: COLORS.textSecondary, fontSize: 10, fontWeight: 700, cursor: "pointer", fontFamily: TYPOGRAPHY.fontTajawal }}>
+                ✕ إغلاق
+              </button>
+            </div>
+            <SalaryCertForm user={user} onSubmitted={function(){ setActiveTemplate(null); }} />
+          </div>
+        )}
+
+        {/* v7.70 — My HR Requests History */}
+        <div style={{ marginTop: SPACING.lg }}>
+          <MyHRRequestsHistory user={user} />
+        </div>
       </div>
 
       {/* Divider */}
@@ -12191,6 +12211,241 @@ function HRRequestsHub({ user, onTicket, myTickets }) {
         </div>
         <TicketsCard user={user} myTickets={myTickets} onTicket={onTicket} />
       </div>
+    </div>
+  );
+}
+
+/* v7.70 — SalaryCertForm: نموذج طلب شهادة راتب */
+function SalaryCertForm({ user, onSubmitted }) {
+  var [purpose, setPurpose] = useState("");
+  var [purposeOther, setPurposeOther] = useState("");
+  var [language, setLanguage] = useState("ar");
+  var [copies, setCopies] = useState(1);
+  var [notes, setNotes] = useState("");
+  var [submitting, setSubmitting] = useState(false);
+  var [msg, setMsg] = useState(null);
+
+  var purposeOptions = [
+    { value: "bank", label: "🏦 للبنك (قرض/تمويل)" },
+    { value: "visa", label: "🛂 للتأشيرة/السفارة" },
+    { value: "real_estate", label: "🏠 للعقار/الإيجار" },
+    { value: "gov", label: "🏛️ لجهة حكومية" },
+    { value: "other", label: "❓ غرض آخر (اكتبه)" },
+  ];
+
+  async function submit() {
+    if (!purpose) { setMsg({ type: "error", text: "اختر الغرض من الشهادة" }); return; }
+    if (purpose === "other" && !purposeOther.trim()) { setMsg({ type: "error", text: "اكتب الغرض" }); return; }
+    setSubmitting(true);
+    setMsg(null);
+    try {
+      var finalPurpose = purpose === "other" ? purposeOther.trim() : (purposeOptions.find(function(o){ return o.value === purpose; }) || {}).label;
+      var r = await fetch("/api/data?action=hr-requests", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          empId: user.id,
+          empName: user.name,
+          type: "salary_cert",
+          typeLabel: "شهادة راتب",
+          purpose: finalPurpose,
+          language: language,
+          copies: copies,
+          notes: notes.trim(),
+        }),
+      });
+      var d = await r.json();
+      if (d.ok) {
+        setMsg({ type: "success", text: "✓ تم إرسال طلبك للموارد البشرية — ستصلك إشعار عند الموافقة" });
+        setTimeout(function(){
+          if (onSubmitted) onSubmitted();
+        }, 1600);
+      } else {
+        setMsg({ type: "error", text: d.error || "فشل إرسال الطلب" });
+      }
+    } catch(e) {
+      setMsg({ type: "error", text: "فشل الاتصال: " + e.message });
+    }
+    setSubmitting(false);
+  }
+
+  return (
+    <div>
+      <div style={{ marginBottom: 12 }}>
+        <label style={FORM_LABEL}>الغرض من الشهادة</label>
+        <select value={purpose} onChange={function(e){ setPurpose(e.target.value); }} style={FORM_INPUT}>
+          <option value="">— اختر الغرض —</option>
+          {purposeOptions.map(function(o){ return <option key={o.value} value={o.value}>{o.label}</option>; })}
+        </select>
+      </div>
+
+      {purpose === "other" && (
+        <div style={{ marginBottom: 12 }}>
+          <label style={FORM_LABEL}>اكتب الغرض</label>
+          <input type="text" value={purposeOther} onChange={function(e){ setPurposeOther(e.target.value); }} placeholder="مثلاً: لجهة معيّنة..." style={FORM_INPUT} />
+        </div>
+      )}
+
+      <div style={{ marginBottom: 12 }}>
+        <label style={FORM_LABEL}>لغة الشهادة</label>
+        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 6 }}>
+          {[
+            { v: "ar", l: "🇸🇦 عربي" },
+            { v: "en", l: "🇬🇧 إنجليزي" },
+            { v: "both", l: "🌐 كلاهما" },
+          ].map(function(o){
+            var active = language === o.v;
+            return <button key={o.v} onClick={function(){ setLanguage(o.v); }} style={{
+              padding: "10px 6px",
+              borderRadius: 10,
+              background: active ? "rgba(5,150,105,0.15)" : COLORS.bgSecondary,
+              border: "1px solid " + (active ? "#059669" : COLORS.cardBorder),
+              color: COLORS.textPrimary,
+              fontSize: 11, fontWeight: 700,
+              cursor: "pointer",
+              fontFamily: TYPOGRAPHY.fontTajawal,
+            }}>{o.l}</button>;
+          })}
+        </div>
+      </div>
+
+      <div style={{ marginBottom: 12 }}>
+        <label style={FORM_LABEL}>عدد النسخ</label>
+        <input type="number" min="1" max="10" value={copies} onChange={function(e){ setCopies(Math.max(1, Math.min(10, Number(e.target.value) || 1))); }} style={FORM_INPUT} />
+      </div>
+
+      <div style={{ marginBottom: 12 }}>
+        <label style={FORM_LABEL}>ملاحظات إضافية (اختياري)</label>
+        <textarea value={notes} onChange={function(e){ setNotes(e.target.value); }} rows={2} placeholder="أي تفاصيل تريد إبلاغها..." style={{ ...FORM_INPUT, resize: "none" }} />
+      </div>
+
+      {msg && (
+        <div style={{
+          padding: "10px 12px", borderRadius: 10, marginBottom: 10,
+          background: msg.type === "error" ? "rgba(239,68,68,0.15)" : "rgba(16,185,129,0.15)",
+          border: "1px solid " + (msg.type === "error" ? "rgba(239,68,68,0.3)" : "rgba(16,185,129,0.3)"),
+          color: msg.type === "error" ? "#FCA5A5" : "#6EE7B7",
+          fontSize: 11, fontWeight: 700, textAlign: "center",
+        }}>
+          {msg.text}
+        </div>
+      )}
+
+      <button onClick={submit} disabled={submitting} style={{
+        width: "100%", padding: 12, borderRadius: 12,
+        background: submitting ? COLORS.bgSecondary : "linear-gradient(135deg, #059669, #047857)",
+        color: "#fff", border: "none",
+        fontSize: 13, fontWeight: 800,
+        cursor: submitting ? "wait" : "pointer",
+        fontFamily: TYPOGRAPHY.fontTajawal,
+      }}>
+        {submitting ? "جارٍ الإرسال..." : "📤 إرسال الطلب للموارد البشرية"}
+      </button>
+    </div>
+  );
+}
+
+/* v7.70 — MyHRRequestsHistory: سجل طلبات HR السابقة للموظف */
+function MyHRRequestsHistory({ user }) {
+  var [requests, setRequests] = useState([]);
+  var [loading, setLoading] = useState(true);
+  var [shownCount, setShownCount] = useState(3);
+
+  async function load() {
+    setLoading(true);
+    try {
+      var r = await fetch("/api/data?action=hr-requests&empId=" + encodeURIComponent(user.id));
+      var d = await r.json();
+      setRequests(Array.isArray(d) ? d : []);
+    } catch(e) {}
+    setLoading(false);
+  }
+
+  useEffect(function(){ if (user && user.id) load(); }, [user && user.id]);
+
+  function statusMeta(s) {
+    if (s === "pending")   return { label: "⏳ قيد المراجعة", color: "#F59E0B", bg: "rgba(245,158,11,0.15)" };
+    if (s === "approved")  return { label: "✓ مُوافق عليه",    color: "#10B981", bg: "rgba(16,185,129,0.15)" };
+    if (s === "ready")     return { label: "📄 جاهز للتحميل",  color: "#3B82F6", bg: "rgba(59,130,246,0.15)" };
+    if (s === "delivered") return { label: "✅ مُسلَّم",         color: "#059669", bg: "rgba(5,150,105,0.15)" };
+    if (s === "rejected")  return { label: "✕ مرفوض",          color: "#EF4444", bg: "rgba(239,68,68,0.15)" };
+    return { label: s, color: COLORS.textMuted, bg: COLORS.bgSecondary };
+  }
+
+  function downloadSalaryCert(req) {
+    // v7.70 — استخدام PDF generator الموجود + بيانات الموظف
+    try {
+      exportSalaryLetter(user, {
+        toEntity: req.purpose || "لمن يهمه الأمر",
+        salary: user.basicSalary || user.salary || "—",
+        allowances: user.allowances || "—",
+        total: user.totalSalary || "—",
+        signedBy: req.decidedByName || "إدارة الموارد البشرية",
+      });
+    } catch(e) {
+      alert("تعذّر فتح الشهادة: " + e.message);
+    }
+  }
+
+  if (loading) return null;
+  if (!requests || requests.length === 0) return null;
+
+  var shown = requests.slice(0, shownCount);
+  var hasMore = requests.length > shownCount;
+
+  return (
+    <div style={{ padding: 12, borderRadius: 10, background: COLORS.bgSecondary, border: "1px solid " + COLORS.cardBorder }}>
+      <div style={{ fontSize: 12, fontWeight: 800, color: COLORS.textPrimary, marginBottom: 10, display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+        <span>📜 طلباتي السابقة</span>
+        <span style={{ fontSize: 10, color: COLORS.textMuted, fontWeight: 600 }}>{requests.length} طلب</span>
+      </div>
+      <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+        {shown.map(function(r){
+          var s = statusMeta(r.status);
+          var canDownload = (r.type === "salary_cert") && (r.status === "ready" || r.status === "approved" || r.status === "delivered");
+          return (
+            <div key={r.id} style={{ padding: 10, borderRadius: 8, background: COLORS.card, border: "1px solid " + COLORS.cardBorder }}>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 8, marginBottom: 4 }}>
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div style={{ fontSize: 12, fontWeight: 800, color: COLORS.textPrimary }}>{r.typeLabel || r.type}</div>
+                  {r.purpose && <div style={{ fontSize: 10, color: COLORS.textMuted, marginTop: 2 }}>{r.purpose}</div>}
+                </div>
+                <span style={{ fontSize: 9, fontWeight: 800, padding: "3px 8px", borderRadius: 8, background: s.bg, color: s.color, whiteSpace: "nowrap" }}>
+                  {s.label}
+                </span>
+              </div>
+              <div style={{ fontSize: 9, color: COLORS.textMuted, marginTop: 4 }}>
+                📅 {r.ts ? new Date(r.ts).toLocaleDateString("ar-SA") : "—"}
+                {r.decidedAt && " · قُرِّر: " + new Date(r.decidedAt).toLocaleDateString("ar-SA")}
+              </div>
+              {r.rejectReason && (
+                <div style={{ marginTop: 6, padding: 6, borderRadius: 6, background: "rgba(239,68,68,0.1)", fontSize: 10, color: "#FCA5A5", fontWeight: 600 }}>
+                  سبب الرفض: {r.rejectReason}
+                </div>
+              )}
+              {canDownload && (
+                <button onClick={function(){ downloadSalaryCert(r); }} style={{
+                  marginTop: 8, width: "100%", padding: 8, borderRadius: 8,
+                  background: "linear-gradient(135deg, #059669, #047857)", color: "#fff",
+                  border: "none", fontSize: 11, fontWeight: 800, cursor: "pointer", fontFamily: TYPOGRAPHY.fontTajawal,
+                }}>
+                  📄 تحميل الشهادة / طباعة
+                </button>
+              )}
+            </div>
+          );
+        })}
+      </div>
+      {hasMore && (
+        <button onClick={function(){ setShownCount(shownCount + 5); }} style={{
+          width: "100%", marginTop: 8, padding: 8, borderRadius: 8,
+          background: "rgba(201,168,76,0.12)", border: "1px solid " + COLORS.goldLight,
+          color: COLORS.goldLight, fontSize: 11, fontWeight: 700, cursor: "pointer",
+          fontFamily: TYPOGRAPHY.fontTajawal,
+        }}>
+          ⬇️ إظهار المزيد ({requests.length - shownCount})
+        </button>
+      )}
     </div>
   );
 }

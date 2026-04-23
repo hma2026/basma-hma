@@ -5307,6 +5307,89 @@ export default async function handler(req, res) {
         return res.json({ templates: DEFAULT_TEMPLATES });
       }
 
+      /* v7.70 — HR Requests: قوالب طلبات HR من الموظفين (شهادة راتب، خبرة، خطاب تعريف...) */
+      case 'hr-requests': {
+        if (req.method === 'GET') {
+          var all = (await dbGet('hr-requests')) || [];
+          // Filter by empId if provided
+          if (req.query.empId) {
+            all = all.filter(function(r){ return String(r.empId) === String(req.query.empId); });
+          }
+          // Filter by status if provided
+          if (req.query.status) {
+            all = all.filter(function(r){ return r.status === req.query.status; });
+          }
+          // Sort by ts desc
+          all.sort(function(a,b){ return (b.ts || '').localeCompare(a.ts || ''); });
+          return res.json(all);
+        }
+        if (req.method === 'POST') {
+          var body = req.body || {};
+          if (!body.empId || !body.type) {
+            return res.status(400).json({ error: 'empId + type مطلوبان' });
+          }
+          var nowIso = new Date().toISOString();
+          var reqs = (await dbGet('hr-requests')) || [];
+          var newReq = {
+            id: 'HR' + Date.now() + Math.floor(Math.random()*1000),
+            empId: body.empId,
+            empName: body.empName || '',
+            type: body.type,           // salary_cert | experience_cert | intro_letter | promotion | advance | transfer | hours_adjust | medical_ins | other
+            typeLabel: body.typeLabel || body.type,
+            purpose: body.purpose || '',       // للبنك / للتأشيرة / ...
+            language: body.language || 'ar',   // ar | en | both
+            copies: Number(body.copies) || 1,
+            extraData: body.extraData || {},   // أي حقول إضافية لكل نوع
+            notes: body.notes || '',
+            status: 'pending',                 // pending | approved | rejected | ready | delivered
+            ts: nowIso,
+            decidedBy: null,
+            decidedByName: null,
+            decidedAt: null,
+            rejectReason: null,
+            deliveryNote: null,
+          };
+          reqs.push(newReq);
+          await dbSet('hr-requests', reqs);
+          return res.json({ ok: true, id: newReq.id, request: newReq });
+        }
+        if (req.method === 'PUT') {
+          // Admin updates status
+          var b = req.body || {};
+          if (!b.id) return res.status(400).json({ error: 'id مطلوب' });
+          var allR = (await dbGet('hr-requests')) || [];
+          var idx = allR.findIndex(function(r){ return r.id === b.id; });
+          if (idx < 0) return res.status(404).json({ error: 'طلب غير موجود' });
+          if (b.status) allR[idx].status = b.status;
+          if (b.rejectReason !== undefined) allR[idx].rejectReason = b.rejectReason;
+          if (b.deliveryNote !== undefined) allR[idx].deliveryNote = b.deliveryNote;
+          allR[idx].decidedBy = b.decidedBy || null;
+          allR[idx].decidedByName = b.decidedByName || null;
+          allR[idx].decidedAt = new Date().toISOString();
+          await dbSet('hr-requests', allR);
+          // Create notification for employee
+          try {
+            var notifs = (await dbGet('notifications')) || [];
+            var statusMsg = b.status === 'approved' ? '✓ طلبك مُوافَق عليه' :
+                            b.status === 'rejected' ? '✕ طلبك مرفوض' :
+                            b.status === 'ready' ? '📄 شهادتك جاهزة للتحميل' :
+                            b.status === 'delivered' ? '✅ تم تسليم طلبك' : 'تحديث';
+            notifs.unshift({
+              id: 'N' + Date.now(),
+              empId: allR[idx].empId,
+              type: 'hr_request',
+              title: statusMsg + ': ' + (allR[idx].typeLabel || allR[idx].type),
+              body: b.rejectReason ? 'سبب الرفض: ' + b.rejectReason : (b.deliveryNote || 'انتقل لقسم المعاملات الإدارية لعرض التفاصيل'),
+              read: false,
+              createdAt: new Date().toISOString(),
+            });
+            await dbSet('notifications', notifs);
+          } catch(e) { /* notification failure doesn't break the flow */ }
+          return res.json({ ok: true, request: allR[idx] });
+        }
+        break;
+      }
+
       /* v6.81 — HR ticket summary (counts unread per employee) */
       case 'hr-tickets-summary': {
         var empId = req.query.empId;

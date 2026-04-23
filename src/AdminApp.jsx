@@ -4,7 +4,7 @@ import { generateAttendanceReport, generateEmployeeReport, generateMonthlySummar
 import { exportFormalWarning, exportInvestigationRecord, exportAffidavit, exportEmploymentLetter, exportSalaryLetter, exportLeaveLetter } from "./formalPdfs";
 
 const APP = "بصمة HMA";
-const VER = "7.69";
+const VER = "7.70";
 const CO = "هاني محمد عسيري للإستشارات الهندسية";
 const B = { blue: "#2B5EA7", yellow: "#FDD800", red: "#E2192C", black: "#1A1A1A", blueDk: "#1E4478", blueLt: "#EDF3FB", gold: "#D4A017" };
 
@@ -1515,9 +1515,12 @@ export default function AdminApp() {
 
       {/* ═══ ADMIN REQUESTS ═══ */}
       {tab === "admin_requests" && <>
+        {/* v7.70 — طلبات HR الجديدة (قوالب شهادات + خطابات) */}
+        <HRRequestsAdminPanel t={t} B={B} safeEmps={safeEmps} />
+
         <div style={{ background: t.card, borderRadius: 14, padding: "18px", border: "1px solid " + t.sep, marginBottom: 14 }}>
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 14 }}>
-            <div><div style={{ fontSize: 14, fontWeight: 700 }}>📝 طلبات الموظفين</div><div style={{ fontSize: 11, color: t.txM, marginTop: 2 }}>شهادات خبرة، خطابات تعريف، سلف، تعويضات</div></div>
+            <div><div style={{ fontSize: 14, fontWeight: 700 }}>📝 طلبات الموظفين (النظام القديم)</div><div style={{ fontSize: 11, color: t.txM, marginTop: 2 }}>سيتم دمجها مع الطلبات الجديدة قريباً</div></div>
             <button onClick={async function() {
               var reqs = await api("requests") || [];
               if (!Array.isArray(reqs)) reqs = [];
@@ -3457,6 +3460,221 @@ function BackupPanel({ t, B }) {
 /* ═══════════════════════════════════════════════════════════════
    HR TICKETS PANEL — رسائل الموارد البشرية للموظفين v6.81
    ═══════════════════════════════════════════════════════════════ */
+/* v7.70 — HRRequestsAdminPanel: لوحة إدارة طلبات HR الجديدة (شهادة راتب، إلخ) */
+function HRRequestsAdminPanel({ t, B, safeEmps }) {
+  var [requests, setRequests] = useState([]);
+  var [loading, setLoading] = useState(true);
+  var [filter, setFilter] = useState("pending"); // all | pending | approved | ready | rejected | delivered
+  var [busy, setBusy] = useState(false);
+
+  async function load() {
+    setLoading(true);
+    try {
+      var r = await fetch("/api/data?action=hr-requests");
+      var d = await r.json();
+      setRequests(Array.isArray(d) ? d : []);
+    } catch(e) {}
+    setLoading(false);
+  }
+
+  useEffect(function(){ load(); }, []);
+
+  var adminEmail = localStorage.getItem("basma_admin_email") || "admin";
+
+  async function updateStatus(req, newStatus, extra) {
+    if (busy) return;
+    setBusy(true);
+    try {
+      var body = Object.assign({
+        id: req.id,
+        status: newStatus,
+        decidedBy: adminEmail,
+        decidedByName: localStorage.getItem("basma_admin_name") || adminEmail,
+      }, extra || {});
+      var r = await fetch("/api/data?action=hr-requests", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+      });
+      var d = await r.json();
+      if (d.ok) {
+        await load();
+      } else {
+        alert("فشل: " + (d.error || "خطأ"));
+      }
+    } catch(e) { alert("خطأ: " + e.message); }
+    setBusy(false);
+  }
+
+  function handleApprove(req) {
+    if (!confirm("الموافقة على الطلب؟ سيتم إشعار الموظف.")) return;
+    updateStatus(req, "approved");
+  }
+
+  function handleReady(req) {
+    var note = prompt("ملاحظة للموظف (اختياري):");
+    updateStatus(req, "ready", { deliveryNote: note || "الشهادة جاهزة — يمكنك تحميلها من التطبيق" });
+  }
+
+  function handleDelivered(req) {
+    var note = prompt("ملاحظة تسليم (اختياري):");
+    updateStatus(req, "delivered", { deliveryNote: note || "تم التسليم" });
+  }
+
+  function handleReject(req) {
+    var reason = prompt("سبب الرفض (إجباري):");
+    if (!reason || !reason.trim()) return;
+    updateStatus(req, "rejected", { rejectReason: reason.trim() });
+  }
+
+  var filtered = filter === "all" ? requests : requests.filter(function(r){ return r.status === filter; });
+
+  var statusCounts = {
+    all: requests.length,
+    pending: requests.filter(function(r){ return r.status === "pending"; }).length,
+    approved: requests.filter(function(r){ return r.status === "approved"; }).length,
+    ready: requests.filter(function(r){ return r.status === "ready"; }).length,
+    delivered: requests.filter(function(r){ return r.status === "delivered"; }).length,
+    rejected: requests.filter(function(r){ return r.status === "rejected"; }).length,
+  };
+
+  var filterTabs = [
+    { id: "pending", label: "⏳ قيد المراجعة", color: "#F59E0B" },
+    { id: "approved", label: "✓ مُوافق", color: "#10B981" },
+    { id: "ready", label: "📄 جاهز", color: "#3B82F6" },
+    { id: "delivered", label: "✅ مُسلَّم", color: "#059669" },
+    { id: "rejected", label: "✕ مرفوض", color: "#EF4444" },
+    { id: "all", label: "الكل", color: "#6B7280" },
+  ];
+
+  function typeEmoji(type) {
+    var m = {
+      salary_cert: "📄", experience_cert: "🪪", intro_letter: "🏢",
+      promotion: "🚀", advance: "💵", transfer: "🏠",
+      hours_adjust: "🕐", medical_ins: "🏥", other: "❓",
+    };
+    return m[type] || "📋";
+  }
+
+  return (
+    <div style={{ background: t.card, borderRadius: 14, padding: "18px", border: "1px solid " + t.sep, marginBottom: 14 }}>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 14 }}>
+        <div>
+          <div style={{ fontSize: 14, fontWeight: 700, color: t.tx }}>📨 طلبات الموارد البشرية</div>
+          <div style={{ fontSize: 11, color: t.txM, marginTop: 2 }}>شهادة راتب، خبرة، خطاب تعريف، وغيرها — نظام v7.70</div>
+        </div>
+        <button onClick={load} disabled={loading} style={{ padding: "8px 16px", borderRadius: 8, background: B.blue, color: "#fff", fontSize: 11, fontWeight: 700, border: "none", cursor: "pointer" }}>
+          🔄 تحديث
+        </button>
+      </div>
+
+      {/* Filter tabs */}
+      <div style={{ display: "flex", gap: 6, marginBottom: 12, flexWrap: "wrap" }}>
+        {filterTabs.map(function(ft){
+          var active = filter === ft.id;
+          var count = statusCounts[ft.id] || 0;
+          return (
+            <button key={ft.id} onClick={function(){ setFilter(ft.id); }} style={{
+              padding: "6px 10px", borderRadius: 8,
+              background: active ? ft.color : "transparent",
+              border: "1px solid " + (active ? ft.color : t.sep),
+              color: active ? "#fff" : t.tx,
+              fontSize: 10, fontWeight: 700, cursor: "pointer",
+            }}>
+              {ft.label} ({count})
+            </button>
+          );
+        })}
+      </div>
+
+      {loading && <div style={{ textAlign: "center", padding: 20, color: t.txM, fontSize: 11 }}>جارِ التحميل...</div>}
+
+      {!loading && filtered.length === 0 && (
+        <div style={{ textAlign: "center", padding: 30, color: t.txM, fontSize: 12 }}>
+          لا توجد طلبات{filter !== "all" ? " في هذه الفئة" : ""}
+        </div>
+      )}
+
+      {!loading && filtered.map(function(r){
+        var emp = safeEmps.find(function(e){ return String(e.id) === String(r.empId); }) || {};
+        return (
+          <div key={r.id} style={{ padding: 12, borderRadius: 10, background: t.inp, marginBottom: 8, border: "1px solid " + t.sep }}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 10, marginBottom: 6 }}>
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <div style={{ fontSize: 13, fontWeight: 800, color: t.tx, display: "flex", alignItems: "center", gap: 6 }}>
+                  <span style={{ fontSize: 16 }}>{typeEmoji(r.type)}</span>
+                  <span>{r.typeLabel || r.type}</span>
+                </div>
+                <div style={{ fontSize: 11, color: t.tx2, marginTop: 4 }}>
+                  <b>{r.empName || emp.name || r.empId}</b> · {r.empId}
+                </div>
+                {r.purpose && <div style={{ fontSize: 11, color: t.tx2, marginTop: 2 }}>الغرض: <b>{r.purpose}</b></div>}
+                {(r.language || r.copies) && (
+                  <div style={{ fontSize: 10, color: t.txM, marginTop: 2 }}>
+                    {r.language === "ar" ? "🇸🇦 عربي" : r.language === "en" ? "🇬🇧 إنجليزي" : "🌐 عربي + إنجليزي"}
+                    {r.copies > 1 ? " · " + r.copies + " نسخ" : ""}
+                  </div>
+                )}
+                {r.notes && <div style={{ fontSize: 10, color: t.tx2, marginTop: 4, fontStyle: "italic" }}>"{r.notes}"</div>}
+                <div style={{ fontSize: 9, color: t.txM, marginTop: 6 }}>
+                  📅 قُدِّم: {r.ts ? new Date(r.ts).toLocaleString("ar-SA") : "—"}
+                  {r.decidedAt && " · قُرِّر: " + new Date(r.decidedAt).toLocaleString("ar-SA")}
+                </div>
+                {r.rejectReason && (
+                  <div style={{ marginTop: 6, padding: 6, borderRadius: 6, background: "rgba(239,68,68,0.1)", fontSize: 10, color: "#EF4444", fontWeight: 600 }}>
+                    سبب الرفض: {r.rejectReason}
+                  </div>
+                )}
+                {r.deliveryNote && (
+                  <div style={{ marginTop: 6, padding: 6, borderRadius: 6, background: "rgba(59,130,246,0.1)", fontSize: 10, color: "#3B82F6", fontWeight: 600 }}>
+                    {r.deliveryNote}
+                  </div>
+                )}
+              </div>
+              <div style={{ fontSize: 9, fontWeight: 800, padding: "3px 8px", borderRadius: 8, whiteSpace: "nowrap",
+                background: r.status === "pending" ? "rgba(245,158,11,0.15)" :
+                            r.status === "approved" ? "rgba(16,185,129,0.15)" :
+                            r.status === "ready" ? "rgba(59,130,246,0.15)" :
+                            r.status === "delivered" ? "rgba(5,150,105,0.15)" :
+                            "rgba(239,68,68,0.15)",
+                color: r.status === "pending" ? "#F59E0B" :
+                       r.status === "approved" ? "#10B981" :
+                       r.status === "ready" ? "#3B82F6" :
+                       r.status === "delivered" ? "#059669" :
+                       "#EF4444",
+              }}>
+                {r.status === "pending" ? "⏳ مراجعة" :
+                 r.status === "approved" ? "✓ مُوافق" :
+                 r.status === "ready" ? "📄 جاهز" :
+                 r.status === "delivered" ? "✅ مُسلَّم" :
+                 "✕ مرفوض"}
+              </div>
+            </div>
+
+            {/* Action buttons */}
+            {r.status === "pending" && (
+              <div style={{ display: "flex", gap: 6, marginTop: 10 }}>
+                <button onClick={function(){ handleApprove(r); }} disabled={busy} style={{ flex: 1, padding: 8, borderRadius: 8, background: "#10B981", color: "#fff", border: "none", fontSize: 11, fontWeight: 700, cursor: "pointer" }}>✓ موافقة</button>
+                <button onClick={function(){ handleReject(r); }} disabled={busy} style={{ flex: 1, padding: 8, borderRadius: 8, background: "#EF4444", color: "#fff", border: "none", fontSize: 11, fontWeight: 700, cursor: "pointer" }}>✕ رفض</button>
+              </div>
+            )}
+            {r.status === "approved" && (
+              <div style={{ display: "flex", gap: 6, marginTop: 10 }}>
+                <button onClick={function(){ handleReady(r); }} disabled={busy} style={{ flex: 1, padding: 8, borderRadius: 8, background: "#3B82F6", color: "#fff", border: "none", fontSize: 11, fontWeight: 700, cursor: "pointer" }}>📄 وضع جاهز</button>
+              </div>
+            )}
+            {r.status === "ready" && (
+              <div style={{ display: "flex", gap: 6, marginTop: 10 }}>
+                <button onClick={function(){ handleDelivered(r); }} disabled={busy} style={{ flex: 1, padding: 8, borderRadius: 8, background: "#059669", color: "#fff", border: "none", fontSize: 11, fontWeight: 700, cursor: "pointer" }}>✅ تم التسليم</button>
+              </div>
+            )}
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
 function HRTicketsPanel({ t, B, emps }) {
   var [tickets, setTickets] = useState([]);
   var [templates, setTemplates] = useState([]);
