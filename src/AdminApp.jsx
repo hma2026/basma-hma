@@ -5,7 +5,7 @@ import { exportFormalWarning, exportInvestigationRecord, exportAffidavit, export
 import { t as tr, setLang, getLang, subscribeLangChange } from "./i18n";
 
 const APP = "بصمة HMA";
-const VER = "7.113";
+const VER = "7.117";
 const CO = "هاني محمد عسيري للإستشارات الهندسية";
 const B = { blue: "#2B5EA7", yellow: "#FDD800", red: "#E2192C", black: "#1A1A1A", blueDk: "#1E4478", blueLt: "#EDF3FB", gold: "#D4A017" };
 
@@ -13,6 +13,404 @@ const B = { blue: "#2B5EA7", yellow: "#FDD800", red: "#E2192C", black: "#1A1A1A"
 const LT = { bg: "#F2F2F7", card: "#fff", tx: "#000000", tx2: "#6E6E73", txM: "#8E8E93", sep: "#E5E5EA", ac: "#0A84FF", ok: "#30D158", okLt: "rgba(48,209,88,0.1)", warn: "#FF9F0A", warnLt: "rgba(255,159,10,0.1)", bad: "#FF3B30", badLt: "rgba(255,59,48,0.08)", cardBrd: "rgba(0,0,0,0.05)", cardSh: "0 1px 3px rgba(0,0,0,0.08)", nav: "#F2F2F7", navBrd: "rgba(0,0,0,0.1)", inp: "#FFFFFF", inpBrd: "#E5E5EA" };
 const DK = { bg: "#000000", card: "#1C1C1E", tx: "#FFFFFF", tx2: "#98989D", txM: "#636366", sep: "#2C2C2E", ac: "#0A84FF", ok: "#30D158", okLt: "rgba(48,209,88,0.15)", warn: "#FF9F0A", warnLt: "rgba(255,159,10,0.15)", bad: "#FF453A", badLt: "rgba(255,69,58,0.12)", cardBrd: "rgba(255,255,255,0.1)", cardSh: "none", nav: "#1C1C1E", navBrd: "rgba(255,255,255,0.1)", inp: "#2C2C2E", inpBrd: "rgba(255,255,255,0.1)" };
 const Fn = "'IBM Plex Sans Arabic',-apple-system,'Segoe UI',sans-serif";
+
+/* ═════════════════════════════════════════════════════════════════
+ * v7.115 — ADMIN DESIGN SYSTEM (Design Tokens)
+ * ═════════════════════════════════════════════════════════════════
+ * Unified design language for AdminApp. Replaces random values.
+ */
+const ADMIN = {
+  // ═══ SPACING (8px base grid) ═══
+  space: {
+    xs: 4,
+    sm: 8,
+    md: 12,
+    lg: 16,
+    xl: 20,
+    xxl: 28,
+    huge: 40,
+  },
+
+  // ═══ TYPOGRAPHY SCALE ═══
+  font: {
+    tiny: 10,    // micro text
+    xs: 11,      // captions, labels
+    sm: 12,      // body small
+    base: 13,    // default body
+    md: 14,      // headings h5
+    lg: 16,      // section titles
+    xl: 18,      // page titles
+    xxl: 22,     // hero numbers
+  },
+
+  // ═══ WEIGHTS ═══
+  weight: {
+    regular: 500,
+    medium: 600,
+    bold: 700,
+    heavy: 800,
+    black: 900,
+  },
+
+  // ═══ BORDER RADIUS ═══
+  radius: {
+    sm: 6,    // small chips, buttons
+    md: 10,   // cards, inputs
+    lg: 14,   // panels, hero sections
+    xl: 18,   // large modals
+    full: 999, // pills, avatars
+  },
+
+  // ═══ SHADOWS ═══
+  shadow: {
+    none: "none",
+    card: "0 1px 3px rgba(0,0,0,0.06), 0 1px 2px rgba(0,0,0,0.04)",
+    float: "0 4px 12px rgba(0,0,0,0.10), 0 2px 4px rgba(0,0,0,0.06)",
+    modal: "0 12px 32px rgba(0,0,0,0.18), 0 4px 8px rgba(0,0,0,0.08)",
+    colored: function(color) { return "0 4px 14px " + color + "40, 0 2px 4px " + color + "20"; },
+  },
+
+  // ═══ TRANSITIONS ═══
+  transition: {
+    fast: "all 0.15s cubic-bezier(0.4,0,0.2,1)",
+    base: "all 0.25s cubic-bezier(0.4,0,0.2,1)",
+    slow: "all 0.4s cubic-bezier(0.4,0,0.2,1)",
+  },
+};
+
+// Semantic colors (uses B palette - keeps consistency with existing code)
+// B.blue, B.gold, B.red are defined above as brand colors
+// Using t.* for theme-aware colors (t.ok, t.bad, t.warn, t.tx, etc.)
+
+
+/* ═════════════════════════════════════════════════════════════════
+ * v7.114 — UX POLISH HELPERS (AdminApp)
+ * ═════════════════════════════════════════════════════════════════ */
+function AdminAnimatedNumber({ value, duration, format, style }) {
+  var [display, setDisplay] = useState(0);
+  var target = Number(value) || 0;
+  var dur = duration || 800;
+  useEffect(function(){
+    var start = Date.now();
+    var raf;
+    function tick() {
+      var elapsed = Date.now() - start;
+      var progress = Math.min(1, elapsed / dur);
+      var eased = 1 - Math.pow(1 - progress, 3);
+      setDisplay(Math.round(target * eased));
+      if (progress < 1) raf = requestAnimationFrame(tick);
+    }
+    raf = requestAnimationFrame(tick);
+    return function(){ if (raf) cancelAnimationFrame(raf); };
+  }, [target]);
+  var formatted = format ? format(display) : display;
+  return <span style={style}>{formatted}</span>;
+}
+
+function AdminSkeleton({ width, height, borderRadius, style }) {
+  return <div className="admin-shimmer" style={Object.assign({
+    width: width || "100%",
+    height: height || 16,
+    borderRadius: borderRadius || 8,
+    display: "block",
+  }, style || {})} />;
+}
+
+function AdminEmptyState({ icon, title, subtitle, action, onAction, t, B }) {
+  return <div className="admin-fade-up" style={{
+    padding: "48px 20px", textAlign: "center",
+    background: t ? t.bg : "transparent",
+    borderRadius: 14,
+    border: "1px dashed " + (t ? t.sep : "#ccc"),
+  }}>
+    <div style={{ fontSize: 52, marginBottom: 14, opacity: 0.4 }}>{icon || "📭"}</div>
+    {title && <div style={{ fontSize: 15, fontWeight: 800, color: t ? t.tx : "#000", marginBottom: 6 }}>{title}</div>}
+    {subtitle && <div style={{ fontSize: 12, color: t ? t.txM : "#666", marginBottom: action ? 16 : 0, lineHeight: 1.6 }}>{subtitle}</div>}
+    {action && <button onClick={onAction} className="admin-smooth admin-ripple" style={{
+      padding: "10px 22px", borderRadius: 10,
+      background: "linear-gradient(135deg, " + (B ? B.blue : "#2B5EA7") + ", " + (B ? B.blueDk : "#1E4478") + ")",
+      color: "#fff", border: "none", fontSize: 12, fontWeight: 800,
+      cursor: "pointer", fontFamily: "inherit",
+    }}>{action}</button>}
+  </div>;
+}
+
+function adminRipple(originalOnClick) {
+  return function(e) {
+    var btn = e.currentTarget;
+    if (!btn) return;
+    var rect = btn.getBoundingClientRect();
+    var x = (e.clientX || rect.left + rect.width / 2) - rect.left;
+    var y = (e.clientY || rect.top + rect.height / 2) - rect.top;
+    var wave = document.createElement("span");
+    wave.className = "admin-ripple-wave";
+    wave.style.left = x + "px";
+    wave.style.top = y + "px";
+    btn.appendChild(wave);
+    setTimeout(function(){
+      if (wave && wave.parentNode) wave.parentNode.removeChild(wave);
+    }, 650);
+    if (originalOnClick) originalOnClick(e);
+  };
+}
+
+/* ═════════════════════════════════════════════════════════════════
+ * v7.115 — SHARED COMPONENTS
+ * ═════════════════════════════════════════════════════════════════ */
+
+/* 🎯 PanelHeader — unified header for every panel */
+function PanelHeader({ icon, title, subtitle, action, gradient, t, B }) {
+  var iconGradient = gradient || ("linear-gradient(135deg, " + B.blue + ", " + B.blueDk + ")");
+  return (
+    <div className="admin-fade-up" style={{
+      display: "flex",
+      alignItems: "center",
+      justifyContent: "space-between",
+      gap: ADMIN.space.md,
+      marginBottom: ADMIN.space.lg,
+      padding: ADMIN.space.lg + "px " + ADMIN.space.xl + "px",
+      background: t.card,
+      borderRadius: ADMIN.radius.lg,
+      border: "1px solid " + t.sep,
+      boxShadow: ADMIN.shadow.card,
+      flexWrap: "wrap",
+    }}>
+      <div style={{ display: "flex", alignItems: "center", gap: ADMIN.space.md, flex: 1, minWidth: 0 }}>
+        {icon && (
+          <div style={{
+            width: 44, height: 44,
+            borderRadius: ADMIN.radius.md,
+            background: iconGradient,
+            display: "flex", alignItems: "center", justifyContent: "center",
+            fontSize: 22, flexShrink: 0,
+            boxShadow: ADMIN.shadow.card,
+          }}>{icon}</div>
+        )}
+        <div style={{ minWidth: 0, flex: 1 }}>
+          <div style={{
+            fontSize: ADMIN.font.xl,
+            fontWeight: ADMIN.weight.heavy,
+            color: t.tx,
+            lineHeight: 1.3,
+          }}>{title}</div>
+          {subtitle && (
+            <div style={{
+              fontSize: ADMIN.font.xs,
+              color: t.txM,
+              marginTop: 3,
+              lineHeight: 1.5,
+            }}>{subtitle}</div>
+          )}
+        </div>
+      </div>
+      {action && <div style={{ flexShrink: 0 }}>{action}</div>}
+    </div>
+  );
+}
+
+/* 📊 StatCard — unified stat display */
+function StatCard({ icon, label, value, sub, color, trend, onClick, delay, t }) {
+  var c = color || "#2B5EA7";
+  var delayClass = delay ? "admin-fade-up-d" + Math.min(delay, 4) : "admin-fade-up";
+  var Wrapper = onClick ? "button" : "div";
+  var clickable = !!onClick;
+  return (
+    <Wrapper
+      onClick={clickable ? adminRipple(onClick) : undefined}
+      className={delayClass + (clickable ? " admin-ripple admin-hover-lift admin-smooth" : " admin-smooth")}
+      style={{
+        background: t.card,
+        borderRadius: ADMIN.radius.lg,
+        padding: ADMIN.space.lg,
+        border: "1px solid " + t.sep,
+        boxShadow: ADMIN.shadow.card,
+        cursor: clickable ? "pointer" : "default",
+        width: "100%",
+        textAlign: "right",
+        fontFamily: "inherit",
+        display: "block",
+      }}>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: ADMIN.space.sm }}>
+        <div style={{ flex: 1, minWidth: 0 }}>
+          <div style={{
+            fontSize: ADMIN.font.xs,
+            color: t.txM,
+            fontWeight: ADMIN.weight.medium,
+            marginBottom: 4,
+          }}>{label}</div>
+          <div style={{
+            fontSize: ADMIN.font.xxl + 6,
+            fontWeight: ADMIN.weight.black,
+            color: c,
+            lineHeight: 1,
+            marginBottom: sub || trend ? 4 : 0,
+          }}>
+            <AdminAnimatedNumber value={value} duration={900} />
+          </div>
+          {sub && (
+            <div style={{
+              fontSize: ADMIN.font.tiny,
+              color: t.txM,
+            }}>{sub}</div>
+          )}
+          {trend && (
+            <div style={{
+              display: "inline-flex", alignItems: "center", gap: 3,
+              fontSize: ADMIN.font.tiny,
+              fontWeight: ADMIN.weight.bold,
+              color: trend.direction === "up" ? "#10b981" : trend.direction === "down" ? "#ef4444" : t.txM,
+              padding: "2px 6px",
+              background: (trend.direction === "up" ? "#10b981" : trend.direction === "down" ? "#ef4444" : t.txM) + "15",
+              borderRadius: ADMIN.radius.sm,
+              marginTop: 4,
+            }}>
+              {trend.direction === "up" ? "▲" : trend.direction === "down" ? "▼" : "—"} {trend.value}
+            </div>
+          )}
+        </div>
+        {icon && (
+          <div style={{
+            width: 42, height: 42,
+            borderRadius: ADMIN.radius.md,
+            background: c + "15",
+            display: "flex", alignItems: "center", justifyContent: "center",
+            fontSize: 22, flexShrink: 0,
+          }}>{icon}</div>
+        )}
+      </div>
+    </Wrapper>
+  );
+}
+
+/* 🔘 ActionButton — unified button with variants */
+function ActionButton({ variant, size, icon, label, onClick, disabled, loading, full, color, t, B }) {
+  var V = variant || "primary"; // primary | secondary | ghost | danger | success
+  var S = size || "md"; // sm | md | lg
+  var sizes = {
+    sm: { padY: 6, padX: 12, font: ADMIN.font.xs },
+    md: { padY: 10, padX: 16, font: ADMIN.font.sm },
+    lg: { padY: 12, padX: 20, font: ADMIN.font.base },
+  };
+  var sz = sizes[S];
+
+  var bg, textColor, border;
+  if (V === "primary") {
+    bg = "linear-gradient(135deg, " + (B ? B.blue : "#2B5EA7") + ", " + (B ? B.blueDk : "#1E4478") + ")";
+    textColor = "#fff";
+    border = "none";
+  } else if (V === "success") {
+    bg = "linear-gradient(135deg, #10b981, #059669)";
+    textColor = "#fff";
+    border = "none";
+  } else if (V === "danger") {
+    bg = "linear-gradient(135deg, #ef4444, #dc2626)";
+    textColor = "#fff";
+    border = "none";
+  } else if (V === "gold") {
+    bg = "linear-gradient(135deg, #f59e0b, #d97706)";
+    textColor = "#fff";
+    border = "none";
+  } else if (V === "secondary") {
+    bg = t ? t.bg : "#f2f2f7";
+    textColor = t ? t.tx : "#000";
+    border = "1px solid " + (t ? t.sep : "#ccc");
+  } else {
+    bg = "transparent";
+    textColor = t ? t.tx : "#000";
+    border = "1px solid " + (t ? t.sep : "#ccc");
+  }
+
+  return (
+    <button
+      onClick={disabled || loading ? undefined : adminRipple(onClick)}
+      disabled={disabled || loading}
+      className="admin-ripple admin-smooth"
+      style={{
+        padding: sz.padY + "px " + sz.padX + "px",
+        borderRadius: ADMIN.radius.md,
+        background: disabled ? (t ? t.sep : "#ccc") : bg,
+        color: textColor,
+        border: border,
+        fontSize: sz.font,
+        fontWeight: ADMIN.weight.heavy,
+        fontFamily: "inherit",
+        cursor: disabled || loading ? "not-allowed" : "pointer",
+        display: "inline-flex", alignItems: "center", justifyContent: "center",
+        gap: 6,
+        width: full ? "100%" : "auto",
+        opacity: disabled ? 0.6 : 1,
+        boxShadow: V === "primary" || V === "success" || V === "danger" || V === "gold"
+          ? ADMIN.shadow.colored(V === "primary" ? (B ? B.blue : "#2B5EA7") : V === "success" ? "#10b981" : V === "danger" ? "#ef4444" : "#f59e0b")
+          : ADMIN.shadow.card,
+      }}
+    >
+      {loading ? <span style={{ fontSize: 14 }}>⏳</span> : icon && <span style={{ fontSize: 14 }}>{icon}</span>}
+      {label}
+    </button>
+  );
+}
+
+/* 🏷️ SectionTitle — unified section headers */
+function SectionTitle({ icon, title, extra, t }) {
+  return (
+    <div className="admin-fade-up" style={{
+      display: "flex",
+      alignItems: "center",
+      justifyContent: "space-between",
+      marginBottom: ADMIN.space.md,
+      gap: ADMIN.space.sm,
+    }}>
+      <div style={{
+        fontSize: ADMIN.font.lg,
+        fontWeight: ADMIN.weight.heavy,
+        color: t ? t.tx : "#000",
+        display: "flex",
+        alignItems: "center",
+        gap: 6,
+      }}>
+        {icon && <span>{icon}</span>}
+        {title}
+      </div>
+      {extra && <div>{extra}</div>}
+    </div>
+  );
+}
+
+/* 🎨 FilterBar — unified filter bar */
+function FilterBar({ children, t }) {
+  return (
+    <div className="admin-fade-up" style={{
+      display: "flex",
+      gap: ADMIN.space.sm,
+      marginBottom: ADMIN.space.lg,
+      flexWrap: "wrap",
+      alignItems: "center",
+    }}>{children}</div>
+  );
+}
+
+/* 📇 DataCard — unified list item card */
+function DataCard({ children, highlight, onClick, delay, t }) {
+  var delayClass = delay ? "admin-fade-up-d" + Math.min(delay, 4) : "admin-fade-up";
+  return (
+    <div
+      onClick={onClick ? adminRipple(onClick) : undefined}
+      className={delayClass + (onClick ? " admin-ripple admin-hover-lift" : "") + " admin-smooth"}
+      style={{
+        background: t.card,
+        borderRadius: ADMIN.radius.md,
+        padding: ADMIN.space.md + "px " + ADMIN.space.lg + "px",
+        border: "1px solid " + t.sep,
+        borderRight: highlight ? "3px solid " + highlight : "1px solid " + t.sep,
+        boxShadow: ADMIN.shadow.card,
+        marginBottom: ADMIN.space.sm,
+        cursor: onClick ? "pointer" : "default",
+      }}
+    >{children}</div>
+  );
+}
+
+
 
 // ═══════ DATA ═══════
 const BRANCHES = [
@@ -122,7 +520,8 @@ function AdminBottomNav({ tab, setTab, badges }) {
         return (
           <button
             key={it.id}
-            onClick={function(){ setTab(it.id); }}
+            onClick={adminRipple(function(){ setTab(it.id); })}
+            className="admin-ripple admin-smooth"
             style={{
               flex: active ? "1 1 auto" : "0 0 auto",
               minWidth: active ? 100 : 48,
@@ -138,13 +537,13 @@ function AdminBottomNav({ tab, setTab, badges }) {
               justifyContent: "center",
               gap: 6,
               fontFamily: "inherit",
-              transition: "all .25s cubic-bezier(.4,0,.2,1)",
               position: "relative",
+              transform: active ? "translateY(-2px)" : "translateY(0)",
             }}
           >
             <span style={{ fontSize: 20 }}>{it.icon}</span>
             {active && (
-              <span style={{
+              <span className="admin-slide-tab" style={{
                 fontSize: 12,
                 fontWeight: 700,
                 color: LN.ac,
@@ -152,7 +551,7 @@ function AdminBottomNav({ tab, setTab, badges }) {
               }}>{it.label}</span>
             )}
             {it.badge > 0 && (
-              <div style={{
+              <div className="admin-scale-in" style={{
                 position: "absolute",
                 top: 4,
                 right: active ? 8 : 4,
@@ -382,25 +781,56 @@ function SmartDashboard({ t, B, safeEmps, leaves, present, absent, late, pending
 
   return (
     <div>
-      {/* ─── Smart Greeting Header ─── */}
-      <div style={{
-        background: "linear-gradient(135deg, " + B.blue + "15, " + B.gold + "10)",
-        borderRadius: 14, padding: "16px 20px", marginBottom: 14,
+      {/* ─── Smart Greeting Header — v7.115 unified ─── */}
+      <div className="admin-fade-up" style={{
+        background: "linear-gradient(135deg, " + B.blue + "10 0%, " + B.gold + "08 100%)",
+        borderRadius: ADMIN.radius.lg,
+        padding: ADMIN.space.xl + "px " + ADMIN.space.xxl + "px",
+        marginBottom: ADMIN.space.lg,
         border: "1px solid " + t.sep,
-        display: "flex", justifyContent: "space-between", alignItems: "center", gap: 14, flexWrap: "wrap"
+        boxShadow: ADMIN.shadow.card,
+        display: "flex",
+        justifyContent: "space-between",
+        alignItems: "center",
+        gap: ADMIN.space.lg,
+        flexWrap: "wrap"
       }}>
         <div>
-          <div style={{ fontSize: 18, fontWeight: 800, color: t.tx, marginBottom: 2 }}>{greet} 👋</div>
-          <div style={{ fontSize: 11, color: t.txM }}>{dateStr}</div>
+          <div style={{
+            fontSize: ADMIN.font.xl,
+            fontWeight: ADMIN.weight.heavy,
+            color: t.tx,
+            marginBottom: 2,
+          }}>{greet} 👋</div>
+          <div style={{
+            fontSize: ADMIN.font.xs,
+            color: t.txM,
+          }}>{dateStr}</div>
         </div>
-        <div style={{ display: "flex", gap: 10, fontSize: 11, flexWrap: "wrap" }}>
-          <div style={{ padding: "8px 12px", borderRadius: 8, background: t.card }}>
+        <div style={{ display: "flex", gap: ADMIN.space.sm, flexWrap: "wrap" }}>
+          <div className="admin-fade-up-d1 admin-smooth" style={{
+            padding: ADMIN.space.sm + "px " + ADMIN.space.md + "px",
+            borderRadius: ADMIN.radius.md,
+            background: t.card,
+            border: "1px solid " + t.sep,
+            fontSize: ADMIN.font.xs,
+          }}>
             <span style={{ color: t.txM }}>{tr("الموظفون: ")}</span>
-            <strong style={{ color: B.blue }}>{safeEmps.length}</strong>
+            <strong style={{ color: B.blue, fontSize: ADMIN.font.sm, fontWeight: ADMIN.weight.heavy }}>
+              <AdminAnimatedNumber value={safeEmps.length} duration={900} />
+            </strong>
           </div>
-          <div style={{ padding: "8px 12px", borderRadius: 8, background: t.card }}>
+          <div className="admin-fade-up-d2 admin-smooth" style={{
+            padding: ADMIN.space.sm + "px " + ADMIN.space.md + "px",
+            borderRadius: ADMIN.radius.md,
+            background: t.card,
+            border: "1px solid " + t.sep,
+            fontSize: ADMIN.font.xs,
+          }}>
             <span style={{ color: t.txM }}>{tr("الحضور اليوم: ")}</span>
-            <strong style={{ color: t.ok }}>{present}/{safeEmps.length}</strong>
+            <strong style={{ color: t.ok, fontSize: ADMIN.font.sm, fontWeight: ADMIN.weight.heavy }}>
+              <AdminAnimatedNumber value={present} duration={900} />/{safeEmps.length}
+            </strong>
             <span style={{ color: t.txM, marginRight: 4 }}> ({safeEmps.length > 0 ? Math.round((present / safeEmps.length) * 100) : 0}%)</span>
           </div>
         </div>
@@ -408,10 +838,13 @@ function SmartDashboard({ t, B, safeEmps, leaves, present, absent, late, pending
 
       {/* v7.102 — Smart Alerts Panel */}
       {alerts && alerts.counts.total > 0 && (
-        <div style={{
-          background: t.card, borderRadius: 14, padding: 16,
+        <div className={"admin-fade-up-d1 " + (alerts.counts.high > 0 ? "admin-glow-critical" : "")} style={{
+          background: t.card,
+          borderRadius: ADMIN.radius.lg,
+          padding: ADMIN.space.lg,
           border: "1px solid " + (alerts.counts.high > 0 ? t.bad + "40" : "#F59E0B40"),
-          marginBottom: 14,
+          boxShadow: ADMIN.shadow.card,
+          marginBottom: ADMIN.space.lg,
         }}>
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12, flexWrap: "wrap", gap: 8 }}>
             <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
@@ -503,25 +936,42 @@ function SmartDashboard({ t, B, safeEmps, leaves, present, absent, late, pending
         })}
       </div>
 
-      {/* ─── Today Stats (4 cards) ─── */}
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(4,1fr)", gap: 12, marginBottom: 16 }}>
-        {[
-          { l: tr("حاضر"), v: present, i: "✅", c: t.ok, s: tr("من ") + safeEmps.length },
-          { l: tr("غائب"), v: absent, i: "🚫", c: t.bad },
-          { l: tr("متأخر"), v: late, i: "⏰", c: t.warn },
-          { l: tr("طلبات معلّقة"), v: pending, i: "📋", c: B.blue },
-        ].map(function(s, i){
-          return <div key={i} style={{ background: t.card, borderRadius: 14, padding: "16px", border: "1px solid " + t.sep }}>
-            <div style={{ display: "flex", justifyContent: "space-between" }}>
-              <div>
-                <div style={{ fontSize: 11, color: t.txM }}>{s.l}</div>
-                <div style={{ fontSize: 28, fontWeight: 800, color: s.c, marginTop: 4 }}>{s.v}</div>
-                {s.s && <div style={{ fontSize: 10, color: t.txM }}>{s.s}</div>}
-              </div>
-              <div style={{ width: 40, height: 40, borderRadius: 10, background: s.c + "12", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 20 }}>{s.i}</div>
-            </div>
-          </div>;
-        })}
+      {/* ─── Today Stats (4 cards) — v7.115 using StatCard ─── */}
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))", gap: ADMIN.space.md, marginBottom: ADMIN.space.lg }}>
+        <StatCard
+          icon="✅"
+          label={tr("حاضر")}
+          value={present}
+          sub={tr("من ") + safeEmps.length}
+          color={t.ok}
+          delay={1}
+          t={t}
+        />
+        <StatCard
+          icon="🚫"
+          label={tr("غائب")}
+          value={absent}
+          color={t.bad}
+          delay={2}
+          t={t}
+        />
+        <StatCard
+          icon="⏰"
+          label={tr("متأخر")}
+          value={late}
+          color={t.warn}
+          delay={3}
+          t={t}
+        />
+        <StatCard
+          icon="📋"
+          label={tr("طلبات معلّقة")}
+          value={pending}
+          color={B.blue}
+          delay={4}
+          t={t}
+          onClick={pending > 0 ? function(){ setTab("leaves_hub"); } : null}
+        />
       </div>
 
       {/* ─── Smart Insights (3 cards) ─── */}
@@ -530,7 +980,7 @@ function SmartDashboard({ t, B, safeEmps, leaves, present, absent, late, pending
           <div style={{ fontSize: 14, fontWeight: 800, color: t.tx, marginBottom: 10 }}>{tr("💡 رؤى ذكية")}</div>
           <div style={{ display: "grid", gridTemplateColumns: "repeat(" + insights.length + ",1fr)", gap: 12 }}>
             {insights.map(function(ins, i){
-              return <div key={i} style={{
+              return <div key={i} className={"admin-fade-up-d" + Math.min(i+2, 4) + " admin-hover-lift admin-smooth"} style={{
                 background: t.card, borderRadius: 14, padding: 16,
                 border: "1px solid " + t.sep,
                 borderRight: "3px solid " + ins.color,
@@ -1981,7 +2431,7 @@ function EmployeeDetailPage({ t, B, emp, allEmps, leaves, branches, isMobile, on
           </div>
 
           {myLeaves.length === 0 ? (
-            <div style={{ padding: 30, textAlign: "center", color: t.txM, fontSize: 12 }}>{tr("لا توجد إجازات مسجلة")}</div>
+            <div className="admin-fade-up" style={{ padding: "40px 20px", textAlign: "center", background: t.bg, borderRadius: 12, border: "1px dashed " + t.sep }}><div style={{ fontSize: 40, marginBottom: 10, opacity: 0.4 }}>🏖️</div><div style={{ fontSize: 13, fontWeight: 700, color: t.tx, marginBottom: 4 }}>{tr("لا توجد إجازات مسجلة")}</div></div>
           ) : (
             <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
               {myLeaves.slice(0, 10).map(function(l, i){
@@ -2053,7 +2503,7 @@ function EmployeeDetailPage({ t, B, emp, allEmps, leaves, branches, isMobile, on
               </div>
             </div>
           ) : (
-            <div style={{ padding: 30, textAlign: "center", color: t.txM, fontSize: 12 }}>{tr("لا توجد قسائم مسجلة")}</div>
+            <div className="admin-fade-up" style={{ padding: "40px 20px", textAlign: "center", background: t.bg, borderRadius: 12, border: "1px dashed " + t.sep }}><div style={{ fontSize: 40, marginBottom: 10, opacity: 0.4 }}>💰</div><div style={{ fontSize: 13, fontWeight: 700, color: t.tx, marginBottom: 4 }}>{tr("لا توجد قسائم مسجلة")}</div></div>
           )}
         </div>
       )}
@@ -2107,7 +2557,7 @@ function EmployeeDetailPage({ t, B, emp, allEmps, leaves, branches, isMobile, on
           {loading ? (
             <div style={{ padding: 30, textAlign: "center", color: t.txM, fontSize: 12 }}>{tr("جاري التحميل...")}</div>
           ) : empAudit.length === 0 ? (
-            <div style={{ padding: 30, textAlign: "center", color: t.txM, fontSize: 12 }}>{tr("لا توجد عمليات مسجلة")}</div>
+            <div className="admin-fade-up" style={{ padding: "40px 20px", textAlign: "center", background: t.bg, borderRadius: 12, border: "1px dashed " + t.sep }}><div style={{ fontSize: 40, marginBottom: 10, opacity: 0.4 }}>📋</div><div style={{ fontSize: 13, fontWeight: 700, color: t.tx, marginBottom: 4 }}>{tr("لا توجد عمليات مسجلة")}</div></div>
           ) : (
             <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
               {empAudit.slice(0, 20).map(function(e, i){
@@ -2213,17 +2663,14 @@ function SalarySheetsPanel({ t, B, emps }) {
 
   return (
     <div>
-      {/* Header */}
-      <div style={{
-        background: "linear-gradient(135deg, #10B981, #059669)",
-        borderRadius: 14, padding: "16px 20px", color: "#fff",
-        marginBottom: 14,
-      }}>
-        <div style={{ fontSize: 16, fontWeight: 900 }}>💰 {tr("مسيرات الرواتب")}</div>
-        <div style={{ fontSize: 11, opacity: 0.9, marginTop: 4 }}>
-          {tr("إنشاء مسيرات شهرية محسوبة تلقائياً من الحضور")}
-        </div>
-      </div>
+      {/* Header — v7.117 unified */}
+      <PanelHeader
+        icon="💰"
+        title={tr("مسيرات الرواتب")}
+        subtitle={tr("إنشاء مسيرات شهرية محسوبة تلقائياً من الحضور")}
+        gradient="linear-gradient(135deg, #10B981, #059669)"
+        t={t} B={B}
+      />
 
       {/* Period selector + actions */}
       <div style={{
@@ -2311,7 +2758,7 @@ function SalarySheetsPanel({ t, B, emps }) {
 
       {/* Slips list */}
       {loading ? (
-        <div style={{ padding: 30, textAlign: "center", color: t.txM }}>⏳ {tr("جاري التحميل...")}</div>
+        <div className="admin-fade-up"><AdminSkeleton height={70} borderRadius={12} style={{ marginBottom: 10 }} /><AdminSkeleton height={45} borderRadius={10} /></div>
       ) : slips.length === 0 ? (
         <div style={{
           padding: 40, textAlign: "center", color: t.txM,
@@ -2382,7 +2829,7 @@ function ChallengesDashboardPanel({ t, B }) {
   useEffect(function(){ load(); }, []);
 
   if (loading) {
-    return <div style={{ padding: 40, textAlign: "center", color: t.txM }}>⏳ {tr("جاري التحميل...")}</div>;
+    return <div className="admin-fade-up"><AdminSkeleton height={80} borderRadius={12} style={{ marginBottom: 10 }} /><AdminSkeleton height={50} borderRadius={10} style={{ marginBottom: 8 }} /><AdminSkeleton height={50} borderRadius={10} /></div>;
   }
   if (error) {
     return <div style={{ padding: 20, textAlign: "center", color: t.bad }}>⚠️ {error}</div>;
@@ -2391,27 +2838,22 @@ function ChallengesDashboardPanel({ t, B }) {
 
   return (
     <div>
-      {/* Header */}
-      <div style={{
-        background: "linear-gradient(135deg, #7c3aed, #a855f7)",
-        borderRadius: 14, padding: "18px 22px", color: "#fff",
-        marginBottom: 14,
-        display: "flex", justifyContent: "space-between", alignItems: "center", gap: 14, flexWrap: "wrap",
-      }}>
-        <div>
-          <div style={{ fontSize: 18, fontWeight: 900 }}>📊 {tr("إحصائيات التحديات")}</div>
-          <div style={{ fontSize: 11, opacity: 0.9, marginTop: 4 }}>
-            {tr("آخر 30 يوم")}
-          </div>
-        </div>
-        <button onClick={load} style={{
-          padding: "8px 14px", borderRadius: 10,
-          background: "rgba(255,255,255,0.2)",
-          border: "1px solid rgba(255,255,255,0.3)",
-          color: "#fff", fontSize: 11, fontWeight: 700,
-          cursor: "pointer", fontFamily: "inherit",
-        }}>🔄 {tr("تحديث")}</button>
-      </div>
+      {/* Header — v7.117 unified */}
+      <PanelHeader
+        icon="📊"
+        title={tr("إحصائيات التحديات")}
+        subtitle={tr("آخر 30 يوم")}
+        gradient="linear-gradient(135deg, #7c3aed, #a855f7)"
+        action={
+          <ActionButton
+            variant="secondary" size="sm"
+            icon="🔄" label={tr("تحديث")}
+            onClick={load}
+            t={t} B={B}
+          />
+        }
+        t={t} B={B}
+      />
 
       {/* Flash Challenge Stats */}
       <div style={{ background: t.card, borderRadius: 14, padding: 16, border: "1px solid " + t.sep, marginBottom: 14 }}>
@@ -2754,16 +3196,14 @@ function FlashChallengePanel({ t, B, emps }) {
 
   return (
     <div>
-      {/* Header */}
-      <div style={{ background: "linear-gradient(135deg, #7c3aed, #a855f7)", borderRadius: 14, padding: "18px 22px", color: "#fff", marginBottom: 14 }}>
-        <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
-          <div style={{ fontSize: 36 }}>⚡</div>
-          <div style={{ flex: 1 }}>
-            <div style={{ fontSize: 18, fontWeight: 900 }}>{tr("سؤال تحدي على السريع")}</div>
-            <div style={{ fontSize: 11, opacity: 0.9, marginTop: 3 }}>{tr("أرسل سؤال فوري لموظفيك لكسب نقاط — وقت تقريره أنت")}</div>
-          </div>
-        </div>
-      </div>
+      {/* Header — v7.117 unified */}
+      <PanelHeader
+        icon="⚡"
+        title={tr("سؤال تحدي على السريع")}
+        subtitle={tr("أرسل سؤال فوري لموظفيك لكسب نقاط — وقت تقريره أنت")}
+        gradient="linear-gradient(135deg, #7c3aed, #a855f7)"
+        t={t} B={B}
+      />
 
       {/* Tabs */}
       <div style={{ display: "flex", gap: 6, marginBottom: 14 }}>
@@ -3077,7 +3517,7 @@ function FlashChallengePanel({ t, B, emps }) {
       {view === "history" && (
         <div>
           {loadingHistory ? (
-            <div style={{ padding: 40, textAlign: "center", color: t.txM }}>⏳ {tr("جاري التحميل...")}</div>
+            <div className="admin-fade-up"><AdminSkeleton height={80} borderRadius={12} style={{ marginBottom: 10 }} /><AdminSkeleton height={50} borderRadius={10} style={{ marginBottom: 8 }} /><AdminSkeleton height={50} borderRadius={10} /></div>
           ) : history.length === 0 ? (
             <div style={{ padding: 40, textAlign: "center", background: t.card, borderRadius: 14, border: "1px solid " + t.sep }}>
               <div style={{ fontSize: 36, marginBottom: 8 }}>📜</div>
@@ -3215,42 +3655,47 @@ function PushBroadcastPanel({ t, B, emps }) {
 
   return (
     <div>
+      {/* Header — v7.117 unified */}
+      <PanelHeader
+        icon="🔔"
+        title={tr("إشعارات Push")}
+        subtitle={overview ? overview.subscribed + " " + tr("مفعّل") + " · " + overview.pct + "% " + tr("نسبة التفعيل") : ""}
+        gradient={"linear-gradient(135deg, " + B.blue + ", " + B.blueDk + ")"}
+        action={
+          <ActionButton
+            variant="secondary" size="sm"
+            icon="🔄" label={tr("تحديث")}
+            onClick={loadOverview}
+            t={t} B={B}
+          />
+        }
+        t={t} B={B}
+      />
+
       {/* VAPID warning */}
       {overview && !overview.vapidConfigured && (
-        <div style={{ padding: "12px 14px", background: t.warnLt, border: "1px solid " + t.warn + "40", borderRadius: 10, fontSize: 11, color: t.tx, lineHeight: 1.7, marginBottom: 14 }}>
+        <div className="admin-fade-up" style={{
+          padding: ADMIN.space.md + "px " + ADMIN.space.md + "px",
+          background: t.warnLt,
+          border: "1px solid " + t.warn + "40",
+          borderRadius: ADMIN.radius.md,
+          fontSize: ADMIN.font.xs,
+          color: t.tx,
+          lineHeight: 1.7,
+          marginBottom: ADMIN.space.md,
+        }}>
           ⚠️ <b>{tr("VAPID keys غير مُهيّأة:")}</b> {tr("يجب إضافة VAPID_PUBLIC_KEY و VAPID_PRIVATE_KEY في Vercel env.")}
         </div>
       )}
 
-      {/* Overview Card */}
-      <div style={{ background: t.card, borderRadius: 14, padding: 16, border: "1px solid " + t.sep, marginBottom: 14 }}>
-        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>
-          <div style={{ fontSize: 14, fontWeight: 800, color: t.tx }}>🔔 {tr("إشعارات Push")}</div>
-          <button onClick={loadOverview} style={{
-            padding: "6px 12px", borderRadius: 8,
-            background: B.blue, color: "#fff",
-            border: "none", fontSize: 10, fontWeight: 700,
-            cursor: "pointer",
-          }}>🔄 {tr("تحديث")}</button>
+      {/* Overview Stats — v7.117 using StatCard */}
+      {overview && (
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(160px, 1fr))", gap: ADMIN.space.md, marginBottom: ADMIN.space.lg }}>
+          <StatCard icon="✅" label={tr("مفعّل")} value={overview.subscribed} color={t.ok} delay={1} t={t} />
+          <StatCard icon="⏸" label={tr("غير مفعّل")} value={overview.unsubscribed} color={t.warn} delay={2} t={t} />
+          <StatCard icon="📊" label={tr("نسبة التفعيل")} value={overview.pct} sub="%" color={B.blue} delay={3} t={t} />
         </div>
-
-        {overview && (
-          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 10 }}>
-            <div style={{ padding: 14, background: t.ok + "10", borderRadius: 10, border: "1px solid " + t.ok + "30", textAlign: "center" }}>
-              <div style={{ fontSize: 24, fontWeight: 900, color: t.ok }}>{overview.subscribed}</div>
-              <div style={{ fontSize: 10, color: t.txM, marginTop: 4 }}>{tr("مفعّل")}</div>
-            </div>
-            <div style={{ padding: 14, background: t.warn + "10", borderRadius: 10, border: "1px solid " + t.warn + "30", textAlign: "center" }}>
-              <div style={{ fontSize: 24, fontWeight: 900, color: t.warn }}>{overview.unsubscribed}</div>
-              <div style={{ fontSize: 10, color: t.txM, marginTop: 4 }}>{tr("غير مفعّل")}</div>
-            </div>
-            <div style={{ padding: 14, background: B.blue + "10", borderRadius: 10, border: "1px solid " + B.blue + "30", textAlign: "center" }}>
-              <div style={{ fontSize: 24, fontWeight: 900, color: B.blue }}>{overview.pct}%</div>
-              <div style={{ fontSize: 10, color: t.txM, marginTop: 4 }}>{tr("نسبة التفعيل")}</div>
-            </div>
-          </div>
-        )}
-      </div>
+      )}
 
       {/* Tabs */}
       <div style={{ display: "flex", gap: 6, marginBottom: 14 }}>
@@ -3582,42 +4027,60 @@ function AuditLogPanel({ t, B, emps }) {
 
   return (
     <div>
-      {/* Header + Stats */}
-      <div style={{ background: t.card, borderRadius: 14, padding: 16, border: "1px solid " + t.sep, marginBottom: 14 }}>
-        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12, flexWrap: "wrap", gap: 10 }}>
-          <div>
-            <div style={{ fontSize: 16, fontWeight: 800, color: t.tx }}>📜 {tr("سجل العمليات")}</div>
-            <div style={{ fontSize: 11, color: t.txM, marginTop: 2 }}>{tr("جميع العمليات الإدارية في النظام")} · {total} {tr("عملية")}</div>
+      {/* Header — v7.117 unified */}
+      <PanelHeader
+        icon="📜"
+        title={tr("سجل العمليات")}
+        subtitle={tr("جميع العمليات الإدارية في النظام") + " · " + total + " " + tr("عملية")}
+        gradient={"linear-gradient(135deg, " + B.blue + ", " + B.blueDk + ")"}
+        action={
+          <div style={{ display: "flex", gap: ADMIN.space.xs }}>
+            <ActionButton
+              variant="secondary" size="sm"
+              icon="🔄" label={tr("تحديث")}
+              onClick={load}
+              t={t} B={B}
+            />
+            <ActionButton
+              variant="success" size="sm"
+              icon="📥" label={tr("CSV")}
+              onClick={exportCSV}
+              disabled={filtered.length === 0}
+              t={t} B={B}
+            />
           </div>
-          <div style={{ display: "flex", gap: 8 }}>
-            <button onClick={load} style={{ padding: "8px 14px", borderRadius: 8, background: B.blue, color: "#fff", fontSize: 11, fontWeight: 700, border: "none", cursor: "pointer" }}>🔄 {tr("تحديث")}</button>
-            <button onClick={exportCSV} disabled={filtered.length === 0} style={{ padding: "8px 14px", borderRadius: 8, background: filtered.length === 0 ? t.cardBrd : t.ok, color: "#fff", fontSize: 11, fontWeight: 700, border: "none", cursor: filtered.length === 0 ? "default" : "pointer" }}>📥 {tr("تصدير CSV")}</button>
-          </div>
-        </div>
+        }
+        t={t} B={B}
+      />
 
+      <div style={{ background: t.card, borderRadius: ADMIN.radius.lg, padding: ADMIN.space.lg, border: "1px solid " + t.sep, marginBottom: ADMIN.space.md }}>
         {/* Category Tabs */}
-        <div style={{ display: "flex", flexWrap: "wrap", gap: 6, marginBottom: 12 }}>
+        <div style={{ display: "flex", flexWrap: "wrap", gap: ADMIN.space.xs, marginBottom: ADMIN.space.md }}>
           {categories.map(function(c){
             var active = filterCat === c.id;
             var count = c.id === "all" ? total : (stats[c.id] || 0);
-            return <button key={c.id} onClick={function(){ setFilterCat(c.id); }} style={{
-              padding: "8px 12px", borderRadius: 20,
-              background: active ? c.color : t.card,
+            return <button key={c.id} onClick={adminRipple(function(){ setFilterCat(c.id); })} className="admin-ripple admin-smooth" style={{
+              padding: ADMIN.space.sm + "px " + ADMIN.space.md + "px",
+              borderRadius: ADMIN.radius.full,
+              background: active ? c.color : t.bg,
               color: active ? "#fff" : t.tx,
               border: "1px solid " + (active ? c.color : t.sep),
-              fontSize: 11, fontWeight: 700,
+              fontSize: ADMIN.font.xs,
+              fontWeight: ADMIN.weight.bold,
               cursor: "pointer",
               display: "flex", alignItems: "center", gap: 6,
+              fontFamily: "inherit",
+              boxShadow: active ? ADMIN.shadow.colored(c.color) : "none",
             }}>
               <span>{c.icon}</span>
               <span>{c.label}</span>
-              {count > 0 && <span style={{ padding: "1px 7px", borderRadius: 10, background: active ? "rgba(255,255,255,0.25)" : t.sep, fontSize: 10 }}>{count}</span>}
+              {count > 0 && <span style={{ padding: "1px 7px", borderRadius: ADMIN.radius.full, background: active ? "rgba(255,255,255,0.25)" : t.sep, fontSize: ADMIN.font.tiny }}>{count}</span>}
             </button>;
           })}
         </div>
 
         {/* Search + Date range */}
-        <div style={{ display: "grid", gridTemplateColumns: "2fr 1fr 1fr 1fr", gap: 8 }}>
+        <div style={{ display: "grid", gridTemplateColumns: "2fr 1fr 1fr 1fr", gap: ADMIN.space.xs }}>
           <input
             type="text"
             value={search}
@@ -3828,12 +4291,13 @@ function MoreMenuPage({ setTab, badges, sideGroups, onSwitchToEmployee, onLogout
             </div>
 
             <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-              {items.map(function(item){
+              {items.map(function(item, idx){
                 var hasBadge = item.badge && item.badge > 0;
                 return (
                   <button
                     key={item.id}
-                    onClick={function(){ setTab(item.id); }}
+                    onClick={adminRipple(function(){ setTab(item.id); })}
+                    className={"admin-ripple admin-smooth admin-fade-up-d" + Math.min(idx % 4 + 1, 4)}
                     style={{
                       width: "100%",
                       padding: "14px 14px",
@@ -3848,10 +4312,9 @@ function MoreMenuPage({ setTab, badges, sideGroups, onSwitchToEmployee, onLogout
                       textAlign: "right",
                       fontFamily: "inherit",
                       boxShadow: LN.cardSh,
-                      transition: "all .15s",
                     }}
-                    onMouseEnter={function(e){ e.currentTarget.style.background = LN.hover; }}
-                    onMouseLeave={function(e){ e.currentTarget.style.background = LN.card; }}
+                    onMouseEnter={function(e){ e.currentTarget.style.background = LN.hover; e.currentTarget.style.transform = "translateX(-3px)"; }}
+                    onMouseLeave={function(e){ e.currentTarget.style.background = LN.card; e.currentTarget.style.transform = "translateX(0)"; }}
                   >
                     <div style={{
                       width: 38, height: 38,
@@ -4726,6 +5189,32 @@ export default function AdminApp() {
         from { transform: translateX(20px); opacity: 0; }
         to   { transform: translateX(0);    opacity: 1; }
       }
+      /* v7.114 — UX Polish animations for AdminApp */
+      @keyframes admin-fade-up { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: translateY(0); } }
+      @keyframes admin-scale-in { from { opacity: 0; transform: scale(0.96); } to { opacity: 1; transform: scale(1); } }
+      @keyframes admin-shimmer { 0% { background-position: -200% 0; } 100% { background-position: 200% 0; } }
+      @keyframes admin-glow-critical { 0%,100% { box-shadow: 0 0 4px rgba(239,68,68,0.3), 0 0 10px rgba(239,68,68,0.2); } 50% { box-shadow: 0 0 16px rgba(239,68,68,0.5), 0 0 30px rgba(239,68,68,0.3); } }
+      @keyframes admin-slide-tab { from { transform: translateX(6px); opacity: 0; } to { transform: translateX(0); opacity: 1; } }
+      @keyframes admin-success-pop { 0% { transform: scale(0.3); opacity: 0; } 50% { transform: scale(1.15); opacity: 1; } 100% { transform: scale(1); opacity: 1; } }
+      @keyframes admin-bounce { 0%,100% { transform: translateY(0); } 50% { transform: translateY(-4px); } }
+      .admin-fade-up { animation: admin-fade-up 0.4s ease-out both; }
+      .admin-fade-up-d1 { animation: admin-fade-up 0.4s ease-out 0.05s both; }
+      .admin-fade-up-d2 { animation: admin-fade-up 0.4s ease-out 0.1s both; }
+      .admin-fade-up-d3 { animation: admin-fade-up 0.4s ease-out 0.15s both; }
+      .admin-fade-up-d4 { animation: admin-fade-up 0.4s ease-out 0.2s both; }
+      .admin-scale-in { animation: admin-scale-in 0.35s cubic-bezier(0.175,0.885,0.32,1.275) both; }
+      .admin-slide-tab { animation: admin-slide-tab 0.3s ease-out; }
+      .admin-shimmer { background: linear-gradient(90deg, rgba(0,0,0,0.04) 0%, rgba(0,0,0,0.1) 50%, rgba(0,0,0,0.04) 100%); background-size: 200% 100%; animation: admin-shimmer 1.5s infinite; border-radius: 8px; }
+      .admin-glow-critical { animation: admin-glow-critical 2s ease-in-out infinite; }
+      .admin-success-pop { animation: admin-success-pop 0.6s cubic-bezier(0.175,0.885,0.32,1.275); }
+      .admin-bounce { animation: admin-bounce 2s ease-in-out infinite; }
+      .admin-smooth { transition: all 0.25s cubic-bezier(0.4,0,0.2,1); }
+      .admin-smooth-slow { transition: all 0.4s cubic-bezier(0.4,0,0.2,1); }
+      .admin-hover-lift:hover { transform: translateY(-2px); box-shadow: 0 4px 12px rgba(0,0,0,0.12); }
+      /* Ripple */
+      .admin-ripple { position: relative; overflow: hidden; }
+      .admin-ripple-wave { position: absolute; border-radius: 50%; background: rgba(255,255,255,0.4); pointer-events: none; animation: admin-ripple-grow 0.6s ease-out forwards; }
+      @keyframes admin-ripple-grow { 0% { width: 0; height: 0; opacity: 0.6; } 100% { width: 300px; height: 300px; opacity: 0; } }
     `}</style>
 
     {/* Sidebar — hidden on mobile (replaced by Bottom Nav) */}
@@ -4762,10 +5251,10 @@ export default function AdminApp() {
               {group.items.map(function(item){
                 var a = tab === item.id;
                 return (
-                  <button key={item.id} onClick={function(){ setTab(item.id); setSelEmp(null); }} style={{ width: "100%", padding: "9px 12px", borderRadius: 10, border: "none", marginBottom: 2, background: a ? B.blueLt : "transparent", cursor: "pointer", display: "flex", alignItems: "center", gap: 8, fontFamily: "inherit" }}>
+                  <button key={item.id} onClick={adminRipple(function(){ setTab(item.id); setSelEmp(null); })} className="admin-ripple admin-smooth" style={{ width: "100%", padding: "9px 12px", borderRadius: 10, border: "none", marginBottom: 2, background: a ? B.blueLt : "transparent", cursor: "pointer", display: "flex", alignItems: "center", gap: 8, fontFamily: "inherit", transform: a ? "translateX(-3px)" : "translateX(0)", boxShadow: a ? "0 2px 6px " + B.blue + "20" : "none" }}>
                     <span style={{ fontSize: 15, filter: a ? "none" : "grayscale(.5) opacity(.6)" }}>{item.icon}</span>
                     <span style={{ fontSize: 12, fontWeight: a ? 700 : 500, color: a ? B.blue : t.tx2, flex: 1, textAlign: "right" }}>{item.label}</span>
-                    {item.badge > 0 && <div style={{ width: 18, height: 18, borderRadius: "50%", background: t.bad, color: "#fff", fontSize: 9, fontWeight: 800, display: "flex", alignItems: "center", justifyContent: "center" }}>{item.badge}</div>}
+                    {item.badge > 0 && <div className="admin-scale-in" style={{ width: 18, height: 18, borderRadius: "50%", background: t.bad, color: "#fff", fontSize: 9, fontWeight: 800, display: "flex", alignItems: "center", justifyContent: "center" }}>{item.badge}</div>}
                   </button>
                 );
               })}
@@ -5145,35 +5634,80 @@ export default function AdminApp() {
             <KadwarSyncButton t={t} B={B} />
           </div>
         </div>
-        <div style={{ display: "flex", gap: 8, marginBottom: 14, flexWrap: "wrap" }}>
-          <input value={search} onChange={e => setSearch(e.target.value)} placeholder="🔍 بحث..." style={{ flex: 1, minWidth: isMobile ? 120 : 200, padding: "10px 14px", borderRadius: 10, border: "1px solid " + t.sep, fontSize: 13, outline: "none", background: t.card, color: t.tx }} />
-          {!isMobile && <select value={brFilter} onChange={e => setBrFilter(e.target.value)} style={{ padding: "10px 14px", borderRadius: 10, border: "1px solid " + t.sep, fontSize: 12, background: "#fff", color: "#000", fontWeight: 600, cursor: "pointer" }}><option value="all" style={{background:"#fff",color:"#000"}}>كل الفروع</option>{BRANCHES.map(b => <option key={b.id} value={b.name} style={{background:"#fff",color:"#000"}}>{b.name}</option>)}</select>}
-          <select value={statusFilter || "all"} onChange={e => setStatusFilter(e.target.value)} style={{ padding: "10px 14px", borderRadius: 10, border: "1px solid " + t.sep, fontSize: 12, background: "#fff", color: "#000", fontWeight: 600, cursor: "pointer" }}>
-            <option value="all" style={{background:"#fff",color:"#000"}}>كل الحالات</option>
-            <option value="حاضر" style={{background:"#fff",color:"#000"}}>✅ حاضر</option>
-            <option value="متأخر" style={{background:"#fff",color:"#000"}}>⏰ متأخر</option>
-            <option value="غائب" style={{background:"#fff",color:"#000"}}>❌ غائب</option>
+        <FilterBar t={t}>
+          <input value={search} onChange={e => setSearch(e.target.value)} placeholder="🔍 بحث..." style={{
+            flex: 1, minWidth: isMobile ? 120 : 200,
+            padding: ADMIN.space.sm + "px " + ADMIN.space.md + "px",
+            borderRadius: ADMIN.radius.md,
+            border: "1px solid " + t.sep,
+            fontSize: ADMIN.font.sm,
+            outline: "none",
+            background: t.card,
+            color: t.tx,
+            fontFamily: "inherit",
+          }} />
+          {!isMobile && <select value={brFilter} onChange={e => setBrFilter(e.target.value)} style={{
+            padding: ADMIN.space.sm + "px " + ADMIN.space.md + "px",
+            borderRadius: ADMIN.radius.md,
+            border: "1px solid " + t.sep,
+            fontSize: ADMIN.font.sm,
+            background: t.card,
+            color: t.tx,
+            fontWeight: ADMIN.weight.medium,
+            cursor: "pointer",
+            fontFamily: "inherit",
+          }}><option value="all">كل الفروع</option>{BRANCHES.map(b => <option key={b.id} value={b.name}>{b.name}</option>)}</select>}
+          <select value={statusFilter || "all"} onChange={e => setStatusFilter(e.target.value)} style={{
+            padding: ADMIN.space.sm + "px " + ADMIN.space.md + "px",
+            borderRadius: ADMIN.radius.md,
+            border: "1px solid " + t.sep,
+            fontSize: ADMIN.font.sm,
+            background: t.card,
+            color: t.tx,
+            fontWeight: ADMIN.weight.medium,
+            cursor: "pointer",
+            fontFamily: "inherit",
+          }}>
+            <option value="all">كل الحالات</option>
+            <option value="حاضر">✅ حاضر</option>
+            <option value="متأخر">⏰ متأخر</option>
+            <option value="غائب">❌ غائب</option>
           </select>
-          {!isMobile && <select value={accountFilter || "all"} onChange={e => setAccountFilter(e.target.value)} style={{ padding: "10px 14px", borderRadius: 10, border: "1px solid " + t.sep, fontSize: 12, background: "#fff", color: "#000", fontWeight: 600, cursor: "pointer" }}>
-            <option value="all" style={{background:"#fff",color:"#000"}}>كل الحسابات</option>
-            <option value="active" style={{background:"#fff",color:"#000"}}>✓ نشط</option>
-            <option value="inactive" style={{background:"#fff",color:"#000"}}>⚠ بدون حساب</option>
+          {!isMobile && <select value={accountFilter || "all"} onChange={e => setAccountFilter(e.target.value)} style={{
+            padding: ADMIN.space.sm + "px " + ADMIN.space.md + "px",
+            borderRadius: ADMIN.radius.md,
+            border: "1px solid " + t.sep,
+            fontSize: ADMIN.font.sm,
+            background: t.card,
+            color: t.tx,
+            fontWeight: ADMIN.weight.medium,
+            cursor: "pointer",
+            fontFamily: "inherit",
+          }}>
+            <option value="all">كل الحسابات</option>
+            <option value="active">✓ نشط</option>
+            <option value="inactive">⚠ بدون حساب</option>
           </select>}
-          <button onClick={function(){ setSearch(""); setBrFilter("all"); setStatusFilter("all"); setAccountFilter("all"); }} style={{ padding: "10px 14px", borderRadius: 10, border: "1px solid " + t.sep, fontSize: 12, background: t.card, color: t.tx, fontWeight: 600, cursor: "pointer" }}>🔄</button>
-        </div>
-        <div style={{ fontSize: 11, color: t.txM, marginBottom: 10 }}>
+          <ActionButton
+            variant="secondary" size="md"
+            icon="🔄" label=""
+            onClick={function(){ setSearch(""); setBrFilter("all"); setStatusFilter("all"); setAccountFilter("all"); }}
+            t={t} B={B}
+          />
+        </FilterBar>
+        <div style={{ fontSize: ADMIN.font.xs, color: t.txM, marginBottom: ADMIN.space.sm }}>
           عدد النتائج: <strong style={{ color: B.blue }}>{filteredEmps.length}</strong> من <strong>{safeEmps.length}</strong>
         </div>
 
         {/* v7.29 — Mobile: card list instead of wide table */}
         {isMobile ? (
           <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-            {filteredEmps.map(function(e){
+            {filteredEmps.map(function(e, idx){
               var sc = e.status === "حاضر" ? t.ok : e.status === "متأخر" ? t.warn : t.bad;
               var pc = e.pct >= 85 ? t.ok : e.pct >= 70 ? t.warn : t.bad;
               var isChecked = bulkSelected.indexOf(e.id) >= 0;
               return (
-                <div key={e.id} style={{
+                <div key={e.id} className={"admin-fade-up-d" + Math.min(idx % 4 + 1, 4) + " admin-smooth admin-hover-lift"} style={{
                   background: isChecked ? B.blue + "10" : t.card,
                   borderRadius: 12,
                   padding: 12,
@@ -5924,32 +6458,36 @@ function HolidaysPanel({ t, B }) {
   };
 
   if (loading) {
-    return <div style={{ padding: 40, textAlign: "center", color: t.txM }}>⏳ {tr("جاري التحميل...")}</div>;
+    return <div className="admin-fade-up"><AdminSkeleton height={80} borderRadius={12} style={{ marginBottom: 10 }} /><AdminSkeleton height={50} borderRadius={10} style={{ marginBottom: 8 }} /><AdminSkeleton height={50} borderRadius={10} /></div>;
   }
 
   return (
     <div>
-      {/* Header */}
-      <div style={{ background: "linear-gradient(135deg, " + B.blue + ", " + B.blueDk + ")", borderRadius: 14, padding: "18px 22px", color: "#fff", marginBottom: 14, display: "flex", justifyContent: "space-between", alignItems: "center", gap: 14, flexWrap: "wrap" }}>
-        <div>
-          <div style={{ fontSize: 18, fontWeight: 900 }}>📅 {tr("العطل الرسمية وأيام الراحة")}</div>
-          <div style={{ fontSize: 11, opacity: 0.9, marginTop: 4 }}>{holidays.length} {tr("عطلة مسجلة")} · {weekendDays.length} {tr("يوم راحة أسبوعي")}</div>
-        </div>
-        <div style={{ display: "flex", gap: 8 }}>
-          <button onClick={seedSaudi} disabled={busy} style={{
-            padding: "10px 14px", borderRadius: 10,
-            background: "rgba(255,255,255,0.2)", color: "#fff",
-            border: "1px solid rgba(255,255,255,0.4)",
-            fontSize: 11, fontWeight: 700, cursor: busy ? "wait" : "pointer", fontFamily: "inherit",
-          }}>🇸🇦 {tr("إضافة عطل السعودية")}</button>
-          <button onClick={addHoliday} style={{
-            padding: "10px 16px", borderRadius: 10,
-            background: "#fff", color: B.blue,
-            border: "none",
-            fontSize: 12, fontWeight: 800, cursor: "pointer", fontFamily: "inherit",
-          }}>➕ {tr("عطلة جديدة")}</button>
-        </div>
-      </div>
+      {/* Header — v7.116 unified */}
+      <PanelHeader
+        icon="📅"
+        title={tr("العطل الرسمية وأيام الراحة")}
+        subtitle={holidays.length + " " + tr("عطلة مسجلة") + " · " + weekendDays.length + " " + tr("يوم راحة أسبوعي")}
+        gradient={"linear-gradient(135deg, " + B.blue + ", " + B.blueDk + ")"}
+        action={
+          <div style={{ display: "flex", gap: ADMIN.space.xs }}>
+            <ActionButton
+              variant="secondary" size="sm"
+              icon="🇸🇦" label={tr("عطل السعودية")}
+              onClick={seedSaudi}
+              disabled={busy}
+              t={t} B={B}
+            />
+            <ActionButton
+              variant="primary" size="sm"
+              icon="➕" label={tr("عطلة جديدة")}
+              onClick={addHoliday}
+              t={t} B={B}
+            />
+          </div>
+        }
+        t={t} B={B}
+      />
 
       {/* Weekend Days Selector */}
       <div style={{ background: t.card, borderRadius: 14, padding: 16, border: "1px solid " + t.sep, marginBottom: 14 }}>
@@ -6348,11 +6886,14 @@ function WorkTypesPanel({ t, B, emps }) {
 
   return (
     <div style={{ maxWidth: 1000 }}>
-      {/* Gradient Header */}
-      <div style={{ background: "linear-gradient(135deg, " + B.blue + " 0%, " + B.blueDk + " 100%)", borderRadius: 16, padding: "20px 22px", marginBottom: 16, color: "#fff", boxShadow: "0 4px 20px rgba(43,94,167,0.25)" }}>
-        <div style={{ fontSize: 20, fontWeight: 800, marginBottom: 4, fontFamily: "inherit" }}>⏰ أنواع الدوام</div>
-        <div style={{ fontSize: 11, opacity: 0.9 }}>{Object.keys(workTypes).length} أنواع معرّفة · {emps.length} موظف مربوط بالنظام</div>
-      </div>
+      {/* Header — v7.117 unified */}
+      <PanelHeader
+        icon="⏰"
+        title="أنواع الدوام"
+        subtitle={Object.keys(workTypes).length + " أنواع معرّفة · " + emps.length + " موظف مربوط بالنظام"}
+        gradient={"linear-gradient(135deg, " + B.blue + ", " + B.blueDk + ")"}
+        t={t} B={B}
+      />
 
       {/* Types Grid */}
       <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(240px, 1fr))", gap: 12, marginBottom: 20 }}>
@@ -6718,11 +7259,24 @@ function LeaveBalancesPanel({ t, B, emps }) {
 
   return (
     <div style={{ maxWidth: 1100 }}>
-      {/* Gradient Header */}
-      <div style={{ background: "linear-gradient(135deg, " + B.blue + " 0%, " + B.blueDk + " 100%)", borderRadius: 16, padding: "20px 22px", marginBottom: 16, color: "#fff", boxShadow: "0 4px 20px rgba(43,94,167,0.25)" }}>
-        <div style={{ fontSize: 20, fontWeight: 800, marginBottom: 4 }}>💰 أرصدة الإجازات ({curYear})</div>
-        <div style={{ fontSize: 11, opacity: 0.9 }}>{emps.length} موظف · تعديل يدوي للرصيد + عرض السجل</div>
-      </div>
+      {/* Header — v7.117 unified */}
+      <PanelHeader
+        icon="💰"
+        title={"أرصدة الإجازات (" + curYear + ")"}
+        subtitle={emps.length + " موظف · تعديل يدوي للرصيد + عرض السجل"}
+        gradient={"linear-gradient(135deg, " + B.blue + ", " + B.blueDk + ")"}
+        action={
+          <ActionButton
+            variant="success" size="sm"
+            icon="🔄" label={bulkBusy ? "..." : "إعادة تعيين"}
+            onClick={resetAllToDefault}
+            disabled={bulkBusy}
+            loading={bulkBusy}
+            t={t} B={B}
+          />
+        }
+        t={t} B={B}
+      />
 
       {/* Stats + bulk actions */}
       <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(140px, 1fr))", gap: 10, marginBottom: 16 }}>
@@ -7023,42 +7577,52 @@ function RecognitionAdminPanel({ t, B, emps }) {
 
   return (
     <div>
-      {/* Hero */}
-      <div style={{
-        background: "linear-gradient(135deg, #f59e0b, #d97706)",
-        borderRadius: 14, padding: "18px 22px",
-        color: "#fff", marginBottom: 14,
-      }}>
-        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 12 }}>
-          <div>
-            <div style={{ fontSize: 20, fontWeight: 900 }}>🏆 {tr("نظام التكريم")}</div>
-            <div style={{ fontSize: 11, opacity: 0.9, marginTop: 4 }}>
-              {tr("تكريم تلقائي شهري + جوائز فعلية")}
-            </div>
-          </div>
+      {/* Hero — v7.115 using PanelHeader */}
+      <PanelHeader
+        icon="🏆"
+        title={tr("نظام التكريم")}
+        subtitle={tr("تكريم تلقائي شهري + جوائز فعلية")}
+        gradient="linear-gradient(135deg, #f59e0b, #d97706)"
+        action={
           <input type="month" value={month} onChange={function(e){ setMonth(e.target.value); }} style={{
-            padding: "8px 12px", borderRadius: 8,
-            background: "rgba(255,255,255,0.15)",
-            border: "1px solid rgba(255,255,255,0.3)",
-            color: "#fff", fontSize: 13, fontFamily: "inherit",
+            padding: ADMIN.space.sm + "px " + ADMIN.space.md + "px",
+            borderRadius: ADMIN.radius.md,
+            background: t.bg,
+            border: "1px solid " + t.sep,
+            color: t.tx,
+            fontSize: ADMIN.font.sm,
+            fontFamily: "inherit",
           }} />
-        </div>
-      </div>
+        }
+        t={t} B={B}
+      />
 
       {loading ? (
-        <div style={{ padding: 40, textAlign: "center", color: t.txM }}>⏳ {tr("جاري التحميل...")}</div>
+        <div>
+          {/* v7.114 — Skeleton loading */}
+          <AdminSkeleton height={110} borderRadius={14} style={{ marginBottom: 14 }} />
+          <AdminSkeleton height={60} borderRadius={12} style={{ marginBottom: 8 }} />
+          <AdminSkeleton height={60} borderRadius={12} style={{ marginBottom: 8 }} />
+          <AdminSkeleton height={60} borderRadius={12} style={{ marginBottom: 8 }} />
+        </div>
       ) : !data ? (
-        <div style={{ padding: 40, textAlign: "center", color: t.txM }}>{tr("لا توجد بيانات")}</div>
+        <AdminEmptyState
+          icon="🏆"
+          title={tr("لا توجد بيانات للتكريم")}
+          subtitle={tr("اختر شهراً آخر أو انتظر تراكم بيانات الحضور")}
+          t={t} B={B}
+        />
       ) : (
         <>
           {/* Winner showcase */}
           {data.winner && (
-            <div style={{
+            <div className="admin-scale-in admin-glow-critical" style={{
               background: "linear-gradient(135deg, rgba(245,158,11,0.15), rgba(168,85,247,0.08))",
               border: "2px solid rgba(245,158,11,0.4)",
               borderRadius: 14, padding: 20, marginBottom: 14, textAlign: "center",
+              animationIterationCount: 1,
             }}>
-              <div style={{ fontSize: 42, marginBottom: 8 }}>👑</div>
+              <div className="admin-bounce" style={{ fontSize: 42, marginBottom: 8 }}>👑</div>
               <div style={{ fontSize: 12, color: "#D97706", fontWeight: 800, letterSpacing: 1, marginBottom: 4 }}>
                 {tr("موظف الشهر")}
               </div>
@@ -7071,7 +7635,7 @@ function RecognitionAdminPanel({ t, B, emps }) {
                 </div>
               )}
               <div style={{ fontSize: 24, fontWeight: 900, color: "#f59e0b" }}>
-                {data.winner.scores.total} / 100
+                <AdminAnimatedNumber value={data.winner.scores.total} duration={1200} /> / 100
               </div>
             </div>
           )}
@@ -7082,7 +7646,7 @@ function RecognitionAdminPanel({ t, B, emps }) {
               <div style={{ fontSize: 14, fontWeight: 800, color: t.tx }}>
                 📊 {tr("الترتيب الكامل")}
               </div>
-              <button onClick={function(){ setShowAwardModal(true); }} style={{
+              <button onClick={adminRipple(function(){ setShowAwardModal(true); })} className="admin-ripple admin-smooth admin-hover-lift" style={{
                 padding: "8px 14px", borderRadius: 8,
                 background: "linear-gradient(135deg, #f59e0b, #d97706)",
                 color: "#fff", border: "none",
@@ -7094,7 +7658,8 @@ function RecognitionAdminPanel({ t, B, emps }) {
             {(data.allScores || []).map(function(emp, i){
               var colors = ["#f59e0b", "#94a3b8", "#ea8a50"];
               var medal = i < 3 ? ["🥇", "🥈", "🥉"][i] : "#" + (i + 1);
-              return <div key={emp.empId} style={{
+              var delayClass = "admin-fade-up-d" + Math.min(i, 4);
+              return <div key={emp.empId} className={delayClass} style={{
                 display: "flex", alignItems: "center", gap: 12,
                 padding: "10px 12px",
                 background: i < 3 ? (colors[i] + "10") : t.bg,
@@ -7124,7 +7689,7 @@ function RecognitionAdminPanel({ t, B, emps }) {
                   borderRadius: 8,
                   fontSize: 13, fontWeight: 900,
                   flexShrink: 0,
-                }}>{emp.scores.total}</div>
+                }}><AdminAnimatedNumber value={emp.scores.total} duration={700 + i * 80} /></div>
               </div>;
             })}
           </div>
@@ -7423,20 +7988,29 @@ function SurveysPanel({ t, B, emps }) {
   // List view
   return (
     <div style={{ maxWidth: 1000 }}>
-      <div style={{ background: "linear-gradient(135deg, " + B.blue + " 0%, " + B.blueDk + " 100%)", borderRadius: 16, padding: "20px 22px", marginBottom: 16, color: "#fff", display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 10 }}>
-        <div>
-          <div style={{ fontSize: 20, fontWeight: 800, marginBottom: 4 }}>📊 استطلاعات الرأي</div>
-          <div style={{ fontSize: 11, opacity: 0.9 }}>اعرف آراء فريقك — مجهولة الهوية أو معلنة</div>
-        </div>
-        <button onClick={function(){ setView("create"); }} style={{ padding: "10px 18px", borderRadius: 10, background: B.gold, color: "#000", border: "none", fontSize: 12, fontWeight: 800, cursor: "pointer", fontFamily: "inherit" }}>+ استطلاع جديد</button>
-      </div>
+      <PanelHeader
+        icon="📊"
+        title="استطلاعات الرأي"
+        subtitle="اعرف آراء فريقك — مجهولة الهوية أو معلنة"
+        gradient={"linear-gradient(135deg, " + B.blue + ", " + B.blueDk + ")"}
+        action={
+          <ActionButton
+            variant="gold" size="md"
+            icon="➕" label="استطلاع جديد"
+            onClick={function(){ setView("create"); }}
+            t={t} B={B}
+          />
+        }
+        t={t} B={B}
+      />
 
       {surveys.length === 0 ? (
-        <div style={{ padding: 40, textAlign: "center", color: t.txM, fontSize: 13, background: t.card, borderRadius: 14, border: "1px dashed " + t.sep }}>
-          <div style={{ fontSize: 40, marginBottom: 12 }}>📊</div>
-          <div style={{ fontWeight: 700, marginBottom: 6 }}>لا توجد استطلاعات بعد</div>
-          <div style={{ fontSize: 11 }}>اضغط "+ استطلاع جديد" لإنشاء أول استطلاع</div>
-        </div>
+        <AdminEmptyState
+          icon="📊"
+          title="لا توجد استطلاعات بعد"
+          subtitle='اضغط "+ استطلاع جديد" لإنشاء أول استطلاع'
+          t={t} B={B}
+        />
       ) : (
         <div style={{ display: "grid", gap: 10 }}>
           {surveys.slice().sort(function(a,b){ return (b.createdAt || "").localeCompare(a.createdAt || ""); }).map(function(s){
@@ -7833,36 +8407,44 @@ function BackupPanel({ t, B }) {
 
   return (
     <div style={{ maxWidth: 900 }}>
-      {/* Header */}
-      <div style={{ background: "linear-gradient(135deg, #0F766E 0%, #115E59 100%)", borderRadius: 16, padding: "20px 22px", marginBottom: 16, color: "#fff" }}>
-        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 10 }}>
-          <div>
-            <div style={{ fontSize: 20, fontWeight: 800, marginBottom: 4 }}>🛡 النسخ الاحتياطي</div>
-            <div style={{ fontSize: 11, opacity: 0.9 }}>حفظ واستعادة كل بيانات بصمة بأمان — يدعم حتى 1 GB</div>
-          </div>
-        </div>
-      </div>
+      {/* Header — v7.117 unified */}
+      <PanelHeader
+        icon="🛡"
+        title="النسخ الاحتياطي"
+        subtitle="حفظ واستعادة كل بيانات بصمة بأمان — يدعم حتى 1 GB"
+        gradient="linear-gradient(135deg, #0F766E, #115E59)"
+        t={t} B={B}
+      />
 
-      {/* Status */}
-      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 10, marginBottom: 16 }}>
-        <div style={{ padding: 14, borderRadius: 12, background: t.card, border: "1px solid " + t.sep, textAlign: "center" }}>
-          <div style={{ fontSize: 9, color: t.txM, marginBottom: 4 }}>آخر نسخة</div>
-          <div style={{ fontSize: 11, fontWeight: 800, color: info ? "#10B981" : t.txM }}>
+      {/* Status cards — v7.117 using StatCard */}
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(160px, 1fr))", gap: ADMIN.space.md, marginBottom: ADMIN.space.lg }}>
+        <div className="admin-fade-up-d1 admin-smooth" style={{
+          padding: ADMIN.space.lg,
+          background: t.card,
+          borderRadius: ADMIN.radius.lg,
+          border: "1px solid " + t.sep,
+          boxShadow: ADMIN.shadow.card,
+          textAlign: "center",
+        }}>
+          <div style={{ fontSize: ADMIN.font.xs, color: t.txM, marginBottom: 4, fontWeight: ADMIN.weight.medium }}>آخر نسخة</div>
+          <div style={{ fontSize: ADMIN.font.sm, fontWeight: ADMIN.weight.heavy, color: info ? "#10B981" : t.txM }}>
             {info ? fmtDate(info.date) : "لا توجد"}
           </div>
         </div>
-        <div style={{ padding: 14, borderRadius: 12, background: t.card, border: "1px solid " + t.sep, textAlign: "center" }}>
-          <div style={{ fontSize: 9, color: t.txM, marginBottom: 4 }}>الحجم</div>
-          <div style={{ fontSize: 14, fontWeight: 800, color: B.blue }}>
+        <div className="admin-fade-up-d2 admin-smooth" style={{
+          padding: ADMIN.space.lg,
+          background: t.card,
+          borderRadius: ADMIN.radius.lg,
+          border: "1px solid " + t.sep,
+          boxShadow: ADMIN.shadow.card,
+          textAlign: "center",
+        }}>
+          <div style={{ fontSize: ADMIN.font.xs, color: t.txM, marginBottom: 4, fontWeight: ADMIN.weight.medium }}>الحجم</div>
+          <div style={{ fontSize: ADMIN.font.md, fontWeight: ADMIN.weight.black, color: B.blue }}>
             {info ? fmtSize(info.size) : "—"}
           </div>
         </div>
-        <div style={{ padding: 14, borderRadius: 12, background: t.card, border: "1px solid " + t.sep, textAlign: "center" }}>
-          <div style={{ fontSize: 9, color: t.txM, marginBottom: 4 }}>عدد العناصر</div>
-          <div style={{ fontSize: 14, fontWeight: 800, color: "#7C3AED" }}>
-            {info && info.keys ? info.keys.length : "—"}
-          </div>
-        </div>
+        <StatCard icon="📦" label="عدد العناصر" value={info && info.keys ? info.keys.length : 0} color="#7C3AED" delay={3} t={t} />
       </div>
 
       {/* Action Buttons */}
@@ -8182,50 +8764,43 @@ function HRRequestsAdminPanel({ t, B, safeEmps }) {
   }
 
   return (
-    <div style={{ background: t.card, borderRadius: 14, padding: "18px", border: "1px solid " + t.sep, marginBottom: 14 }}>
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 14 }}>
-        <div>
-          <div style={{ fontSize: 14, fontWeight: 700, color: t.tx }}>📨 طلبات الموارد البشرية</div>
-          <div style={{ fontSize: 11, color: t.txM, marginTop: 2 }}>نظام v7.74 — 10 قوالب + إحصائيات + تصدير Excel</div>
-        </div>
-        <div style={{ display: "flex", gap: 6 }}>
-          <button onClick={exportCSV} disabled={loading || requests.length === 0} style={{ padding: "8px 14px", borderRadius: 8, background: "#16A34A", color: "#fff", fontSize: 11, fontWeight: 700, border: "none", cursor: "pointer" }}>
-            📊 تصدير Excel
-          </button>
-          <button onClick={load} disabled={loading} style={{ padding: "8px 16px", borderRadius: 8, background: B.blue, color: "#fff", fontSize: 11, fontWeight: 700, border: "none", cursor: "pointer" }}>
-            🔄 تحديث
-          </button>
-        </div>
+    <div>
+      {/* Header — v7.117 unified */}
+      <PanelHeader
+        icon="📨"
+        title="طلبات الموارد البشرية"
+        subtitle="10 قوالب + إحصائيات + تصدير Excel"
+        gradient={"linear-gradient(135deg, " + B.blue + ", " + B.blueDk + ")"}
+        action={
+          <div style={{ display: "flex", gap: ADMIN.space.xs }}>
+            <ActionButton
+              variant="success" size="sm"
+              icon="📊" label="Excel"
+              onClick={exportCSV}
+              disabled={loading || requests.length === 0}
+              t={t} B={B}
+            />
+            <ActionButton
+              variant="secondary" size="sm"
+              icon="🔄" label="تحديث"
+              onClick={load}
+              disabled={loading}
+              t={t} B={B}
+            />
+          </div>
+        }
+        t={t} B={B}
+      />
+
+      {/* Stats — v7.117 using StatCard */}
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(150px, 1fr))", gap: ADMIN.space.md, marginBottom: ADMIN.space.lg }}>
+        <StatCard icon="📅" label="هذا الشهر" value={thisMonth.length} sub="طلب مُقدَّم" color="#3B82F6" delay={1} t={t} />
+        <StatCard icon="🗓️" label="آخر 7 أيام" value={lastWeek.length} sub="طلب" color="#8B5CF6" delay={2} t={t} />
+        <StatCard icon="⏳" label="معلّقة" value={statusCounts.pending} sub="بانتظار المراجعة" color="#F59E0B" delay={3} t={t} />
+        <StatCard icon="✓" label="نسبة الموافقة" value={approvalRate} sub="%" color="#10B981" delay={4} t={t} />
       </div>
 
-      {/* v7.74 — إحصائيات ذكية */}
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(140px, 1fr))", gap: 8, marginBottom: 14 }}>
-        <div style={{ padding: 10, borderRadius: 10, background: "rgba(59,130,246,0.1)", border: "1px solid rgba(59,130,246,0.3)" }}>
-          <div style={{ fontSize: 10, color: "#3B82F6", fontWeight: 700 }}>📅 هذا الشهر</div>
-          <div style={{ fontSize: 20, fontWeight: 800, color: t.tx, marginTop: 2 }}>{thisMonth.length}</div>
-          <div style={{ fontSize: 9, color: t.txM, marginTop: 2 }}>طلب مُقدَّم</div>
-        </div>
-        <div style={{ padding: 10, borderRadius: 10, background: "rgba(139,92,246,0.1)", border: "1px solid rgba(139,92,246,0.3)" }}>
-          <div style={{ fontSize: 10, color: "#8B5CF6", fontWeight: 700 }}>🗓️ آخر 7 أيام</div>
-          <div style={{ fontSize: 20, fontWeight: 800, color: t.tx, marginTop: 2 }}>{lastWeek.length}</div>
-          <div style={{ fontSize: 9, color: t.txM, marginTop: 2 }}>طلب</div>
-        </div>
-        <div style={{ padding: 10, borderRadius: 10, background: "rgba(245,158,11,0.1)", border: "1px solid rgba(245,158,11,0.3)" }}>
-          <div style={{ fontSize: 10, color: "#F59E0B", fontWeight: 700 }}>⏳ معلّقة</div>
-          <div style={{ fontSize: 20, fontWeight: 800, color: t.tx, marginTop: 2 }}>{statusCounts.pending}</div>
-          <div style={{ fontSize: 9, color: t.txM, marginTop: 2 }}>بانتظار المراجعة</div>
-        </div>
-        <div style={{ padding: 10, borderRadius: 10, background: "rgba(16,185,129,0.1)", border: "1px solid rgba(16,185,129,0.3)" }}>
-          <div style={{ fontSize: 10, color: "#10B981", fontWeight: 700 }}>✓ نسبة الموافقة</div>
-          <div style={{ fontSize: 20, fontWeight: 800, color: t.tx, marginTop: 2 }}>{approvalRate}%</div>
-          <div style={{ fontSize: 9, color: t.txM, marginTop: 2 }}>من المقرَّرة</div>
-        </div>
-        <div style={{ padding: 10, borderRadius: 10, background: "rgba(236,72,153,0.1)", border: "1px solid rgba(236,72,153,0.3)" }}>
-          <div style={{ fontSize: 10, color: "#EC4899", fontWeight: 700 }}>⏱️ متوسط الرد</div>
-          <div style={{ fontSize: 20, fontWeight: 800, color: t.tx, marginTop: 2 }}>{avgResponseHours < 24 ? avgResponseHours + " س" : Math.round(avgResponseHours / 24) + " يوم"}</div>
-          <div style={{ fontSize: 9, color: t.txM, marginTop: 2 }}>من الطلب للقرار</div>
-        </div>
-      </div>
+      <div style={{ background: t.card, borderRadius: ADMIN.radius.lg, padding: ADMIN.space.lg, border: "1px solid " + t.sep, marginBottom: ADMIN.space.md }}>
 
       {/* v7.74 — بحث + فلتر النوع */}
       <div style={{ display: "grid", gridTemplateColumns: "2fr 1fr", gap: 8, marginBottom: 12 }}>
@@ -8466,6 +9041,7 @@ function HRRequestsAdminPanel({ t, B, safeEmps }) {
           </div>
         );
       })}
+      </div>
     </div>
   );
 }
@@ -8558,29 +9134,29 @@ function HRTicketsPanel({ t, B, emps }) {
   // ═══ LIST VIEW ═══
   return (
     <div style={{ maxWidth: 1000 }}>
-      <div style={{ background: "linear-gradient(135deg, " + B.blue + " 0%, " + B.blueDk + " 100%)", borderRadius: 16, padding: "20px 22px", marginBottom: 16, color: "#fff", display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 10 }}>
-        <div>
-          <div style={{ fontSize: 20, fontWeight: 800, marginBottom: 4 }}>📨 رسائل الموارد البشرية</div>
-          <div style={{ fontSize: 11, opacity: 0.9 }}>تواصل ثنائي الاتجاه — HR يبدأ، الموظف يرد، والعكس</div>
-        </div>
-        <button onClick={function(){ setView("create"); }} style={{ padding: "10px 18px", borderRadius: 10, background: B.gold, color: "#000", border: "none", fontSize: 12, fontWeight: 800, cursor: "pointer", fontFamily: "inherit" }}>+ رسالة جديدة</button>
-      </div>
+      {/* Header — v7.117 unified */}
+      <PanelHeader
+        icon="📨"
+        title="رسائل الموارد البشرية"
+        subtitle="تواصل ثنائي الاتجاه — HR يبدأ، الموظف يرد، والعكس"
+        gradient={"linear-gradient(135deg, " + B.blue + ", " + B.blueDk + ")"}
+        action={
+          <ActionButton
+            variant="gold" size="md"
+            icon="➕" label="رسالة جديدة"
+            onClick={function(){ setView("create"); }}
+            t={t} B={B}
+          />
+        }
+        t={t} B={B}
+      />
 
-      {/* Stats */}
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 10, marginBottom: 14 }}>
-        {[
-          { label: "مفتوحة", value: stats.open, color: "#3B82F6" },
-          { label: "ردّ الموظفون", value: stats.replied, color: "#10B981" },
-          { label: "بدأتها HR", value: stats.fromHR, color: "#7C3AED" },
-          { label: "بدأها الموظفون", value: stats.fromEmp, color: "#F59E0B" },
-        ].map(function(s, i){
-          return (
-            <div key={i} style={{ padding: 12, borderRadius: 10, background: t.card, border: "1px solid " + t.sep, textAlign: "center" }}>
-              <div style={{ fontSize: 20, fontWeight: 900, color: s.color, marginBottom: 3 }}>{s.value}</div>
-              <div style={{ fontSize: 10, color: t.txM, fontWeight: 700 }}>{s.label}</div>
-            </div>
-          );
-        })}
+      {/* Stats — v7.117 using StatCard */}
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(150px, 1fr))", gap: ADMIN.space.md, marginBottom: ADMIN.space.lg }}>
+        <StatCard icon="📬" label="مفتوحة" value={stats.open} color="#3B82F6" delay={1} t={t} />
+        <StatCard icon="💬" label="ردّ الموظفون" value={stats.replied} color="#10B981" delay={2} t={t} />
+        <StatCard icon="🏢" label="بدأتها HR" value={stats.fromHR} color="#7C3AED" delay={3} t={t} />
+        <StatCard icon="👤" label="بدأها الموظفون" value={stats.fromEmp} color="#F59E0B" delay={4} t={t} />
       </div>
 
       {/* Filters */}
@@ -9456,11 +10032,14 @@ function AttendanceInsightsPanel({ t, B, emps }) {
 
   return (
     <div style={{ maxWidth: 1100 }}>
-      {/* Header */}
-      <div style={{ background: "linear-gradient(135deg, " + B.blue + " 0%, " + B.blueDk + " 100%)", borderRadius: 16, padding: "20px 22px", marginBottom: 16, color: "#fff", boxShadow: "0 4px 20px rgba(43,94,167,0.25)" }}>
-        <div style={{ fontSize: 20, fontWeight: 800, marginBottom: 4 }}>📈 ذكاء الحضور</div>
-        <div style={{ fontSize: 11, opacity: 0.9 }}>نبض حي · تحليل شهري · تصدير كشف الرواتب</div>
-      </div>
+      {/* Header — v7.117 unified */}
+      <PanelHeader
+        icon="📈"
+        title="ذكاء الحضور"
+        subtitle="نبض حي · تحليل شهري · تصدير كشف الرواتب"
+        gradient={"linear-gradient(135deg, " + B.blue + ", " + B.blueDk + ")"}
+        t={t} B={B}
+      />
 
       {/* Live Pulse */}
       <div style={{ background: t.card, borderRadius: 14, padding: 16, border: "1px solid " + t.sep, marginBottom: 14 }}>
@@ -9659,7 +10238,7 @@ function BranchAnalyticsPanel({ t, B }) {
   useEffect(function(){ load(); }, []);
 
   if (loading) {
-    return <div style={{ padding: 40, textAlign: "center", color: t.txM }}>⏳ {tr("جاري التحميل...")}</div>;
+    return <div className="admin-fade-up"><AdminSkeleton height={80} borderRadius={12} style={{ marginBottom: 10 }} /><AdminSkeleton height={50} borderRadius={10} style={{ marginBottom: 8 }} /><AdminSkeleton height={50} borderRadius={10} /></div>;
   }
   if (error) {
     return <div style={{ padding: 20, textAlign: "center", color: t.bad }}>⚠️ {error}</div>;
@@ -9683,27 +10262,22 @@ function BranchAnalyticsPanel({ t, B }) {
 
   return (
     <div>
-      {/* Header */}
-      <div style={{
-        background: "linear-gradient(135deg, " + B.blue + ", " + B.blueDk + ")",
-        borderRadius: 14, padding: "16px 20px", color: "#fff",
-        marginBottom: 14,
-        display: "flex", justifyContent: "space-between", alignItems: "center", gap: 14, flexWrap: "wrap",
-      }}>
-        <div>
-          <div style={{ fontSize: 17, fontWeight: 900 }}>📊 {tr("مقارنة أداء الفروع")}</div>
-          <div style={{ fontSize: 11, opacity: 0.9, marginTop: 4 }}>
-            {tr("هذا الشهر")} · {data.summary.totalBranches} {tr("فروع")}
-          </div>
-        </div>
-        <button onClick={load} style={{
-          padding: "8px 14px", borderRadius: 10,
-          background: "rgba(255,255,255,0.2)",
-          border: "1px solid rgba(255,255,255,0.3)",
-          color: "#fff", fontSize: 11, fontWeight: 700,
-          cursor: "pointer", fontFamily: "inherit",
-        }}>🔄 {tr("تحديث")}</button>
-      </div>
+      {/* Header — v7.117 unified */}
+      <PanelHeader
+        icon="📊"
+        title={tr("مقارنة أداء الفروع")}
+        subtitle={tr("هذا الشهر") + " · " + data.summary.totalBranches + " " + tr("فروع")}
+        gradient={"linear-gradient(135deg, " + B.blue + ", " + B.blueDk + ")"}
+        action={
+          <ActionButton
+            variant="secondary" size="sm"
+            icon="🔄" label={tr("تحديث")}
+            onClick={load}
+            t={t} B={B}
+          />
+        }
+        t={t} B={B}
+      />
 
       {/* Summary cards */}
       {data.summary.bestBranch && (
@@ -9894,14 +10468,22 @@ function BranchesPanel({ t, B }) {
 
   return (
     <div style={{ maxWidth: 1000 }}>
-      {/* Header */}
-      <div style={{ background: "linear-gradient(135deg, " + B.blue + " 0%, " + B.blueDk + " 100%)", borderRadius: 16, padding: "20px 22px", marginBottom: 16, color: "#fff", boxShadow: "0 4px 20px rgba(43,94,167,0.25)", display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 12 }}>
-        <div>
-          <div style={{ fontSize: 20, fontWeight: 800, marginBottom: 4 }}>🏢 إدارة الفروع</div>
-          <div style={{ fontSize: 11, opacity: 0.9 }}>{branches.length} فرع · إعدادات GPS وساعات العمل</div>
-        </div>
-        <button onClick={openAdd} style={{ padding: "10px 16px", borderRadius: 10, background: B.gold, color: "#000", border: "none", fontSize: 12, fontWeight: 800, cursor: "pointer", fontFamily: "inherit" }}>+ فرع جديد</button>
-      </div>
+      {/* Header — v7.117 unified */}
+      <PanelHeader
+        icon="🏢"
+        title="إدارة الفروع"
+        subtitle={branches.length + " فرع · إعدادات GPS وساعات العمل"}
+        gradient={"linear-gradient(135deg, " + B.blue + ", " + B.blueDk + ")"}
+        action={
+          <ActionButton
+            variant="gold" size="md"
+            icon="➕" label="فرع جديد"
+            onClick={openAdd}
+            t={t} B={B}
+          />
+        }
+        t={t} B={B}
+      />
 
       {/* Branches list */}
       <div style={{ display: "grid", gap: 12 }}>
@@ -10140,11 +10722,14 @@ function AssetManagementPanel({ t, B, emps }) {
 
   return (
     <div style={{ maxWidth: 1100 }}>
-      {/* Header */}
-      <div style={{ background: "linear-gradient(135deg, " + B.blue + " 0%, " + B.blueDk + " 100%)", borderRadius: 16, padding: "20px 22px", marginBottom: 16, color: "#fff", boxShadow: "0 4px 20px rgba(43,94,167,0.25)" }}>
-        <div style={{ fontSize: 20, fontWeight: 800, marginBottom: 4 }}>🔧 إدارة الأصول المتقدمة</div>
-        <div style={{ fontSize: 11, opacity: 0.9 }}>صيانة دورية · ضمان · تكاليف تشغيل · حالة الأصل</div>
-      </div>
+      {/* Header — v7.117 unified */}
+      <PanelHeader
+        icon="🔧"
+        title="إدارة الأصول المتقدمة"
+        subtitle="صيانة دورية · ضمان · تكاليف تشغيل · حالة الأصل"
+        gradient={"linear-gradient(135deg, " + B.blue + ", " + B.blueDk + ")"}
+        t={t} B={B}
+      />
 
       {/* Tabs */}
       <div style={{ display: "flex", gap: 6, marginBottom: 14, flexWrap: "wrap" }}>
@@ -10854,11 +11439,14 @@ function LettersPanel({ t, B, emps }) {
 
   return (
     <div style={{ maxWidth: 900 }}>
-      {/* Header */}
-      <div style={{ background: "linear-gradient(135deg, " + B.blue + " 0%, " + B.blueDk + " 100%)", borderRadius: 16, padding: "20px 22px", marginBottom: 16, color: "#fff", boxShadow: "0 4px 20px rgba(43,94,167,0.25)" }}>
-        <div style={{ fontSize: 20, fontWeight: 800, marginBottom: 4 }}>📄 إصدار إفادات رسمية</div>
-        <div style={{ fontSize: 11, opacity: 0.9 }}>توليد إفادات بصيغة PDF مع شعار المكتب وختم رسمي</div>
-      </div>
+      {/* Header — v7.117 unified */}
+      <PanelHeader
+        icon="📄"
+        title="إصدار إفادات رسمية"
+        subtitle="توليد إفادات بصيغة PDF مع شعار المكتب وختم رسمي"
+        gradient={"linear-gradient(135deg, " + B.blue + ", " + B.blueDk + ")"}
+        t={t} B={B}
+      />
 
       {/* Step 1: Select letter type */}
       <div style={{ background: t.card, borderRadius: 14, padding: 16, border: "1px solid " + t.sep, marginBottom: 12 }}>
@@ -11042,14 +11630,22 @@ function BannersPanel({ t, B }) {
 
   return (
     <div style={{ maxWidth: 1000 }}>
-      {/* Header */}
-      <div style={{ background: "linear-gradient(135deg, " + B.blue + " 0%, " + B.blueDk + " 100%)", borderRadius: 16, padding: "18px 22px", marginBottom: 16, color: "#fff", display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 12 }}>
-        <div>
-          <div style={{ fontSize: 20, fontWeight: 800, marginBottom: 4 }}>🎨 إدارة البنر</div>
-          <div style={{ fontSize: 11, opacity: 0.85 }}>{(banners || []).length} بنر · {activeCount} نشط</div>
-        </div>
-        <button onClick={function(){ setEditing("new"); }} style={{ background: "#fff", color: B.blue, border: "none", borderRadius: 10, padding: "10px 18px", fontSize: 13, fontWeight: 800, cursor: "pointer", fontFamily: "inherit" }}>+ إضافة بنر</button>
-      </div>
+      {/* Header — v7.116 unified */}
+      <PanelHeader
+        icon="🎨"
+        title="إدارة البنر"
+        subtitle={(banners || []).length + " بنر · " + activeCount + " نشط"}
+        gradient={"linear-gradient(135deg, " + B.blue + ", " + B.blueDk + ")"}
+        action={
+          <ActionButton
+            variant="primary" size="md"
+            icon="➕" label="إضافة بنر"
+            onClick={function(){ setEditing("new"); }}
+            t={t} B={B}
+          />
+        }
+        t={t} B={B}
+      />
 
       {/* Info */}
       <div style={{ background: B.blue + "10", border: "1px solid " + B.blue + "30", borderRadius: 10, padding: "10px 14px", marginBottom: 14, fontSize: 11, color: t.tx, lineHeight: 1.6 }}>
@@ -11279,7 +11875,7 @@ function TawasulAdminPanel({ t, B }) {
   }
   useEffect(function(){ load(); }, []);
 
-  if (loading) return <div style={{ padding: 20, textAlign: "center", color: t.txM }}>⏳ جارِ التحميل...</div>;
+  if (loading) return <div><AdminSkeleton height={50} borderRadius={10} style={{ marginBottom: 8 }} /><AdminSkeleton height={40} borderRadius={10} /></div>;
   if (err) return <div style={{ padding: 20, color: "#ef4444", textAlign: "center" }}>⚠️ {err}</div>;
   if (!data) return null;
 
@@ -11297,26 +11893,21 @@ function TawasulAdminPanel({ t, B }) {
 
   return (
     <div style={{ padding: 20 }}>
-      <div style={{ fontSize: 22, fontWeight: 800, color: B.blue, marginBottom: 20 }}>🤝 نظام تواصل — إدارة</div>
+      {/* Header — v7.116 unified */}
+      <PanelHeader
+        icon="🤝"
+        title="نظام تواصل — إدارة"
+        subtitle="إدارة مهام الموظفين الداخلية"
+        gradient={"linear-gradient(135deg, " + B.blue + ", " + B.blueDk + ")"}
+        t={t} B={B}
+      />
 
-      {/* Stats cards */}
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 12, marginBottom: 24 }}>
-        <div style={{ background: t.card, border: "1px solid " + t.sep, borderRadius: 12, padding: 14, textAlign: "center" }}>
-          <div style={{ fontSize: 26, fontWeight: 900, color: B.blue }}>{stats.total}</div>
-          <div style={{ fontSize: 11, color: t.txM, marginTop: 4 }}>إجمالي المهام</div>
-        </div>
-        <div style={{ background: t.card, border: "1px solid " + t.sep, borderRadius: 12, padding: 14, textAlign: "center" }}>
-          <div style={{ fontSize: 26, fontWeight: 900, color: "#f59e0b" }}>{stats.open}</div>
-          <div style={{ fontSize: 11, color: t.txM, marginTop: 4 }}>مفتوحة</div>
-        </div>
-        <div style={{ background: t.card, border: "1px solid " + t.sep, borderRadius: 12, padding: 14, textAlign: "center" }}>
-          <div style={{ fontSize: 26, fontWeight: 900, color: "#ef4444" }}>{stats.escalated}</div>
-          <div style={{ fontSize: 11, color: t.txM, marginTop: 4 }}>مصعّدة</div>
-        </div>
-        <div style={{ background: t.card, border: "1px solid " + t.sep, borderRadius: 12, padding: 14, textAlign: "center" }}>
-          <div style={{ fontSize: 26, fontWeight: 900, color: "#dc2626" }}>{stats.late}</div>
-          <div style={{ fontSize: 11, color: t.txM, marginTop: 4 }}>متأخرة</div>
-        </div>
+      {/* Stats cards — v7.116 using StatCard */}
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))", gap: ADMIN.space.md, marginBottom: ADMIN.space.xl }}>
+        <StatCard icon="📋" label="إجمالي المهام" value={stats.total} color={B.blue} delay={1} t={t} />
+        <StatCard icon="🔓" label="مفتوحة" value={stats.open} color="#f59e0b" delay={2} t={t} />
+        <StatCard icon="⚠️" label="مصعّدة" value={stats.escalated} color="#ef4444" delay={3} t={t} />
+        <StatCard icon="⏰" label="متأخرة" value={stats.late} color="#dc2626" delay={4} t={t} />
       </div>
 
       {/* Subtabs */}
@@ -11831,7 +12422,7 @@ function TawasulAdminPermissions({ t, B }) {
     return { label: "🟢 الكل", color: "#22c55e" };
   }
 
-  if (loading) return <div style={{ padding: 20, textAlign: "center", color: t.txM }}>⏳ جارِ التحميل...</div>;
+  if (loading) return <div><AdminSkeleton height={50} borderRadius={10} style={{ marginBottom: 8 }} /><AdminSkeleton height={40} borderRadius={10} /></div>;
   if (err) return <div style={{ padding: 20, color: "#ef4444" }}>⚠️ {err}</div>;
 
   return (
@@ -12289,47 +12880,59 @@ function CustodyPanel({ t, B, emps }) {
 
   return (
     <div style={{ maxWidth: 1100 }}>
-      <div style={{ background: B.blue + "12", border: "1px solid " + B.blue + "40", borderRadius: 10, padding: 12, marginBottom: 14, fontSize: 11, color: t.tx, lineHeight: 1.7 }}>
-        📦 <strong>إدارة العهد</strong> — 3 أنواع من العهد:<br/>
-        <span style={{ fontSize: 10 }}>🟢 <strong>استهلاكية</strong> (قرطاسية، مواد) • 🟡 <strong>دائمة</strong> (أجهزة بسيريال) • 🔵 <strong>نقدية</strong> (مع رفع فواتير)</span>
-      </div>
+      {/* Header — v7.117 unified */}
+      <PanelHeader
+        icon="📦"
+        title="إدارة العُهَد"
+        subtitle="3 أنواع: استهلاكية 🟢 · دائمة 🟡 · نقدية 🔵"
+        gradient={"linear-gradient(135deg, " + B.blue + ", " + B.blueDk + ")"}
+        action={
+          <ActionButton
+            variant="primary" size="md"
+            icon="➕" label="عهدة جديدة"
+            onClick={function(){ setShowNew(true); setEditing(null); }}
+            t={t} B={B}
+          />
+        }
+        t={t} B={B}
+      />
 
-      {/* Stats */}
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(5, 1fr)", gap: 10, marginBottom: 14 }}>
-        <div style={{ background: t.card, borderRadius: 10, padding: 12, border: "1px solid " + t.sep, textAlign: "center" }}>
-          <div style={{ fontSize: 22, fontWeight: 900, color: B.blue }}>{items.length}</div>
-          <div style={{ fontSize: 10, color: t.txM }}>إجمالي العهد</div>
-        </div>
-        <div style={{ background: t.card, borderRadius: 10, padding: 12, border: "1px solid " + t.sep, textAlign: "center" }}>
-          <div style={{ fontSize: 22, fontWeight: 900, color: "#10b981" }}>{activeAssets}</div>
-          <div style={{ fontSize: 10, color: t.txM }}>أصول نشطة</div>
-        </div>
-        <div style={{ background: t.card, borderRadius: 10, padding: 12, border: "1px solid " + t.sep, textAlign: "center" }}>
-          <div style={{ fontSize: 22, fontWeight: 900, color: B.gold }}>{Math.round(totalCash)} ر.س</div>
-          <div style={{ fontSize: 10, color: t.txM }}>إجمالي النقدية</div>
-        </div>
-        <div style={{ background: t.card, borderRadius: 10, padding: 12, border: "1px solid " + t.sep, textAlign: "center" }}>
-          <div style={{ fontSize: 22, fontWeight: 900, color: "#8b5cf6" }}>{Math.round(cashBalance)} ر.س</div>
-          <div style={{ fontSize: 10, color: t.txM }}>رصيد متبقي</div>
-        </div>
-        <div style={{ background: t.card, borderRadius: 10, padding: 12, border: "1px solid " + (pendingInvoices > 0 ? "#f59e0b" : t.sep), textAlign: "center" }}>
-          <div style={{ fontSize: 22, fontWeight: 900, color: pendingInvoices > 0 ? "#f59e0b" : t.txM }}>{pendingInvoices}</div>
-          <div style={{ fontSize: 10, color: t.txM }}>فواتير معلّقة</div>
-        </div>
+      {/* Stats — v7.117 using StatCard */}
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(150px, 1fr))", gap: ADMIN.space.md, marginBottom: ADMIN.space.lg }}>
+        <StatCard icon="📋" label="إجمالي العهد" value={items.length} color={B.blue} delay={1} t={t} />
+        <StatCard icon="✅" label="أصول نشطة" value={activeAssets} color="#10b981" delay={2} t={t} />
+        <StatCard icon="💰" label="إجمالي النقدية" value={Math.round(totalCash)} sub="ر.س" color={B.gold} delay={3} t={t} />
+        <StatCard icon="💳" label="رصيد متبقي" value={Math.round(cashBalance)} sub="ر.س" color="#8b5cf6" delay={4} t={t} />
+        <StatCard icon="⏳" label="فواتير معلّقة" value={pendingInvoices} color={pendingInvoices > 0 ? "#f59e0b" : t.txM} delay={4} t={t} />
       </div>
 
       {/* Actions bar */}
-      <div style={{ display: "flex", gap: 10, marginBottom: 14, alignItems: "center", flexWrap: "wrap" }}>
-        <button onClick={function(){ setShowNew(true); setEditing(null); }} style={{ padding: "10px 18px", borderRadius: 10, background: B.blue, color: "#fff", border: "none", fontSize: 12, fontWeight: 800, cursor: "pointer" }}>
-          ➕ عهدة جديدة
-        </button>
-        <select value={filterType} onChange={function(e){ setFilterType(e.target.value); }} style={{ padding: "10px 14px", borderRadius: 10, background: "#fff", color: "#000", border: "1px solid " + t.sep, fontSize: 12, fontWeight: 600, cursor: "pointer" }}>
+      <FilterBar t={t}>
+        <select value={filterType} onChange={function(e){ setFilterType(e.target.value); }} style={{
+          padding: ADMIN.space.sm + "px " + ADMIN.space.md + "px",
+          borderRadius: ADMIN.radius.md,
+          background: t.card, color: t.tx,
+          border: "1px solid " + t.sep,
+          fontSize: ADMIN.font.sm,
+          fontWeight: ADMIN.weight.medium,
+          cursor: "pointer",
+          fontFamily: "inherit",
+        }}>
           <option value="all">كل الأنواع</option>
           <option value="consumable">🟢 استهلاكية</option>
           <option value="asset">🟡 دائمة</option>
           <option value="cash">🔵 نقدية</option>
         </select>
-        <select value={filterStatus} onChange={function(e){ setFilterStatus(e.target.value); }} style={{ padding: "10px 14px", borderRadius: 10, background: "#fff", color: "#000", border: "1px solid " + t.sep, fontSize: 12, fontWeight: 600, cursor: "pointer" }}>
+        <select value={filterStatus} onChange={function(e){ setFilterStatus(e.target.value); }} style={{
+          padding: ADMIN.space.sm + "px " + ADMIN.space.md + "px",
+          borderRadius: ADMIN.radius.md,
+          background: t.card, color: t.tx,
+          border: "1px solid " + t.sep,
+          fontSize: ADMIN.font.sm,
+          fontWeight: ADMIN.weight.medium,
+          cursor: "pointer",
+          fontFamily: "inherit",
+        }}>
           <option value="all">كل الحالات</option>
           <option value="active">نشطة</option>
           <option value="issued">مصروفة</option>
@@ -12337,17 +12940,25 @@ function CustodyPanel({ t, B, emps }) {
           <option value="damaged">تالفة</option>
           <option value="closed">مغلقة</option>
         </select>
-        <button onClick={load} style={{ padding: "10px 14px", borderRadius: 10, background: "none", border: "1px solid " + t.sep, color: t.tx, fontSize: 11, cursor: "pointer" }}>🔄 تحديث</button>
-      </div>
+        <ActionButton
+          variant="secondary" size="md"
+          icon="🔄" label="تحديث"
+          onClick={load}
+          t={t} B={B}
+        />
+      </FilterBar>
 
       {/* New/Edit form */}
       {(showNew || editing) && <CustodyForm t={t} B={B} emps={emps} initial={editing} onSave={saveItem} onCancel={function(){ setShowNew(false); setEditing(null); }} />}
 
       {/* List */}
       {filtered.length === 0 && !showNew && !editing && (
-        <div style={{ textAlign: "center", padding: 40, color: t.txM, fontSize: 13 }}>
-          لا توجد عهد. اضغط "➕ عهدة جديدة" للبدء.
-        </div>
+        <AdminEmptyState
+          icon="📦"
+          title="لا توجد عهد"
+          subtitle='اضغط "➕ عهدة جديدة" للبدء'
+          t={t} B={B}
+        />
       )}
 
       <div style={{ display: "grid", gap: 10 }}>
@@ -12778,49 +13389,59 @@ function BenefitsPanel({ t, B }) {
 
   return (
     <div style={{ maxWidth: 900 }}>
-      <div style={{ background: B.gold + "12", border: "1px solid " + B.gold + "40", borderRadius: 10, padding: 12, marginBottom: 14, fontSize: 11, color: t.tx, lineHeight: 1.7 }}>
-        🏅 <strong>امتيازات العضوية</strong><br/>
-        أنشئ كوبونات خصم ومكافآت يمكن للموظفين استبدالها بنقاطهم.
+      {/* Header — v7.116 unified */}
+      <PanelHeader
+        icon="🏅"
+        title="امتيازات العضوية"
+        subtitle="كوبونات خصم ومكافآت للموظفين يستبدلونها بالنقاط"
+        gradient={"linear-gradient(135deg, " + B.gold + ", #b8960c)"}
+        action={
+          <ActionButton
+            variant="primary" size="md"
+            icon="➕" label="كوبون جديد"
+            onClick={function(){ setShowNew(true); }}
+            t={t} B={B}
+          />
+        }
+        t={t} B={B}
+      />
+
+      {/* Stats — v7.116 using StatCard */}
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(160px, 1fr))", gap: ADMIN.space.md, marginBottom: ADMIN.space.lg }}>
+        <StatCard icon="🎫" label="إجمالي الكوبونات" value={coupons.length} color={B.blue} delay={1} t={t} />
+        <StatCard icon="✅" label="المفعّلة" value={coupons.filter(function(c){ return c.active !== false; }).length} color="#10b981" delay={2} t={t} />
+        <StatCard icon="💸" label="مرات الصرف" value={redemptions.length} color={B.gold} delay={3} t={t} />
+        <StatCard icon="⭐" label="نقاط مصروفة" value={redemptions.reduce(function(s, r){ return s + (r.pts || 0); }, 0)} color="#8b5cf6" delay={4} t={t} />
       </div>
 
-      {/* Stats */}
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 10, marginBottom: 14 }}>
-        <div style={{ background: t.card, borderRadius: 10, padding: 12, border: "1px solid " + t.sep, textAlign: "center" }}>
-          <div style={{ fontSize: 22, fontWeight: 900, color: B.blue }}>{coupons.length}</div>
-          <div style={{ fontSize: 10, color: t.txM }}>إجمالي الكوبونات</div>
-        </div>
-        <div style={{ background: t.card, borderRadius: 10, padding: 12, border: "1px solid " + t.sep, textAlign: "center" }}>
-          <div style={{ fontSize: 22, fontWeight: 900, color: "#10b981" }}>{coupons.filter(function(c){ return c.active !== false; }).length}</div>
-          <div style={{ fontSize: 10, color: t.txM }}>المفعّلة</div>
-        </div>
-        <div style={{ background: t.card, borderRadius: 10, padding: 12, border: "1px solid " + t.sep, textAlign: "center" }}>
-          <div style={{ fontSize: 22, fontWeight: 900, color: B.gold }}>{redemptions.length}</div>
-          <div style={{ fontSize: 10, color: t.txM }}>مرات الصرف</div>
-        </div>
-        <div style={{ background: t.card, borderRadius: 10, padding: 12, border: "1px solid " + t.sep, textAlign: "center" }}>
-          <div style={{ fontSize: 22, fontWeight: 900, color: "#8b5cf6" }}>{redemptions.reduce(function(s, r){ return s + (r.pts || 0); }, 0)}</div>
-          <div style={{ fontSize: 10, color: t.txM }}>نقاط مصروفة</div>
-        </div>
-      </div>
-
-      {/* Actions bar */}
-      <div style={{ display: "flex", gap: 10, marginBottom: 14, alignItems: "center", flexWrap: "wrap" }}>
-        <button onClick={function(){ setShowNew(true); }} style={{ padding: "10px 18px", borderRadius: 10, background: B.blue, color: "#fff", border: "none", fontSize: 12, fontWeight: 800, cursor: "pointer" }}>
-          ➕ كوبون جديد
-        </button>
-        <select value={filter} onChange={function(e){ setFilter(e.target.value); }} style={{ padding: "10px 14px", borderRadius: 10, background: "#fff", color: "#000", border: "1px solid " + t.sep, fontSize: 12, fontWeight: 600, cursor: "pointer" }}>
-          {cats.map(function(c){ return <option key={c} value={c} style={{ background: "#fff", color: "#000" }}>{c === "all" ? "كل الفئات" : c}</option>; })}
+      {/* Filter bar */}
+      <FilterBar t={t}>
+        <select value={filter} onChange={function(e){ setFilter(e.target.value); }} style={{
+          padding: ADMIN.space.sm + "px " + ADMIN.space.md + "px",
+          borderRadius: ADMIN.radius.md,
+          background: t.card,
+          color: t.tx,
+          border: "1px solid " + t.sep,
+          fontSize: ADMIN.font.sm,
+          fontWeight: ADMIN.weight.medium,
+          cursor: "pointer",
+          fontFamily: "inherit",
+        }}>
+          {cats.map(function(c){ return <option key={c} value={c}>{c === "all" ? "كل الفئات" : c}</option>; })}
         </select>
-      </div>
+      </FilterBar>
 
       {/* New coupon form */}
       {showNew && <CouponForm t={t} B={B} onSave={addCoupon} onCancel={function(){ setShowNew(false); }} />}
 
       {/* Coupons list */}
       {filtered.length === 0 && !showNew && (
-        <div style={{ textAlign: "center", padding: 40, color: t.txM, fontSize: 13 }}>
-          لا توجد كوبونات. اضغط "➕ كوبون جديد" لإضافة أول كوبون.
-        </div>
+        <AdminEmptyState
+          icon="🎁"
+          title="لا توجد كوبونات"
+          subtitle='اضغط "➕ كوبون جديد" لإضافة أول كوبون'
+          t={t} B={B}
+        />
       )}
 
       <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(280px, 1fr))", gap: 10 }}>
@@ -13009,41 +13630,40 @@ function AnnouncementsPanel({ t, B, emps, branches }) {
 
   return (
     <div style={{ maxWidth: 900 }}>
-      <div style={{ background: "#8b5cf615", border: "1px solid #8b5cf640", borderRadius: 10, padding: 12, marginBottom: 14, fontSize: 11, color: t.tx, lineHeight: 1.7 }}>
-        📢 <strong>التعاميم</strong><br/>
-        أنشئ تعاميم للموظفين. يمكن استهداف الكل أو فرع معيّن أو موظفين محددين.
-      </div>
+      {/* Header — v7.116 unified */}
+      <PanelHeader
+        icon="📢"
+        title="التعاميم"
+        subtitle="أنشئ تعاميم للموظفين — الكل أو فرع معيّن أو محددين"
+        gradient="linear-gradient(135deg, #8b5cf6, #7c3aed)"
+        action={
+          <ActionButton
+            variant="primary" size="md"
+            icon="➕" label="تعميم جديد"
+            onClick={function(){ setShowNew(true); }}
+            t={t} B={B}
+          />
+        }
+        t={t} B={B}
+      />
 
-      {/* Stats */}
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 10, marginBottom: 14 }}>
-        <div style={{ background: t.card, borderRadius: 10, padding: 12, border: "1px solid " + t.sep, textAlign: "center" }}>
-          <div style={{ fontSize: 22, fontWeight: 900, color: "#8b5cf6" }}>{list.length}</div>
-          <div style={{ fontSize: 10, color: t.txM }}>إجمالي</div>
-        </div>
-        <div style={{ background: t.card, borderRadius: 10, padding: 12, border: "1px solid " + t.sep, textAlign: "center" }}>
-          <div style={{ fontSize: 22, fontWeight: 900, color: "#10b981" }}>{published.length}</div>
-          <div style={{ fontSize: 10, color: t.txM }}>منشورة</div>
-        </div>
-        <div style={{ background: t.card, borderRadius: 10, padding: 12, border: "1px solid " + t.sep, textAlign: "center" }}>
-          <div style={{ fontSize: 22, fontWeight: 900, color: "#f59e0b" }}>{drafts.length}</div>
-          <div style={{ fontSize: 10, color: t.txM }}>مسودات</div>
-        </div>
-        <div style={{ background: t.card, borderRadius: 10, padding: 12, border: "1px solid " + t.sep, textAlign: "center" }}>
-          <div style={{ fontSize: 22, fontWeight: 900, color: B.blue }}>{totalReads}</div>
-          <div style={{ fontSize: 10, color: t.txM }}>مرات القراءة</div>
-        </div>
+      {/* Stats — v7.116 using StatCard */}
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(160px, 1fr))", gap: ADMIN.space.md, marginBottom: ADMIN.space.lg }}>
+        <StatCard icon="📋" label="إجمالي" value={list.length} color="#8b5cf6" delay={1} t={t} />
+        <StatCard icon="✅" label="منشورة" value={published.length} color="#10b981" delay={2} t={t} />
+        <StatCard icon="📝" label="مسودات" value={drafts.length} color="#f59e0b" delay={3} t={t} />
+        <StatCard icon="👁" label="مرات القراءة" value={totalReads} color={B.blue} delay={4} t={t} />
       </div>
-
-      <button onClick={function(){ setShowNew(true); }} style={{ marginBottom: 14, padding: "10px 18px", borderRadius: 10, background: "#8b5cf6", color: "#fff", border: "none", fontSize: 12, fontWeight: 800, cursor: "pointer" }}>
-        ➕ تعميم جديد
-      </button>
 
       {showNew && <AnnouncementForm t={t} B={B} emps={emps} branches={branches} onSave={save} onCancel={function(){ setShowNew(false); }} />}
 
       {list.length === 0 && !showNew && (
-        <div style={{ textAlign: "center", padding: 40, color: t.txM, fontSize: 13 }}>
-          لا توجد تعاميم. اضغط "➕ تعميم جديد" لإنشاء أول تعميم.
-        </div>
+        <AdminEmptyState
+          icon="📢"
+          title="لا توجد تعاميم"
+          subtitle='اضغط "➕ تعميم جديد" لإنشاء أول تعميم'
+          t={t} B={B}
+        />
       )}
 
       {list.map(function(a){
@@ -13323,17 +13943,36 @@ function OrgHierarchyPanel({ t, B }) {
 
   return (
     <div>
-      {/* Info banner */}
-      <div style={{ background: "rgba(10,132,255,0.06)", border: "1px solid rgba(10,132,255,0.2)", borderRadius: 12, padding: 14, marginBottom: 14, lineHeight: 1.7 }}>
-        <div style={{ fontSize: 14, fontWeight: 800, color: B.blue, marginBottom: 6 }}>🏢 الهيكل التنظيمي</div>
-        <div style={{ fontSize: 11, color: t.tx, marginBottom: 8 }}>
-          لكل موظف <strong>مديران</strong> (مثل كوادر):
+      {/* Header — v7.117 unified */}
+      <PanelHeader
+        icon="🏢"
+        title="الهيكل التنظيمي"
+        subtitle="مدير أول (إداري) · مدير ثاني (فني) — تُزامَن مع كوادر"
+        gradient={"linear-gradient(135deg, #0F766E, #115E59)"}
+        t={t} B={B}
+      />
+
+      {/* Info banner — compact */}
+      <div className="admin-fade-up" style={{
+        background: "rgba(10,132,255,0.06)",
+        border: "1px solid rgba(10,132,255,0.2)",
+        borderRadius: ADMIN.radius.md,
+        padding: ADMIN.space.md,
+        marginBottom: ADMIN.space.md,
+        lineHeight: 1.7,
+      }}>
+        <div style={{ display: "flex", gap: ADMIN.space.md, flexWrap: "wrap", fontSize: ADMIN.font.xs, color: t.tx }}>
+          <div>👔 <strong style={{ color: "#0F766E" }}>المدير الأول:</strong> إداري (إجازات، تقييم)</div>
+          <div>🔧 <strong style={{ color: B.blue }}>المدير الثاني:</strong> فني (مهام، جودة)</div>
         </div>
-        <div style={{ display: "flex", gap: 12, flexWrap: "wrap", fontSize: 11, color: t.tx }}>
-          <div>👔 <strong style={{ color: "#0F766E" }}>المدير الأول (الإداري):</strong> يوافق على الإجازات، يُقيّم أداءً عاماً، الإشراف الإداري</div>
-          <div>🔧 <strong style={{ color: B.blue }}>المدير الثاني (الفني):</strong> يُسند مهام فنية، يُقيّم الجودة، يستلم تقاريرك التقنية</div>
-        </div>
-        <div style={{ marginTop: 8, padding: "6px 10px", background: "rgba(245,158,11,0.10)", borderRadius: 6, fontSize: 10, color: "#D97706" }}>
+        <div style={{
+          marginTop: ADMIN.space.sm,
+          padding: ADMIN.space.xs + "px " + ADMIN.space.sm + "px",
+          background: "rgba(245,158,11,0.10)",
+          borderRadius: ADMIN.radius.sm,
+          fontSize: ADMIN.font.tiny,
+          color: "#D97706",
+        }}>
           ⚠️ التعديل من بصمة يُسجَّل بعلامة "✏️ معدّل في بصمة" — والمصدر الأساسي يبقى كوادر.
         </div>
       </div>
@@ -13694,20 +14333,41 @@ function SystemCheckPanel({ t, B }) {
 
   return (
     <div>
-      {/* Summary card */}
-      <div style={{ background: t.card, borderRadius: 16, padding: 20, border: "2px solid " + overallColor + "60", marginBottom: 14 }}>
-        <div style={{ display: "flex", alignItems: "center", gap: 14 }}>
+      {/* Header — v7.117 unified */}
+      <PanelHeader
+        icon="🔍"
+        title="فحص صحة النظام"
+        subtitle={report ? report.total_checks + " فحص — " + (report.failed_checks || []).length + " عطل" : "جارِ الفحص..."}
+        gradient={"linear-gradient(135deg, " + overallColor + ", " + overallColor + "cc)"}
+        action={
+          <ActionButton
+            variant="primary" size="md"
+            icon={running ? "⏳" : "🔄"}
+            label={running ? "فحص..." : "إعادة فحص"}
+            onClick={runCheck}
+            disabled={running}
+            loading={running}
+            t={t} B={B}
+          />
+        }
+        t={t} B={B}
+      />
+
+      {/* Summary card — enhanced */}
+      <div className={"admin-fade-up-d1 " + (report && report.overall === "error" ? "admin-glow-critical" : "")} style={{
+        background: t.card,
+        borderRadius: ADMIN.radius.lg,
+        padding: ADMIN.space.xl,
+        border: "2px solid " + overallColor + "60",
+        marginBottom: ADMIN.space.md,
+        boxShadow: ADMIN.shadow.card,
+      }}>
+        <div style={{ display: "flex", alignItems: "center", gap: ADMIN.space.md }}>
           <div style={{ fontSize: 42 }}>{overallIcon}</div>
           <div style={{ flex: 1 }}>
-            <div style={{ fontSize: 18, fontWeight: 900, color: overallColor, marginBottom: 3 }}>{overallLabel}</div>
-            <div style={{ fontSize: 12, color: t.tx2 }}>
-              {report ? report.total_checks + " فحص — " + (report.failed_checks || []).length + " عطل" : "جارِ الفحص..."}
-              {report && report.ts && <span style={{ marginRight: 8, color: t.txM }}>• {new Date(report.ts).toLocaleTimeString("ar-SA")}</span>}
-            </div>
+            <div style={{ fontSize: ADMIN.font.lg, fontWeight: ADMIN.weight.black, color: overallColor, marginBottom: 3 }}>{overallLabel}</div>
+            {report && report.ts && <div style={{ fontSize: ADMIN.font.xs, color: t.txM }}>آخر فحص: {new Date(report.ts).toLocaleTimeString("ar-SA")}</div>}
           </div>
-          <button onClick={runCheck} disabled={running} style={{ padding: "10px 18px", borderRadius: 10, background: running ? t.sep : B.blue, color: "#fff", border: "none", fontSize: 13, fontWeight: 700, cursor: running ? "default" : "pointer", fontFamily: "inherit" }}>
-            {running ? "⏳ فحص..." : "🔄 إعادة فحص"}
-          </button>
         </div>
       </div>
 
@@ -13870,10 +14530,22 @@ function StoragePanel({ t, B }) {
 
   return (
     <div style={{ maxWidth: 800 }}>
-      <div style={{ background: B.blue + "12", border: "1px solid " + B.blue + "40", borderRadius: 10, padding: 12, marginBottom: 14, fontSize: 11, color: t.tx, lineHeight: 1.7 }}>
-        💾 <strong>إدارة التخزين</strong><br/>
-        مراقبة حالة قواعد البيانات (Redis + R2) ونقل البيانات من Vercel Blob.
-      </div>
+      {/* Header — v7.117 unified */}
+      <PanelHeader
+        icon="💾"
+        title="إدارة التخزين"
+        subtitle="مراقبة حالة قواعد البيانات (Redis + R2)"
+        gradient={"linear-gradient(135deg, " + B.blue + ", " + B.blueDk + ")"}
+        action={
+          <ActionButton
+            variant="secondary" size="sm"
+            icon="🔄" label="تحديث"
+            onClick={refresh}
+            t={t} B={B}
+          />
+        }
+        t={t} B={B}
+      />
 
       {/* Primary Storage Status */}
       <div style={{ background: t.card, borderRadius: 12, padding: 16, border: "1px solid " + t.sep, marginBottom: 14 }}>
@@ -17789,21 +18461,30 @@ function EvaluationsHRPanel({ t, B, emps }) {
   };
 
   return <div style={{ padding: 20, maxWidth: 1400, margin: "0 auto" }}>
-    {/* Header */}
-    <div style={{ display: "flex", alignItems: "center", gap: 14, marginBottom: 20 }}>
-      <div style={{ fontSize: 32 }}>⭐</div>
-      <div style={{ flex: 1 }}>
-        <div style={{ fontSize: 20, fontWeight: 800, color: t.tx }}>إدارة التقييمات</div>
-        <div style={{ fontSize: 11, color: t.txM, marginTop: 2 }}>
-          {stats ? stats.total + " تقييم · " + (stats.pendingApproval || 0) + " بانتظار الاعتماد" : ""}
-        </div>
-      </div>
-      <button onClick={loadAll} style={{ padding: "8px 14px", borderRadius: 8, background: t.bg, border: "1px solid " + t.sep, fontSize: 12, fontWeight: 700, color: t.tx, cursor: "pointer", fontFamily: "inherit" }}>🔄 تحديث</button>
-    </div>
+    {/* Header — v7.116 unified */}
+    <PanelHeader
+      icon="⭐"
+      title="إدارة التقييمات"
+      subtitle={stats ? stats.total + " تقييم · " + (stats.pendingApproval || 0) + " بانتظار الاعتماد" : ""}
+      gradient="linear-gradient(135deg, #f59e0b, #d97706)"
+      action={
+        <ActionButton
+          variant="secondary" size="sm"
+          icon="🔄" label="تحديث"
+          onClick={loadAll}
+          t={t} B={B}
+        />
+      }
+      t={t} B={B}
+    />
 
     {/* Message */}
-    {msg && <div style={{
-      padding: "10px 14px", borderRadius: 8, marginBottom: 14, fontSize: 12, fontWeight: 700,
+    {msg && <div className="admin-fade-up" style={{
+      padding: ADMIN.space.sm + "px " + ADMIN.space.md + "px",
+      borderRadius: ADMIN.radius.md,
+      marginBottom: ADMIN.space.md,
+      fontSize: ADMIN.font.sm,
+      fontWeight: ADMIN.weight.bold,
       background: msg.type === "error" ? "rgba(239,68,68,0.1)" : "rgba(34,197,94,0.1)",
       color: msg.type === "error" ? "#DC2626" : "#16A34A",
       border: "1px solid " + (msg.type === "error" ? "rgba(239,68,68,0.3)" : "rgba(34,197,94,0.3)"),
@@ -17813,24 +18494,40 @@ function EvaluationsHRPanel({ t, B, emps }) {
       <button onClick={function(){setMsg(null);}} style={{ background: "none", border: "none", fontSize: 16, color: "inherit", cursor: "pointer" }}>✕</button>
     </div>}
 
-    {/* Stats cards */}
-    {stats && <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 12, marginBottom: 20 }}>
-      <div style={{ padding: 14, background: t.card, borderRadius: 12, border: "1px solid " + t.sep }}>
-        <div style={{ fontSize: 11, color: t.txM, fontWeight: 700, marginBottom: 4 }}>📊 إجمالي التقييمات</div>
-        <div style={{ fontSize: 22, fontWeight: 800, color: B.blue }}>{stats.total || 0}</div>
-      </div>
-      <div style={{ padding: 14, background: t.card, borderRadius: 12, border: "1px solid " + t.sep }}>
-        <div style={{ fontSize: 11, color: t.txM, fontWeight: 700, marginBottom: 4 }}>⏳ بانتظار اعتمادك</div>
-        <div style={{ fontSize: 22, fontWeight: 800, color: "#F59E0B" }}>{stats.pendingApproval || 0}</div>
-      </div>
-      <div style={{ padding: 14, background: t.card, borderRadius: 12, border: "1px solid " + t.sep }}>
-        <div style={{ fontSize: 11, color: t.txM, fontWeight: 700, marginBottom: 4 }}>✓ معتمد</div>
-        <div style={{ fontSize: 22, fontWeight: 800, color: "#16A34A" }}>{(stats.byStatus && (stats.byStatus.approved || 0) + (stats.byStatus.final || 0)) || 0}</div>
-      </div>
-      <div style={{ padding: 14, background: t.card, borderRadius: 12, border: "1px solid " + t.sep }}>
-        <div style={{ fontSize: 11, color: t.txM, fontWeight: 700, marginBottom: 4 }}>📈 متوسط الدرجات</div>
-        <div style={{ fontSize: 22, fontWeight: 800, color: t.tx }}>{stats.averageScore != null ? stats.averageScore.toFixed(1) : "—"}</div>
-      </div>
+    {/* Stats cards — v7.116 using StatCard */}
+    {stats && <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))", gap: ADMIN.space.md, marginBottom: ADMIN.space.lg }}>
+      <StatCard
+        icon="📊"
+        label="إجمالي التقييمات"
+        value={stats.total || 0}
+        color={B.blue}
+        delay={1}
+        t={t}
+      />
+      <StatCard
+        icon="⏳"
+        label="بانتظار اعتمادك"
+        value={stats.pendingApproval || 0}
+        color="#F59E0B"
+        delay={2}
+        t={t}
+      />
+      <StatCard
+        icon="✓"
+        label="معتمد"
+        value={(stats.byStatus && (stats.byStatus.approved || 0) + (stats.byStatus.final || 0)) || 0}
+        color="#16A34A"
+        delay={3}
+        t={t}
+      />
+      <StatCard
+        icon="📈"
+        label="متوسط الدرجات"
+        value={stats.averageScore != null ? Math.round(stats.averageScore * 10) / 10 : 0}
+        color={t.tx}
+        delay={4}
+        t={t}
+      />
     </div>}
 
     {/* Tabs */}
@@ -18106,36 +18803,57 @@ function LeaveRequestsHRPanel({ t, B, emps }) {
 
   return <div style={{ padding: 20, maxWidth: 1200, margin: "0 auto" }}>
 
-    {/* Header */}
-    <div style={{ display: "flex", alignItems: "center", gap: 14, marginBottom: 20 }}>
-      <div style={{ fontSize: 32 }}>🏖️</div>
-      <div style={{ flex: 1 }}>
-        <div style={{ fontSize: 20, fontWeight: 800, color: t.tx }}>الإجازات + التسليم</div>
-        <div style={{ fontSize: 11, color: t.txM, marginTop: 2 }}>
-          نظام متقدم مع Handover · سلسلة اعتماد 6 مراحل
-        </div>
-      </div>
-      <button onClick={loadAll} style={{ padding: "8px 14px", borderRadius: 8, background: t.bg, border: "1px solid " + t.sep, fontSize: 12, fontWeight: 700, color: t.tx, cursor: "pointer", fontFamily: "inherit" }}>🔄 تحديث</button>
-    </div>
+    {/* Header — v7.116 unified */}
+    <PanelHeader
+      icon="🏖️"
+      title="الإجازات + التسليم"
+      subtitle="نظام متقدم مع Handover · سلسلة اعتماد 6 مراحل"
+      gradient="linear-gradient(135deg, #0ea5e9, #0284c7)"
+      action={
+        <ActionButton
+          variant="secondary" size="sm"
+          icon="🔄" label="تحديث"
+          onClick={loadAll}
+          t={t} B={B}
+        />
+      }
+      t={t} B={B}
+    />
 
-    {/* Stats */}
-    {stats && <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 12, marginBottom: 18 }}>
-      <div style={{ padding: 14, background: t.card, borderRadius: 12, border: "1px solid " + t.sep }}>
-        <div style={{ fontSize: 10, color: t.txM, fontWeight: 700, marginBottom: 4 }}>⏳ بانتظار المدير</div>
-        <div style={{ fontSize: 22, fontWeight: 800, color: "#D97706" }}>{stats.pendingM1 || 0}</div>
-      </div>
-      <div style={{ padding: 14, background: t.card, borderRadius: 12, border: "1px solid " + t.sep }}>
-        <div style={{ fontSize: 10, color: t.txM, fontWeight: 700, marginBottom: 4 }}>📋 التسليم قيد التنفيذ</div>
-        <div style={{ fontSize: 22, fontWeight: 800, color: "#8B5CF6" }}>{stats.pendingDelegates || 0}</div>
-      </div>
-      <div style={{ padding: 14, background: t.card, borderRadius: 12, border: "1px solid " + t.sep }}>
-        <div style={{ fontSize: 10, color: t.txM, fontWeight: 700, marginBottom: 4 }}>🎯 مراجعة نهائية</div>
-        <div style={{ fontSize: 22, fontWeight: 800, color: B.blue }}>{stats.pendingFinal || 0}</div>
-      </div>
-      <div style={{ padding: 14, background: t.card, borderRadius: 12, border: "1px solid " + t.sep }}>
-        <div style={{ fontSize: 10, color: t.txM, fontWeight: 700, marginBottom: 4 }}>✅ معتمدة</div>
-        <div style={{ fontSize: 22, fontWeight: 800, color: "#16A34A" }}>{stats.approved || 0}</div>
-      </div>
+    {/* Stats — v7.116 using StatCard */}
+    {stats && <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))", gap: ADMIN.space.md, marginBottom: ADMIN.space.lg }}>
+      <StatCard
+        icon="⏳"
+        label="بانتظار المدير"
+        value={stats.pendingM1 || 0}
+        color="#D97706"
+        delay={1}
+        t={t}
+      />
+      <StatCard
+        icon="📋"
+        label="التسليم قيد التنفيذ"
+        value={stats.pendingDelegates || 0}
+        color="#8B5CF6"
+        delay={2}
+        t={t}
+      />
+      <StatCard
+        icon="🎯"
+        label="مراجعة نهائية"
+        value={stats.pendingFinal || 0}
+        color={B.blue}
+        delay={3}
+        t={t}
+      />
+      <StatCard
+        icon="✅"
+        label="معتمدة"
+        value={stats.approved || 0}
+        color="#16A34A"
+        delay={4}
+        t={t}
+      />
     </div>}
 
     {/* Tabs */}
@@ -19086,21 +19804,45 @@ function FinesPreviewModal({ t, B, actorId, onClose }) {
 
 function SubTabBar({ tabs, active, onChange, t, B, badges }) {
   badges = badges || {};
-  return <div style={{ display: "flex", gap: 6, marginBottom: 18, flexWrap: "wrap", padding: 4, background: t.bg, borderRadius: 12, border: "1px solid " + t.sep }}>
+  return <div style={{
+    display: "flex",
+    gap: ADMIN.space.xs,
+    marginBottom: ADMIN.space.lg,
+    flexWrap: "wrap",
+    padding: ADMIN.space.xs,
+    background: t.bg,
+    borderRadius: ADMIN.radius.md,
+    border: "1px solid " + t.sep,
+  }}>
     {tabs.map(function(tb){
       var a = active === tb.id;
       var badge = badges[tb.id];
-      return <button key={tb.id} onClick={function(){ onChange(tb.id); }} style={{
-        padding: "8px 14px", borderRadius: 8,
+      return <button key={tb.id} onClick={adminRipple(function(){ onChange(tb.id); })} className="admin-ripple admin-smooth" style={{
+        padding: ADMIN.space.sm + "px " + ADMIN.space.md + "px",
+        borderRadius: ADMIN.radius.sm,
         background: a ? B.blue : "transparent",
         color: a ? "#fff" : t.tx,
-        border: "none", fontSize: 12, fontWeight: 700, cursor: "pointer",
-        display: "flex", alignItems: "center", gap: 6,
-        fontFamily: "inherit"
+        border: "none",
+        fontSize: ADMIN.font.sm,
+        fontWeight: a ? ADMIN.weight.heavy : ADMIN.weight.bold,
+        cursor: "pointer",
+        display: "flex",
+        alignItems: "center",
+        gap: 6,
+        fontFamily: "inherit",
+        boxShadow: a ? ADMIN.shadow.colored(B.blue) : "none",
+        transform: a ? "translateY(-1px)" : "translateY(0)",
       }}>
-        <span style={{ fontSize: 14 }}>{tb.icon}</span>
+        <span style={{ fontSize: ADMIN.font.md }}>{tb.icon}</span>
         <span>{tb.label}</span>
-        {badge ? <span style={{ padding: "1px 7px", borderRadius: 10, background: a ? "rgba(255,255,255,0.25)" : B.red, color: "#fff", fontSize: 10, fontWeight: 800 }}>{badge}</span> : null}
+        {badge ? <span style={{
+          padding: "1px 7px",
+          borderRadius: ADMIN.radius.full,
+          background: a ? "rgba(255,255,255,0.25)" : B.red,
+          color: "#fff",
+          fontSize: ADMIN.font.tiny,
+          fontWeight: ADMIN.weight.heavy,
+        }}>{badge}</span> : null}
       </button>;
     })}
   </div>;
@@ -19440,28 +20182,22 @@ function QuestionBankPanel({ t, B }) {
 
   return (
     <div>
-      {/* Header */}
-      <div style={{
-        background: "linear-gradient(135deg, #7c3aed, #a855f7)",
-        borderRadius: 14, padding: "18px 22px", color: "#fff",
-        marginBottom: 14,
-      }}>
-        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 10 }}>
-          <div>
-            <div style={{ fontSize: 18, fontWeight: 900 }}>📚 {tr("بنك الأسئلة الموحّد")}</div>
-            <div style={{ fontSize: 11, opacity: 0.9, marginTop: 4 }}>
-              {tr("مستودع مركزي لكل الأسئلة — يخدم تحدي الصباح وتحدي السريع")}
-            </div>
-          </div>
-          <button onClick={function(){ setAddingNew(true); setEditingQ({ text: "", correct: "", wrongs: ["", ""], category: "general", difficulty: "medium", active: true, tags: [] }); }} style={{
-            padding: "10px 18px", borderRadius: 10,
-            background: "rgba(255,255,255,0.25)",
-            border: "1px solid rgba(255,255,255,0.4)",
-            color: "#fff", fontSize: 12, fontWeight: 800,
-            cursor: "pointer", fontFamily: "inherit",
-          }}>➕ {tr("إضافة سؤال")}</button>
-        </div>
-      </div>
+      {/* Header — v7.116 unified */}
+      <PanelHeader
+        icon="📚"
+        title={tr("بنك الأسئلة الموحّد")}
+        subtitle={tr("مستودع مركزي لكل الأسئلة — يخدم تحدي الصباح وتحدي السريع")}
+        gradient="linear-gradient(135deg, #7c3aed, #a855f7)"
+        action={
+          <ActionButton
+            variant="primary" size="md"
+            icon="➕" label={tr("إضافة سؤال")}
+            onClick={function(){ setAddingNew(true); setEditingQ({ text: "", correct: "", wrongs: ["", ""], category: "general", difficulty: "medium", active: true, tags: [] }); }}
+            t={t} B={B}
+          />
+        }
+        t={t} B={B}
+      />
 
       {/* Migration banner */}
       {showMigrate && migrationResult && (
@@ -19543,7 +20279,7 @@ function QuestionBankPanel({ t, B }) {
 
       {/* Questions list */}
       {loading ? (
-        <div style={{ padding: 40, textAlign: "center", color: t.txM }}>⏳ {tr("جاري التحميل...")}</div>
+        <div className="admin-fade-up"><AdminSkeleton height={80} borderRadius={12} style={{ marginBottom: 10 }} /><AdminSkeleton height={50} borderRadius={10} style={{ marginBottom: 8 }} /><AdminSkeleton height={50} borderRadius={10} /></div>
       ) : filtered.length === 0 ? (
         <div style={{ padding: 40, textAlign: "center", background: t.card, borderRadius: 14, border: "1px dashed " + t.sep }}>
           <div style={{ fontSize: 40, marginBottom: 10 }}>📚</div>
@@ -19760,37 +20496,44 @@ function ChallengesHub({ t, B, emps }) {
   }, []);
 
   return <div>
-    {/* Hero header */}
-    <div style={{
-      background: "linear-gradient(135deg, #7c3aed 0%, #a855f7 100%)",
-      borderRadius: 14, padding: "20px 24px",
-      color: "#fff", marginBottom: 16,
-    }}>
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 12 }}>
-        <div>
-          <div style={{ fontSize: 22, fontWeight: 900 }}>🎯 {tr("التحديات والأسئلة")}</div>
-          <div style={{ fontSize: 12, opacity: 0.9, marginTop: 4 }}>
-            {tr("مركز موحّد — إدارة كل ما يتعلق بالأسئلة والتحديات في مكان واحد")}
+    {/* v7.115 — using unified PanelHeader */}
+    <PanelHeader
+      icon="🎯"
+      title={tr("التحديات والأسئلة")}
+      subtitle={tr("مركز موحّد — إدارة كل ما يتعلق بالأسئلة والتحديات في مكان واحد")}
+      gradient="linear-gradient(135deg, #7c3aed, #a855f7)"
+      action={stats && (
+        <div style={{ display: "flex", gap: ADMIN.space.xs, flexWrap: "wrap" }}>
+          <div style={{
+            padding: ADMIN.space.xs + "px " + ADMIN.space.sm + "px",
+            background: "rgba(124,58,237,0.1)",
+            border: "1px solid rgba(124,58,237,0.3)",
+            borderRadius: ADMIN.radius.sm,
+            textAlign: "center",
+            minWidth: 50,
+          }}>
+            <div style={{ fontSize: ADMIN.font.md, fontWeight: ADMIN.weight.black, color: "#7c3aed" }}>
+              <AdminAnimatedNumber value={stats.total} duration={800} />
+            </div>
+            <div style={{ fontSize: ADMIN.font.tiny - 1, color: t.txM }}>{tr("سؤال")}</div>
+          </div>
+          <div style={{
+            padding: ADMIN.space.xs + "px " + ADMIN.space.sm + "px",
+            background: "rgba(16,185,129,0.1)",
+            border: "1px solid rgba(16,185,129,0.3)",
+            borderRadius: ADMIN.radius.sm,
+            textAlign: "center",
+            minWidth: 50,
+          }}>
+            <div style={{ fontSize: ADMIN.font.md, fontWeight: ADMIN.weight.black, color: "#10b981" }}>
+              <AdminAnimatedNumber value={stats.active} duration={800} />
+            </div>
+            <div style={{ fontSize: ADMIN.font.tiny - 1, color: t.txM }}>{tr("نشط")}</div>
           </div>
         </div>
-        {stats && (
-          <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-            <div style={{ padding: "8px 12px", background: "rgba(255,255,255,0.15)", borderRadius: 10, textAlign: "center", minWidth: 70 }}>
-              <div style={{ fontSize: 16, fontWeight: 900 }}>{stats.total}</div>
-              <div style={{ fontSize: 9, opacity: 0.85 }}>{tr("سؤال")}</div>
-            </div>
-            <div style={{ padding: "8px 12px", background: "rgba(255,255,255,0.15)", borderRadius: 10, textAlign: "center", minWidth: 70 }}>
-              <div style={{ fontSize: 16, fontWeight: 900 }}>{stats.active}</div>
-              <div style={{ fontSize: 9, opacity: 0.85 }}>{tr("نشط")}</div>
-            </div>
-            <div style={{ padding: "8px 12px", background: "rgba(255,255,255,0.15)", borderRadius: 10, textAlign: "center", minWidth: 70 }}>
-              <div style={{ fontSize: 16, fontWeight: 900 }}>{stats.usage.totalShown}</div>
-              <div style={{ fontSize: 9, opacity: 0.85 }}>{tr("استخدام")}</div>
-            </div>
-          </div>
-        )}
-      </div>
-    </div>
+      )}
+      t={t} B={B}
+    />
 
     {/* Sub-tab navigation */}
     <SubTabBar t={t} B={B} active={sub} onChange={setSub}
@@ -19927,7 +20670,7 @@ function ChallengesUnifiedSettingsPanel({ t, B }) {
     setSaving(false);
   }
 
-  if (!settings) return <div style={{ padding: 40, textAlign: "center", color: t.txM }}>⏳ {tr("جاري التحميل...")}</div>;
+  if (!settings) return <div className="admin-fade-up"><AdminSkeleton height={80} borderRadius={12} style={{ marginBottom: 10 }} /><AdminSkeleton height={50} borderRadius={10} style={{ marginBottom: 8 }} /><AdminSkeleton height={50} borderRadius={10} /></div>;
 
   return (
     <div>

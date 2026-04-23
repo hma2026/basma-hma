@@ -12,7 +12,7 @@ import { t as tr, setLang, getLang, getDir, isRTL, subscribeLangChange } from ".
 
 /* ═══════════ APP CONFIG (إعدادات التطبيق) ═══════════ */
 const APP_CONFIG = {
-  VER: "7.113",
+  VER: "7.117",
   NAME: "بصمة HMA",
   FULL_NAME: "نظام الحضور والانصراف الذكي",
   COMPANY: "هاني محمد عسيري للاستشارات الهندسية",
@@ -68,6 +68,17 @@ if (typeof document !== "undefined" && !document.getElementById("basma-css")) {
     "@keyframes tawasulDeadlinePulse{0%,100%{transform:scale(1);box-shadow:0 0 0 0 rgba(239,68,68,.5)}50%{transform:scale(1.05);box-shadow:0 0 0 6px rgba(239,68,68,0)}}",
     "@keyframes basma-bounce-in{0%{opacity:0;transform:scale(0.7)}50%{opacity:1;transform:scale(1.05)}100%{transform:scale(1)}}",
     "@keyframes basma-pulse-glow{0%,100%{transform:scale(1);box-shadow:0 8px 24px rgba(124,58,237,0.5),0 0 0 1px rgba(124,58,237,0.3)}50%{transform:scale(1.02);box-shadow:0 12px 32px rgba(124,58,237,0.7),0 0 0 3px rgba(124,58,237,0.4)}}",
+    /* v7.114 — UX Polish keyframes */
+    "@keyframes basma-glow-critical{0%,100%{box-shadow:0 0 4px rgba(239,68,68,0.3),0 0 10px rgba(239,68,68,0.2)}50%{box-shadow:0 0 16px rgba(239,68,68,0.6),0 0 32px rgba(239,68,68,0.35)}}",
+    "@keyframes basma-glow-gold{0%,100%{box-shadow:0 0 4px rgba(245,158,11,0.3),0 0 10px rgba(245,158,11,0.2)}50%{box-shadow:0 0 16px rgba(245,158,11,0.6),0 0 32px rgba(245,158,11,0.35)}}",
+    "@keyframes basma-shimmer{0%{background-position:-200% 0}100%{background-position:200% 0}}",
+    "@keyframes basma-success-pop{0%{transform:scale(0.3);opacity:0}50%{transform:scale(1.2);opacity:1}80%,100%{transform:scale(1);opacity:1}}",
+    "@keyframes basma-bounce-gentle{0%,100%{transform:translateY(0)}50%{transform:translateY(-6px)}}",
+    "@keyframes basma-slide-tab{from{transform:translateX(8px);opacity:0}to{transform:translateX(0);opacity:1}}",
+    "@keyframes basma-confetti-fall{0%{transform:translate(0,0) rotate(0deg);opacity:1}100%{transform:translate(var(--tx,0),110vh) rotate(720deg);opacity:0}}",
+    "@keyframes basma-ripple-expand{0%{width:0;height:0;opacity:0.6}100%{width:300px;height:300px;opacity:0}}",
+    "@keyframes basma-count-in{0%{opacity:0;transform:translateY(4px)}100%{opacity:1;transform:translateY(0)}}",
+    "@keyframes basma-scale-in{0%{transform:scale(0.85);opacity:0}100%{transform:scale(1);opacity:1}}",
     ".basma-fadein{animation:fadeIn .4s ease both}",
     ".basma-fadein-d1{animation:fadeIn .4s ease .1s both}",
     ".basma-fadein-d2{animation:fadeIn .4s ease .2s both}",
@@ -75,6 +86,23 @@ if (typeof document !== "undefined" && !document.getElementById("basma-css")) {
     ".basma-slideup{animation:slideUp .35s ease both}",
     ".basma-slidedown{animation:slideDown .3s ease both}",
     ".basma-pulse{animation:pulse 1.5s ease infinite}",
+    /* v7.114 — Utility classes */
+    ".basma-glow-critical{animation:basma-glow-critical 2s ease-in-out infinite}",
+    ".basma-glow-gold{animation:basma-glow-gold 2.5s ease-in-out infinite}",
+    ".basma-shimmer{background:linear-gradient(90deg,rgba(255,255,255,0.03) 0%,rgba(255,255,255,0.08) 50%,rgba(255,255,255,0.03) 100%);background-size:200% 100%;animation:basma-shimmer 1.5s infinite}",
+    ".basma-success-pop{animation:basma-success-pop 0.6s cubic-bezier(0.175,0.885,0.32,1.275)}",
+    ".basma-bounce-gentle{animation:basma-bounce-gentle 2s ease-in-out infinite}",
+    ".basma-slide-tab{animation:basma-slide-tab 0.3s ease-out}",
+    ".basma-scale-in{animation:basma-scale-in 0.35s cubic-bezier(0.175,0.885,0.32,1.275)}",
+    ".basma-count-in{animation:basma-count-in 0.4s ease-out}",
+    /* Ripple button */
+    ".basma-ripple{position:relative;overflow:hidden}",
+    ".basma-ripple-wave{position:absolute;border-radius:50%;background:rgba(255,255,255,0.35);pointer-events:none;animation:basma-ripple-expand 0.6s ease-out forwards}",
+    /* Smooth transitions everywhere */
+    ".basma-smooth{transition:all 0.25s cubic-bezier(0.4,0,0.2,1)}",
+    ".basma-smooth-slow{transition:all 0.4s cubic-bezier(0.4,0,0.2,1)}",
+    /* Hover lift */
+    ".basma-hover-lift:hover{transform:translateY(-2px);box-shadow:0 4px 12px rgba(0,0,0,0.2)}",
     ".basma-flip-container{perspective:600px;width:100%}",
     ".basma-flip-inner{position:relative;width:100%;transition:transform .6s;transform-style:preserve-3d}",
     ".basma-flip-inner.flipped{transform:rotateX(180deg)}",
@@ -393,6 +421,167 @@ var STATUS_META = {
 };
 function getStatusMeta(status) {
   return STATUS_META[status] || { label: status || "—", icon: "•", color: COLORS.textMuted, bg: COLORS.metallic };
+}
+
+/* ═════════════════════════════════════════════════════════════════
+ * v7.114 — UX POLISH COMPONENTS
+ * ═════════════════════════════════════════════════════════════════ */
+
+/* 🔢 AnimatedNumber — counts up from 0 to target value */
+function AnimatedNumber({ value, duration, format, style }) {
+  var [display, setDisplay] = useState(0);
+  var targetValue = Number(value) || 0;
+  var dur = duration || 800;
+
+  useEffect(function(){
+    var start = Date.now();
+    var startVal = 0;
+    var raf;
+    function tick() {
+      var elapsed = Date.now() - start;
+      var progress = Math.min(1, elapsed / dur);
+      // Ease-out cubic
+      var eased = 1 - Math.pow(1 - progress, 3);
+      var current = Math.round(startVal + (targetValue - startVal) * eased);
+      setDisplay(current);
+      if (progress < 1) raf = requestAnimationFrame(tick);
+    }
+    raf = requestAnimationFrame(tick);
+    return function(){ if (raf) cancelAnimationFrame(raf); };
+  }, [targetValue]);
+
+  var formatted = format ? format(display) : display;
+  return <span style={style}>{formatted}</span>;
+}
+
+/* 💀 Skeleton — shimmer placeholder */
+function Skeleton({ width, height, borderRadius, style }) {
+  return <div className="basma-shimmer" style={Object.assign({
+    width: width || "100%",
+    height: height || 16,
+    borderRadius: borderRadius || 8,
+    display: "block",
+  }, style || {})} />;
+}
+
+/* 🎉 Confetti — burst of colored dots */
+function Confetti({ trigger, duration, colors }) {
+  var [pieces, setPieces] = useState([]);
+  var COLORS = colors || ["#f59e0b", "#fbbf24", "#ef4444", "#8b5cf6", "#10b981", "#3b82f6", "#ec4899"];
+  var dur = duration || 3000;
+
+  useEffect(function(){
+    if (!trigger) return;
+    // Generate 40 pieces
+    var arr = [];
+    for (var i = 0; i < 40; i++) {
+      arr.push({
+        id: i,
+        x: Math.random() * 100,           // 0-100 vw
+        tx: (Math.random() - 0.5) * 200,  // horizontal drift
+        delay: Math.random() * 0.4,
+        duration: 2.5 + Math.random() * 1.5,
+        color: COLORS[Math.floor(Math.random() * COLORS.length)],
+        size: 6 + Math.random() * 8,
+        shape: Math.random() > 0.5 ? "circle" : "square",
+      });
+    }
+    setPieces(arr);
+    var timeout = setTimeout(function(){ setPieces([]); }, dur + 500);
+    return function(){ clearTimeout(timeout); };
+  }, [trigger]);
+
+  if (pieces.length === 0) return null;
+
+  return <div style={{
+    position: "fixed", top: 0, left: 0, right: 0, bottom: 0,
+    pointerEvents: "none", zIndex: 9999, overflow: "hidden",
+  }}>
+    {pieces.map(function(p){
+      return <div key={p.id} style={{
+        position: "absolute",
+        top: -20,
+        left: p.x + "vw",
+        width: p.size, height: p.size,
+        background: p.color,
+        borderRadius: p.shape === "circle" ? "50%" : "2px",
+        animation: "basma-confetti-fall " + p.duration + "s ease-out " + p.delay + "s forwards",
+        "--tx": p.tx + "px",
+      }} />;
+    })}
+  </div>;
+}
+
+/* 📭 BasmaEmpty — beautiful empty message (v7.114 new version with action button) */
+function BasmaEmpty({ icon, title, subtitle, action, onAction }) {
+  return <div style={{
+    padding: "40px 20px", textAlign: "center",
+    background: "rgba(255,255,255,0.02)",
+    borderRadius: 14,
+    border: "1px dashed rgba(255,255,255,0.1)",
+  }} className="basma-fadein">
+    <div style={{ fontSize: 48, marginBottom: 12, opacity: 0.5 }}>{icon || "📭"}</div>
+    {title && <div style={{ fontSize: 14, fontWeight: 800, color: "#fff", marginBottom: 6 }}>{title}</div>}
+    {subtitle && <div style={{ fontSize: 11, color: "rgba(255,255,255,0.55)", marginBottom: action ? 14 : 0, lineHeight: 1.6 }}>{subtitle}</div>}
+    {action && <button onClick={onAction} className="basma-ripple basma-smooth" style={{
+      padding: "8px 18px", borderRadius: 10,
+      background: "linear-gradient(135deg, #8b5cf6, #7c3aed)",
+      color: "#fff", border: "none", fontSize: 12, fontWeight: 700,
+      cursor: "pointer", fontFamily: "inherit",
+    }}>{action}</button>}
+  </div>;
+}
+
+/* 🌊 makeRipple — attach ripple effect to onClick */
+function makeRipple(originalOnClick) {
+  return function(e) {
+    var btn = e.currentTarget;
+    if (!btn) return;
+    var rect = btn.getBoundingClientRect();
+    var x = (e.clientX || (e.touches && e.touches[0] && e.touches[0].clientX) || rect.left + rect.width / 2) - rect.left;
+    var y = (e.clientY || (e.touches && e.touches[0] && e.touches[0].clientY) || rect.top + rect.height / 2) - rect.top;
+
+    var wave = document.createElement("span");
+    wave.className = "basma-ripple-wave";
+    wave.style.left = (x - 0) + "px";
+    wave.style.top = (y - 0) + "px";
+    btn.appendChild(wave);
+
+    setTimeout(function(){
+      if (wave && wave.parentNode) wave.parentNode.removeChild(wave);
+    }, 650);
+
+    if (originalOnClick) originalOnClick(e);
+  };
+}
+
+/* 📳 haptic — tiny vibration on supported devices */
+function haptic(type) {
+  try {
+    if (typeof navigator !== "undefined" && navigator.vibrate) {
+      var patterns = {
+        light:   [10],
+        medium:  [20],
+        heavy:   [30],
+        success: [10, 30, 10],
+        error:   [50, 40, 50],
+      };
+      navigator.vibrate(patterns[type] || patterns.light);
+    }
+  } catch(e) {}
+}
+
+/* ✅ SuccessCheck — animated checkmark for success moments */
+function SuccessCheck({ size, color }) {
+  var s = size || 50;
+  var c = color || "#10b981";
+  return <div className="basma-success-pop" style={{
+    width: s, height: s, borderRadius: "50%",
+    background: c,
+    display: "inline-flex", alignItems: "center", justifyContent: "center",
+    color: "#fff", fontSize: s * 0.55, fontWeight: 900,
+    boxShadow: "0 4px 14px " + c + "80",
+  }}>✓</div>;
 }
 
 /* ── v7.46 — isAdminUser helper (replaces 4 identical checks) ── */
@@ -848,6 +1037,8 @@ function MobileAppInner() {
 
   function showToast(msg, type = "success") {
     setToast({ msg, type });
+    // v7.114 — Haptic feedback matches toast type
+    try { haptic(type === "error" ? "error" : type === "success" ? "success" : "light"); } catch(e) {}
     setTimeout(() => setToast(null), 3000);
   }
 
@@ -1531,7 +1722,7 @@ function MobileAppInner() {
     } finally { setLoading(false); }
   }
 
-  function requestCheckin(type, label) { setConfirmModal({ type, label }); }
+  function requestCheckin(type, label) { try { haptic("medium"); } catch(e) {} setConfirmModal({ type, label }); }
 
   function confirmCheckin() {
     const { type } = confirmModal;
@@ -2441,7 +2632,7 @@ function HomePage({ user, branch, workType, now, todayAtt, allAtt, gps, gpsDist,
             );
           })()}
           <span style={{ fontSize: 11, color: C.sub }}>{badge.icon + " " + badge.label}</span>
-          <span style={{ fontSize: 10, color: C.gold, fontWeight: 800 }}>{"⭐" + (user.points || 0)}</span>
+          <span style={{ fontSize: 10, color: C.gold, fontWeight: 800 }}>⭐<AnimatedNumber value={user.points || 0} duration={1000} /></span>
           {/* v7.50 — جرس الإشعارات في الهيدر محذوف (جرس عائم top-left يُغطي كل الإشعارات بدون تكرار) */}
         </div>
       </div>
@@ -14867,12 +15058,19 @@ function RecognitionCard({ user, allEmps }) {
   var [data, setData] = useState(null);
   var [loading, setLoading] = useState(true);
   var [expanded, setExpanded] = useState(true);
+  var [showConfetti, setShowConfetti] = useState(false);  // v7.114
 
   async function load() {
     try {
       var r = await fetch("/api/data?action=recognition");
       var d = await r.json();
-      if (d.ok) setData(d);
+      if (d.ok) {
+        setData(d);
+        // v7.114 — trigger confetti if winner exists and it's my first view
+        if (d.winner) {
+          setTimeout(function(){ setShowConfetti(Date.now()); }, 300);
+        }
+      }
     } catch(e) {}
     setLoading(false);
   }
@@ -14885,11 +15083,18 @@ function RecognitionCard({ user, allEmps }) {
         background: "linear-gradient(135deg, rgba(245,158,11,0.1), rgba(217,119,6,0.03))",
         border: "1px solid rgba(245,158,11,0.25)",
         borderRadius: 14, padding: 14, marginBottom: 10,
-        textAlign: "center",
       }}>
-        <div style={{ color: "rgba(255,255,255,0.6)", fontSize: 11 }}>
-          ⏳ {tr("تحميل التكريم...")}
+        {/* v7.114 — Skeleton loader */}
+        <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 12 }}>
+          <Skeleton width={40} height={40} borderRadius={10} />
+          <div style={{ flex: 1 }}>
+            <Skeleton height={14} width="50%" style={{ marginBottom: 6 }} />
+            <Skeleton height={10} width="30%" />
+          </div>
         </div>
+        <Skeleton height={80} borderRadius={12} style={{ marginBottom: 8 }} />
+        <Skeleton height={40} borderRadius={10} style={{ marginBottom: 6 }} />
+        <Skeleton height={40} borderRadius={10} />
       </div>
     );
   }
@@ -14916,12 +15121,15 @@ function RecognitionCard({ user, allEmps }) {
   } catch(e) {}
 
   return (
-    <div style={{
+    <div className="basma-scale-in" style={{
       background: "linear-gradient(135deg, rgba(245,158,11,0.12) 0%, rgba(217,119,6,0.06) 50%, rgba(168,85,247,0.08) 100%)",
       border: "1.5px solid rgba(245,158,11,0.4)",
       borderRadius: 16, padding: 14, marginBottom: 10,
       overflow: "hidden", position: "relative",
     }}>
+      {/* v7.114 — Confetti burst on winner reveal */}
+      {showConfetti && winner && <Confetti trigger={showConfetti} duration={3500} />}
+
       {/* Decorative gold accents */}
       <div style={{
         position: "absolute", top: -30, right: -30,
@@ -14932,7 +15140,7 @@ function RecognitionCard({ user, allEmps }) {
       {/* Header */}
       <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: expanded ? 12 : 0, position: "relative" }}>
         <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-          <div style={{
+          <div className="basma-bounce-gentle" style={{
             width: 40, height: 40, borderRadius: 10,
             background: "linear-gradient(135deg, #f59e0b, #d97706)",
             display: "flex", alignItems: "center", justifyContent: "center",
@@ -14948,7 +15156,7 @@ function RecognitionCard({ user, allEmps }) {
           </div>
         </div>
 
-        <button onClick={function(){ setExpanded(!expanded); }} style={{
+        <button onClick={function(){ setExpanded(!expanded); }} className="basma-smooth" style={{
           background: "rgba(255,255,255,0.1)",
           border: "none", borderRadius: 6,
           width: 26, height: 26,
@@ -14961,7 +15169,7 @@ function RecognitionCard({ user, allEmps }) {
         <>
           {/* Winner Hero Section */}
           {winner && (
-            <div style={{
+            <div className="basma-fadein-d1 basma-glow-gold" style={{
               padding: 14,
               background: "linear-gradient(135deg, rgba(245,158,11,0.25), rgba(168,85,247,0.1))",
               border: "1px solid rgba(245,158,11,0.4)",
@@ -14990,7 +15198,7 @@ function RecognitionCard({ user, allEmps }) {
                 borderRadius: 20,
                 fontSize: 11, color: "#10b981", fontWeight: 800,
               }}>
-                ⭐ {winner.scores.total} / 100 {tr("نقطة")}
+                ⭐ <AnimatedNumber value={winner.scores.total} duration={1200} /> / 100 {tr("نقطة")}
               </div>
             </div>
           )}
@@ -16895,9 +17103,22 @@ function AdminSmartCard({ user }) {
         border: "1px solid rgba(239,68,68,0.25)",
         borderRadius: 14, padding: 14, marginBottom: 10,
       }}>
-        <div style={{ color: "rgba(255,255,255,0.6)", fontSize: 11, textAlign: "center" }}>
-          ⏳ {tr("جاري تحميل لوحة الإدارة...")}
+        {/* v7.114 — Skeleton header */}
+        <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 12 }}>
+          <Skeleton width={38} height={38} borderRadius={10} />
+          <div style={{ flex: 1 }}>
+            <Skeleton height={12} width="45%" style={{ marginBottom: 5 }} />
+            <Skeleton height={9} width="25%" />
+          </div>
         </div>
+        {/* Stats skeleton */}
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 6, marginBottom: 10 }}>
+          <Skeleton height={40} borderRadius={8} />
+          <Skeleton height={40} borderRadius={8} />
+          <Skeleton height={40} borderRadius={8} />
+          <Skeleton height={40} borderRadius={8} />
+        </div>
+        <Skeleton height={34} borderRadius={8} style={{ marginBottom: 6 }} />
       </div>
     );
   }
@@ -16908,13 +17129,12 @@ function AdminSmartCard({ user }) {
   var hasAnyAlerts = data.alertCounts.total > 0;
 
   return (
-    <div style={{
+    <div className={hasCriticalAlerts ? "basma-glow-critical basma-scale-in" : "basma-scale-in"} style={{
       background: hasCriticalAlerts
         ? "linear-gradient(135deg, rgba(239,68,68,0.15), rgba(220,38,38,0.05))"
         : "linear-gradient(135deg, rgba(201,168,76,0.12), rgba(239,68,68,0.05))",
       border: "1.5px solid " + (hasCriticalAlerts ? "rgba(239,68,68,0.5)" : "rgba(201,168,76,0.35)"),
       borderRadius: 14, padding: 14, marginBottom: 10,
-      animation: hasCriticalAlerts ? "pulse 2s ease infinite" : "none",
     }}>
       {/* Header */}
       <div style={{
@@ -16968,32 +17188,40 @@ function AdminSmartCard({ user }) {
           {/* Quick stats (today) */}
           {!data.today.isWeekend && !data.today.isHoliday && (
             <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 6, marginBottom: 10 }}>
-              <div style={{
+              <div className="basma-fadein-d1" style={{
                 padding: "8px 4px", background: "rgba(16,185,129,0.15)",
                 borderRadius: 8, textAlign: "center",
               }}>
-                <div style={{ color: "#10b981", fontSize: 16, fontWeight: 900 }}>{data.stats.present}</div>
+                <div style={{ color: "#10b981", fontSize: 16, fontWeight: 900 }}>
+                  <AnimatedNumber value={data.stats.present} duration={900} />
+                </div>
                 <div style={{ color: "rgba(255,255,255,0.6)", fontSize: 8, marginTop: 2 }}>{tr("حاضر")}</div>
               </div>
-              <div style={{
+              <div className="basma-fadein-d2" style={{
                 padding: "8px 4px", background: "rgba(239,68,68,0.15)",
                 borderRadius: 8, textAlign: "center",
               }}>
-                <div style={{ color: "#ef4444", fontSize: 16, fontWeight: 900 }}>{data.stats.absent}</div>
+                <div style={{ color: "#ef4444", fontSize: 16, fontWeight: 900 }}>
+                  <AnimatedNumber value={data.stats.absent} duration={900} />
+                </div>
                 <div style={{ color: "rgba(255,255,255,0.6)", fontSize: 8, marginTop: 2 }}>{tr("غائب")}</div>
               </div>
-              <div style={{
+              <div className="basma-fadein-d3" style={{
                 padding: "8px 4px", background: "rgba(245,158,11,0.15)",
                 borderRadius: 8, textAlign: "center",
               }}>
-                <div style={{ color: "#f59e0b", fontSize: 16, fontWeight: 900 }}>{data.stats.late}</div>
+                <div style={{ color: "#f59e0b", fontSize: 16, fontWeight: 900 }}>
+                  <AnimatedNumber value={data.stats.late} duration={900} />
+                </div>
                 <div style={{ color: "rgba(255,255,255,0.6)", fontSize: 8, marginTop: 2 }}>{tr("متأخر")}</div>
               </div>
-              <div style={{
+              <div className="basma-fadein-d3" style={{
                 padding: "8px 4px", background: "rgba(59,130,246,0.15)",
                 borderRadius: 8, textAlign: "center",
               }}>
-                <div style={{ color: "#3b82f6", fontSize: 16, fontWeight: 900 }}>{data.stats.onLeave}</div>
+                <div style={{ color: "#3b82f6", fontSize: 16, fontWeight: 900 }}>
+                  <AnimatedNumber value={data.stats.onLeave} duration={900} />
+                </div>
                 <div style={{ color: "rgba(255,255,255,0.6)", fontSize: 8, marginTop: 2 }}>{tr("إجازة")}</div>
               </div>
             </div>

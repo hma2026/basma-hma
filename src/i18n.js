@@ -172,6 +172,11 @@ var EN_TRANSLATIONS = {
 
 
 
+
+  // ────── v7.114 — UX Polish ──────
+  "لا توجد بيانات للتكريم": "No recognition data",
+  "اختر شهراً آخر أو انتظر تراكم بيانات الحضور": "Select another month or wait for attendance data",
+
   // ────── v7.113 — Employee Recognition System ──────
   "تحميل التكريم...": "Loading recognition...",
   "موظفو الشهر": "Employees of the Month",
