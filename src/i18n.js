@@ -154,6 +154,12 @@ var EN_TRANSLATIONS = {
   "العطل الرسمية": "Official Holidays",
   "العطل الرسمية وأيام الراحة": "Official Holidays & Weekends",
 
+  // ────── v7.94 — Morning Challenge Diagnostics ──────
+  "جاري تحميل الأسئلة...": "Loading questions...",
+  "إذا استمرت الرسالة أكثر من دقيقة، اطلب من الإدارة إضافة أسئلة.": "If this persists over a minute, ask admin to add questions.",
+  "تحدي الصباح يبدأ في الفجر": "Morning challenge starts at dawn",
+  "انتهى وقت التحدي — سجل حضورك": "Challenge time ended — check-in now",
+
   // ────── v7.93 — Holidays Mobile Integration ──────
   "العطل القادمة": "Upcoming Holidays",
   "أيام العطل الرسمية خلال الأشهر القادمة": "Official holidays in the coming months",

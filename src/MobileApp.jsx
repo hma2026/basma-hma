@@ -12,7 +12,7 @@ import { t as tr, setLang, getLang, getDir, isRTL, subscribeLangChange } from ".
 
 /* ═══════════ APP CONFIG (إعدادات التطبيق) ═══════════ */
 const APP_CONFIG = {
-  VER: "7.93",
+  VER: "7.94",
   NAME: "بصمة HMA",
   FULL_NAME: "نظام الحضور والانصراف الذكي",
   COMPANY: "هاني محمد عسيري للاستشارات الهندسية",
@@ -1598,7 +1598,7 @@ function MobileAppInner() {
       {/* Floating active-timer indicator — global, shows on all pages */}
       {user && <ActiveTimerFloater user={user} onGoTo={function(taskId){ setPage("tawasul"); setTimeout(function(){ window.dispatchEvent(new CustomEvent("basma:open-task", { detail: { taskId: taskId } })); }, 80); }} />}
 
-      {toast && <Toast msg={toast.msg} type={toast.type} />}
+      {toast && <Toast msg={toast.msg} type={toast.type} onDismiss={function(){ setToast(null); }} />}
       {callBanner && <CallBanner type={callBanner.type} msg={callBanner.msg} onDismiss={function(){ setCallBanner(null); }} />}
       {fakeCall && <FakeCallScreen type={fakeCall.type} label={fakeCall.label} user={user} onAnswer={function(){ var fc = fakeCall; setFakeCall(null); setFaceVerifyModal({ type: fc.type, label: fc.label, source: "call" }); }} onDecline={function(){ setFakeCall(null); }} />}
       {autoCheckinPrompt && <AutoCheckinBanner label={autoCheckinPrompt.label} onConfirm={function(){ var p = autoCheckinPrompt; setAutoCheckinPrompt(null); setFaceVerifyModal({ type: p.type, label: p.label, source: "auto" }); }} onDismiss={function(){ setAutoCheckinPrompt(null); window.__autoCheckinTriggered = false; }} />}
@@ -2188,8 +2188,10 @@ function HomePage({ user, branch, workType, now, todayAtt, allAtt, gps, gpsDist,
   }
 
   // Challenge state — only shows if admin has added questions to the bank
-  // v6.78 — Persist challenge across re-renders/navigation; only hide when user manually closes or answers
-  var [challengeQ] = useState(function() {
+  // v7.94 — FIX: use useState with retry mechanism via useEffect
+  // Previously: useState(pickChallenge()) ran once at mount — if cache was still null,
+  // challengeQ stayed null forever even after questions loaded. This was the root cause.
+  var [challengeQ, setChallengeQ] = useState(function() {
     // Try to restore today's challenge from localStorage so it doesn't change between re-renders
     try {
       var saved = localStorage.getItem("basma_challenge_q_" + todayStr());
@@ -2202,8 +2204,39 @@ function HomePage({ user, branch, workType, now, todayAtt, allAtt, gps, gpsDist,
     if (fresh) {
       try { localStorage.setItem("basma_challenge_q_" + todayStr(), JSON.stringify(fresh)); } catch(e) {}
     }
-    return fresh;
+    return fresh; // may be null if cache not loaded yet — will retry via useEffect
   });
+
+  // v7.94 — Retry loading challenge when CHALLENGES_CACHE becomes available
+  // Checks every 2 seconds for up to 20 seconds (10 retries)
+  useEffect(function(){
+    if (challengeQ) return; // already have one, skip
+    // Also skip if user already answered or dismissed today
+    try {
+      if (localStorage.getItem("basma_challenge_" + todayStr()) === "1") return;
+      if (localStorage.getItem("basma_challenge_dismissed_" + todayStr()) === "1") return;
+    } catch(e) {}
+
+    var attempts = 0;
+    var maxAttempts = 10;
+    var interval = setInterval(function(){
+      attempts++;
+      if (attempts >= maxAttempts) {
+        clearInterval(interval);
+        return;
+      }
+      // Try to pick a challenge (CHALLENGES_CACHE may have been populated by now)
+      var fresh = pickChallenge();
+      if (fresh) {
+        try { localStorage.setItem("basma_challenge_q_" + todayStr(), JSON.stringify(fresh)); } catch(e) {}
+        setChallengeQ(fresh);
+        clearInterval(interval);
+      }
+    }, 2000);
+
+    return function(){ clearInterval(interval); };
+  }, [challengeQ]);
+
   var [challengeAnswer, setChallengeAnswer] = useState(function() {
     // Restore answer state from localStorage
     var saved = localStorage.getItem("basma_challenge_ans_" + todayStr());
@@ -2435,6 +2468,29 @@ function HomePage({ user, branch, workType, now, todayAtt, allAtt, gps, gpsDist,
 
         {/* Challenge text below clock */}
         {!hasCheckedIn && !showChallenge && challengeAnswer === null && challengeDoneToday && <div style={{ marginTop: SPACING.sm, ...TYPOGRAPHY.caption, color: COLORS.textSecondary }}>{tr("✓ أجبت على تحدي اليوم")}</div>}
+
+        {/* v7.94 — Debug: show hint if challenge should show but doesn't (help user/admin diagnose) */}
+        {!hasCheckedIn && !showChallenge && challengeAnswer === null && !challengeDoneToday && !challengeDismissed && (function(){
+          var now = new Date();
+          var nowMins = now.getHours() * 60 + now.getMinutes();
+          var shiftStart = branch ? timeToMin(branch.start) : 480;
+          if (!challengeQ) {
+            return <div style={{ marginTop: SPACING.sm, padding: "6px 12px", borderRadius: 8, background: "rgba(251,191,36,0.1)", border: "1px solid rgba(251,191,36,0.3)", fontSize: 10, color: "#FCD34D", textAlign: "center", lineHeight: 1.5 }}>
+              ⏳ {tr("جاري تحميل الأسئلة...")} {tr("إذا استمرت الرسالة أكثر من دقيقة، اطلب من الإدارة إضافة أسئلة.")}
+            </div>;
+          }
+          if (nowMins < 240) {
+            return <div style={{ marginTop: SPACING.sm, ...TYPOGRAPHY.caption, color: COLORS.textSecondary }}>
+              {tr("تحدي الصباح يبدأ في الفجر")}
+            </div>;
+          }
+          if (nowMins > (shiftStart - 30)) {
+            return <div style={{ marginTop: SPACING.sm, ...TYPOGRAPHY.caption, color: COLORS.textSecondary }}>
+              {tr("انتهى وقت التحدي — سجل حضورك")}
+            </div>;
+          }
+          return null;
+        })()}
       </div>
 
       {/* ═══ BOTTOM (unified buttons, uniform height) ═══ */}
@@ -11530,11 +11586,33 @@ function AnnouncementsModal({ announcements, user, onClose, onRead }) {
 
 /* ═══════════ MODALS ═══════════ */
 
-function Toast({ msg, type }) {
+function Toast({ msg, type, onDismiss }) {
   var bg = type === "error" ? C.red : type === "warning" ? C.orange : C.green;
   return (
-    <div className="basma-slidedown" style={{ position: "fixed", top: 16, left: "50%", transform: "translateX(-50%)", zIndex: 999, background: bg, color: "#fff", padding: "10px 24px", borderRadius: 14, fontSize: 13, fontWeight: 700, boxShadow: "0 4px 20px rgba(0,0,0,.25)", fontFamily: "'Tajawal',sans-serif", maxWidth: "90vw", textAlign: "center" }}>
-      {msg}
+    <div className="basma-slidedown" style={{
+      position: "fixed", top: 16, left: "50%",
+      transform: "translateX(-50%)", zIndex: 999,
+      background: bg, color: "#fff",
+      padding: "10px 16px 10px 24px",
+      borderRadius: 14, fontSize: 13, fontWeight: 700,
+      boxShadow: "0 4px 20px rgba(0,0,0,.25)",
+      fontFamily: "'Tajawal',sans-serif",
+      maxWidth: "90vw",
+      display: "flex", alignItems: "center", gap: 10,
+    }}>
+      <span style={{ flex: 1, textAlign: "center" }}>{msg}</span>
+      {onDismiss && (
+        <button onClick={onDismiss} style={{
+          background: "rgba(255,255,255,0.25)",
+          border: "none", borderRadius: "50%",
+          width: 22, height: 22,
+          display: "flex", alignItems: "center", justifyContent: "center",
+          color: "#fff", fontSize: 14, fontWeight: 900,
+          cursor: "pointer", flexShrink: 0,
+          fontFamily: "inherit",
+          lineHeight: 1,
+        }}>×</button>
+      )}
     </div>
   );
 }
