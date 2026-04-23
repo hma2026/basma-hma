@@ -5,7 +5,7 @@ import { exportFormalWarning, exportInvestigationRecord, exportAffidavit, export
 import { t as tr, setLang, getLang, subscribeLangChange } from "./i18n";
 
 const APP = "بصمة HMA";
-const VER = "7.110";
+const VER = "7.112";
 const CO = "هاني محمد عسيري للإستشارات الهندسية";
 const B = { blue: "#2B5EA7", yellow: "#FDD800", red: "#E2192C", black: "#1A1A1A", blueDk: "#1E4478", blueLt: "#EDF3FB", gold: "#D4A017" };
 
@@ -2554,6 +2554,8 @@ function FlashChallengePanel({ t, B, emps }) {
   var [selectedIds, setSelectedIds] = useState([]);
   var [branches, setBranches] = useState([]);
   var [questionBank, setQuestionBank] = useState([]);
+  var [bankSource, setBankSource] = useState("unified"); // v7.111: "unified" | "legacy"
+  var [pickCategory, setPickCategory] = useState("all"); // v7.111: filter for random pick
   var [sending, setSending] = useState(false);
   var [result, setResult] = useState(null);
   // History
@@ -2573,8 +2575,42 @@ function FlashChallengePanel({ t, B, emps }) {
     fetch("/api/data?action=branches").then(function(r){ return r.json(); }).then(function(d){
       setBranches(Array.isArray(d) ? d : []);
     });
+    // v7.111 — Prefer unified question_bank, fall back to legacy settings.questions
+    fetch("/api/data?action=question-bank&activeOnly=1").then(function(r){ return r.json(); }).then(function(bankArr){
+      if (Array.isArray(bankArr) && bankArr.length > 0) {
+        // Convert unified format → legacy format for existing Flash UI
+        var converted = bankArr.map(function(q){
+          return {
+            q: q.text,
+            correct: q.correct,
+            wrong1: (q.wrongs || [])[0] || "",
+            wrong2: (q.wrongs || [])[1] || "",
+            type: q.category || "general",
+            _id: q.id,
+            _difficulty: q.difficulty,
+          };
+        });
+        setQuestionBank(converted);
+        setBankSource("unified");
+      } else {
+        // Fallback to legacy
+        fetch("/api/data?action=settings").then(function(r){ return r.json(); }).then(function(d){
+          if (d && Array.isArray(d.questions)) {
+            setQuestionBank(d.questions);
+            setBankSource("legacy");
+          }
+        });
+      }
+    }).catch(function(){
+      fetch("/api/data?action=settings").then(function(r){ return r.json(); }).then(function(d){
+        if (d && Array.isArray(d.questions)) {
+          setQuestionBank(d.questions);
+          setBankSource("legacy");
+        }
+      });
+    });
+    // Load flash settings separately
     fetch("/api/data?action=settings").then(function(r){ return r.json(); }).then(function(d){
-      if (d && Array.isArray(d.questions)) setQuestionBank(d.questions);
       // v7.96 — Load flash settings
       if (d && d.flashChallenge) {
         setFlashSettings(Object.assign({
@@ -2634,11 +2670,21 @@ function FlashChallengePanel({ t, B, emps }) {
       setResult({ ok: false, msg: tr("بنك الأسئلة فارغ") });
       return;
     }
-    var q = questionBank[Math.floor(Math.random() * questionBank.length)];
+    // v7.111 — Filter by category if selected
+    var pool = questionBank;
+    if (pickCategory !== "all") {
+      pool = questionBank.filter(function(q){ return q.type === pickCategory; });
+      if (pool.length === 0) {
+        setResult({ ok: false, msg: tr("لا توجد أسئلة في هذا التصنيف") });
+        return;
+      }
+    }
+    var q = pool[Math.floor(Math.random() * pool.length)];
     setQText(q.q);
     setCorrect(q.correct);
     setWrong1(q.wrong1);
     setWrong2(q.wrong2);
+    setResult(null);
   }
 
   function toggleEmp(id) {
@@ -2747,15 +2793,47 @@ function FlashChallengePanel({ t, B, emps }) {
         <div style={{ background: t.card, borderRadius: 14, padding: 16, border: "1px solid " + t.sep }}>
 
           {/* Question source */}
-          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>
-            <div style={{ fontSize: 13, fontWeight: 800, color: t.tx }}>📝 {tr("السؤال")}</div>
-            <button onClick={pickFromBank} style={{
-              padding: "5px 12px", borderRadius: 8,
-              background: "#7c3aed15", color: "#7c3aed",
-              border: "1px solid #7c3aed30",
-              fontSize: 10, fontWeight: 700,
-              cursor: "pointer", fontFamily: "inherit",
-            }}>🎲 {tr("اختر عشوائياً من البنك")}</button>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12, flexWrap: "wrap", gap: 8 }}>
+            <div style={{ fontSize: 13, fontWeight: 800, color: t.tx, display: "flex", alignItems: "center", gap: 8 }}>
+              📝 {tr("السؤال")}
+              {/* v7.111 — Bank source indicator */}
+              <span style={{
+                padding: "2px 6px", borderRadius: 6,
+                background: bankSource === "unified" ? "#10b98120" : "#6b728020",
+                color: bankSource === "unified" ? "#10b981" : "#6b7280",
+                fontSize: 9, fontWeight: 700,
+              }}>
+                {bankSource === "unified" ? "📚 " + tr("بنك موحّد") : "📜 " + tr("بنك قديم")}
+                {" · "}{questionBank.length}
+              </span>
+            </div>
+            <div style={{ display: "flex", gap: 6, alignItems: "center", flexWrap: "wrap" }}>
+              {/* v7.111 — Category filter (only for unified bank) */}
+              {bankSource === "unified" && questionBank.length > 0 && (
+                <select value={pickCategory} onChange={function(e){ setPickCategory(e.target.value); }} style={{
+                  padding: "5px 8px", borderRadius: 6,
+                  background: t.inp, color: t.tx,
+                  border: "1px solid " + t.sep,
+                  fontSize: 10, fontFamily: "inherit", cursor: "pointer",
+                }}>
+                  <option value="all">{tr("كل التصنيفات")}</option>
+                  <option value="general">💡 {tr("عام")}</option>
+                  <option value="engineering">⚙️ {tr("هندسي")}</option>
+                  <option value="safety">🛡️ {tr("سلامة")}</option>
+                  <option value="hr">👥 {tr("موارد بشرية")}</option>
+                  <option value="religion">🕌 {tr("ذكر")}</option>
+                  <option value="culture">🎭 {tr("ثقافة عامة")}</option>
+                  <option value="company">🏢 {tr("سياسات المكتب")}</option>
+                </select>
+              )}
+              <button onClick={pickFromBank} style={{
+                padding: "5px 12px", borderRadius: 8,
+                background: "#7c3aed15", color: "#7c3aed",
+                border: "1px solid #7c3aed30",
+                fontSize: 10, fontWeight: 700,
+                cursor: "pointer", fontFamily: "inherit",
+              }}>🎲 {tr("اختر عشوائياً")}</button>
+            </div>
           </div>
 
           <div style={{ marginBottom: 10 }}>
@@ -4621,7 +4699,8 @@ export default function AdminApp() {
       id: "comm",
       label: "التواصل والمحتوى",
       items: [
-        { id: "content_hub", icon: "📣", label: "المحتوى (تعاميم + بنرات + مناسبات + أسئلة)" },
+        { id: "content_hub", icon: "📣", label: "المحتوى (تعاميم + بنرات + مناسبات)" },
+        { id: "challenges_hub", icon: "🎯", label: "التحديات والأسئلة" },
       ],
     },
     {
@@ -5260,6 +5339,7 @@ export default function AdminApp() {
       {tab === "custody_hub" && <CustodyHub t={t} B={B} emps={safeEmps} />}
       {tab === "attendance_hub" && <AttendanceHub t={t} B={B} emps={safeEmps} branches={branches} saveBranches={saveBranches} mapTarget={mapTarget} setMapTarget={setMapTarget} role={role} Fn={Fn} />}
       {tab === "content_hub" && <ContentHub t={t} B={B} emps={safeEmps} branches={branches} events={events} setEvents={setEvents} hrQuestions={hrQuestions} setHrQuestions={setHrQuestions} saveSettings={saveSettings} newQ={newQ} setNewQ={setNewQ} Fn={Fn} Toggle={Toggle} />}
+      {tab === "challenges_hub" && <ChallengesHub t={t} B={B} emps={safeEmps} />}
 
       {/* ═══ REPORTS ═══ */}
       {tab === "reports" && <>
@@ -18803,8 +18883,6 @@ function SettingsHub({ t, B, emps, onLogout, onOpenOldSettings }) {
         { id: "system",        icon: "🛠️", label: tr("إعدادات النظام") },
         { id: "emp_edits",     icon: "✏️", label: tr("تعديلات موظفين") },
         { id: "push",          icon: "🔔", label: tr("إشعارات الجوال") },
-        { id: "flash",         icon: "⚡", label: tr("سؤال تحدي على السريع") },
-        { id: "challenges_stats", icon: "📊", label: tr("إحصائيات التحديات") },
         { id: "salary_sheets", icon: "💰", label: tr("مسيرات الرواتب") },
         { id: "audit",         icon: "📜", label: tr("سجل العمليات") },
         { id: "attach_queue",  icon: "📎", label: tr("مرفقات معلّقة") },
@@ -18822,8 +18900,6 @@ function SettingsHub({ t, B, emps, onLogout, onOpenOldSettings }) {
     {sub === "system" && <SystemSettingsPanel t={t} B={B} />}
     {sub === "emp_edits" && <EmployeeEditsPanel t={t} B={B} actorName="HR" />}
     {sub === "push" && <PushBroadcastPanel t={t} B={B} emps={emps} />}
-    {sub === "flash" && <FlashChallengePanel t={t} B={B} emps={emps} />}
-    {sub === "challenges_stats" && <ChallengesDashboardPanel t={t} B={B} />}
     {sub === "salary_sheets" && <SalarySheetsPanel t={t} B={B} emps={emps} />}
     {sub === "audit" && <AuditLogPanel t={t} B={B} emps={emps} />}
     {/* v7.10 — Pending attachments central queue */}
@@ -19365,6 +19441,264 @@ function QuestionBankPanel({ t, B }) {
   );
 }
 
+/* ═════════════════════════════════════════════════════════════════
+ * v7.112 — ChallengesHub — مركز التحديات الموحّد
+ * ═════════════════════════════════════════════════════════════════
+ * Unifies: Question Bank + Morning Challenge + Flash Challenge + Stats
+ * Replaces 3 scattered locations with a single hub.
+ */
+function ChallengesHub({ t, B, emps }) {
+  var [sub, setSub] = useState("bank");
+  var [stats, setStats] = useState(null);
+
+  // Load quick stats for header
+  useEffect(function(){
+    fetch("/api/data?action=question-bank-stats").then(function(r){ return r.json(); }).then(function(d){
+      if (d.ok) setStats(d);
+    }).catch(function(){});
+  }, []);
+
+  return <div>
+    {/* Hero header */}
+    <div style={{
+      background: "linear-gradient(135deg, #7c3aed 0%, #a855f7 100%)",
+      borderRadius: 14, padding: "20px 24px",
+      color: "#fff", marginBottom: 16,
+    }}>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 12 }}>
+        <div>
+          <div style={{ fontSize: 22, fontWeight: 900 }}>🎯 {tr("التحديات والأسئلة")}</div>
+          <div style={{ fontSize: 12, opacity: 0.9, marginTop: 4 }}>
+            {tr("مركز موحّد — إدارة كل ما يتعلق بالأسئلة والتحديات في مكان واحد")}
+          </div>
+        </div>
+        {stats && (
+          <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+            <div style={{ padding: "8px 12px", background: "rgba(255,255,255,0.15)", borderRadius: 10, textAlign: "center", minWidth: 70 }}>
+              <div style={{ fontSize: 16, fontWeight: 900 }}>{stats.total}</div>
+              <div style={{ fontSize: 9, opacity: 0.85 }}>{tr("سؤال")}</div>
+            </div>
+            <div style={{ padding: "8px 12px", background: "rgba(255,255,255,0.15)", borderRadius: 10, textAlign: "center", minWidth: 70 }}>
+              <div style={{ fontSize: 16, fontWeight: 900 }}>{stats.active}</div>
+              <div style={{ fontSize: 9, opacity: 0.85 }}>{tr("نشط")}</div>
+            </div>
+            <div style={{ padding: "8px 12px", background: "rgba(255,255,255,0.15)", borderRadius: 10, textAlign: "center", minWidth: 70 }}>
+              <div style={{ fontSize: 16, fontWeight: 900 }}>{stats.usage.totalShown}</div>
+              <div style={{ fontSize: 9, opacity: 0.85 }}>{tr("استخدام")}</div>
+            </div>
+          </div>
+        )}
+      </div>
+    </div>
+
+    {/* Sub-tab navigation */}
+    <SubTabBar t={t} B={B} active={sub} onChange={setSub}
+      tabs={[
+        { id: "bank",      icon: "📚", label: tr("البنك") },
+        { id: "morning",   icon: "🌅", label: tr("تحدي الصباح") },
+        { id: "flash",     icon: "⚡", label: tr("على السريع") },
+        { id: "stats",     icon: "📊", label: tr("الإحصائيات") },
+        { id: "settings",  icon: "⚙️", label: tr("الإعدادات") },
+      ]} />
+
+    {/* Panels */}
+    {sub === "bank" && <QuestionBankPanel t={t} B={B} />}
+    {sub === "morning" && <MorningChallengeSettingsPanel t={t} B={B} />}
+    {sub === "flash" && <FlashChallengePanel t={t} B={B} emps={emps} />}
+    {sub === "stats" && <ChallengesDashboardPanel t={t} B={B} />}
+    {sub === "settings" && <ChallengesUnifiedSettingsPanel t={t} B={B} />}
+  </div>;
+}
+
+/* ═════════════════════════════════════════════════════════════════
+ * v7.112 — MorningChallengeSettingsPanel — إعدادات تحدي الصباح
+ * ═════════════════════════════════════════════════════════════════ */
+function MorningChallengeSettingsPanel({ t, B }) {
+  return (
+    <div>
+      {/* Info banner */}
+      <div style={{
+        background: "linear-gradient(135deg, rgba(245,158,11,0.12), rgba(217,119,6,0.03))",
+        border: "1px solid rgba(245,158,11,0.3)",
+        borderRadius: 12, padding: 16, marginBottom: 14,
+      }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 10 }}>
+          <div style={{ fontSize: 28 }}>🌅</div>
+          <div>
+            <div style={{ fontSize: 15, fontWeight: 900, color: "#D97706" }}>{tr("تحدي الصباح")}</div>
+            <div style={{ fontSize: 11, color: t.txM, marginTop: 3 }}>
+              {tr("يظهر تلقائياً للموظف قبل تسجيل الحضور صباحاً")}
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {/* How it works */}
+      <div style={{ background: t.card, borderRadius: 12, padding: 16, marginBottom: 14, border: "1px solid " + t.sep }}>
+        <div style={{ fontSize: 13, fontWeight: 800, color: t.tx, marginBottom: 12 }}>
+          ⏰ {tr("كيف يعمل؟")}
+        </div>
+        <div style={{ fontSize: 12, color: t.tx, lineHeight: 2 }}>
+          • {tr("يظهر من الساعة 4 صباحاً حتى 30 دقيقة قبل بداية الدوام")}<br/>
+          • {tr("مثال: لو دوامك 8 ص → يظهر بين 4:00 و 7:30 ص")}<br/>
+          • {tr("لا يظهر إذا سجّل الموظف حضوره بالفعل")}<br/>
+          • {tr("مرة واحدة في اليوم لكل موظف")}<br/>
+          • <b>{tr("النقاط: +25 نقطة للإجابة الصحيحة")}</b>
+        </div>
+      </div>
+
+      {/* Source */}
+      <div style={{
+        background: "linear-gradient(135deg, rgba(16,185,129,0.1), rgba(5,150,105,0.03))",
+        border: "1px solid rgba(16,185,129,0.3)",
+        borderRadius: 12, padding: 16, marginBottom: 14,
+      }}>
+        <div style={{ fontSize: 13, fontWeight: 800, color: "#10b981", marginBottom: 8 }}>
+          📚 {tr("مصدر الأسئلة")}
+        </div>
+        <div style={{ fontSize: 12, color: t.tx, lineHeight: 1.8 }}>
+          {tr("يُختار السؤال تلقائياً وعشوائياً من")} <b>{tr("بنك الأسئلة")}</b> {tr("(تبويب 📚 البنك)")}
+        </div>
+        <div style={{ fontSize: 11, color: t.txM, marginTop: 8, padding: 10, background: t.bg, borderRadius: 8 }}>
+          💡 {tr("كل سؤال نشط في البنك مُرشَّح للظهور في تحدي الصباح")}
+        </div>
+      </div>
+
+      {/* Quick actions */}
+      <div style={{ background: t.card, borderRadius: 12, padding: 16, border: "1px solid " + t.sep }}>
+        <div style={{ fontSize: 13, fontWeight: 800, color: t.tx, marginBottom: 12 }}>
+          🚀 {tr("إجراءات سريعة")}
+        </div>
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))", gap: 10 }}>
+          <div style={{
+            padding: 14, background: t.bg, borderRadius: 10,
+            border: "1px dashed " + t.sep, textAlign: "center",
+          }}>
+            <div style={{ fontSize: 22, marginBottom: 6 }}>📚</div>
+            <div style={{ fontSize: 11, color: t.tx, fontWeight: 700 }}>{tr("إضافة أسئلة")}</div>
+            <div style={{ fontSize: 9, color: t.txM, marginTop: 4 }}>{tr("في تبويب البنك")}</div>
+          </div>
+          <div style={{
+            padding: 14, background: t.bg, borderRadius: 10,
+            border: "1px dashed " + t.sep, textAlign: "center",
+          }}>
+            <div style={{ fontSize: 22, marginBottom: 6 }}>📊</div>
+            <div style={{ fontSize: 11, color: t.tx, fontWeight: 700 }}>{tr("متابعة الإجابات")}</div>
+            <div style={{ fontSize: 9, color: t.txM, marginTop: 4 }}>{tr("في تبويب الإحصائيات")}</div>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/* ═════════════════════════════════════════════════════════════════
+ * v7.112 — ChallengesUnifiedSettingsPanel — إعدادات موحّدة
+ * ═════════════════════════════════════════════════════════════════ */
+function ChallengesUnifiedSettingsPanel({ t, B }) {
+  var [settings, setSettings] = useState(null);
+  var [saving, setSaving] = useState(false);
+
+  useEffect(function(){
+    fetch("/api/data?action=settings").then(function(r){ return r.json(); }).then(function(d){
+      setSettings(Object.assign({
+        challengePoints: 25,
+        flashChallenge: {
+          requireInWork: true,
+          notifyWho: 'all',
+          timerMode: 'unified',
+        },
+      }, d || {}));
+    });
+  }, []);
+
+  async function save() {
+    if (!settings) return;
+    setSaving(true);
+    try {
+      await fetch("/api/data?action=settings", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(settings),
+      });
+      alert("✅ " + tr("تم الحفظ"));
+    } catch(e) { alert("❌ " + e.message); }
+    setSaving(false);
+  }
+
+  if (!settings) return <div style={{ padding: 40, textAlign: "center", color: t.txM }}>⏳ {tr("جاري التحميل...")}</div>;
+
+  return (
+    <div>
+      {/* Morning Challenge Settings */}
+      <div style={{ background: t.card, borderRadius: 12, padding: 16, marginBottom: 14, border: "1px solid " + t.sep }}>
+        <div style={{ fontSize: 13, fontWeight: 800, color: "#D97706", marginBottom: 12 }}>
+          🌅 {tr("إعدادات تحدي الصباح")}
+        </div>
+        <div style={{ marginBottom: 12 }}>
+          <label style={{ fontSize: 11, fontWeight: 700, color: t.tx, display: "block", marginBottom: 6 }}>
+            {tr("النقاط للإجابة الصحيحة")}
+          </label>
+          <input type="number" min="5" max="100" value={settings.challengePoints || 25} onChange={function(e){
+            setSettings({ ...settings, challengePoints: parseInt(e.target.value) || 25 });
+          }} style={{
+            width: "100%", padding: "10px 12px", borderRadius: 8,
+            border: "1px solid " + t.sep, background: t.inp, color: t.tx,
+            fontSize: 13, fontFamily: "inherit", boxSizing: "border-box",
+          }} />
+        </div>
+      </div>
+
+      {/* Flash Challenge Settings */}
+      <div style={{ background: t.card, borderRadius: 12, padding: 16, marginBottom: 14, border: "1px solid " + t.sep }}>
+        <div style={{ fontSize: 13, fontWeight: 800, color: "#7c3aed", marginBottom: 12 }}>
+          ⚡ {tr("إعدادات تحدي على السريع")}
+        </div>
+
+        <div style={{ marginBottom: 12 }}>
+          <label style={{ fontSize: 11, fontWeight: 700, color: t.tx, display: "block", marginBottom: 6 }}>
+            {tr("من يستقبل الإشعار؟")}
+          </label>
+          <select value={settings.flashChallenge && settings.flashChallenge.notifyWho || 'all'} onChange={function(e){
+            setSettings({ ...settings, flashChallenge: { ...(settings.flashChallenge || {}), notifyWho: e.target.value } });
+          }} style={{
+            width: "100%", padding: "10px 12px", borderRadius: 8,
+            border: "1px solid " + t.sep, background: t.inp, color: t.tx,
+            fontSize: 13, fontFamily: "inherit", cursor: "pointer",
+          }}>
+            <option value="all">{tr("الجميع")}</option>
+            <option value="checked_in">{tr("الذين سجّلوا الحضور فقط")}</option>
+            <option value="in_work">{tr("الموجودون في العمل حالياً")}</option>
+          </select>
+        </div>
+
+        <div style={{ marginBottom: 12 }}>
+          <label style={{ fontSize: 11, fontWeight: 700, color: t.tx, display: "block", marginBottom: 6 }}>
+            {tr("نوع المؤقّت")}
+          </label>
+          <select value={settings.flashChallenge && settings.flashChallenge.timerMode || 'unified'} onChange={function(e){
+            setSettings({ ...settings, flashChallenge: { ...(settings.flashChallenge || {}), timerMode: e.target.value } });
+          }} style={{
+            width: "100%", padding: "10px 12px", borderRadius: 8,
+            border: "1px solid " + t.sep, background: t.inp, color: t.tx,
+            fontSize: 13, fontFamily: "inherit", cursor: "pointer",
+          }}>
+            <option value="unified">{tr("موحّد - ينتهي في نفس الوقت للجميع")}</option>
+            <option value="per_user">{tr("فردي - المؤقّت يبدأ عند فتح السؤال")}</option>
+          </select>
+        </div>
+      </div>
+
+      <button onClick={save} disabled={saving} style={{
+        width: "100%", padding: 14, borderRadius: 10,
+        background: saving ? t.sep : "linear-gradient(135deg, " + B.blue + ", " + B.blueDk + ")",
+        color: "#fff", border: "none", fontSize: 13, fontWeight: 800,
+        cursor: saving ? "wait" : "pointer", fontFamily: "inherit",
+      }}>{saving ? "⏳ " + tr("جاري الحفظ...") : "💾 " + tr("حفظ الإعدادات")}</button>
+    </div>
+  );
+}
+
 /* ContentHub */
 function ContentHub({ t, B, emps, branches, events, setEvents, hrQuestions, setHrQuestions, saveSettings, newQ, setNewQ, Fn, Toggle }) {
   var [sub, setSub] = useState("announcements");
@@ -19374,14 +19708,10 @@ function ContentHub({ t, B, emps, branches, events, setEvents, hrQuestions, setH
         { id: "announcements", icon: "📢", label: "التعاميم" },
         { id: "banners",       icon: "🎨", label: "البنرات" },
         { id: "events",        icon: "🎉", label: "المناسبات" },
-        { id: "question_bank", icon: "📚", label: "بنك الأسئلة" },
-        { id: "questions",     icon: "❓", label: "أسئلة الصباح (قديم)" },
       ]} />
     {sub === "announcements" && <AnnouncementsPanel t={t} B={B} emps={emps} branches={branches} />}
     {sub === "banners" && <BannersPanel t={t} B={B} />}
     {sub === "events" && <EventsPanel events={events} setEvents={setEvents} t={t} B={B} Fn={Fn} Toggle={Toggle} />}
-    {sub === "question_bank" && <QuestionBankPanel t={t} B={B} />}
-    {sub === "questions" && <QuestionsPanel hrQuestions={hrQuestions} setHrQuestions={setHrQuestions} saveSettings={saveSettings} newQ={newQ} setNewQ={setNewQ} t={t} B={B} Fn={Fn} />}
   </div>;
 }
 
@@ -19562,7 +19892,23 @@ function EventsPanel({ events, setEvents, t, B, Fn, Toggle }) {
  * ═════════════════════════════════════════════════════════════════ */
 function QuestionsPanel({ hrQuestions, setHrQuestions, saveSettings, newQ, setNewQ, t, B, Fn }) {
   return <>
-    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 14 }}><span style={{ fontSize: 14, fontWeight: 700 }}>بنك أسئلة تحدي الصباح</span><span style={{ fontSize: 11, color: t.txM }}>{"إجمالي: " + hrQuestions.length + " سؤال"}</span></div>
+    {/* v7.111 — Deprecation notice pointing to unified bank */}
+    <div style={{ padding: 14, background: "linear-gradient(135deg, #F59E0B15, #EAB30808)", border: "2px solid #F59E0B50", borderRadius: 12, marginBottom: 14 }}>
+      <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 8 }}>
+        <div style={{ fontSize: 22 }}>📚</div>
+        <div style={{ flex: 1 }}>
+          <div style={{ fontSize: 13, fontWeight: 900, color: "#D97706" }}>{tr("الانتقال إلى البنك الموحّد الجديد")}</div>
+          <div style={{ fontSize: 11, color: t.tx, marginTop: 3, lineHeight: 1.6 }}>
+            {tr("هذا النظام (قديم) لا يزال يعمل — لكن يُفضَّل نقل الأسئلة إلى البنك الجديد المتطوّر مع التصنيفات والإحصائيات")}
+          </div>
+        </div>
+      </div>
+      <div style={{ fontSize: 10, color: t.txM, padding: "6px 10px", background: t.card, borderRadius: 8, marginTop: 6 }}>
+        💡 {tr("اذهب إلى:")} <b>{tr("المحتوى")}</b> → <b>📚 {tr("بنك الأسئلة")}</b> {tr("واضغط زر النقل")}
+      </div>
+    </div>
+
+    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 14 }}><span style={{ fontSize: 14, fontWeight: 700 }}>بنك أسئلة تحدي الصباح (قديم)</span><span style={{ fontSize: 11, color: t.txM }}>{"إجمالي: " + hrQuestions.length + " سؤال"}</span></div>
     <div style={{ fontSize: 11, color: t.tx, marginBottom: 14, padding: 12, borderRadius: 10, background: "rgba(10,132,255,0.06)", border: "1px solid rgba(10,132,255,0.2)", lineHeight: 1.7 }}>
       <div style={{ fontWeight: 800, marginBottom: 4, color: B.blue }}>ℹ️ كيف يعمل بنك الأسئلة</div>
       التحدي الصباحي يظهر للموظفين <b>فقط</b> من الأسئلة التي تحفظها أنت هنا. لا أسئلة افتراضية — إذا البنك فارغ، لا يظهر تحدي.<br/>

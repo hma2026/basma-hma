@@ -12,7 +12,7 @@ import { t as tr, setLang, getLang, getDir, isRTL, subscribeLangChange } from ".
 
 /* ═══════════ APP CONFIG (إعدادات التطبيق) ═══════════ */
 const APP_CONFIG = {
-  VER: "7.110",
+  VER: "7.112",
   NAME: "بصمة HMA",
   FULL_NAME: "نظام الحضور والانصراف الذكي",
   COMPANY: "هاني محمد عسيري للاستشارات الهندسية",
@@ -1320,30 +1320,57 @@ function MobileAppInner() {
         fetch("/api/data?action=banners").then(function(r){ return r.json(); }).then(function(bnrD){
           if (bnrD && Array.isArray(bnrD.banners)) setBanners(bnrD.banners);
         }),
-        // Admin-managed challenge questions (stored in settings.questions)
-        // v7.95 — Uses React state setChallengeBank (not global var)
-        fetch("/api/data?action=settings").then(function(r){ return r.json(); }).then(function(sd){
-          if (sd && Array.isArray(sd.questions) && sd.questions.length > 0) {
-            CHALLENGES_CACHE = sd.questions;    // keep global for backwards compat
-            setChallengeBank(sd.questions);      // v7.95 — also update React state
-          } else {
-            // v7.91 — Auto-seed if bank is empty
-            fetch("/api/data?action=seed_questions", {
-              method: "POST",
-              headers: { "Content-Type": "application/json" },
-              body: JSON.stringify({ mode: "append" }),
-            }).then(function(r){ return r.json(); }).then(function(seedD){
-              if (seedD.ok) {
-                fetch("/api/data?action=settings").then(function(r){ return r.json(); }).then(function(sd2){
-                  if (sd2 && Array.isArray(sd2.questions)) {
-                    CHALLENGES_CACHE = sd2.questions;
-                    setChallengeBank(sd2.questions);   // v7.95 — update state
-                  }
-                }).catch(function(){});
-              }
-            }).catch(function(){});
+        // Admin-managed challenge questions — v7.111: prefer unified bank
+        // v7.111 — Uses question_bank (v7.109+) first, legacy settings.questions as fallback
+        fetch("/api/data?action=question-bank&activeOnly=1").then(function(r){ return r.json(); }).then(function(bankData){
+          // bank endpoint returns array directly
+          if (Array.isArray(bankData) && bankData.length > 0) {
+            // Convert unified format → legacy format for compatibility
+            var convertedQuestions = bankData.map(function(q){
+              return {
+                q: q.text,
+                correct: q.correct,
+                wrong1: (q.wrongs || [])[0] || "",
+                wrong2: (q.wrongs || [])[1] || "",
+                type: q.category || "general",
+              };
+            });
+            CHALLENGES_CACHE = convertedQuestions;
+            setChallengeBank(convertedQuestions);
+            return;  // don't fall back
           }
-        }).catch(function(){}),
+          // Fallback to legacy settings.questions if bank is empty
+          fetch("/api/data?action=settings").then(function(r){ return r.json(); }).then(function(sd){
+            if (sd && Array.isArray(sd.questions) && sd.questions.length > 0) {
+              CHALLENGES_CACHE = sd.questions;
+              setChallengeBank(sd.questions);
+            } else {
+              // Auto-seed if both are empty (v7.91 legacy behavior)
+              fetch("/api/data?action=seed_questions", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ mode: "append" }),
+              }).then(function(r){ return r.json(); }).then(function(seedD){
+                if (seedD.ok) {
+                  fetch("/api/data?action=settings").then(function(r){ return r.json(); }).then(function(sd2){
+                    if (sd2 && Array.isArray(sd2.questions)) {
+                      CHALLENGES_CACHE = sd2.questions;
+                      setChallengeBank(sd2.questions);
+                    }
+                  }).catch(function(){});
+                }
+              }).catch(function(){});
+            }
+          }).catch(function(){});
+        }).catch(function(){
+          // If bank endpoint fails, fall back to legacy
+          fetch("/api/data?action=settings").then(function(r){ return r.json(); }).then(function(sd){
+            if (sd && Array.isArray(sd.questions) && sd.questions.length > 0) {
+              CHALLENGES_CACHE = sd.questions;
+              setChallengeBank(sd.questions);
+            }
+          }).catch(function(){});
+        }),
         // Field projects (only if field/mixed)
         (emp.type === "field" || emp.type === "mixed") ? api("projects").then(function(ps){
           if (Array.isArray(ps)) setFieldProjects(ps);
