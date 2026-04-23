@@ -4745,6 +4745,81 @@ export default async function handler(req, res) {
        *   POST /api/data?action=recognition-award              — Admin adds reward
        *   GET  /api/data?action=recognition-awards&empId=X     — Employee rewards log
        */
+
+      /* ═══════════════════════════════════════════════════════════
+       * v7.124 — HR Permissions (صلاحيات مدير الموارد البشرية)
+       *
+       * لوحة تحكم لـ المدير العام يستطيع من خلالها تمكين/تعطيل صلاحيات
+       * إدارية محددة لـ HR. الصلاحيات النظامية مقفلة دائماً (لا تُعرض هنا).
+       *
+       * Endpoints:
+       *   GET  /api/data?action=hr-permissions
+       *   PUT  /api/data?action=hr-permissions   (body: { permissions: {...}, actorName })
+       * ═══════════════════════════════════════════════════════════ */
+      case 'hr-permissions': {
+        var permKey = 'hr_permissions_config';
+
+        // الصلاحيات الافتراضية (كلها مفعّلة لـ HR)
+        var DEFAULT_HR_PERMISSIONS = {
+          manage_employees:     true,   // إدارة بيانات الموظفين
+          approve_leaves:       true,   // الموافقة على الإجازات
+          handle_requests:      true,   // رسائل + طلبات + إفادات
+          apply_violations:     true,   // تطبيق المخالفات والجزاءات
+          terminate_employees:  true,   // إنهاء خدمة الموظفين
+          delete_employees:     true,   // حذف الموظفين نهائياً
+          modify_salaries:      true,   // تعديل الرواتب
+          run_evaluations:      true,   // التقييمات والتكريم
+          manage_content:       true,   // التعاميم + البنرات + المناسبات + الاستطلاعات
+          manage_challenges:    true,   // التحديات والأسئلة
+          send_push:            true,   // إرسال إشعارات push
+          manage_attendance:    true,   // الحضور + الفروع + أنواع الدوام
+          manage_custody:       true,   // العُهَد والأصول
+          generate_reports:     true,   // إصدار التقارير
+          manage_tasks:         true,   // المهام الإدارية (تواصل)
+          manage_company_settings: true, // العطل + الامتيازات + حساب المدير
+        };
+
+        if (req.method === 'GET') {
+          var config = await dbGet(permKey);
+          if (!config) {
+            // أول مرة → احفظ الافتراضي
+            config = { permissions: DEFAULT_HR_PERMISSIONS, updatedAt: new Date().toISOString(), updatedBy: 'system' };
+            await dbSet(permKey, config);
+          }
+          // دمج مع الافتراضي (لضمان عدم ظهور أي صلاحية ناقصة)
+          var merged = Object.assign({}, DEFAULT_HR_PERMISSIONS, config.permissions || {});
+          return res.json({
+            ok: true,
+            permissions: merged,
+            updatedAt: config.updatedAt,
+            updatedBy: config.updatedBy || 'system',
+          });
+        }
+
+        if (req.method === 'PUT') {
+          var body = req.body || {};
+          if (!body.permissions || typeof body.permissions !== 'object') {
+            return res.status(400).json({ error: 'permissions (object) مطلوب' });
+          }
+          // أخذ المفاتيح المعروفة فقط (حماية من injection)
+          var safePerms = {};
+          Object.keys(DEFAULT_HR_PERMISSIONS).forEach(function(k){
+            safePerms[k] = !!body.permissions[k];
+          });
+          var current = await dbGet(permKey) || {};
+          var newConfig = {
+            permissions: safePerms,
+            updatedAt: new Date().toISOString(),
+            updatedBy: body.actorName || body.actorId || 'admin',
+            previousPermissions: current.permissions || {},
+          };
+          await dbSet(permKey, newConfig);
+          return res.json({ ok: true, permissions: safePerms, updatedAt: newConfig.updatedAt });
+        }
+
+        return res.status(405).json({ error: 'Method not allowed' });
+      }
+
       case 'recognition': {
         if (req.method !== 'GET') return res.status(405).json({ error: 'GET required' });
 

@@ -5,7 +5,7 @@ import { exportFormalWarning, exportInvestigationRecord, exportAffidavit, export
 import { t as tr, setLang, getLang, subscribeLangChange } from "./i18n";
 
 const APP = "بصمة HMA";
-const VER = "7.122";
+const VER = "7.124";
 const CO = "هاني محمد عسيري للإستشارات الهندسية";
 const B = { blue: "#2B5EA7", yellow: "#FDD800", red: "#E2192C", black: "#1A1A1A", blueDk: "#1E4478", blueLt: "#EDF3FB", gold: "#D4A017" };
 
@@ -152,6 +152,66 @@ function adminRipple(originalOnClick) {
     }, 650);
     if (originalOnClick) originalOnClick(e);
   };
+}
+
+/* ═════════════════════════════════════════════════════════════════
+ * v7.124 — HR Permissions Model (الصلاحيات الإدارية لمدير الموارد البشرية)
+ *
+ * التصميم الصحيح (بعد مراجعة v7.123):
+ * - HR يحصل على صلاحيات إدارية واسعة افتراضياً (يشمل المخالفات، الحذف،
+ *   إنهاء الخدمة، تعديل الراتب) — لأن هذه وظيفته الأصيلة.
+ * - المدير العام يستطيع تعطيل صلاحيات معينة لـ HR (من HRPermissionsPanel).
+ * - صلاحيات النظام (كوادر، تخزين، سجل، صيانة) مقفلة دائماً — لا يُمنحها HR.
+ *
+ * الـ cache: يُحمَّل من /api/data?action=hr-permissions في بداية التطبيق
+ * ويبقى في state ثم يُمرَّر للمكوّنات.
+ * ═════════════════════════════════════════════════════════════════ */
+
+// الصلاحيات الإدارية الافتراضية (كلها مفعّلة مبدئياً)
+var DEFAULT_HR_PERMISSIONS = {
+  manage_employees:        true,
+  approve_leaves:          true,
+  handle_requests:         true,
+  apply_violations:        true,
+  terminate_employees:     true,
+  delete_employees:        true,
+  modify_salaries:         true,
+  run_evaluations:         true,
+  manage_content:          true,
+  manage_challenges:       true,
+  send_push:               true,
+  manage_attendance:       true,
+  manage_custody:          true,
+  generate_reports:        true,
+  manage_tasks:            true,
+  manage_company_settings: true,
+};
+
+// الصلاحيات النظامية — مقفلة دائماً لـ HR (لا تظهر في لوحة التحكم)
+var SYSTEM_ONLY_PERMISSIONS = [
+  "system_integration",    // كوادر + APIs
+  "system_storage",        // التخزين والنسخ
+  "system_audit",          // سجل العمليات
+  "system_maintenance",    // تنظيف + بصمات + مرفقات
+  "system_advanced",       // الإعدادات المتقدمة
+  "manage_hr_permissions", // إدارة صلاحيات HR نفسها
+];
+
+/**
+ * hrCan — فحص صلاحية HR
+ * @param {string} role "manager" (مدير عام) | "hr" (مدير موارد بشرية)
+ * @param {string} permission اسم الصلاحية (من DEFAULT_HR_PERMISSIONS أو SYSTEM_ONLY_PERMISSIONS)
+ * @param {object} hrPerms حالة الصلاحيات المحمّلة من الخادم (اختياري)
+ * @returns {boolean}
+ */
+function hrCan(role, permission, hrPerms) {
+  // المدير العام → كل شيء مسموح
+  if (role !== "hr") return true;
+  // صلاحية نظامية → ممنوعة دائماً لـ HR
+  if (SYSTEM_ONLY_PERMISSIONS.indexOf(permission) !== -1) return false;
+  // صلاحية إدارية → افحص القائمة المحفوظة
+  var perms = hrPerms || DEFAULT_HR_PERMISSIONS;
+  return !!perms[permission];
 }
 
 /* ═════════════════════════════════════════════════════════════════
@@ -5061,7 +5121,10 @@ export default function AdminApp() {
     // Auto-login if admin email was saved (from previous session) — survives F5
     return !!localStorage.getItem("basma_admin_email");
   });
-  const [role, setRole] = useState("manager");
+  // v7.122 — نحفظ الدور أيضاً حتى يستمر بعد إعادة التشغيل
+  const [role, setRole] = useState(function(){
+    return localStorage.getItem("basma_admin_role") || "manager";
+  });
   const [tab, _setTabRaw] = useState("dashboard");
   // v7.82 — language state for AdminApp (mirrors MobileApp pattern)
   const [lang, setLangState] = useState(function(){ return getLang(); });
@@ -5204,6 +5267,21 @@ export default function AdminApp() {
     var interval = setInterval(loadBadges, 30000);
     return function() { clearInterval(interval); };
   }, []);
+
+  // v7.124 — تحميل صلاحيات HR (تُحدّث كل 60 ثانية)
+  const [hrPerms, setHrPerms] = useState(DEFAULT_HR_PERMISSIONS);
+  useEffect(function(){
+    async function loadHrPerms() {
+      try {
+        var r = await fetch("/api/data?action=hr-permissions");
+        var d = await r.json();
+        if (d.ok && d.permissions) setHrPerms(d.permissions);
+      } catch(e) {}
+    }
+    loadHrPerms();
+    var i = setInterval(loadHrPerms, 60000);
+    return function(){ clearInterval(i); };
+  }, []);
   const [emailLists, setEmailLists] = useState([
     { id: 1, name: "الموارد البشرية", email: "hr@hma.engineer", color: B.blue },
     { id: 2, name: "الشؤون القانونية", email: "legal@hma.engineer", color: t.bad },
@@ -5308,7 +5386,11 @@ export default function AdminApp() {
   var approveLeave = async function(id) { await api('leaves', 'PUT', { id, status: 'approved' }); var lvs = await api('leaves'); if (Array.isArray(lvs)) setLeaves(lvs); };
   var rejectLeave = async function(id) { await api('leaves', 'PUT', { id, status: 'rejected' }); var lvs = await api('leaves'); if (Array.isArray(lvs)) setLeaves(lvs); };
 
-  if (!loggedIn) return <Login onLogin={r => { setRole(r); setLoggedIn(true); }} />;
+  if (!loggedIn) return <Login onLogin={r => {
+    setRole(r);
+    setLoggedIn(true);
+    try { localStorage.setItem("basma_admin_role", r); } catch(e) {}
+  }} />;
   if (loading) return <div style={{ minHeight: "100vh", background: t.bg, display: "flex", alignItems: "center", justifyContent: "center", fontFamily: Fn, direction: "rtl" }}><div style={{ textAlign: "center" }}><div style={{ width: 32, height: 32, border: "3px solid " + t.sep, borderTopColor: B.blue, borderRadius: "50%", animation: "spin .8s linear infinite", margin: "0 auto" }} /><div style={{ fontSize: 13, color: t.txM, marginTop: 12 }}>جارِ تحميل البيانات...</div></div><style>{"@keyframes spin{to{transform:rotate(360deg)}}"}</style></div>;
 
   var formatReport = function(r, label) {
@@ -5362,9 +5444,23 @@ export default function AdminApp() {
   });
 
   // ═══════════════════════════════════════════════════════════
-  // v7.122 — إعادة هيكلة كاملة: 6 مجموعات منطقية بدلاً من 5 مع ازدحام
-  // دراسة UX شاملة لإزالة التكرار وتجميع الوظائف المتشابهة
+  // v7.124 — إعادة هيكلة كاملة مع صلاحيات HR ديناميكية
+  //
+  // المنطق:
+  // - المدير العام: يرى كل العناصر
+  // - HR: يرى فقط العناصر المسموحة له (حسب hrPerms)
+  // - الصلاحيات النظامية (إعدادات متقدمة، سجل، تخزين): مخفية تماماً لـ HR
   // ═══════════════════════════════════════════════════════════
+  var isHRRole = role === "hr";
+
+  // Helper: إرجاع العنصر فقط إذا كانت الصلاحية مفعّلة لـ HR
+  // (المدير العام دائماً يرى كل شيء)
+  function gate(item, permissionKey) {
+    if (!isHRRole) return item;                           // مدير عام → دائماً
+    if (!hrPerms[permissionKey]) return null;             // HR لكن الصلاحية مُعطّلة
+    return item;
+  }
+
   const sideGroups = [
     {
       id: "main",
@@ -5377,48 +5473,51 @@ export default function AdminApp() {
       id: "people",
       label: "شؤون الموظفين",
       items: [
-        { id: "employees", icon: "👥", label: "الموظفون" },
-        { id: "leaves_hub", icon: "🏖️", label: "الإجازات", badge: pending },
-        { id: "requests_hub", icon: "📝", label: "طلبات الموظفين", badge: (badgeCounts.requests || 0) + (badgeCounts.tickets || 0) || null },
-        { id: "performance_hub", icon: "⭐", label: "التقييم والتكريم" },
-        { id: "discipline_hub", icon: "⚖️", label: "النظام التأديبي", badge: (badgeCounts.complaints || 0) + (badgeCounts.investigations || 0) + (badgeCounts.violations || 0) + (badgeCounts.appeals || 0) || null },
-        { id: "termination", icon: "🚪", label: "إنهاء الخدمات" },
-      ],
+        gate({ id: "employees", icon: "👥", label: "الموظفون" }, "manage_employees"),
+        gate({ id: "leaves_hub", icon: "🏖️", label: "الإجازات", badge: pending }, "approve_leaves"),
+        gate({ id: "requests_hub", icon: "📝", label: "طلبات الموظفين", badge: (badgeCounts.requests || 0) + (badgeCounts.tickets || 0) || null }, "handle_requests"),
+        gate({ id: "performance_hub", icon: "⭐", label: "التقييم والتكريم" }, "run_evaluations"),
+        gate({ id: "discipline_hub", icon: "⚖️", label: "النظام التأديبي", badge: (badgeCounts.complaints || 0) + (badgeCounts.investigations || 0) + (badgeCounts.violations || 0) + (badgeCounts.appeals || 0) || null }, "apply_violations"),
+        gate({ id: "termination", icon: "🚪", label: "إنهاء الخدمات" }, "terminate_employees"),
+      ].filter(Boolean),
     },
     {
       id: "finance",
       label: "الرواتب والمالية",
       items: [
-        { id: "payroll_hub", icon: "💰", label: "الرواتب والمالية 🔒" },
-      ],
+        gate({ id: "payroll_hub", icon: "💰", label: "الرواتب والمالية 🔒" }, "modify_salaries"),
+      ].filter(Boolean),
     },
     {
       id: "ops",
       label: "العمليات اليومية",
       items: [
-        { id: "attendance_hub", icon: "⏰", label: "الحضور والتنظيم" },
-        { id: "tawasul", icon: "🤝", label: "المهام الإدارية" },
-        { id: "custody_hub", icon: "📦", label: "العُهَد والأصول" },
-        { id: "reports", icon: "📄", label: "التقارير" },
-      ],
+        gate({ id: "attendance_hub", icon: "⏰", label: "الحضور والتنظيم" }, "manage_attendance"),
+        gate({ id: "tawasul", icon: "🤝", label: "المهام الإدارية" }, "manage_tasks"),
+        gate({ id: "custody_hub", icon: "📦", label: "العُهَد والأصول" }, "manage_custody"),
+        gate({ id: "reports", icon: "📄", label: "التقارير" }, "generate_reports"),
+      ].filter(Boolean),
     },
     {
       id: "comm",
       label: "التواصل والتفاعل",
       items: [
-        { id: "content_hub", icon: "📣", label: "المحتوى" },
-        { id: "challenges_hub", icon: "🎯", label: "التحديات والأسئلة" },
-        { id: "push", icon: "🔔", label: "إشعارات الجوال" },
-      ],
+        gate({ id: "content_hub", icon: "📣", label: "المحتوى" }, "manage_content"),
+        gate({ id: "challenges_hub", icon: "🎯", label: "التحديات والأسئلة" }, "manage_challenges"),
+        gate({ id: "push", icon: "🔔", label: "إشعارات الجوال" }, "send_push"),
+      ].filter(Boolean),
     },
     {
       id: "config",
       label: "النظام",
       items: [
-        { id: "settings_hub", icon: "⚙️", label: "إعدادات النظام" },
-      ],
+        // v7.124 — صلاحيات HR (للمدير العام فقط)
+        !isHRRole && { id: "hr_permissions", icon: "🔐", label: "صلاحيات HR" },
+        { id: "settings_hub", icon: "⚙️", label: isHRRole ? "إعدادات الشركة" : "إعدادات النظام" },
+      ].filter(Boolean),
     },
-  ];
+  // فلترة المجموعات الفارغة (في حال HR لا يملك أي صلاحية من المجموعة)
+  ].filter(function(g){ return g.items && g.items.length > 0; });
 
   // Flatten for internal compatibility
   const sideItems = sideGroups.reduce(function(acc, g){ return acc.concat(g.items); }, []);
@@ -5550,6 +5649,7 @@ export default function AdminApp() {
             }}
             onLogout={function(){
               localStorage.removeItem("basma_admin_email");
+              localStorage.removeItem("basma_admin_role");
               localStorage.removeItem("basma_last_mode");
               setLoggedIn(false);
             }}
@@ -6255,13 +6355,13 @@ export default function AdminApp() {
           • laiha, complaints, investigations, violations_v2, appeals → داخل DisciplineHub */}
 
       {/* ═══ v6.93 — DISCIPLINE HUB (موحّد: لائحة + شكاوى + تحقيقات + مخالفات + تظلمات) ═══ */}
-      {tab === "discipline_hub" && <DisciplineHub t={t} B={B} emps={emps} badgeCounts={badgeCounts} />}
+      {tab === "discipline_hub" && <DisciplineHub t={t} B={B} emps={emps} badgeCounts={badgeCounts} role={role} />}
 
       {/* ═══ v6.93 — LEAVES HUB (موحّد: طلبات+تسليم + أرصدة + سجل قديم) ═══ */}
       {tab === "leaves_hub" && <LeavesHub t={t} B={B} emps={safeEmps} leaves={leaves} role={role} approve={approve} reject={reject} />}
 
       {/* ═══ v6.93 — SETTINGS HUB (موحّد: 7 تابات فرعية) ═══ */}
-      {tab === "settings_hub" && <SettingsHub t={t} B={B} emps={safeEmps} onLogout={function(){ localStorage.removeItem("basma_admin_email"); localStorage.removeItem("basma_last_mode"); setLoggedIn(false); }} onOpenOldSettings={function(k){ setTab("settings"); }} />}
+      {tab === "settings_hub" && <SettingsHub t={t} B={B} emps={safeEmps} userRole={role} onLogout={function(){ localStorage.removeItem("basma_admin_email"); localStorage.removeItem("basma_admin_role"); localStorage.removeItem("basma_last_mode"); setLoggedIn(false); }} onOpenOldSettings={function(k){ setTab("settings"); }} />}
 
       {/* ═══ SETTINGS ═══ */}
       {tab === "settings" && <>
@@ -6476,6 +6576,9 @@ export default function AdminApp() {
       {tab === "payroll_hub" && <PayrollHub t={t} B={B} emps={safeEmps} role={role} />}
       {tab === "requests_hub" && <RequestsHub t={t} B={B} emps={safeEmps} />}
       {tab === "performance_hub" && <PerformanceHub t={t} B={B} emps={safeEmps} />}
+
+      {/* v7.124 — HR Permissions Panel (للمدير العام فقط) */}
+      {tab === "hr_permissions" && <HRPermissionsPanel t={t} B={B} />}
 
       {/* v7.122 — Fallback لـ tabs قديمة قد تُستدعى مباشرة */}
       {tab === "emp_edits" && <EmployeeEditsPanel t={t} B={B} actorName="HR" />}
@@ -20149,7 +20252,7 @@ function LeavesHub({ t, B, emps, leaves, role, approve, reject }) {
 }
 
 /* ────── DisciplineHub — النظام التأديبي (5 تابات) ────── */
-function DisciplineHub({ t, B, emps, badgeCounts }) {
+function DisciplineHub({ t, B, emps, badgeCounts, role }) {
   var [sub, setSub] = useState("laiha");
   badgeCounts = badgeCounts || {};
   return <div>
@@ -20176,7 +20279,10 @@ function DisciplineHub({ t, B, emps, badgeCounts }) {
 }
 
 /* ────── SettingsHub — v7.122: 4 أقسام مُنظمة (بدلاً من 16 تاب متراص) ────── */
-function SettingsHub({ t, B, emps, onLogout, onOpenOldSettings }) {
+function SettingsHub({ t, B, emps, onLogout, onOpenOldSettings, userRole }) {
+  // v7.122 — قيود HR: يرى فقط قسم "الشركة"
+  var isHRRole = userRole === "hr";
+
   // v7.122 — القسم الرئيسي + الـ sub-tab داخله
   var initialSection = "company";
   var initialSub = null;
@@ -20196,15 +20302,23 @@ function SettingsHub({ t, B, emps, onLogout, onOpenOldSettings }) {
     }
   } catch(e) {}
 
+  // v7.122 — HR لا يملك صلاحية أقسام النظام — يبقى على "الشركة" دائماً
+  if (isHRRole && initialSection !== "company") {
+    initialSection = "company";
+    initialSub = "holidays";
+  }
+
   var [section, setSection] = useState(initialSection);
 
   // 4 أقسام رئيسية مع أيقونات ملوّنة
-  var SECTIONS = [
+  var ALL_SECTIONS = [
     { id: "company", icon: "🏢", label: tr("الشركة"), color: "#2B5EA7", desc: tr("البيانات الأساسية للشركة") },
     { id: "integration", icon: "🔗", label: tr("التكامل"), color: "#7C3AED", desc: tr("كوادر والتخزين والإعدادات المتقدمة") },
     { id: "monitoring", icon: "📊", label: tr("المراقبة"), color: "#10B981", desc: tr("سجل العمليات وفحص النظام") },
     { id: "maintenance", icon: "🧹", label: tr("الصيانة"), color: "#F59E0B", desc: tr("تنظيف البيانات والمرفقات") },
   ];
+  // HR يرى فقط قسم "الشركة"
+  var SECTIONS = isHRRole ? ALL_SECTIONS.filter(function(s){ return s.id === "company"; }) : ALL_SECTIONS;
 
   // Sub-tabs لكل قسم
   var SUB_TABS = {
@@ -20345,6 +20459,430 @@ function SettingsHub({ t, B, emps, onLogout, onOpenOldSettings }) {
     {section === "maintenance" && sub === "attachments" && <AttachmentTypesManager t={t} B={B} />}
   </div>;
 }
+
+
+/* ═══════════════════════════════════════════════════════════════════
+ * v7.124 — HRPermissionsPanel — صلاحيات مدير الموارد البشرية
+ *
+ * للمدير العام فقط: تحكّم دقيق في الصلاحيات الإدارية لـ HR
+ * كل صلاحية = toggle مستقل، يُحفظ فوراً في DB
+ *
+ * الصلاحيات النظامية تُعرض للمعلومة فقط (مقفلة دائماً)
+ * ═══════════════════════════════════════════════════════════════════ */
+function HRPermissionsPanel({ t, B }) {
+  var [perms, setPerms] = useState(null);       // object of booleans
+  var [loading, setLoading] = useState(true);
+  var [saving, setSaving] = useState(false);
+  var [lastUpdate, setLastUpdate] = useState(null);
+  var [dirty, setDirty] = useState(false);
+
+  async function load() {
+    setLoading(true);
+    try {
+      var r = await fetch("/api/data?action=hr-permissions");
+      var d = await r.json();
+      if (d.ok) {
+        setPerms(d.permissions || {});
+        setLastUpdate({ at: d.updatedAt, by: d.updatedBy });
+      }
+    } catch(e) {}
+    setLoading(false);
+  }
+  useEffect(function(){ load(); }, []);
+
+  function toggle(key) {
+    setPerms(function(prev){
+      var next = Object.assign({}, prev);
+      next[key] = !next[key];
+      return next;
+    });
+    setDirty(true);
+  }
+
+  async function save() {
+    if (!perms) return;
+    setSaving(true);
+    try {
+      var r = await fetch("/api/data?action=hr-permissions", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          permissions: perms,
+          actorName: "المدير العام",
+        }),
+      });
+      var d = await r.json();
+      if (d.ok) {
+        setLastUpdate({ at: d.updatedAt, by: "المدير العام" });
+        setDirty(false);
+        alert("✅ تم الحفظ بنجاح");
+      } else {
+        alert("فشل الحفظ: " + (d.error || "خطأ"));
+      }
+    } catch(e) { alert("خطأ: " + e.message); }
+    setSaving(false);
+  }
+
+  // قائمة الصلاحيات الإدارية مُنظَّمة في مجموعات
+  var ADMIN_GROUPS = [
+    {
+      id: "employees",
+      label: tr("إدارة الموظفين"),
+      icon: "👥",
+      color: "#2B5EA7",
+      perms: [
+        { key: "manage_employees",    icon: "👥", label: tr("إضافة/تعديل بيانات الموظفين"),    desc: tr("الحضور ⇢ الإضافة والتعديل اليومي") },
+        { key: "delete_employees",    icon: "🗑️", label: tr("حذف الموظفين نهائياً"),           desc: tr("إزالة موظف من قاعدة البيانات") },
+        { key: "terminate_employees", icon: "🚪", label: tr("إنهاء خدمات الموظفين"),           desc: tr("تسجيل إنهاء عقد موظف") },
+      ],
+    },
+    {
+      id: "discipline",
+      label: tr("الموافقات والجزاءات"),
+      icon: "⚖️",
+      color: "#dc2626",
+      perms: [
+        { key: "approve_leaves",   icon: "🏖️", label: tr("الموافقة على الإجازات"),        desc: tr("قبول/رفض طلبات الإجازات") },
+        { key: "handle_requests",  icon: "📝", label: tr("التعامل مع الطلبات والرسائل"),   desc: tr("الطلبات + رسائل HR + الإفادات") },
+        { key: "apply_violations", icon: "⚖️", label: tr("تطبيق المخالفات والجزاءات"),     desc: tr("تسجيل مخالفة رسمية حسب اللائحة") },
+      ],
+    },
+    {
+      id: "finance",
+      label: tr("الشؤون المالية"),
+      icon: "💰",
+      color: "#F59E0B",
+      perms: [
+        { key: "modify_salaries", icon: "💰", label: tr("تعديل الرواتب"), desc: tr("رفع/تخفيض الراتب + إدارة المسيرات") },
+      ],
+    },
+    {
+      id: "content",
+      label: tr("المحتوى والتفاعل"),
+      icon: "📣",
+      color: "#8b5cf6",
+      perms: [
+        { key: "manage_content",    icon: "📣", label: tr("المحتوى (تعاميم + بنرات + استطلاعات)"), desc: tr("إنشاء ونشر المحتوى للموظفين") },
+        { key: "manage_challenges", icon: "🎯", label: tr("التحديات والأسئلة"),                    desc: tr("إدارة تحديات الصباح وبنك الأسئلة") },
+        { key: "send_push",         icon: "🔔", label: tr("إرسال إشعارات Push"),                  desc: tr("بث إشعارات للموظفين") },
+      ],
+    },
+    {
+      id: "evaluations",
+      label: tr("التقييم والأداء"),
+      icon: "⭐",
+      color: "#10b981",
+      perms: [
+        { key: "run_evaluations", icon: "⭐", label: tr("التقييمات والتكريم"), desc: tr("إجراء تقييم الأداء + موظف الشهر") },
+      ],
+    },
+    {
+      id: "operations",
+      label: tr("العمليات اليومية"),
+      icon: "📊",
+      color: "#0891b2",
+      perms: [
+        { key: "manage_attendance", icon: "⏰", label: tr("الحضور والتنظيم"),                   desc: tr("متابعة الحضور + الفروع + أنواع الدوام") },
+        { key: "manage_custody",    icon: "📦", label: tr("العُهَد والأصول"),                    desc: tr("استلام وتسليم العُهَد") },
+        { key: "manage_tasks",      icon: "🤝", label: tr("المهام الإدارية (تواصل)"),            desc: tr("تخصيص ومتابعة المهام الإدارية") },
+        { key: "generate_reports",  icon: "📄", label: tr("إصدار التقارير"),                    desc: tr("تقارير PDF شاملة") },
+      ],
+    },
+    {
+      id: "company",
+      label: tr("إعدادات الشركة"),
+      icon: "🏢",
+      color: "#64748b",
+      perms: [
+        { key: "manage_company_settings", icon: "🏢", label: tr("العطل الرسمية والامتيازات"), desc: tr("إدارة العطل + الامتيازات + حساب المدير") },
+      ],
+    },
+  ];
+
+  // قائمة الصلاحيات النظامية (للعرض فقط — مقفلة)
+  var SYSTEM_PERMISSIONS = [
+    { icon: "🔗", label: tr("إعدادات التكامل (كوادر، APIs)") },
+    { icon: "💾", label: tr("التخزين والنسخ الاحتياطي") },
+    { icon: "📜", label: tr("سجل العمليات (Audit Log)") },
+    { icon: "🔍", label: tr("فحص النظام + اختبار APIs") },
+    { icon: "🧹", label: tr("تنظيف البيانات") },
+    { icon: "📸", label: tr("بصمات الوجه") },
+    { icon: "📎", label: tr("أنواع المرفقات ومعالجتها") },
+    { icon: "⚙️", label: tr("الإعدادات المتقدمة للنظام") },
+    { icon: "🔐", label: tr("إدارة صلاحيات HR (هذه الصفحة)") },
+  ];
+
+  if (loading) {
+    return <div style={{ padding: 40, textAlign: "center", color: t.txM }}>جارِ التحميل...</div>;
+  }
+
+  // حساب عدد الصلاحيات المفعّلة
+  var totalAdmin = ADMIN_GROUPS.reduce(function(sum, g){ return sum + g.perms.length; }, 0);
+  var activeCount = perms ? ADMIN_GROUPS.reduce(function(sum, g){
+    return sum + g.perms.filter(function(p){ return perms[p.key]; }).length;
+  }, 0) : 0;
+
+  return <div style={{ maxWidth: "100%", overflowX: "hidden" }}>
+    <PanelHeader
+      t={t} B={B}
+      icon="🔐"
+      title={tr("صلاحيات مدير الموارد البشرية")}
+      subtitle={tr("تحكّم في ما يستطيع HR فعله في النظام")}
+      gradient={"linear-gradient(135deg, #2B5EA7, #1E4478)"}
+    />
+
+    {/* شريط معلومات + زر الحفظ */}
+    <div style={{
+      background: t.card,
+      borderRadius: ADMIN.radius.lg,
+      padding: ADMIN.space.md,
+      marginBottom: ADMIN.space.md,
+      border: "1px solid " + t.sep,
+      display: "flex",
+      alignItems: "center",
+      gap: ADMIN.space.md,
+      flexWrap: "wrap",
+    }}>
+      <div style={{
+        background: "linear-gradient(135deg, #10b981, #047857)",
+        borderRadius: ADMIN.radius.md,
+        padding: "10px 16px",
+        color: "#fff",
+        fontSize: ADMIN.font.xs,
+        fontWeight: ADMIN.weight.bold,
+      }}>
+        ✓ {tr("مفعّل")}: <b style={{ fontSize: ADMIN.font.lg, marginInlineStart: 4 }}>{activeCount}</b> / {totalAdmin}
+      </div>
+      {lastUpdate && lastUpdate.at && (
+        <div style={{ fontSize: ADMIN.font.tiny, color: t.txM }}>
+          {tr("آخر تعديل")}: {new Date(lastUpdate.at).toLocaleString("ar-SA")} {lastUpdate.by ? "· " + lastUpdate.by : ""}
+        </div>
+      )}
+      {dirty && (
+        <button onClick={save} disabled={saving}
+          style={{
+            marginInlineStart: "auto",
+            padding: "10px 20px",
+            borderRadius: ADMIN.radius.md,
+            background: saving ? "#94a3b8" : "linear-gradient(135deg, " + B.blue + ", " + B.blueDk + ")",
+            color: "#fff",
+            border: "none",
+            fontSize: ADMIN.font.sm,
+            fontWeight: ADMIN.weight.black,
+            cursor: saving ? "not-allowed" : "pointer",
+            fontFamily: "inherit",
+            boxShadow: "0 2px 8px rgba(43,94,167,0.3)",
+          }}>
+          {saving ? "⏳ جارِ الحفظ..." : "💾 حفظ التغييرات"}
+        </button>
+      )}
+    </div>
+
+    {/* معلومة توضيحية */}
+    <div style={{
+      padding: "12px 14px",
+      background: "#eff6ff",
+      border: "1px solid #bfdbfe",
+      borderRight: "4px solid #3b82f6",
+      borderRadius: 10,
+      marginBottom: ADMIN.space.md,
+      fontSize: 12,
+      color: "#1e40af",
+      lineHeight: 1.7,
+      display: "flex",
+      alignItems: "flex-start",
+      gap: 10,
+    }}>
+      <div style={{ fontSize: 18 }}>💡</div>
+      <div>
+        <b>{tr("كيف تعمل الصلاحيات؟")}</b><br/>
+        {tr("الصلاحيات الإدارية أدناه يمكنك تشغيلها/إيقافها لـ HR. الصلاحيات النظامية مقفلة دائماً (للمدير العام حصرياً).")}
+      </div>
+    </div>
+
+    {/* ═══ الصلاحيات الإدارية (قابلة للتخصيص) ═══ */}
+    <div style={{
+      background: "linear-gradient(135deg, #ecfdf5, #f0fdf4)",
+      border: "2px solid #10b981",
+      borderRadius: ADMIN.radius.lg,
+      padding: ADMIN.space.lg,
+      marginBottom: ADMIN.space.md,
+    }}>
+      <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: ADMIN.space.md }}>
+        <div style={{
+          width: 44, height: 44, borderRadius: 12,
+          background: "linear-gradient(135deg, #10b981, #047857)",
+          color: "#fff",
+          display: "flex", alignItems: "center", justifyContent: "center",
+          fontSize: 22,
+        }}>📋</div>
+        <div style={{ flex: 1 }}>
+          <div style={{ fontSize: ADMIN.font.lg, fontWeight: ADMIN.weight.black, color: "#047857" }}>
+            {tr("الصلاحيات الإدارية")}
+          </div>
+          <div style={{ fontSize: ADMIN.font.tiny, color: "#059669" }}>
+            {tr("قابلة للتخصيص — فعّل/عطّل ما تشاء لـ HR")}
+          </div>
+        </div>
+      </div>
+
+      {/* مجموعات الصلاحيات */}
+      <div style={{ display: "flex", flexDirection: "column", gap: ADMIN.space.sm }}>
+        {ADMIN_GROUPS.map(function(group){
+          return <div key={group.id} style={{
+            background: "#fff",
+            borderRadius: ADMIN.radius.md,
+            border: "1px solid " + t.sep,
+            borderRight: "3px solid " + group.color,
+            padding: ADMIN.space.md,
+          }}>
+            {/* عنوان المجموعة */}
+            <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: ADMIN.space.sm }}>
+              <span style={{ fontSize: 18 }}>{group.icon}</span>
+              <span style={{ fontSize: ADMIN.font.md, fontWeight: ADMIN.weight.black, color: group.color }}>
+                {group.label}
+              </span>
+            </div>
+
+            {/* toggle-rows */}
+            {group.perms.map(function(p){
+              var isOn = !!(perms && perms[p.key]);
+              return <div key={p.key} style={{
+                display: "flex",
+                alignItems: "center",
+                gap: 10,
+                padding: "10px 8px",
+                borderTop: "1px solid #f1f5f9",
+              }}>
+                <div style={{ fontSize: 18, width: 28, textAlign: "center", opacity: isOn ? 1 : 0.4 }}>{p.icon}</div>
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div style={{
+                    fontSize: ADMIN.font.sm,
+                    fontWeight: ADMIN.weight.bold,
+                    color: isOn ? t.tx : t.txM,
+                  }}>
+                    {p.label}
+                  </div>
+                  <div style={{ fontSize: ADMIN.font.tiny, color: t.txM, marginTop: 1 }}>
+                    {p.desc}
+                  </div>
+                </div>
+                {/* Toggle Switch */}
+                <button
+                  onClick={function(){ toggle(p.key); }}
+                  aria-label={p.label}
+                  style={{
+                    position: "relative",
+                    width: 48,
+                    height: 26,
+                    borderRadius: 13,
+                    background: isOn ? group.color : "#cbd5e1",
+                    border: "none",
+                    cursor: "pointer",
+                    flexShrink: 0,
+                    transition: "background 0.2s",
+                    padding: 0,
+                    boxShadow: isOn ? "0 2px 6px " + group.color + "40, inset 0 1px 2px rgba(0,0,0,0.1)" : "inset 0 1px 2px rgba(0,0,0,0.1)",
+                  }}>
+                  <div style={{
+                    position: "absolute",
+                    top: 3,
+                    [isOn ? "left" : "right"]: 3,
+                    width: 20,
+                    height: 20,
+                    borderRadius: "50%",
+                    background: "#fff",
+                    boxShadow: "0 1px 3px rgba(0,0,0,0.2)",
+                    transition: "all 0.2s",
+                  }} />
+                </button>
+              </div>;
+            })}
+          </div>;
+        })}
+      </div>
+    </div>
+
+    {/* ═══ الصلاحيات النظامية (مقفلة — للعرض فقط) ═══ */}
+    <div style={{
+      background: "linear-gradient(135deg, #fef2f2, #fef2f2)",
+      border: "2px solid #fecaca",
+      borderRadius: ADMIN.radius.lg,
+      padding: ADMIN.space.lg,
+    }}>
+      <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: ADMIN.space.md }}>
+        <div style={{
+          width: 44, height: 44, borderRadius: 12,
+          background: "linear-gradient(135deg, #dc2626, #991b1b)",
+          color: "#fff",
+          display: "flex", alignItems: "center", justifyContent: "center",
+          fontSize: 22,
+        }}>⚙️</div>
+        <div style={{ flex: 1 }}>
+          <div style={{ fontSize: ADMIN.font.lg, fontWeight: ADMIN.weight.black, color: "#991b1b" }}>
+            {tr("الصلاحيات النظامية")}
+          </div>
+          <div style={{ fontSize: ADMIN.font.tiny, color: "#dc2626" }}>
+            🔒 {tr("مقفلة دائماً — للمدير العام حصرياً، لا يمكن منحها لـ HR")}
+          </div>
+        </div>
+      </div>
+
+      <div style={{
+        background: "#fff",
+        borderRadius: ADMIN.radius.md,
+        border: "1px solid #fecaca",
+        padding: ADMIN.space.md,
+        display: "flex",
+        flexDirection: "column",
+        gap: 2,
+      }}>
+        {SYSTEM_PERMISSIONS.map(function(p, i){
+          return <div key={i} style={{
+            display: "flex",
+            alignItems: "center",
+            gap: 10,
+            padding: "8px 6px",
+            borderTop: i > 0 ? "1px solid #fef2f2" : "none",
+            opacity: 0.65,
+          }}>
+            <div style={{ fontSize: 16, width: 26, textAlign: "center" }}>{p.icon}</div>
+            <div style={{ flex: 1, fontSize: ADMIN.font.xs, fontWeight: ADMIN.weight.medium, color: "#64748b" }}>
+              {p.label}
+            </div>
+            <div style={{
+              width: 48,
+              height: 26,
+              borderRadius: 13,
+              background: "#fca5a5",
+              position: "relative",
+              flexShrink: 0,
+              opacity: 0.6,
+            }}>
+              <div style={{
+                position: "absolute",
+                top: 3,
+                right: 3,
+                width: 20,
+                height: 20,
+                borderRadius: "50%",
+                background: "#fff",
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                fontSize: 10,
+              }}>🔒</div>
+            </div>
+          </div>;
+        })}
+      </div>
+    </div>
+
+    {/* فاصل أسفل */}
+    <div style={{ height: 60 }} />
+  </div>;
+}
+
 
 /* ═══════════════════════════════════════════════════════════════════
  * v7.122 — 3 Unified Hubs جديدة (إعادة هيكلة كاملة)

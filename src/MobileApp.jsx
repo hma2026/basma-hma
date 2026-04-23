@@ -12,7 +12,7 @@ import { t as tr, setLang, getLang, getDir, isRTL, subscribeLangChange } from ".
 
 /* ═══════════ APP CONFIG (إعدادات التطبيق) ═══════════ */
 const APP_CONFIG = {
-  VER: "7.122",
+  VER: "7.124",
   NAME: "بصمة HMA",
   FULL_NAME: "نظام الحضور والانصراف الذكي",
   COMPANY: "هاني محمد عسيري للاستشارات الهندسية",
@@ -15050,6 +15050,24 @@ function NotificationsInlineView({ user }) {
     return <EmptyState text="جارِ التحميل..." />;
   }
 
+  // v7.123 — state للـ modal (نافذة منبثقة لقراءة الإشعار كاملاً)
+  var [openModal, setOpenModal] = useState(null);
+
+  // v7.123 — فتح المودال + تأشير كمقروء
+  function openNotification(n) {
+    setOpenModal(n);
+    // تأشير كمقروء
+    if (n && n.id && !n.read) {
+      setNotifications(function(prev){
+        return prev.map(function(x){
+          if (x.id === n.id) return Object.assign({}, x, { read: true });
+          return x;
+        });
+      });
+      api("notifications", { method: "PUT", body: { id: n.id, read: true, empId: user.id } }).catch(function(){});
+    }
+  }
+
   // v7.121 — فصل الإشعارات: مرئية (ليست في قائمة الإخفاء) + مؤرشفة (مخفيّة)
   var visibleList = notifications.filter(function(n){ return !hiddenIds[n.id]; });
   var archivedList = notifications.filter(function(n){ return hiddenIds[n.id]; });
@@ -15091,114 +15109,323 @@ function NotificationsInlineView({ user }) {
         )}
       </div>
 
-      {/* Notifications list — v7.121 — نقطة ذهبية/خضراء للإخفاء + توسيع */}
-      <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+      {/* Notifications list — v7.123 — نقر يفتح Modal + زر إخفاء منفصل واضح */}
+      <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
         {shown.map(function(n){
           var nid = n.id || ("idx_" + Math.random());
-          var isExpanded = !!expandedIds[nid];
           var hasLongBody = n.body && n.body.length > 80;
           return (
             <div key={nid}
-              onClick={function(){ if (n.id) toggleExpand(n.id); }}
+              onClick={function(){ if (n.id) openNotification(n); }}
               style={{
-                display: "flex", gap: 10, padding: 10,
+                display: "flex", gap: 10, padding: 12,
                 background: n.read ? COLORS.bgSecondary : "rgba(201,168,76,0.08)",
                 border: "1px solid " + (n.read ? COLORS.cardBorder : COLORS.goldLight + "50"),
-                borderRadius: 10,
-                cursor: n.id ? "pointer" : "default",
+                borderRadius: 12,
+                cursor: "pointer",
                 transition: "all 0.2s",
                 WebkitTapHighlightColor: "transparent",
                 position: "relative",
               }}>
-              <div style={{ fontSize: 18, width: 28, textAlign: "center", flexShrink: 0 }}>
+              {/* أيقونة النوع */}
+              <div style={{
+                fontSize: 22,
+                width: 40, height: 40,
+                display: "flex", alignItems: "center", justifyContent: "center",
+                background: n.read ? COLORS.bgPrimary : "rgba(201,168,76,0.15)",
+                borderRadius: 10,
+                flexShrink: 0,
+              }}>
                 {typeIcons[n.type] || "📌"}
               </div>
+
+              {/* محتوى الإشعار */}
               <div style={{ flex: 1, minWidth: 0 }}>
-                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 6, marginBottom: 3 }}>
-                  <div style={{ fontSize: 12, fontWeight: 800, color: n.read ? COLORS.textSecondary : COLORS.textPrimary, flex: 1, minWidth: 0, paddingInlineEnd: 22 }}>
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 6, marginBottom: 4 }}>
+                  <div style={{
+                    fontSize: 13,
+                    fontWeight: 800,
+                    color: n.read ? COLORS.textSecondary : COLORS.textPrimary,
+                    flex: 1,
+                    minWidth: 0,
+                    lineHeight: 1.3,
+                  }}>
                     {n.title || "إشعار"}
                   </div>
-                  {/* v7.121 — النقطة الذهبية في الزاوية: اضغط لإخفاء الإشعار (ينتقل للأرشيف) */}
-                  <button
-                    onClick={function(e){ hideNotification(n.id, e); }}
-                    aria-label="إخفاء الإشعار"
-                    title="اضغط لإخفاء الإشعار"
-                    style={{
-                      position: "absolute",
-                      top: 10,
-                      insetInlineStart: 10,
-                      width: 22,
-                      height: 22,
+                  {/* نقطة غير مقروء */}
+                  {!n.read && (
+                    <div style={{
+                      width: 8, height: 8,
                       borderRadius: "50%",
-                      border: "1.5px solid " + COLORS.goldLight,
-                      background: !n.read ? COLORS.goldLight : "transparent",
-                      cursor: "pointer",
-                      display: "flex",
-                      alignItems: "center",
-                      justifyContent: "center",
-                      padding: 0,
-                      boxShadow: !n.read ? "0 0 8px " + COLORS.goldLight + "80" : "none",
-                      WebkitTapHighlightColor: "transparent",
+                      background: COLORS.goldLight,
                       flexShrink: 0,
-                    }}>
-                    <span style={{
-                      width: 10,
-                      height: 10,
-                      borderRadius: "50%",
-                      background: !n.read ? "#fff" : COLORS.goldLight,
-                      display: "block",
+                      marginTop: 5,
+                      boxShadow: "0 0 6px " + COLORS.goldLight + "80",
                     }} />
-                  </button>
+                  )}
                 </div>
                 {n.body && (
                   <div style={{
-                    fontSize: 10.5,
+                    fontSize: 11,
                     color: COLORS.textMuted,
                     lineHeight: 1.5,
-                    whiteSpace: isExpanded ? "pre-wrap" : "normal",
-                    display: isExpanded ? "block" : "-webkit-box",
-                    WebkitLineClamp: isExpanded ? "none" : 2,
+                    display: "-webkit-box",
+                    WebkitLineClamp: 2,
                     WebkitBoxOrient: "vertical",
-                    overflow: isExpanded ? "visible" : "hidden",
+                    overflow: "hidden",
                     wordBreak: "break-word",
+                    marginBottom: hasLongBody ? 6 : 0,
                   }}>{n.body}</div>
                 )}
+                {/* أسفل: وقت + تلميح للقراءة + زر إخفاء */}
                 <div style={{
                   display: "flex",
                   justifyContent: "space-between",
                   alignItems: "center",
                   marginTop: 6,
                   gap: 8,
-                  flexWrap: "wrap",
                 }}>
-                  <div style={{ fontSize: 9, color: COLORS.goldLight, fontFamily: TYPOGRAPHY.fontTajawal }}>
+                  <div style={{ fontSize: 10, color: COLORS.goldLight, fontFamily: TYPOGRAPHY.fontTajawal, opacity: 0.85 }}>
                     {n.createdAt ? new Date(n.createdAt).toLocaleString("ar-SA") : ""}
                   </div>
-                  {/* زر التوسيع/الطي — يظهر فقط إذا كان النص طويلاً */}
-                  {hasLongBody && (
-                    <button
-                      onClick={function(e){ e.stopPropagation(); if (n.id) toggleExpand(n.id); }}
-                      style={{
-                        padding: "3px 12px",
-                        borderRadius: 12,
-                        background: "rgba(201,168,76,0.15)",
-                        border: "1px solid " + COLORS.goldLight + "60",
+                  <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
+                    {hasLongBody && (
+                      <span style={{
+                        fontSize: 10,
                         color: COLORS.goldLight,
+                        fontWeight: 800,
+                        opacity: 0.9,
+                      }}>
+                        👁 اضغط للقراءة
+                      </span>
+                    )}
+                    {/* v7.123 — زر إخفاء منفصل واضح (لا يفتح المودال) */}
+                    <button
+                      onClick={function(e){ hideNotification(n.id, e); }}
+                      aria-label="إخفاء الإشعار"
+                      title="إخفاء من القائمة → الأرشيف"
+                      style={{
+                        padding: "5px 12px",
+                        borderRadius: 14,
+                        background: "rgba(100,116,139,0.12)",
+                        border: "1px solid " + COLORS.cardBorder,
+                        color: COLORS.textSecondary,
                         fontSize: 10,
                         fontWeight: 800,
                         cursor: "pointer",
                         fontFamily: TYPOGRAPHY.fontTajawal,
                         WebkitTapHighlightColor: "transparent",
+                        display: "flex",
+                        alignItems: "center",
+                        gap: 4,
                       }}>
-                      {isExpanded ? "▲ طي" : "▼ عرض الكل"}
+                      <span>🗄️</span>
+                      <span>إخفاء</span>
                     </button>
-                  )}
+                  </div>
                 </div>
               </div>
             </div>
           );
         })}
       </div>
+
+      {/* ═══ v7.123 — Modal (نافذة منبثقة لقراءة الإشعار كاملاً) ═══ */}
+      {openModal && (
+        <div
+          onClick={function(){ setOpenModal(null); }}
+          style={{
+            position: "fixed",
+            inset: 0,
+            background: "rgba(0,0,0,0.72)",
+            backdropFilter: "blur(4px)",
+            WebkitBackdropFilter: "blur(4px)",
+            zIndex: 9500,
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            padding: 16,
+          }}>
+          <div
+            onClick={function(e){ e.stopPropagation(); }}
+            style={{
+              background: COLORS.bg1,
+              borderRadius: 20,
+              maxWidth: 480,
+              width: "100%",
+              maxHeight: "85vh",
+              overflowY: "auto",
+              border: "1px solid " + COLORS.metallicBorder,
+              boxShadow: "0 20px 50px rgba(0,0,0,0.4), 0 0 30px rgba(201,168,76,0.15)",
+            }}>
+            {/* Header */}
+            <div style={{
+              padding: "18px 20px",
+              borderBottom: "1px solid " + COLORS.cardBorder,
+              display: "flex",
+              alignItems: "center",
+              gap: 12,
+              position: "sticky",
+              top: 0,
+              background: COLORS.bg1,
+              zIndex: 2,
+            }}>
+              <div style={{
+                width: 46,
+                height: 46,
+                borderRadius: 12,
+                background: "rgba(201,168,76,0.15)",
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                fontSize: 24,
+                flexShrink: 0,
+              }}>
+                {typeIcons[openModal.type] || "📌"}
+              </div>
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <div style={{
+                  fontSize: 14,
+                  fontWeight: 900,
+                  color: COLORS.textPrimary,
+                  lineHeight: 1.4,
+                  marginBottom: 2,
+                }}>
+                  {openModal.title || "إشعار"}
+                </div>
+                <div style={{
+                  fontSize: 10,
+                  color: COLORS.goldLight,
+                  fontFamily: TYPOGRAPHY.fontTajawal,
+                  opacity: 0.9,
+                }}>
+                  {openModal.createdAt ? new Date(openModal.createdAt).toLocaleString("ar-SA", {
+                    year: "numeric", month: "long", day: "numeric",
+                    hour: "2-digit", minute: "2-digit",
+                  }) : ""}
+                </div>
+              </div>
+              <button
+                onClick={function(){ setOpenModal(null); }}
+                aria-label="إغلاق"
+                style={{
+                  width: 36,
+                  height: 36,
+                  borderRadius: "50%",
+                  background: "rgba(100,116,139,0.15)",
+                  border: "1px solid " + COLORS.cardBorder,
+                  color: COLORS.textSecondary,
+                  fontSize: 20,
+                  fontWeight: 700,
+                  cursor: "pointer",
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  fontFamily: "inherit",
+                  lineHeight: 1,
+                  flexShrink: 0,
+                }}>✕</button>
+            </div>
+
+            {/* Body — النص الكامل */}
+            <div style={{ padding: "20px" }}>
+              {openModal.body ? (
+                <div style={{
+                  fontSize: 14,
+                  color: COLORS.textPrimary,
+                  lineHeight: 1.9,
+                  whiteSpace: "pre-wrap",
+                  wordBreak: "break-word",
+                  fontFamily: TYPOGRAPHY.fontTajawal,
+                }}>{openModal.body}</div>
+              ) : (
+                <div style={{
+                  fontSize: 12,
+                  color: COLORS.textMuted,
+                  textAlign: "center",
+                  padding: 20,
+                  fontStyle: "italic",
+                }}>لا يوجد محتوى إضافي</div>
+              )}
+
+              {/* بيانات إضافية إذا كانت موجودة */}
+              {openModal.meta && Object.keys(openModal.meta).length > 0 && (
+                <div style={{
+                  marginTop: 16,
+                  padding: 12,
+                  background: COLORS.bgSecondary,
+                  borderRadius: 10,
+                  border: "1px solid " + COLORS.cardBorder,
+                }}>
+                  <div style={{ fontSize: 10, fontWeight: 800, color: COLORS.goldLight, marginBottom: 6 }}>
+                    تفاصيل إضافية:
+                  </div>
+                  {Object.keys(openModal.meta).map(function(k){
+                    return <div key={k} style={{ fontSize: 11, color: COLORS.textMuted, padding: "2px 0" }}>
+                      <b>{k}:</b> {String(openModal.meta[k])}
+                    </div>;
+                  })}
+                </div>
+              )}
+            </div>
+
+            {/* Footer — أزرار الإجراءات */}
+            <div style={{
+              padding: "14px 20px",
+              borderTop: "1px solid " + COLORS.cardBorder,
+              display: "flex",
+              gap: 10,
+              position: "sticky",
+              bottom: 0,
+              background: COLORS.bg1,
+            }}>
+              <button
+                onClick={function(){
+                  hideNotification(openModal.id);
+                  setOpenModal(null);
+                }}
+                style={{
+                  flex: 1,
+                  padding: "11px 14px",
+                  borderRadius: 12,
+                  background: "rgba(100,116,139,0.15)",
+                  border: "1px solid " + COLORS.cardBorder,
+                  color: COLORS.textSecondary,
+                  fontSize: 12,
+                  fontWeight: 800,
+                  cursor: "pointer",
+                  fontFamily: TYPOGRAPHY.fontTajawal,
+                  WebkitTapHighlightColor: "transparent",
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  gap: 6,
+                }}>
+                <span>🗄️</span>
+                <span>إخفاء للأرشيف</span>
+              </button>
+              <button
+                onClick={function(){ setOpenModal(null); }}
+                style={{
+                  flex: 1,
+                  padding: "11px 14px",
+                  borderRadius: 12,
+                  background: "linear-gradient(135deg, " + COLORS.goldLight + ", " + COLORS.gold + ")",
+                  border: "none",
+                  color: "#1a1a1a",
+                  fontSize: 12,
+                  fontWeight: 900,
+                  cursor: "pointer",
+                  fontFamily: TYPOGRAPHY.fontTajawal,
+                  WebkitTapHighlightColor: "transparent",
+                  boxShadow: "0 4px 12px rgba(201,168,76,0.3)",
+                }}>
+                ✓ حسناً
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Show more button - adds 5 each click */}
       {hasMore && (
@@ -15263,14 +15490,18 @@ function NotificationsInlineView({ user }) {
               {archivedList.map(function(n){
                 var nid = n.id || ("arc_" + Math.random());
                 return (
-                  <div key={nid} style={{
-                    display: "flex", gap: 10, padding: 10,
-                    background: COLORS.bgSecondary,
-                    border: "1px dashed " + COLORS.cardBorder,
-                    borderRadius: 10,
-                    opacity: 0.85,
-                    position: "relative",
-                  }}>
+                  <div key={nid}
+                    onClick={function(){ if (n.id) openNotification(n); }}
+                    style={{
+                      display: "flex", gap: 10, padding: 10,
+                      background: COLORS.bgSecondary,
+                      border: "1px dashed " + COLORS.cardBorder,
+                      borderRadius: 10,
+                      opacity: 0.85,
+                      position: "relative",
+                      cursor: "pointer",
+                      WebkitTapHighlightColor: "transparent",
+                    }}>
                     <div style={{ fontSize: 16, width: 28, textAlign: "center", flexShrink: 0, opacity: 0.7 }}>
                       {typeIcons[n.type] || "📌"}
                     </div>
