@@ -742,6 +742,70 @@ function shuffle(arr) {
   return a;
 }
 
+/* ═══════════════════════════════════════════════════════════════
+ * v7.97 — Work Days Calculator (respects holidays + weekends)
+ * ═══════════════════════════════════════════════════════════════
+ * Returns: { workDays, weekendDays, holidayDays, totalDays, dates: { workDays: [...], holidays: [...] } }
+ *
+ * Usage:
+ *   var result = await calculateWorkDays('2026-04-01', '2026-04-30');
+ *   // result.workDays = 22 (excludes weekends + holidays)
+ */
+async function calculateWorkDays(startDate, endDate) {
+  var holidaysData = (await dbGet('holidays')) || { weekendDays: [5, 6], list: [] };
+  var weekendDays = holidaysData.weekendDays || [5, 6];
+  var holidaysList = holidaysData.list || [];
+
+  var start = new Date(startDate);
+  var end = new Date(endDate);
+  var workDays = 0;
+  var weekendCount = 0;
+  var holidayCount = 0;
+  var workDaysList = [];
+  var holidayDaysList = [];
+
+  for (var d = new Date(start); d <= end; d.setDate(d.getDate() + 1)) {
+    var dateStr = d.toISOString().slice(0, 10);
+    var mmDd = dateStr.slice(5);
+    var dow = d.getDay();
+
+    // Check weekend
+    if (weekendDays.indexOf(dow) >= 0) {
+      weekendCount++;
+      continue;
+    }
+
+    // Check holiday
+    var isHoliday = holidaysList.some(function(h){
+      if (!h.date) return false;
+      if (h.date === dateStr) return true;
+      if (h.recurring && h.date.slice(5) === mmDd) return true;
+      if (h.endDate && dateStr >= h.date && dateStr <= h.endDate) return true;
+      return false;
+    });
+
+    if (isHoliday) {
+      holidayCount++;
+      holidayDaysList.push(dateStr);
+      continue;
+    }
+
+    workDays++;
+    workDaysList.push(dateStr);
+  }
+
+  return {
+    workDays: workDays,
+    weekendDays: weekendCount,
+    holidayDays: holidayCount,
+    totalDays: workDays + weekendCount + holidayCount,
+    dates: {
+      workDays: workDaysList,
+      holidays: holidayDaysList,
+    },
+  };
+}
+
 export default async function handler(req, res) {
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Access-Control-Allow-Methods', 'GET,POST,PUT,DELETE,OPTIONS');
@@ -6201,6 +6265,32 @@ export default async function handler(req, res) {
         return res.json({ ok: true, isHoliday: false });
       }
 
+      /* ═══════════════════════════════════════════════════════════════
+       * v7.97 — Work Days Calculator Endpoint
+       * ═══════════════════════════════════════════════════════════════
+       * GET /api/data?action=work-days&from=YYYY-MM-DD&to=YYYY-MM-DD
+       *   يحسب عدد أيام العمل الفعلية بين تاريخين
+       *   (يستبعد نهاية الأسبوع والعطل الرسمية من holidays)
+       */
+      case 'work-days': {
+        if (req.method !== 'GET') return res.status(405).json({ error: 'GET required' });
+        var fromD = req.query.from;
+        var toD = req.query.to;
+        if (!fromD || !toD) return res.status(400).json({ error: 'from + to required (YYYY-MM-DD)' });
+
+        try {
+          var result = await calculateWorkDays(fromD, toD);
+          return res.json({
+            ok: true,
+            from: fromD,
+            to: toD,
+            ...result,
+          });
+        } catch(e) {
+          return res.status(400).json({ error: 'invalid dates: ' + e.message });
+        }
+      }
+
       /* ═══ WEB PUSH — generate VAPID keys (ONE-TIME SETUP) ═══ */
       case 'vapid-generate': {
         try {
@@ -9567,6 +9657,404 @@ export default async function handler(req, res) {
         return res.json({ ok: true, items: items });
       }
 
+      /* ═══════════════════════════════════════════════════════════════
+       * v7.99 — Kadwar Two-way Sync
+       * ═══════════════════════════════════════════════════════════════
+       * Push pending Basma-side changes back to Kadwar in batch.
+       * Unlike sync-kadwar (which PULLS from Kadwar), this PUSHES.
+       *
+       * POST /api/data?action=kadwar-push-all
+       * Body: { empIds?: [...], types?: ["violations", "payroll", "termination"] }
+       *       If empty, pushes everything pending.
+       *
+       * Response: {
+       *   ok, summary: {
+       *     violations: { total, sent, failed },
+       *     payroll: { total, sent, failed },
+       *     terminations: { total, sent, failed }
+       *   }
+       * }
+       */
+      case 'kadwar-push-all': {
+        if (req.method !== 'POST') return res.status(405).json({ error: 'POST required' });
+        var bodyKP = req.body || {};
+        var filterIds = Array.isArray(bodyKP.empIds) && bodyKP.empIds.length > 0 ? bodyKP.empIds.map(String) : null;
+        var types = Array.isArray(bodyKP.types) && bodyKP.types.length > 0 ? bodyKP.types : ['violations', 'payroll', 'termination'];
+        var actorKP = bodyKP.actorId || 'admin';
+
+        var summary = {
+          violations: { total: 0, sent: 0, failed: 0 },
+          payroll: { total: 0, sent: 0, failed: 0 },
+          terminations: { total: 0, sent: 0, failed: 0 },
+        };
+
+        // 1) Push violations (status: open + not yet synced)
+        if (types.indexOf('violations') >= 0) {
+          var violsKP = (await dbGet('violations_v2')) || [];
+          var pendingViolsKP = violsKP.filter(function(v){
+            if (v.kadwarSynced) return false;  // already synced
+            if (filterIds && filterIds.indexOf(String(v.empId)) < 0) return false;
+            return true;
+          });
+          summary.violations.total = pendingViolsKP.length;
+
+          for (var vi = 0; vi < pendingViolsKP.length; vi++) {
+            var vKP = pendingViolsKP[vi];
+            try {
+              var pushV = await safeKadwarPush('receive-violation', {
+                violation_basma_id: vKP.id,
+                employee_id: vKP.empId,
+                type: vKP.type,
+                desc: vKP.desc,
+                penalty: vKP.penalty,
+                date: vKP.date,
+                ref: vKP.ref,
+              });
+              if (pushV.ok) {
+                vKP.kadwarSynced = true;
+                vKP.kadwarSyncedAt = new Date().toISOString();
+                summary.violations.sent++;
+              } else {
+                summary.violations.failed++;
+              }
+            } catch(e) {
+              summary.violations.failed++;
+            }
+          }
+          if (summary.violations.sent > 0) {
+            await dbSet('violations_v2', violsKP);
+          }
+        }
+
+        // 2) Push payroll slips
+        if (types.indexOf('payroll') >= 0) {
+          var slipsKP = (await dbGet('payroll_slips')) || [];
+          var pendingSlipsKP = slipsKP.filter(function(s){
+            if (s.kadwarSynced) return false;
+            if (filterIds && filterIds.indexOf(String(s.empId)) < 0) return false;
+            return true;
+          });
+          summary.payroll.total = pendingSlipsKP.length;
+
+          for (var si = 0; si < pendingSlipsKP.length; si++) {
+            var sKP = pendingSlipsKP[si];
+            try {
+              var pushS = await safeKadwarPush('receive-payroll-slip', {
+                slip_basma_id: sKP.id,
+                employee_id: sKP.empId,
+                period: sKP.period,
+                gross: sKP.gross,
+                deductions: sKP.deductions,
+                net: sKP.net,
+                details: sKP,
+              });
+              if (pushS.ok) {
+                sKP.kadwarSynced = true;
+                sKP.kadwarSyncedAt = new Date().toISOString();
+                summary.payroll.sent++;
+              } else {
+                summary.payroll.failed++;
+              }
+            } catch(e) {
+              summary.payroll.failed++;
+            }
+          }
+          if (summary.payroll.sent > 0) {
+            await dbSet('payroll_slips', slipsKP);
+          }
+        }
+
+        // 3) Push terminations
+        if (types.indexOf('termination') >= 0) {
+          var termsKP = (await dbGet('terminations')) || [];
+          var pendingTermsKP = termsKP.filter(function(t){
+            if (t.kadwarSynced) return false;
+            if (filterIds && filterIds.indexOf(String(t.empId)) < 0) return false;
+            return true;
+          });
+          summary.terminations.total = pendingTermsKP.length;
+
+          for (var ti = 0; ti < pendingTermsKP.length; ti++) {
+            var tKP = pendingTermsKP[ti];
+            try {
+              var pushT = await safeKadwarPush('receive-termination', {
+                termination_basma_id: tKP.id,
+                employee_id: tKP.empId,
+                reason: tKP.reason,
+                date: tKP.date,
+                details: tKP,
+              });
+              if (pushT.ok) {
+                tKP.kadwarSynced = true;
+                tKP.kadwarSyncedAt = new Date().toISOString();
+                summary.terminations.sent++;
+              } else {
+                summary.terminations.failed++;
+              }
+            } catch(e) {
+              summary.terminations.failed++;
+            }
+          }
+          if (summary.terminations.sent > 0) {
+            await dbSet('terminations', termsKP);
+          }
+        }
+
+        // Audit log
+        await auditLog(actorKP, 'kadwar_push_all', null, {
+          types: types,
+          empFilter: filterIds,
+          summary: summary,
+        }, 'admin');
+
+        var totalSent = summary.violations.sent + summary.payroll.sent + summary.terminations.sent;
+        var totalFailed = summary.violations.failed + summary.payroll.failed + summary.terminations.failed;
+        var totalPending = summary.violations.total + summary.payroll.total + summary.terminations.total;
+
+        return res.json({
+          ok: true,
+          summary: summary,
+          totals: {
+            pending: totalPending,
+            sent: totalSent,
+            failed: totalFailed,
+          },
+        });
+      }
+
+      /* ═══════════════════════════════════════════════════════════════
+       * v7.99 — Get pending Kadwar push count (for dashboard badge)
+       * GET /api/data?action=kadwar-pending-count
+       */
+      /* ═══════════════════════════════════════════════════════════════
+       * v7.100 E — LEADERBOARD (top employees by points)
+       * ═══════════════════════════════════════════════════════════════
+       * GET /api/data?action=leaderboard&limit=10&branch=X&period=all|month
+       * Returns: { ok, period, rankings: [{ rank, empId, name, points, streak, ...}], myRank }
+       */
+      case 'leaderboard': {
+        if (req.method !== 'GET') return res.status(405).json({ error: 'GET required' });
+        var limitLB = parseInt(req.query.limit || '10', 10);
+        var branchLB = req.query.branch || null;
+        var periodLB = req.query.period || 'all';
+        var myEmpId = req.query.empId || null;
+
+        var empsLB = (await dbGet('employees')) || [];
+        var filtered = empsLB.filter(function(e){
+          if (e.active === false) return false;
+          if (e.terminated) return false;
+          if (branchLB && e.branch !== branchLB && e.branchId !== branchLB) return false;
+          return true;
+        });
+
+        // Map to ranking entries
+        var rankings = filtered.map(function(e){
+          return {
+            empId: e.id,
+            name: e.name || '—',
+            points: e.points || 0,
+            streak: e.streak || 0,
+            branch: e.branch || '',
+            jobTitle: e.jobTitle || e.role || '',
+            tier: e.tier || 1,
+            level: e.level || 1,
+          };
+        });
+
+        // Sort by points desc
+        rankings.sort(function(a, b){
+          if (b.points !== a.points) return b.points - a.points;
+          if (b.streak !== a.streak) return b.streak - a.streak;
+          return 0;
+        });
+
+        // Add rank numbers
+        rankings.forEach(function(r, i){ r.rank = i + 1; });
+
+        // Find requester's rank
+        var myRank = null;
+        if (myEmpId) {
+          var myEntry = rankings.find(function(r){ return String(r.empId) === String(myEmpId); });
+          if (myEntry) {
+            myRank = {
+              rank: myEntry.rank,
+              points: myEntry.points,
+              streak: myEntry.streak,
+              totalEmployees: rankings.length,
+              percentile: Math.round(100 * (1 - (myEntry.rank - 1) / rankings.length)),
+            };
+          }
+        }
+
+        // Return top N
+        var top = rankings.slice(0, limitLB);
+
+        return res.json({
+          ok: true,
+          period: periodLB,
+          branch: branchLB,
+          total: rankings.length,
+          rankings: top,
+          myRank: myRank,
+        });
+      }
+
+      case 'kadwar-pending-count': {
+        var vKPC = (await dbGet('violations_v2')) || [];
+        var sKPC = (await dbGet('payroll_slips')) || [];
+        var tKPC = (await dbGet('terminations')) || [];
+
+        var pendingV = vKPC.filter(function(x){ return !x.kadwarSynced; }).length;
+        var pendingS = sKPC.filter(function(x){ return !x.kadwarSynced; }).length;
+        var pendingT = tKPC.filter(function(x){ return !x.kadwarSynced; }).length;
+
+        return res.json({
+          ok: true,
+          pending: {
+            violations: pendingV,
+            payroll: pendingS,
+            terminations: pendingT,
+            total: pendingV + pendingS + pendingT,
+          },
+        });
+      }
+
+      /* ═══════════════════════════════════════════════════════════════
+       * v7.98 C — BULK ACTIONS (Employee operations on multiple records)
+       * ═══════════════════════════════════════════════════════════════
+       * Endpoints:
+       *   POST /api/data?action=bulk-activate     — تفعيل موظفين
+       *   POST /api/data?action=bulk-deactivate   — إيقاف موظفين
+       *   POST /api/data?action=bulk-notify       — إرسال إشعار جماعي
+       * Body: { empIds: [...], actorId?, title?, body? }
+       */
+      case 'bulk-activate': {
+        if (req.method !== 'POST') return res.status(405).json({ error: 'POST required' });
+        var bodyBA = req.body || {};
+        var empIdsBA = bodyBA.empIds;
+        var actorBA = bodyBA.actorId || 'admin';
+        if (!Array.isArray(empIdsBA) || empIdsBA.length === 0) {
+          return res.status(400).json({ error: 'empIds array required' });
+        }
+        var empsBA = (await dbGet('employees')) || [];
+        var updatedBA = 0;
+        empsBA.forEach(function(e){
+          if (empIdsBA.indexOf(e.id) >= 0 || empIdsBA.indexOf(String(e.id)) >= 0) {
+            if (e.active === false) {
+              e.active = true;
+              updatedBA++;
+            }
+          }
+        });
+        await dbSet('employees', empsBA);
+        await auditLog(actorBA, 'bulk_activate', null, {
+          empIds: empIdsBA,
+          count: empIdsBA.length,
+          updated: updatedBA,
+        }, 'admin');
+        return res.json({ ok: true, updated: updatedBA, total: empIdsBA.length });
+      }
+
+      case 'bulk-deactivate': {
+        if (req.method !== 'POST') return res.status(405).json({ error: 'POST required' });
+        var bodyBD = req.body || {};
+        var empIdsBD = bodyBD.empIds;
+        var actorBD = bodyBD.actorId || 'admin';
+        if (!Array.isArray(empIdsBD) || empIdsBD.length === 0) {
+          return res.status(400).json({ error: 'empIds array required' });
+        }
+        var empsBD = (await dbGet('employees')) || [];
+        var updatedBD = 0;
+        empsBD.forEach(function(e){
+          if (empIdsBD.indexOf(e.id) >= 0 || empIdsBD.indexOf(String(e.id)) >= 0) {
+            if (e.active !== false) {
+              e.active = false;
+              updatedBD++;
+            }
+          }
+        });
+        await dbSet('employees', empsBD);
+        await auditLog(actorBD, 'bulk_deactivate', null, {
+          empIds: empIdsBD,
+          count: empIdsBD.length,
+          updated: updatedBD,
+        }, 'admin');
+        return res.json({ ok: true, updated: updatedBD, total: empIdsBD.length });
+      }
+
+      case 'bulk-notify': {
+        if (req.method !== 'POST') return res.status(405).json({ error: 'POST required' });
+        var bodyBN = req.body || {};
+        var empIdsBN = bodyBN.empIds;
+        var titleBN = (bodyBN.title || '').trim();
+        var bodyTextBN = (bodyBN.body || '').trim();
+        var actorBN = bodyBN.actorId || 'admin';
+        if (!Array.isArray(empIdsBN) || empIdsBN.length === 0) {
+          return res.status(400).json({ error: 'empIds array required' });
+        }
+        if (!titleBN || !bodyTextBN) {
+          return res.status(400).json({ error: 'title + body required' });
+        }
+
+        var pushSubsBN = (await dbGet('push_subscriptions')) || {};
+        var notifsBN = (await dbGet('notifications')) || [];
+        var nowBN = new Date().toISOString();
+        var sentBN = 0, failedBN = 0, noSubBN = 0;
+
+        for (var iBN = 0; iBN < empIdsBN.length; iBN++) {
+          var eidBN = empIdsBN[iBN];
+          var subBN = pushSubsBN[eidBN];
+
+          // Save in-app notification
+          notifsBN.unshift({
+            id: 'N_BULK_' + Date.now() + '_' + iBN,
+            empId: eidBN,
+            type: 'bulk_admin',
+            title: titleBN,
+            message: bodyTextBN,
+            read: false,
+            ts: nowBN,
+          });
+
+          // Send push
+          if (subBN && subBN.subscription) {
+            try {
+              var prBN = await sendWebPush(subBN.subscription, {
+                title: titleBN,
+                body: bodyTextBN,
+                tag: 'bulk-' + Date.now(),
+              });
+              if (prBN.sent) sentBN++;
+              else failedBN++;
+            } catch(e) { failedBN++; }
+          } else {
+            noSubBN++;
+          }
+        }
+
+        // Trim notifications to last 500
+        await dbSet('notifications', notifsBN.slice(0, 500));
+
+        await auditLog(actorBN, 'bulk_notify', null, {
+          empIds: empIdsBN,
+          count: empIdsBN.length,
+          sent: sentBN,
+          failed: failedBN,
+          noSubscription: noSubBN,
+          titlePreview: titleBN.slice(0, 50),
+        }, 'admin');
+
+        return res.json({
+          ok: true,
+          summary: {
+            total: empIdsBN.length,
+            sent: sentBN,
+            failed: failedBN,
+            noSubscription: noSubBN,
+          },
+        });
+      }
+
       case 'auto_violations': {
         // Called by cron daily 6pm — checks today's attendance and generates violations per laiha
         var emps = await dbGet('employees') || [];
@@ -9579,6 +10067,41 @@ export default async function handler(req, res) {
         var todayAtt = att.filter(a => a.date === today);
         var todayPreAbs = preAbs.filter(p => p.date === today);
         var generated = [];
+
+        // v7.97 — Skip violations on weekends and holidays
+        var holidaysData = (await dbGet('holidays')) || { weekendDays: [5, 6], list: [] };
+        var weekendDaysAv = holidaysData.weekendDays || [5, 6];
+        var todayDow = new Date().getDay();
+
+        // Check weekend
+        if (weekendDaysAv.indexOf(todayDow) >= 0) {
+          return res.json({
+            ok: true,
+            skipped: true,
+            reason: 'weekend',
+            dayOfWeek: todayDow,
+            generated: 0
+          });
+        }
+
+        // Check official holiday
+        var todayMmDd = today.slice(5);
+        var matchedHolidayAv = (holidaysData.list || []).find(function(h){
+          if (!h.date) return false;
+          if (h.date === today) return true;
+          if (h.recurring && h.date.slice(5) === todayMmDd) return true;
+          if (h.endDate && today >= h.date && today <= h.endDate) return true;
+          return false;
+        });
+        if (matchedHolidayAv) {
+          return res.json({
+            ok: true,
+            skipped: true,
+            reason: 'holiday',
+            holidayName: matchedHolidayAv.name,
+            generated: 0
+          });
+        }
 
         // Penalties lookup (mirrors laiha.js PENALTY_TYPES)
         var penaltyLabels = {

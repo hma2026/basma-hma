@@ -154,6 +154,82 @@ var EN_TRANSLATIONS = {
   "العطل الرسمية": "Official Holidays",
   "العطل الرسمية وأيام الراحة": "Official Holidays & Weekends",
 
+  // ────── v7.97 — Holidays & Work Days Integration ──────
+  "أيام العطل": "Holiday Days",
+  "الحساب يستبعد أيام العطل الرسمية ونهاية الأسبوع — تقرير دقيق": "Excludes official holidays and weekends — accurate",
+
+
+
+
+  // ────── v7.100 E — Mobile Leaderboard ──────
+  "المتصدرون": "Leaderboard",
+  "أعلى الموظفين نقاطاً": "Top employees by points",
+  "ترتيبك": "Your Rank",
+  "المئينية": "Percentile",
+  "أنت": "You",
+
+  // ────── v7.99 — Kadwar Two-way Sync ──────
+  "تحديثات بانتظار الإرسال لكوادر": "Pending updates to send to Kadwar",
+  "تغييرات تمت في بصمة ولم تصل كوادر بعد": "Changes made in Basma not yet in Kadwar",
+  "دفع الكل الآن": "Push All Now",
+  "مسيرات": "Payrolls",
+  "إنهاء عقود": "Terminations",
+  "تم الدفع!": "Pushed!",
+  "المرسل:": "Sent:",
+  "فشل:": "Failed:",
+  "جميع التحديثات متزامنة مع كوادر": "All updates synced with Kadwar",
+  "تأكيد: سيتم دفع كل التحديثات المُعلّقة من بصمة إلى كوادر. متابعة؟": "Confirm: all pending Basma updates will be pushed to Kadwar. Continue?",
+
+  // ────── v7.98 C — Admin Bulk Actions ──────
+  "اختر إجراء جماعي": "Choose bulk action",
+  "إشعار جماعي": "Bulk Notification",
+  "تفعيل": "Activate",
+  "تفعيل الموظفين": "Activate Employees",
+  "إيقاف الموظفين": "Deactivate Employees",
+  "إرسال إشعار جماعي": "Send Bulk Notification",
+  "تصدير بيانات CSV": "Export CSV Data",
+  "موظف سيتأثر": "employees will be affected",
+  "عنوان الإشعار": "Notification Title",
+  "مثلاً: تذكير هام": "E.g., Important Reminder",
+  "اكتب الرسالة هنا...": "Type message here...",
+  "تنبيه": "Warning",
+  "سيتم إيقاف الموظفين المحددين. لن يستطيعوا تسجيل الحضور أو استخدام التطبيق حتى إعادة تفعيلهم.": "Selected employees will be deactivated. They won't be able to check in or use the app until re-activated.",
+  "سيتم إعادة تفعيل الموظفين المحددين وإمكانية استخدامهم للتطبيق بشكل طبيعي.": "Selected employees will be re-activated and can use the app normally.",
+  "سيتم تصدير بيانات الموظفين المحددين في ملف CSV (قابل للفتح في Excel).": "Selected employee data will be exported in a CSV file (Excel compatible).",
+  "يجب إدخال العنوان والنص": "Title and body are required",
+  "جاري التنفيذ...": "Processing...",
+  "تم بنجاح!": "Success!",
+  "فشلت العملية": "Operation Failed",
+  "تم تصدير": "Exported",
+  "تم إرسال الإشعار إلى": "Notification sent to",
+  "تم تفعيل": "Activated",
+  "تم إيقاف": "Deactivated",
+  "حسناً": "OK",
+
+  // ────── v7.97 B — Monthly Performance Report ──────
+  "التقرير الشهري": "Monthly Report",
+  "التقرير الشهري الشامل": "Comprehensive Monthly Report",
+  "الأداء العام": "Overall Performance",
+  "حضور": "Present",
+  "غياب": "Absent",
+  "تأخر": "Late",
+  "عمل": "Work",
+  "عطل": "Holidays",
+  "النقاط والتفاعل": "Points & Engagement",
+  "إجمالي النقاط": "Total Points",
+  "تحديات أجاب": "Challenges Answered",
+  "الإجازات": "Leaves",
+  "إجازة معتمدة": "leaves approved",
+  "بانتظار الموافقة": "pending approval",
+  "سجل نظيف! ✨": "Clean record! ✨",
+  "التقييم النهائي": "Final Grade",
+  "جيد جداً": "Very Good",
+  "متوسط": "Average",
+  "يحتاج تحسين": "Needs Improvement",
+  "خصم تأخر": "Late penalty",
+  "خصم مخالفات": "Violations penalty",
+  "مكافأة تفاعل": "Engagement bonus",
+
   // ────── v7.95 — Flash Challenge (سؤال تحدي على السريع) ──────
   "سؤال تحدي على السريع": "Flash Challenge",
   "أرسل سؤال فوري لموظفيك لكسب نقاط — وقت تقريره أنت": "Send instant question to employees — you decide when",

@@ -12,7 +12,7 @@ import { t as tr, setLang, getLang, getDir, isRTL, subscribeLangChange } from ".
 
 /* ═══════════ APP CONFIG (إعدادات التطبيق) ═══════════ */
 const APP_CONFIG = {
-  VER: "7.96",
+  VER: "7.100",
   NAME: "بصمة HMA",
   FULL_NAME: "نظام الحضور والانصراف الذكي",
   COMPANY: "هاني محمد عسيري للاستشارات الهندسية",
@@ -3465,6 +3465,11 @@ function RecordsHub({ user, onTicket, myTickets }) {
         <SectionHeader emoji="🙋" title="استئذان وإفادات الغياب" />
         <MyRequestsTab user={user} />
       </div>
+
+      {/* v7.100 E — Leaderboard: top employees by points */}
+      <ProfileAccordion emoji="🏆" title={tr("المتصدرون")} subtitle={tr("أعلى الموظفين نقاطاً")}>
+        <LeaderboardCard user={user} />
+      </ProfileAccordion>
 
       {/* v7.93 — Section: العطل القادمة (يعرض من HolidaysPanel) */}
       <ProfileAccordion emoji="📅" title={tr("العطل القادمة")} subtitle={tr("أيام العطل الرسمية خلال الأشهر القادمة")}>
@@ -16618,6 +16623,125 @@ function MembershipFreezeNotice({ user }) {
 }
 
 /* ═══════════ BRANCH HOLIDAYS (الإجازات الرسمية لكل فرع) ═══════════ */
+/* ═════════════════════════════════════════════════════════════════
+ * v7.100 E — LeaderboardCard — المتصدرون (top 10 by points)
+ * ═════════════════════════════════════════════════════════════════ */
+function LeaderboardCard({ user }) {
+  var [data, setData] = useState(null);
+  var [loading, setLoading] = useState(true);
+  var [error, setError] = useState(null);
+
+  useEffect(function(){
+    setLoading(true);
+    fetch("/api/data?action=leaderboard&limit=10&empId=" + encodeURIComponent(user.id))
+      .then(function(r){ return r.json(); })
+      .then(function(d){
+        if (d.ok) setData(d);
+        else setError(d.error || tr("فشل التحميل"));
+        setLoading(false);
+      })
+      .catch(function(e){
+        setError(tr("فشل الاتصال"));
+        setLoading(false);
+      });
+  }, []);
+
+  if (loading) {
+    return <div style={{ padding: 20, textAlign: "center", color: COLORS.textMuted, fontSize: 11 }}>⏳ {tr("جاري التحميل...")}</div>;
+  }
+  if (error) {
+    return <div style={{ padding: 14, background: "rgba(239,68,68,0.08)", borderRadius: 10, color: "#ef4444", fontSize: 11, textAlign: "center" }}>⚠️ {error}</div>;
+  }
+  if (!data || !data.rankings || data.rankings.length === 0) {
+    return <div style={{ padding: 20, textAlign: "center", color: COLORS.textMuted, fontSize: 11 }}>📭 {tr("لا توجد بيانات")}</div>;
+  }
+
+  function rankColor(rank) {
+    if (rank === 1) return { bg: "linear-gradient(135deg, #FFD700, #FFA500)", text: "#fff", icon: "🥇" };
+    if (rank === 2) return { bg: "linear-gradient(135deg, #C0C0C0, #A8A8A8)", text: "#fff", icon: "🥈" };
+    if (rank === 3) return { bg: "linear-gradient(135deg, #CD7F32, #A0522D)", text: "#fff", icon: "🥉" };
+    return { bg: COLORS.metallic, text: COLORS.textPrimary, icon: "#" + rank };
+  }
+
+  return (
+    <div>
+      {/* My rank card */}
+      {data.myRank && (
+        <div style={{
+          background: "linear-gradient(135deg, " + COLORS.goldMedium + "20, " + COLORS.goldLight + "10)",
+          border: "1px solid " + COLORS.goldMedium + "40",
+          borderRadius: 14, padding: "14px 16px", marginBottom: 12,
+        }}>
+          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10 }}>
+            <div>
+              <div style={{ fontSize: 10, color: COLORS.textMuted, fontWeight: 700 }}>{tr("ترتيبك")}</div>
+              <div style={{ fontSize: 26, fontWeight: 900, color: COLORS.goldLight, lineHeight: 1.1, marginTop: 3 }}>
+                #{data.myRank.rank}
+              </div>
+              <div style={{ fontSize: 9, color: COLORS.textMuted, marginTop: 3 }}>
+                {tr("من")} {data.myRank.totalEmployees} {tr("موظف")}
+              </div>
+            </div>
+            <div style={{ textAlign: "center" }}>
+              <div style={{ fontSize: 22, fontWeight: 900, color: COLORS.goldLight }}>{data.myRank.percentile}%</div>
+              <div style={{ fontSize: 9, color: COLORS.textMuted }}>{tr("المئينية")}</div>
+            </div>
+            <div style={{ textAlign: "center" }}>
+              <div style={{ fontSize: 22, fontWeight: 900, color: "#F59E0B" }}>⭐ {data.myRank.points}</div>
+              <div style={{ fontSize: 9, color: COLORS.textMuted }}>{tr("نقطة")}</div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Top 10 */}
+      <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+        {data.rankings.map(function(entry){
+          var isMe = String(entry.empId) === String(user.id);
+          var rc = rankColor(entry.rank);
+
+          return <div key={entry.empId} style={{
+            display: "flex", alignItems: "center", gap: 10,
+            padding: "10px 12px",
+            borderRadius: 10,
+            background: isMe ? COLORS.goldMedium + "15" : COLORS.metallic,
+            border: "1px solid " + (isMe ? COLORS.goldMedium : COLORS.metallicBorder),
+          }}>
+            {/* Rank badge */}
+            <div style={{
+              width: 36, height: 36, borderRadius: "50%",
+              background: rc.bg, color: rc.text,
+              display: "flex", alignItems: "center", justifyContent: "center",
+              fontSize: entry.rank <= 3 ? 18 : 13, fontWeight: 900,
+              flexShrink: 0,
+            }}>{rc.icon}</div>
+
+            {/* Name + info */}
+            <div style={{ flex: 1, minWidth: 0 }}>
+              <div style={{
+                fontSize: 12, fontWeight: 800,
+                color: isMe ? COLORS.goldLight : COLORS.textPrimary,
+                overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap",
+              }}>{entry.name}{isMe && " (" + tr("أنت") + ")"}</div>
+              <div style={{ fontSize: 9, color: COLORS.textMuted, marginTop: 2 }}>
+                {entry.jobTitle || entry.branch || "—"}
+              </div>
+            </div>
+
+            {/* Points + streak */}
+            <div style={{ textAlign: "left", flexShrink: 0 }}>
+              <div style={{ fontSize: 14, fontWeight: 900, color: "#F59E0B" }}>⭐ {entry.points}</div>
+              {entry.streak > 0 && (
+                <div style={{ fontSize: 9, color: "#FF6B35", marginTop: 2 }}>🔥 {entry.streak}</div>
+              )}
+            </div>
+          </div>;
+        })}
+      </div>
+    </div>
+  );
+}
+
 /* ═════════════════════════════════════════════════════════════════
  * v7.93 — UpcomingHolidaysCard — عرض العطل القادمة للموظف
  * ═════════════════════════════════════════════════════════════════

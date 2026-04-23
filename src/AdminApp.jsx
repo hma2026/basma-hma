@@ -5,7 +5,7 @@ import { exportFormalWarning, exportInvestigationRecord, exportAffidavit, export
 import { t as tr, setLang, getLang, subscribeLangChange } from "./i18n";
 
 const APP = "بصمة HMA";
-const VER = "7.96";
+const VER = "7.100";
 const CO = "هاني محمد عسيري للإستشارات الهندسية";
 const B = { blue: "#2B5EA7", yellow: "#FDD800", red: "#E2192C", black: "#1A1A1A", blueDk: "#1E4478", blueLt: "#EDF3FB", gold: "#D4A017" };
 
@@ -1241,18 +1241,29 @@ function EmployeeDetailPage({ t, B, emp, allEmps, leaves, branches, isMobile, on
         var checkins = monthAtt.filter(function(a){ return a.type === "checkin"; });
         var lateCount = checkins.filter(function(a){ return a.late; }).length;
         var uniqueDays = new Set(checkins.map(function(a){ return a.date; })).size;
-        // Calculate work days in month
-        var daysInMonth = new Date(now.getFullYear(), now.getMonth() + 1, 0).getDate();
-        var workDays = 0;
-        for (var d = 1; d <= daysInMonth; d++) {
-          var dt = new Date(now.getFullYear(), now.getMonth(), d);
-          if (dt.getDay() !== 5 && dt.getDay() !== 6) workDays++; // Sun-Thu = work days
-        }
+
+        // v7.97 — Use work-days endpoint that respects holidays + weekends
+        var monthStart = thisMonth + "-01";
+        var lastDay = new Date(now.getFullYear(), now.getMonth() + 1, 0).getDate();
+        var monthEnd = thisMonth + "-" + String(lastDay).padStart(2, "0");
+
+        var workDays = 22; // fallback
+        var holidayDays = 0;
+        try {
+          var wdR = await fetch("/api/data?action=work-days&from=" + monthStart + "&to=" + monthEnd);
+          var wdD = await wdR.json();
+          if (wdD.ok) {
+            workDays = wdD.workDays;
+            holidayDays = wdD.holidayDays;
+          }
+        } catch(e) {}
+
         setMonthlyStats({
           present: uniqueDays,
           absent: Math.max(0, workDays - uniqueDays),
           late: lateCount,
           workDays: workDays,
+          holidayDays: holidayDays,  // v7.97
           pct: workDays > 0 ? Math.round((uniqueDays / workDays) * 100) : 0,
         });
 
@@ -1327,6 +1338,7 @@ function EmployeeDetailPage({ t, B, emp, allEmps, leaves, branches, isMobile, on
   var tabs = [
     { id: "overview",    icon: "📋", label: tr("نظرة عامة") },
     { id: "attendance",  icon: "⏰", label: tr("الحضور") },
+    { id: "monthly",     icon: "📊", label: tr("التقرير الشهري") },  // v7.97 B
     { id: "leaves",      icon: "🏖️", label: tr("الإجازات"), badge: pendingLeaves.length > 0 ? pendingLeaves.length : null },
     { id: "salary",      icon: "💰", label: tr("الراتب") },
     { id: "discipline",  icon: "⚖️", label: tr("النظام التأديبي"), badge: empViolations.filter(function(v){ return v.status === "open"; }).length || null },
@@ -1626,25 +1638,34 @@ function EmployeeDetailPage({ t, B, emp, allEmps, leaves, branches, isMobile, on
         <div style={{ background: t.card, borderRadius: 14, padding: 16, border: "1px solid " + t.sep }}>
           <div style={{ fontSize: 13, fontWeight: 800, color: t.tx, marginBottom: 14 }}>📊 {tr("إحصائيات الشهر الحالي")}</div>
 
-          <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 12, marginBottom: 14 }}>
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(5, 1fr)", gap: 10, marginBottom: 14 }}>
             {[
               { l: tr("أيام الحضور"),  v: monthlyStats.present, c: t.ok, max: monthlyStats.workDays },
               { l: tr("أيام الغياب"),  v: monthlyStats.absent,  c: t.bad, max: monthlyStats.workDays },
               { l: tr("أيام التأخر"), v: monthlyStats.late,    c: t.warn, max: monthlyStats.workDays },
               { l: tr("أيام العمل"),  v: monthlyStats.workDays, c: B.blue },
+              { l: tr("أيام العطل"),  v: monthlyStats.holidayDays || 0, c: B.gold, icon: "🌴" },  // v7.97
             ].map(function(s, i){
               return <div key={i} style={{
-                padding: 14, background: t.bg, borderRadius: 10,
+                padding: 12, background: t.bg, borderRadius: 10,
                 border: "1px solid " + t.sep,
                 textAlign: "center",
               }}>
-                <div style={{ fontSize: 28, fontWeight: 900, color: s.c }}>{s.v}</div>
+                <div style={{ fontSize: 24, fontWeight: 900, color: s.c }}>
+                  {s.icon && <span style={{ fontSize: 14, marginLeft: 4 }}>{s.icon}</span>}
+                  {s.v}
+                </div>
                 <div style={{ fontSize: 10, color: t.txM, marginTop: 4 }}>{s.l}</div>
                 {s.max !== undefined && (
                   <div style={{ fontSize: 9, color: t.txM, marginTop: 2 }}>{tr("من")} {s.max}</div>
                 )}
               </div>;
             })}
+          </div>
+
+          {/* v7.97 — Hint about holiday-aware calculation */}
+          <div style={{ padding: "8px 12px", background: B.gold + "10", border: "1px dashed " + B.gold + "40", borderRadius: 8, fontSize: 10, color: t.txM, marginBottom: 14, textAlign: "center" }}>
+            ℹ️ {tr("الحساب يستبعد أيام العطل الرسمية ونهاية الأسبوع — تقرير دقيق")}
           </div>
 
           {/* Attendance rate bar */}
@@ -1661,6 +1682,192 @@ function EmployeeDetailPage({ t, B, emp, allEmps, leaves, branches, isMobile, on
                 transition: "width .5s",
               }} />
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* ─── v7.97 B — Tab: Monthly Report (تقرير شهري شامل) ─── */}
+      {activeTab === "monthly" && monthlyStats && (
+        <div>
+          {/* Header card */}
+          <div style={{
+            background: "linear-gradient(135deg, " + B.blue + ", " + B.blueDk + ")",
+            borderRadius: 14, padding: "16px 20px",
+            color: "#fff", marginBottom: 14,
+            display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 12,
+          }}>
+            <div>
+              <div style={{ fontSize: 16, fontWeight: 900 }}>📊 {tr("التقرير الشهري الشامل")}</div>
+              <div style={{ fontSize: 11, opacity: 0.9, marginTop: 4 }}>
+                {new Date().toLocaleDateString(getLang() === "ar" ? "ar-SA" : "en-US", { month: "long", year: "numeric" })}
+                {" · "}{emp.name}
+              </div>
+            </div>
+            <div style={{ textAlign: "center", padding: "0 12px" }}>
+              <div style={{ fontSize: 36, fontWeight: 900, lineHeight: 1 }}>{monthlyStats.pct}%</div>
+              <div style={{ fontSize: 10, opacity: 0.85, marginTop: 4 }}>{tr("الأداء العام")}</div>
+            </div>
+          </div>
+
+          {/* Section 1: Attendance Breakdown */}
+          <div style={{ background: t.card, borderRadius: 14, padding: 16, border: "1px solid " + t.sep, marginBottom: 12 }}>
+            <div style={{ fontSize: 13, fontWeight: 800, color: t.tx, marginBottom: 12 }}>
+              ⏰ {tr("الحضور والانصراف")}
+            </div>
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(5, 1fr)", gap: 8 }}>
+              {[
+                { l: tr("حضور"), v: monthlyStats.present, c: t.ok, i: "✓" },
+                { l: tr("غياب"), v: monthlyStats.absent,  c: t.bad, i: "✗" },
+                { l: tr("تأخر"), v: monthlyStats.late,    c: t.warn, i: "⏱" },
+                { l: tr("عمل"),  v: monthlyStats.workDays, c: B.blue, i: "📅" },
+                { l: tr("عطل"),  v: monthlyStats.holidayDays || 0, c: B.gold, i: "🌴" },
+              ].map(function(s, i){
+                return <div key={i} style={{
+                  padding: 10, background: t.bg, borderRadius: 8,
+                  border: "1px solid " + t.sep, textAlign: "center",
+                }}>
+                  <div style={{ fontSize: 12, marginBottom: 2 }}>{s.i}</div>
+                  <div style={{ fontSize: 20, fontWeight: 900, color: s.c }}>{s.v}</div>
+                  <div style={{ fontSize: 9, color: t.txM }}>{s.l}</div>
+                </div>;
+              })}
+            </div>
+          </div>
+
+          {/* Section 2: Challenge Points */}
+          <div style={{ background: t.card, borderRadius: 14, padding: 16, border: "1px solid " + t.sep, marginBottom: 12 }}>
+            <div style={{ fontSize: 13, fontWeight: 800, color: t.tx, marginBottom: 12 }}>
+              ⭐ {tr("النقاط والتفاعل")}
+            </div>
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 10 }}>
+              <div style={{ padding: 14, background: "linear-gradient(135deg, #F59E0B10, #EAB30810)", border: "1px solid #F59E0B40", borderRadius: 10, textAlign: "center" }}>
+                <div style={{ fontSize: 26, fontWeight: 900, color: "#F59E0B" }}>⭐ {emp.points || 0}</div>
+                <div style={{ fontSize: 9, color: t.txM, marginTop: 3 }}>{tr("إجمالي النقاط")}</div>
+              </div>
+              <div style={{ padding: 14, background: "linear-gradient(135deg, #FF6B3510, #F9731610)", border: "1px solid #FF6B3540", borderRadius: 10, textAlign: "center" }}>
+                <div style={{ fontSize: 26, fontWeight: 900, color: "#FF6B35" }}>🔥 {emp.streak || 0}</div>
+                <div style={{ fontSize: 9, color: t.txM, marginTop: 3 }}>{tr("السلسلة")}</div>
+              </div>
+              <div style={{ padding: 14, background: "linear-gradient(135deg, #8B5CF610, #A855F710)", border: "1px solid #8B5CF640", borderRadius: 10, textAlign: "center" }}>
+                <div style={{ fontSize: 26, fontWeight: 900, color: "#8B5CF6" }}>⚡ {emp.challengesCount || 0}</div>
+                <div style={{ fontSize: 9, color: t.txM, marginTop: 3 }}>{tr("تحديات أجاب")}</div>
+              </div>
+            </div>
+          </div>
+
+          {/* Section 3: Leaves & Discipline */}
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12, marginBottom: 12 }}>
+            <div style={{ background: t.card, borderRadius: 14, padding: 14, border: "1px solid " + t.sep }}>
+              <div style={{ fontSize: 12, fontWeight: 800, color: t.tx, marginBottom: 10 }}>
+                🏖️ {tr("الإجازات")}
+              </div>
+              <div style={{ fontSize: 22, fontWeight: 900, color: "#0891B2", marginBottom: 4 }}>
+                {approvedLeaves.length}
+              </div>
+              <div style={{ fontSize: 10, color: t.txM }}>
+                {tr("إجازة معتمدة")}
+                {pendingLeaves.length > 0 && (
+                  <span style={{ color: t.warn, fontWeight: 700 }}> · {pendingLeaves.length} {tr("بانتظار الموافقة")}</span>
+                )}
+              </div>
+            </div>
+
+            <div style={{ background: t.card, borderRadius: 14, padding: 14, border: "1px solid " + t.sep }}>
+              <div style={{ fontSize: 12, fontWeight: 800, color: t.tx, marginBottom: 10 }}>
+                ⚖️ {tr("المخالفات")}
+              </div>
+              <div style={{ fontSize: 22, fontWeight: 900, color: empViolations.length === 0 ? t.ok : t.bad, marginBottom: 4 }}>
+                {empViolations.length}
+              </div>
+              <div style={{ fontSize: 10, color: t.txM }}>
+                {empViolations.length === 0 ? tr("سجل نظيف! ✨") : (
+                  <>
+                    {empViolations.filter(function(v){ return v.status === "open"; }).length} {tr("مفتوحة")}
+                    {" · "}{empViolations.filter(function(v){ return v.status === "closed"; }).length} {tr("مغلقة")}
+                  </>
+                )}
+              </div>
+            </div>
+          </div>
+
+          {/* Section 4: Performance Grade */}
+          <div style={{ background: t.card, borderRadius: 14, padding: 16, border: "1px solid " + t.sep, marginBottom: 12 }}>
+            <div style={{ fontSize: 13, fontWeight: 800, color: t.tx, marginBottom: 12 }}>
+              🏆 {tr("التقييم النهائي")}
+            </div>
+            {(function(){
+              // Calculate composite grade
+              var attendancePct = monthlyStats.pct;
+              var latesPenalty = Math.min(20, (monthlyStats.late || 0) * 2);
+              var violationsPenalty = Math.min(30, empViolations.filter(function(v){ return v.status === "open"; }).length * 10);
+              var engagementBonus = Math.min(10, ((emp.points || 0) / 100) * 1);
+              var finalScore = Math.max(0, Math.min(100, attendancePct - latesPenalty - violationsPenalty + engagementBonus));
+
+              var grade, gradeColor, gradeDesc;
+              if (finalScore >= 90) { grade = "A+"; gradeColor = "#10b981"; gradeDesc = tr("ممتاز"); }
+              else if (finalScore >= 80) { grade = "A"; gradeColor = "#10b981"; gradeDesc = tr("جيد جداً"); }
+              else if (finalScore >= 70) { grade = "B"; gradeColor = "#3b82f6"; gradeDesc = tr("جيد"); }
+              else if (finalScore >= 60) { grade = "C"; gradeColor = "#f59e0b"; gradeDesc = tr("متوسط"); }
+              else { grade = "D"; gradeColor = "#ef4444"; gradeDesc = tr("يحتاج تحسين"); }
+
+              return (
+                <div style={{ display: "flex", alignItems: "center", gap: 16, flexWrap: "wrap" }}>
+                  <div style={{
+                    width: 90, height: 90, borderRadius: "50%",
+                    background: gradeColor + "15",
+                    border: "4px solid " + gradeColor,
+                    display: "flex", alignItems: "center", justifyContent: "center",
+                    fontSize: 32, fontWeight: 900, color: gradeColor,
+                  }}>{grade}</div>
+                  <div style={{ flex: 1, minWidth: 200 }}>
+                    <div style={{ fontSize: 20, fontWeight: 900, color: gradeColor }}>
+                      {Math.round(finalScore)}/100
+                    </div>
+                    <div style={{ fontSize: 14, fontWeight: 700, color: t.tx, marginTop: 4 }}>{gradeDesc}</div>
+                    <div style={{ fontSize: 10, color: t.txM, marginTop: 4, lineHeight: 1.6 }}>
+                      {tr("الحضور")}: {attendancePct}%
+                      {latesPenalty > 0 && <> · {tr("خصم تأخر")}: -{latesPenalty}</>}
+                      {violationsPenalty > 0 && <> · {tr("خصم مخالفات")}: -{violationsPenalty}</>}
+                      {engagementBonus > 0 && <> · {tr("مكافأة تفاعل")}: +{Math.round(engagementBonus)}</>}
+                    </div>
+                  </div>
+                </div>
+              );
+            })()}
+          </div>
+
+          {/* Export button */}
+          <div style={{ display: "flex", gap: 10, justifyContent: "center" }}>
+            <button onClick={function(){
+              var reportText = "تقرير شهري شامل\n";
+              reportText += "═══════════════════════════════\n";
+              reportText += "الموظف: " + emp.name + "\n";
+              reportText += "الفترة: " + new Date().toLocaleDateString("ar-SA", { month: "long", year: "numeric" }) + "\n\n";
+              reportText += "الأداء العام: " + monthlyStats.pct + "%\n\n";
+              reportText += "📊 الحضور:\n";
+              reportText += "  • حضور: " + monthlyStats.present + " يوم\n";
+              reportText += "  • غياب: " + monthlyStats.absent + " يوم\n";
+              reportText += "  • تأخر: " + monthlyStats.late + " مرة\n";
+              reportText += "  • أيام العمل: " + monthlyStats.workDays + "\n";
+              reportText += "  • أيام العطل: " + (monthlyStats.holidayDays || 0) + "\n\n";
+              reportText += "⭐ النقاط: " + (emp.points || 0) + "\n";
+              reportText += "🔥 السلسلة: " + (emp.streak || 0) + "\n\n";
+              reportText += "🏖️ إجازات معتمدة: " + approvedLeaves.length + "\n";
+              reportText += "⚖️ مخالفات: " + empViolations.length + "\n";
+
+              var blob = new Blob(["\uFEFF" + reportText], { type: "text/plain;charset=utf-8" });
+              var url = URL.createObjectURL(blob);
+              var a = document.createElement("a");
+              a.href = url;
+              a.download = "تقرير_" + emp.name + "_" + new Date().toISOString().slice(0, 7) + ".txt";
+              a.click();
+              URL.revokeObjectURL(url);
+            }} style={{
+              padding: "10px 20px", borderRadius: 10,
+              background: B.blue, color: "#fff", border: "none",
+              fontSize: 12, fontWeight: 800, cursor: "pointer",
+              fontFamily: "inherit",
+            }}>📥 {tr("تصدير التقرير")}</button>
           </div>
         </div>
       )}
@@ -3690,6 +3897,11 @@ export default function AdminApp() {
   const [newQ, setNewQ] = useState({ type: "ذكر", q: "", correct: "", wrong1: "", wrong2: "" });
   const [selEmp, setSelEmp] = useState(null);
   const [showAddWizard, setShowAddWizard] = useState(false); // v7.85 — wizard state
+  // v7.98 C — Bulk selection state
+  const [bulkSelected, setBulkSelected] = useState([]);     // array of empIds
+  const [bulkActionOpen, setBulkActionOpen] = useState(null);  // null | "activate" | "deactivate" | "notify" | "export"
+  const [bulkProcessing, setBulkProcessing] = useState(false);
+  const [bulkResult, setBulkResult] = useState(null);
   const [events, setEvents] = useState(EVENTS);
   const eventsLoaded = useRef(false);
 
@@ -4088,6 +4300,272 @@ export default function AdminApp() {
             if (Array.isArray(list)) setEmps(list);
           }}
         />}
+
+        {/* v7.98 C — Bulk Action Bar (shows when employees are selected) */}
+        {bulkSelected.length > 0 && (
+          <div style={{
+            background: "linear-gradient(135deg, " + B.blue + ", " + B.blueDk + ")",
+            borderRadius: 12, padding: "12px 16px",
+            marginBottom: 12,
+            color: "#fff",
+            display: "flex", justifyContent: "space-between", alignItems: "center",
+            gap: 12, flexWrap: "wrap",
+            position: "sticky", top: 0, zIndex: 50,
+            boxShadow: "0 4px 12px rgba(0,0,0,0.15)",
+          }}>
+            <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+              <div style={{
+                width: 32, height: 32, borderRadius: "50%",
+                background: "rgba(255,255,255,0.25)",
+                display: "flex", alignItems: "center", justifyContent: "center",
+                fontSize: 14, fontWeight: 900,
+              }}>{bulkSelected.length}</div>
+              <div>
+                <div style={{ fontSize: 13, fontWeight: 800 }}>
+                  {tr("تم اختيار")} {bulkSelected.length} {tr("موظف")}
+                </div>
+                <div style={{ fontSize: 10, opacity: 0.85 }}>
+                  {tr("اختر إجراء جماعي")}
+                </div>
+              </div>
+            </div>
+            <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+              <button onClick={function(){ setBulkActionOpen("notify"); }} style={{
+                padding: "8px 12px", borderRadius: 8,
+                background: "rgba(255,255,255,0.2)",
+                border: "1px solid rgba(255,255,255,0.3)",
+                color: "#fff", fontSize: 11, fontWeight: 700,
+                cursor: "pointer", fontFamily: "inherit",
+              }}>🔔 {tr("إشعار جماعي")}</button>
+
+              <button onClick={function(){ setBulkActionOpen("export"); }} style={{
+                padding: "8px 12px", borderRadius: 8,
+                background: "rgba(255,255,255,0.2)",
+                border: "1px solid rgba(255,255,255,0.3)",
+                color: "#fff", fontSize: 11, fontWeight: 700,
+                cursor: "pointer", fontFamily: "inherit",
+              }}>📥 {tr("تصدير CSV")}</button>
+
+              <button onClick={function(){ setBulkActionOpen("activate"); }} style={{
+                padding: "8px 12px", borderRadius: 8,
+                background: "rgba(16,185,129,0.3)",
+                border: "1px solid rgba(16,185,129,0.6)",
+                color: "#fff", fontSize: 11, fontWeight: 700,
+                cursor: "pointer", fontFamily: "inherit",
+              }}>✓ {tr("تفعيل")}</button>
+
+              <button onClick={function(){ setBulkActionOpen("deactivate"); }} style={{
+                padding: "8px 12px", borderRadius: 8,
+                background: "rgba(239,68,68,0.3)",
+                border: "1px solid rgba(239,68,68,0.6)",
+                color: "#fff", fontSize: 11, fontWeight: 700,
+                cursor: "pointer", fontFamily: "inherit",
+              }}>⏸ {tr("إيقاف")}</button>
+
+              <button onClick={function(){ setBulkSelected([]); }} style={{
+                padding: "8px 12px", borderRadius: 8,
+                background: "rgba(0,0,0,0.2)",
+                border: "1px solid rgba(255,255,255,0.2)",
+                color: "#fff", fontSize: 11, fontWeight: 700,
+                cursor: "pointer", fontFamily: "inherit",
+              }}>✕</button>
+            </div>
+          </div>
+        )}
+
+        {/* v7.98 C — Bulk Action Modal */}
+        {bulkActionOpen && (
+          <div style={{
+            position: "fixed", inset: 0,
+            background: "rgba(0,0,0,0.6)",
+            zIndex: 9000,
+            display: "flex", alignItems: "center", justifyContent: "center",
+            padding: 20,
+          }} onClick={function(){ if (!bulkProcessing) setBulkActionOpen(null); }}>
+            <div onClick={function(e){ e.stopPropagation(); }} style={{
+              background: t.card, borderRadius: 16, padding: 24,
+              maxWidth: 480, width: "100%",
+              maxHeight: "85vh", overflowY: "auto",
+              border: "1px solid " + t.sep,
+            }}>
+              {!bulkResult ? (
+                <>
+                  <div style={{ textAlign: "center", marginBottom: 18 }}>
+                    <div style={{ fontSize: 42, marginBottom: 8 }}>
+                      {bulkActionOpen === "activate" ? "✓" : bulkActionOpen === "deactivate" ? "⏸" : bulkActionOpen === "notify" ? "🔔" : "📥"}
+                    </div>
+                    <div style={{ fontSize: 16, fontWeight: 900, color: t.tx }}>
+                      {bulkActionOpen === "activate" && tr("تفعيل الموظفين")}
+                      {bulkActionOpen === "deactivate" && tr("إيقاف الموظفين")}
+                      {bulkActionOpen === "notify" && tr("إرسال إشعار جماعي")}
+                      {bulkActionOpen === "export" && tr("تصدير بيانات CSV")}
+                    </div>
+                    <div style={{ fontSize: 11, color: t.txM, marginTop: 6 }}>
+                      {bulkSelected.length} {tr("موظف سيتأثر")}
+                    </div>
+                  </div>
+
+                  {/* Notify form */}
+                  {bulkActionOpen === "notify" && (
+                    <div style={{ marginBottom: 16 }}>
+                      <label style={{ fontSize: 11, fontWeight: 700, color: t.tx, display: "block", marginBottom: 6 }}>{tr("عنوان الإشعار")}</label>
+                      <input type="text" id="bulk-notify-title" placeholder={tr("مثلاً: تذكير هام")}
+                        style={{ width: "100%", padding: "10px 14px", borderRadius: 10, border: "1px solid " + t.sep, background: t.inp, color: t.tx, fontSize: 13, fontFamily: "inherit", boxSizing: "border-box", marginBottom: 10 }} />
+                      <label style={{ fontSize: 11, fontWeight: 700, color: t.tx, display: "block", marginBottom: 6 }}>{tr("نص الإشعار")}</label>
+                      <textarea id="bulk-notify-body" placeholder={tr("اكتب الرسالة هنا...")} rows={3}
+                        style={{ width: "100%", padding: "10px 14px", borderRadius: 10, border: "1px solid " + t.sep, background: t.inp, color: t.tx, fontSize: 13, fontFamily: "inherit", boxSizing: "border-box", resize: "vertical" }} />
+                    </div>
+                  )}
+
+                  {/* Deactivate warning */}
+                  {bulkActionOpen === "deactivate" && (
+                    <div style={{ padding: 14, background: t.badLt, borderRadius: 10, border: "1px solid " + t.bad + "40", marginBottom: 16 }}>
+                      <div style={{ fontSize: 12, fontWeight: 800, color: t.bad, marginBottom: 4 }}>⚠️ {tr("تنبيه")}</div>
+                      <div style={{ fontSize: 11, color: t.tx, lineHeight: 1.6 }}>
+                        {tr("سيتم إيقاف الموظفين المحددين. لن يستطيعوا تسجيل الحضور أو استخدام التطبيق حتى إعادة تفعيلهم.")}
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Activate info */}
+                  {bulkActionOpen === "activate" && (
+                    <div style={{ padding: 14, background: t.okLt, borderRadius: 10, border: "1px solid " + t.ok + "40", marginBottom: 16 }}>
+                      <div style={{ fontSize: 11, color: t.tx, lineHeight: 1.6 }}>
+                        {tr("سيتم إعادة تفعيل الموظفين المحددين وإمكانية استخدامهم للتطبيق بشكل طبيعي.")}
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Export info */}
+                  {bulkActionOpen === "export" && (
+                    <div style={{ padding: 14, background: B.blue + "15", borderRadius: 10, border: "1px solid " + B.blue + "40", marginBottom: 16 }}>
+                      <div style={{ fontSize: 11, color: t.tx, lineHeight: 1.6 }}>
+                        {tr("سيتم تصدير بيانات الموظفين المحددين في ملف CSV (قابل للفتح في Excel).")}
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Actions */}
+                  <div style={{ display: "flex", gap: 10 }}>
+                    <button onClick={function(){ setBulkActionOpen(null); }} disabled={bulkProcessing} style={{
+                      flex: 1, padding: 12, borderRadius: 10,
+                      background: t.bg, color: t.tx,
+                      border: "1px solid " + t.sep,
+                      fontSize: 12, fontWeight: 700,
+                      cursor: "pointer", fontFamily: "inherit",
+                    }}>{tr("إلغاء")}</button>
+                    <button onClick={async function(){
+                      setBulkProcessing(true);
+                      try {
+                        if (bulkActionOpen === "export") {
+                          // CSV Export
+                          var selectedEmps = (emps || []).filter(function(e){ return bulkSelected.indexOf(e.id) >= 0; });
+                          var csv = "\uFEFF";  // BOM for Excel
+                          csv += "الرقم الوظيفي,الاسم,الفرع,المسمى,الحالة,النقاط,السلسلة\n";
+                          selectedEmps.forEach(function(e){
+                            csv += [
+                              e.id,
+                              e.name || "",
+                              e.branch || "",
+                              e.role || e.jobTitle || "",
+                              e.active === false ? "متوقف" : (e.status || "—"),
+                              e.points || 0,
+                              e.streak || 0,
+                            ].join(",") + "\n";
+                          });
+                          var blob = new Blob([csv], { type: "text/csv;charset=utf-8" });
+                          var url = URL.createObjectURL(blob);
+                          var a = document.createElement("a");
+                          a.href = url;
+                          a.download = "employees_" + new Date().toISOString().slice(0, 10) + ".csv";
+                          a.click();
+                          URL.revokeObjectURL(url);
+                          setBulkResult({ ok: true, count: selectedEmps.length, action: "export" });
+                        } else if (bulkActionOpen === "notify") {
+                          var titleEl = document.getElementById("bulk-notify-title");
+                          var bodyEl = document.getElementById("bulk-notify-body");
+                          var title = titleEl ? titleEl.value.trim() : "";
+                          var body = bodyEl ? bodyEl.value.trim() : "";
+                          if (!title || !body) {
+                            setBulkResult({ ok: false, error: tr("يجب إدخال العنوان والنص") });
+                            setBulkProcessing(false);
+                            return;
+                          }
+                          var r = await fetch("/api/data?action=bulk-notify", {
+                            method: "POST",
+                            headers: { "Content-Type": "application/json" },
+                            body: JSON.stringify({ empIds: bulkSelected, title: title, body: body, actorId: "admin" }),
+                          });
+                          var d = await r.json();
+                          setBulkResult(d.ok ? { ok: true, count: d.summary.sent, action: "notify" } : { ok: false, error: d.error });
+                        } else {
+                          var action = bulkActionOpen === "activate" ? "bulk-activate" : "bulk-deactivate";
+                          var r2 = await fetch("/api/data?action=" + action, {
+                            method: "POST",
+                            headers: { "Content-Type": "application/json" },
+                            body: JSON.stringify({ empIds: bulkSelected, actorId: "admin" }),
+                          });
+                          var d2 = await r2.json();
+                          if (d2.ok) {
+                            setBulkResult({ ok: true, count: d2.updated, action: bulkActionOpen });
+                            // Refresh employee list
+                            var list = await api('employees');
+                            if (Array.isArray(list)) setEmps(list);
+                          } else {
+                            setBulkResult({ ok: false, error: d2.error });
+                          }
+                        }
+                      } catch(e) {
+                        setBulkResult({ ok: false, error: e.message });
+                      }
+                      setBulkProcessing(false);
+                    }} disabled={bulkProcessing} style={{
+                      flex: 2, padding: 12, borderRadius: 10,
+                      background: bulkProcessing ? t.sep : (bulkActionOpen === "deactivate" ? t.bad : bulkActionOpen === "activate" ? t.ok : B.blue),
+                      color: "#fff", border: "none",
+                      fontSize: 13, fontWeight: 800,
+                      cursor: bulkProcessing ? "wait" : "pointer", fontFamily: "inherit",
+                    }}>{bulkProcessing ? "⏳ " + tr("جاري التنفيذ...") : tr("تأكيد")}</button>
+                  </div>
+                </>
+              ) : (
+                <>
+                  <div style={{ textAlign: "center" }}>
+                    <div style={{ fontSize: 56, marginBottom: 10 }}>
+                      {bulkResult.ok ? "✅" : "❌"}
+                    </div>
+                    <div style={{ fontSize: 18, fontWeight: 900, color: bulkResult.ok ? t.ok : t.bad, marginBottom: 8 }}>
+                      {bulkResult.ok ? tr("تم بنجاح!") : tr("فشلت العملية")}
+                    </div>
+                    {bulkResult.ok && (
+                      <div style={{ fontSize: 13, color: t.tx, lineHeight: 1.7 }}>
+                        {bulkResult.action === "export" && <>{tr("تم تصدير")} <b>{bulkResult.count}</b> {tr("موظف")}</>}
+                        {bulkResult.action === "notify" && <>{tr("تم إرسال الإشعار إلى")} <b>{bulkResult.count}</b> {tr("موظف")}</>}
+                        {bulkResult.action === "activate" && <>{tr("تم تفعيل")} <b>{bulkResult.count}</b> {tr("موظف")}</>}
+                        {bulkResult.action === "deactivate" && <>{tr("تم إيقاف")} <b>{bulkResult.count}</b> {tr("موظف")}</>}
+                      </div>
+                    )}
+                    {!bulkResult.ok && (
+                      <div style={{ fontSize: 12, color: t.bad, marginTop: 8 }}>{bulkResult.error}</div>
+                    )}
+                    <button onClick={function(){
+                      setBulkResult(null);
+                      setBulkActionOpen(null);
+                      if (bulkResult.ok) setBulkSelected([]);
+                    }} style={{
+                      marginTop: 18,
+                      padding: "10px 30px", borderRadius: 10,
+                      background: B.blue, color: "#fff",
+                      border: "none", fontSize: 12, fontWeight: 800,
+                      cursor: "pointer", fontFamily: "inherit",
+                    }}>{tr("حسناً")}</button>
+                  </div>
+                </>
+              )}
+            </div>
+          </div>
+        )}
+
         {/* Kadwar source banner — compact on mobile */}
         <div style={{ background: B.blue + "12", border: "1px solid " + B.blue + "40", borderRadius: 10, padding: isMobile ? "8px 10px" : "10px 14px", marginBottom: 12, display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
           <div style={{ fontSize: isMobile ? 10 : 11, color: t.tx, lineHeight: 1.5, flex: 1, minWidth: 0 }}>
@@ -4138,51 +4616,104 @@ export default function AdminApp() {
             {filteredEmps.map(function(e){
               var sc = e.status === "حاضر" ? t.ok : e.status === "متأخر" ? t.warn : t.bad;
               var pc = e.pct >= 85 ? t.ok : e.pct >= 70 ? t.warn : t.bad;
+              var isChecked = bulkSelected.indexOf(e.id) >= 0;
               return (
-                <div key={e.id} onClick={function(){ setSelEmp(e); }} style={{
-                  background: t.card,
+                <div key={e.id} style={{
+                  background: isChecked ? B.blue + "10" : t.card,
                   borderRadius: 12,
                   padding: 12,
-                  border: "1px solid " + t.sep,
+                  border: "1px solid " + (isChecked ? B.blue : t.sep),
                   borderRight: "3px solid " + sc,
-                  cursor: "pointer",
                   display: "flex",
                   alignItems: "center",
                   gap: 10,
                   boxShadow: "0 1px 2px rgba(0,0,0,0.03)",
                 }}>
-                  <div style={{ width: 40, height: 40, borderRadius: "50%", background: sc + "15", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 18, flexShrink: 0 }}>👤</div>
-                  <div style={{ flex: 1, minWidth: 0 }}>
-                    <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 2 }}>
-                      <div style={{ fontSize: 13, fontWeight: 800, color: t.tx, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{e.name}</div>
-                      <span style={{ padding: "1px 6px", borderRadius: 4, fontSize: 9, fontWeight: 700, background: sc + "20", color: sc, flexShrink: 0 }}>{e.status}</span>
+                  {/* v7.98 C — Bulk selection checkbox */}
+                  <div onClick={function(ev){
+                    ev.stopPropagation();
+                    setBulkSelected(function(prev){
+                      if (prev.indexOf(e.id) >= 0) return prev.filter(function(x){ return x !== e.id; });
+                      return prev.concat([e.id]);
+                    });
+                  }} style={{
+                    width: 22, height: 22, borderRadius: 6,
+                    border: "2px solid " + (isChecked ? B.blue : t.sep),
+                    background: isChecked ? B.blue : "transparent",
+                    display: "flex", alignItems: "center", justifyContent: "center",
+                    color: "#fff", fontSize: 14, fontWeight: 900,
+                    cursor: "pointer", flexShrink: 0,
+                  }}>{isChecked ? "✓" : ""}</div>
+
+                  <div onClick={function(){ setSelEmp(e); }} style={{ flex: 1, minWidth: 0, display: "flex", alignItems: "center", gap: 10, cursor: "pointer" }}>
+                    <div style={{ width: 40, height: 40, borderRadius: "50%", background: sc + "15", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 18, flexShrink: 0 }}>👤</div>
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 2 }}>
+                        <div style={{ fontSize: 13, fontWeight: 800, color: t.tx, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{e.name}</div>
+                        <span style={{ padding: "1px 6px", borderRadius: 4, fontSize: 9, fontWeight: 700, background: sc + "20", color: sc, flexShrink: 0 }}>{e.status}</span>
+                      </div>
+                      <div style={{ fontSize: 10, color: t.txM, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                        {e.role} · {e.branch}
+                      </div>
+                      <div style={{ display: "flex", gap: 10, marginTop: 4, fontSize: 10 }}>
+                        <span style={{ color: pc, fontWeight: 700 }}>📊 {e.pct}%</span>
+                        <span style={{ color: t.txM }}>🔥 {e.streak}</span>
+                        {e.violations > 0 && <span style={{ color: t.bad, fontWeight: 700 }}>⚖️ {e.violations}</span>}
+                      </div>
                     </div>
-                    <div style={{ fontSize: 10, color: t.txM, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-                      {e.role} · {e.branch}
-                    </div>
-                    <div style={{ display: "flex", gap: 10, marginTop: 4, fontSize: 10 }}>
-                      <span style={{ color: pc, fontWeight: 700 }}>📊 {e.pct}%</span>
-                      <span style={{ color: t.txM }}>🔥 {e.streak}</span>
-                      {e.violations > 0 && <span style={{ color: t.bad, fontWeight: 700 }}>⚖️ {e.violations}</span>}
-                    </div>
+                    <div style={{ fontSize: 16, color: t.txM, flexShrink: 0 }}>‹</div>
                   </div>
-                  <div style={{ fontSize: 16, color: t.txM, flexShrink: 0 }}>‹</div>
                 </div>
               );
             })}
           </div>
         ) : (
         <div style={{ background: t.card, borderRadius: 14, border: "1px solid " + t.sep, overflow: "hidden" }}>
-          <table style={{ width: "100%", borderCollapse: "collapse" }}><thead><tr style={{ background: t.bg }}>{["الموظف", "الفرع", "الحالة", "الالتزام", "السلسلة", "المستوى", "المخالفات", "البصمات"].map((h, i) => <th key={i} style={{ padding: "10px 12px", fontSize: 10, fontWeight: 700, color: t.txM, textAlign: "right", borderBottom: "1px solid " + t.sep }}>{h}</th>)}</tr></thead>
-          <tbody>{filteredEmps.map(e => { const sc = e.status === "حاضر" ? t.ok : e.status === "متأخر" ? t.warn : t.bad; const pc = e.pct >= 85 ? t.ok : e.pct >= 70 ? t.warn : t.bad; return (<tr key={e.id} onClick={() => setSelEmp(e)} style={{ cursor: "pointer" }} onMouseEnter={ev => ev.currentTarget.style.background = t.bg} onMouseLeave={ev => ev.currentTarget.style.background = "transparent"}>
-            <td style={td}><div style={{ display: "flex", alignItems: "center", gap: 8 }}><div style={{ width: 32, height: 32, borderRadius: "50%", background: `${sc}12`, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 14 }}>👤</div><div><div style={{ fontSize: 12, fontWeight: 700 }}>{e.name}</div><div style={{ fontSize: 9, color: t.txM }}>{e.role} · {e.id}</div></div></div></td>
-            <td style={td}><span style={{ fontSize: 11 }}>{e.branch}</span></td>
-            <td style={td}><span style={{ padding: "3px 8px", borderRadius: 6, fontSize: 10, fontWeight: 700, background: `${sc}15`, color: sc }}>{e.status}</span></td>
-            <td style={td}><span style={{ fontSize: 13, fontWeight: 800, color: pc }}>{e.pct}%</span></td>
-            <td style={td}><span style={{ fontSize: 11 }}>🔥 {e.streak}</span></td>
-            <td style={td}><span style={{ fontSize: 14 }}>{e.level}</span></td>
-            <td style={td}><span style={{ padding: "3px 8px", borderRadius: 6, fontSize: 10, fontWeight: 700, background: e.violations > 0 ? t.badLt : t.okLt, color: e.violations > 0 ? t.bad : t.ok }}>{e.violations}</span></td>
-            <td style={td}><div style={{ display: "flex", gap: 2 }}>{e.checks.map((c, i) => <div key={i} style={{ width: 16, height: 16, borderRadius: 3, background: c ? t.okLt : t.badLt, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 8 }}>{c ? "✓" : "✕"}</div>)}</div></td>
+          <table style={{ width: "100%", borderCollapse: "collapse" }}><thead><tr style={{ background: t.bg }}>
+            {/* v7.98 C — Master checkbox */}
+            <th style={{ padding: "10px 12px", fontSize: 10, fontWeight: 700, color: t.txM, textAlign: "center", borderBottom: "1px solid " + t.sep, width: 34 }}>
+              <div onClick={function(){
+                if (bulkSelected.length === filteredEmps.length) {
+                  setBulkSelected([]);
+                } else {
+                  setBulkSelected(filteredEmps.map(function(e){ return e.id; }));
+                }
+              }} style={{
+                width: 20, height: 20, borderRadius: 5, margin: "0 auto",
+                border: "2px solid " + (bulkSelected.length > 0 ? B.blue : t.sep),
+                background: bulkSelected.length === filteredEmps.length && filteredEmps.length > 0 ? B.blue : bulkSelected.length > 0 ? B.blue + "50" : "transparent",
+                display: "flex", alignItems: "center", justifyContent: "center",
+                color: "#fff", fontSize: 12, fontWeight: 900,
+                cursor: "pointer",
+              }}>{bulkSelected.length === filteredEmps.length && filteredEmps.length > 0 ? "✓" : bulkSelected.length > 0 ? "—" : ""}</div>
+            </th>
+            {["الموظف", "الفرع", "الحالة", "الالتزام", "السلسلة", "المستوى", "المخالفات", "البصمات"].map((h, i) => <th key={i} style={{ padding: "10px 12px", fontSize: 10, fontWeight: 700, color: t.txM, textAlign: "right", borderBottom: "1px solid " + t.sep }}>{h}</th>)}
+          </tr></thead>
+          <tbody>{filteredEmps.map(e => { const sc = e.status === "حاضر" ? t.ok : e.status === "متأخر" ? t.warn : t.bad; const pc = e.pct >= 85 ? t.ok : e.pct >= 70 ? t.warn : t.bad; var isChecked = bulkSelected.indexOf(e.id) >= 0; return (<tr key={e.id} style={{ cursor: "pointer", background: isChecked ? B.blue + "08" : "transparent" }} onMouseEnter={ev => ev.currentTarget.style.background = isChecked ? B.blue + "15" : t.bg} onMouseLeave={ev => ev.currentTarget.style.background = isChecked ? B.blue + "08" : "transparent"}>
+            <td style={Object.assign({}, td, { textAlign: "center" })}>
+              <div onClick={function(ev){
+                ev.stopPropagation();
+                setBulkSelected(function(prev){
+                  if (prev.indexOf(e.id) >= 0) return prev.filter(function(x){ return x !== e.id; });
+                  return prev.concat([e.id]);
+                });
+              }} style={{
+                width: 20, height: 20, borderRadius: 5, margin: "0 auto",
+                border: "2px solid " + (isChecked ? B.blue : t.sep),
+                background: isChecked ? B.blue : "transparent",
+                display: "flex", alignItems: "center", justifyContent: "center",
+                color: "#fff", fontSize: 12, fontWeight: 900,
+                cursor: "pointer",
+              }}>{isChecked ? "✓" : ""}</div>
+            </td>
+            <td style={td} onClick={() => setSelEmp(e)}><div style={{ display: "flex", alignItems: "center", gap: 8 }}><div style={{ width: 32, height: 32, borderRadius: "50%", background: `${sc}12`, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 14 }}>👤</div><div><div style={{ fontSize: 12, fontWeight: 700 }}>{e.name}</div><div style={{ fontSize: 9, color: t.txM }}>{e.role} · {e.id}</div></div></div></td>
+            <td style={td} onClick={() => setSelEmp(e)}><span style={{ fontSize: 11 }}>{e.branch}</span></td>
+            <td style={td} onClick={() => setSelEmp(e)}><span style={{ padding: "3px 8px", borderRadius: 6, fontSize: 10, fontWeight: 700, background: `${sc}15`, color: sc }}>{e.status}</span></td>
+            <td style={td} onClick={() => setSelEmp(e)}><span style={{ fontSize: 13, fontWeight: 800, color: pc }}>{e.pct}%</span></td>
+            <td style={td} onClick={() => setSelEmp(e)}><span style={{ fontSize: 11 }}>🔥 {e.streak}</span></td>
+            <td style={td} onClick={() => setSelEmp(e)}><span style={{ fontSize: 14 }}>{e.level}</span></td>
+            <td style={td} onClick={() => setSelEmp(e)}><span style={{ padding: "3px 8px", borderRadius: 6, fontSize: 10, fontWeight: 700, background: e.violations > 0 ? t.badLt : t.okLt, color: e.violations > 0 ? t.bad : t.ok }}>{e.violations}</span></td>
+            <td style={td} onClick={() => setSelEmp(e)}><div style={{ display: "flex", gap: 2 }}>{e.checks.map((c, i) => <div key={i} style={{ width: 16, height: 16, borderRadius: 3, background: c ? t.okLt : t.badLt, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 8 }}>{c ? "✓" : "✕"}</div>)}</div></td>
           </tr>); })}</tbody></table>
         </div>
         )}
@@ -14354,6 +14885,40 @@ function KadwarSyncDashboard({ t, B }) {
   var [refreshing, setRefreshing] = useState(false);
   var [error, setError] = useState(null);
   var [selectedFailure, setSelectedFailure] = useState(null);
+  // v7.99 — Two-way sync state
+  var [pendingCount, setPendingCount] = useState(null);
+  var [pushing, setPushing] = useState(false);
+  var [pushResult, setPushResult] = useState(null);
+
+  async function loadPending() {
+    try {
+      var r = await fetch("/api/data?action=kadwar-pending-count");
+      var d = await r.json();
+      if (d.ok) setPendingCount(d.pending);
+    } catch(e) {}
+  }
+
+  async function pushAllToKadwar() {
+    if (!confirm(tr("تأكيد: سيتم دفع كل التحديثات المُعلّقة من بصمة إلى كوادر. متابعة؟"))) return;
+    setPushing(true);
+    setPushResult(null);
+    try {
+      var r = await fetch("/api/data?action=kadwar-push-all", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ actorId: "admin" }),
+      });
+      var d = await r.json();
+      setPushResult(d);
+      if (d.ok) {
+        await loadPending();
+        await load(true);
+      }
+    } catch(e) {
+      setPushResult({ ok: false, error: e.message });
+    }
+    setPushing(false);
+  }
 
   async function load(silent) {
     if (silent) setRefreshing(true);
@@ -14380,7 +14945,7 @@ function KadwarSyncDashboard({ t, B }) {
     setRefreshing(false);
   }
 
-  useEffect(function(){ load(false); }, []);
+  useEffect(function(){ load(false); loadPending(); }, []);
 
   // Format timestamp
   function formatTs(ts) {
@@ -14536,6 +15101,94 @@ function KadwarSyncDashboard({ t, B }) {
           </div>;
         })}
       </div>
+
+      {/* v7.99 — Two-way Sync Card (Push pending to Kadwar) */}
+      {pendingCount && pendingCount.total > 0 && (
+        <div style={{
+          background: "linear-gradient(135deg, #F59E0B15, #EAB30815)",
+          border: "2px solid #F59E0B40",
+          borderRadius: 14, padding: 16,
+          marginBottom: 14,
+        }}>
+          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, marginBottom: 12, flexWrap: "wrap" }}>
+            <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+              <div style={{
+                width: 44, height: 44, borderRadius: 10,
+                background: "linear-gradient(135deg, #F59E0B, #EAB308)",
+                display: "flex", alignItems: "center", justifyContent: "center",
+                fontSize: 20, color: "#fff",
+              }}>⬆️</div>
+              <div>
+                <div style={{ fontSize: 14, fontWeight: 900, color: t.tx }}>
+                  {tr("تحديثات بانتظار الإرسال لكوادر")}
+                </div>
+                <div style={{ fontSize: 11, color: t.txM, marginTop: 3 }}>
+                  {tr("تغييرات تمت في بصمة ولم تصل كوادر بعد")}
+                </div>
+              </div>
+            </div>
+            <button onClick={pushAllToKadwar} disabled={pushing} style={{
+              padding: "10px 18px", borderRadius: 10,
+              background: pushing ? t.sep : "linear-gradient(135deg, #F59E0B, #EAB308)",
+              color: "#fff", border: "none",
+              fontSize: 12, fontWeight: 800,
+              cursor: pushing ? "wait" : "pointer", fontFamily: "inherit",
+              boxShadow: pushing ? "none" : "0 4px 12px rgba(245,158,11,0.3)",
+            }}>
+              {pushing ? "⏳ " + tr("جاري الإرسال...") : "⬆️ " + tr("دفع الكل الآن")}
+            </button>
+          </div>
+
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 8 }}>
+            <div style={{ padding: 10, background: t.card, borderRadius: 8, textAlign: "center" }}>
+              <div style={{ fontSize: 22, fontWeight: 900, color: "#F59E0B" }}>{pendingCount.violations}</div>
+              <div style={{ fontSize: 10, color: t.txM, marginTop: 3 }}>⚖️ {tr("مخالفات")}</div>
+            </div>
+            <div style={{ padding: 10, background: t.card, borderRadius: 8, textAlign: "center" }}>
+              <div style={{ fontSize: 22, fontWeight: 900, color: "#F59E0B" }}>{pendingCount.payroll}</div>
+              <div style={{ fontSize: 10, color: t.txM, marginTop: 3 }}>💰 {tr("مسيرات")}</div>
+            </div>
+            <div style={{ padding: 10, background: t.card, borderRadius: 8, textAlign: "center" }}>
+              <div style={{ fontSize: 22, fontWeight: 900, color: "#F59E0B" }}>{pendingCount.terminations}</div>
+              <div style={{ fontSize: 10, color: t.txM, marginTop: 3 }}>🚪 {tr("إنهاء عقود")}</div>
+            </div>
+          </div>
+
+          {pushResult && (
+            <div style={{
+              marginTop: 12, padding: "10px 14px", borderRadius: 10,
+              background: pushResult.ok ? t.okLt : t.badLt,
+              border: "1px solid " + (pushResult.ok ? t.ok : t.bad) + "40",
+              fontSize: 11,
+            }}>
+              {pushResult.ok ? (
+                <div>
+                  <div style={{ fontWeight: 800, color: t.ok, marginBottom: 4 }}>✅ {tr("تم الدفع!")}</div>
+                  <div style={{ color: t.tx }}>
+                    {tr("المرسل:")} <b>{pushResult.totals.sent}</b> · {tr("فشل:")} <b>{pushResult.totals.failed}</b>
+                  </div>
+                </div>
+              ) : (
+                <div style={{ color: t.bad }}>❌ {tr("فشل:")} {pushResult.error}</div>
+              )}
+            </div>
+          )}
+        </div>
+      )}
+
+      {pendingCount && pendingCount.total === 0 && (
+        <div style={{
+          padding: "12px 16px",
+          background: t.okLt, border: "1px solid " + t.ok + "40",
+          borderRadius: 10, marginBottom: 14,
+          display: "flex", alignItems: "center", gap: 10,
+        }}>
+          <span style={{ fontSize: 18 }}>✅</span>
+          <span style={{ fontSize: 12, fontWeight: 700, color: t.ok }}>
+            {tr("جميع التحديثات متزامنة مع كوادر")}
+          </span>
+        </div>
+      )}
 
       {/* ─── Daily Trend Chart (14 days) ─── */}
       <div style={{ background: t.card, borderRadius: 14, padding: 16, border: "1px solid " + t.sep, marginBottom: 14 }}>
