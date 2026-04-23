@@ -732,6 +732,16 @@ const INIT_BRANCHES = [
   { id: "gaz", name: "غازي عنتاب", start: "08:30", end: "17:00", breakS: "12:30", breakE: "13:00", offDay: "friday", tz: "Europe/Istanbul", radius: 120, lat: 37.0662, lng: 37.3833 },
 ];
 
+// v7.95 — Shuffle helper for Flash Challenge options
+function shuffle(arr) {
+  var a = arr.slice();
+  for (var i = a.length - 1; i > 0; i--) {
+    var j = Math.floor(Math.random() * (i + 1));
+    var tmp = a[i]; a[i] = a[j]; a[j] = tmp;
+  }
+  return a;
+}
+
 export default async function handler(req, res) {
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Access-Control-Allow-Methods', 'GET,POST,PUT,DELETE,OPTIONS');
@@ -9164,6 +9174,397 @@ export default async function handler(req, res) {
           questionsAvailable: questionsCount,
           results: results,
         });
+      }
+
+      /* ═══════════════════════════════════════════════════════════════
+       * v7.95 — FLASH CHALLENGE (سؤال تحدي على السريع)
+       * ═══════════════════════════════════════════════════════════════
+       * Admin-triggered instant challenge sent to selected employees
+       * Storage key: 'flash_challenges' — { activeId, items[] }
+       * Each item: {
+       *   id, ts, expiresAt, createdBy,
+       *   q, correct, wrong1, wrong2, type, points,
+       *   targets[],        // array of empIds
+       *   responses: {empId: {answered, correct, ts}}
+       * }
+       *
+       * Endpoints:
+       *   POST   /api/data?action=flash-send      — create & send
+       *   GET    /api/data?action=flash-my&empId=X — get active for employee
+       *   POST   /api/data?action=flash-answer    — submit answer
+       *   GET    /api/data?action=flash-list      — admin: all flashes
+       */
+      case 'flash-send': {
+        if (req.method !== 'POST') return res.status(405).json({ error: 'POST required' });
+        var bodyFs = req.body || {};
+        var actorIdFs = bodyFs.actorId || 'admin';
+        var empIdsFs = bodyFs.empIds;
+        var qTextFs = bodyFs.q;
+        var correctFs = bodyFs.correct;
+        var wrong1Fs = bodyFs.wrong1;
+        var wrong2Fs = bodyFs.wrong2;
+        var pointsFs = parseInt(bodyFs.points || 20, 10);
+        var durationMinutesFs = parseInt(bodyFs.durationMinutes || 5, 10);
+        var typeFs = bodyFs.type || 'سؤال';
+
+        if (!qTextFs || !correctFs || !wrong1Fs || !wrong2Fs) {
+          return res.status(400).json({ error: 'q + correct + wrong1 + wrong2 required' });
+        }
+        if (!Array.isArray(empIdsFs) || empIdsFs.length === 0) {
+          // If empty, broadcast to all active employees
+          var allEmpsFs = (await dbGet('employees')) || [];
+          empIdsFs = allEmpsFs.filter(function(e){ return e.active !== false; }).map(function(e){ return String(e.id); });
+        }
+
+        // v7.96 — Apply notifyWho filter (settings-driven)
+        var flashSettings = ((await dbGet('settings')) || {}).flashChallenge || {};
+        var notifyWho = flashSettings.notifyWho || 'all';  // all | in_work | checked_in
+        var excludedByFilter = 0;
+
+        if (notifyWho !== 'all') {
+          var allEmpsForFilter = (await dbGet('employees')) || [];
+          var attForFilter = (await dbGet('attendance')) || [];
+          var branchesForFilter = (await dbGet('branches')) || [];
+          var todayStrFs = new Date().toISOString().slice(0, 10);
+          var todayAttFilter = attForFilter.filter(function(a){ return a.date === todayStrFs; });
+          var checkedInSet = new Set(todayAttFilter.filter(function(a){ return a.type === 'checkin'; }).map(function(a){ return String(a.empId); }));
+          var checkedOutSet = new Set(todayAttFilter.filter(function(a){ return a.type === 'checkout'; }).map(function(a){ return String(a.empId); }));
+
+          var beforeCount = empIdsFs.length;
+          if (notifyWho === 'checked_in') {
+            // Must have check-in today
+            empIdsFs = empIdsFs.filter(function(id){ return checkedInSet.has(String(id)); });
+          } else if (notifyWho === 'in_work') {
+            // Must have check-in + NOT checked-out yet
+            empIdsFs = empIdsFs.filter(function(id){
+              return checkedInSet.has(String(id)) && !checkedOutSet.has(String(id));
+            });
+          }
+          excludedByFilter = beforeCount - empIdsFs.length;
+        }
+
+        var nowFs = Date.now();
+        var flashId = 'F' + nowFs + Math.random().toString(36).slice(2, 5);
+        var expiresAt = nowFs + (durationMinutesFs * 60 * 1000);
+
+        var newFlash = {
+          id: flashId,
+          ts: new Date(nowFs).toISOString(),
+          expiresAt: new Date(expiresAt).toISOString(),
+          createdBy: actorIdFs,
+          q: qTextFs,
+          correct: correctFs,
+          wrong1: wrong1Fs,
+          wrong2: wrong2Fs,
+          type: typeFs,
+          points: pointsFs,
+          targets: empIdsFs.map(String),
+          responses: {},
+          // v7.96 — Snapshot of settings at send time (enforced on answer)
+          rules: {
+            requireInWork: flashSettings.requireInWork !== false,  // default: required
+            notifyWho: notifyWho,
+            timerMode: flashSettings.timerMode || 'unified',       // unified | personal
+          },
+        };
+
+        // Store flash
+        var flashStore = (await dbGet('flash_challenges')) || { items: [] };
+        if (!Array.isArray(flashStore.items)) flashStore.items = [];
+        flashStore.items.push(newFlash);
+        // Keep only last 100
+        if (flashStore.items.length > 100) flashStore.items = flashStore.items.slice(-100);
+        await dbSet('flash_challenges', flashStore);
+
+        // Send push notifications
+        var pushSubsFs = (await dbGet('push_subscriptions')) || {};
+        var sentCount = 0, failedCount = 0, noSubCount = 0;
+
+        for (var iFs = 0; iFs < empIdsFs.length; iFs++) {
+          var eid = empIdsFs[iFs];
+          var subFs = pushSubsFs[eid];
+          if (!subFs || !subFs.subscription) {
+            noSubCount++;
+            continue;
+          }
+          try {
+            var prFs = await sendWebPush(subFs.subscription, {
+              title: '⚡ سؤال تحدي على السريع!',
+              body: '+' + pointsFs + ' نقاط إذا أجبت صحيح — أسرع قبل انتهاء الوقت!',
+              tag: 'flash-' + flashId,
+              data: { type: 'flash_challenge', flashId: flashId },
+              requireInteraction: true,
+            });
+            if (prFs.sent) sentCount++;
+            else failedCount++;
+          } catch(e) {
+            failedCount++;
+          }
+
+          // Also save to notifications (polling fallback)
+          try {
+            var notifsFs = (await dbGet('notifications')) || [];
+            notifsFs.unshift({
+              id: 'N_FLASH_' + flashId + '_' + iFs,
+              empId: eid,
+              type: 'flash_challenge',
+              title: '⚡ سؤال تحدي على السريع!',
+              message: '+' + pointsFs + ' نقاط إن أجبت صحيح خلال ' + durationMinutesFs + ' دقيقة',
+              flashId: flashId,
+              read: false,
+              ts: new Date().toISOString(),
+            });
+            await dbSet('notifications', notifsFs.slice(0, 500));
+          } catch(e) {}
+        }
+
+        // Audit log
+        await auditLog(actorIdFs, 'flash_challenge_sent', flashId, {
+          targets: empIdsFs.length,
+          sent: sentCount,
+          failed: failedCount,
+          noSub: noSubCount,
+          points: pointsFs,
+          durationMinutes: durationMinutesFs,
+          questionPreview: qTextFs.slice(0, 50),
+        }, 'admin');
+
+        return res.json({
+          ok: true,
+          flashId: flashId,
+          summary: {
+            targets: empIdsFs.length,
+            sent: sentCount,
+            failed: failedCount,
+            noSubscription: noSubCount,
+            excludedByFilter: excludedByFilter,  // v7.96
+          },
+          rules: newFlash.rules,  // v7.96 — return applied rules
+          expiresAt: newFlash.expiresAt,
+        });
+      }
+
+      /* ═══ v7.95 — FLASH: get active flash for employee ═══ */
+      case 'flash-my': {
+        if (req.method !== 'GET') return res.status(405).json({ error: 'GET required' });
+        var empIdM = req.query.empId;
+        if (!empIdM) return res.status(400).json({ error: 'empId required' });
+
+        var storeM = (await dbGet('flash_challenges')) || { items: [] };
+        var nowM = Date.now();
+        // Find latest active flash for this employee
+        var activeFlash = null;
+        if (Array.isArray(storeM.items)) {
+          for (var iM = storeM.items.length - 1; iM >= 0; iM--) {
+            var itemM = storeM.items[iM];
+            if (!itemM) continue;
+            if (new Date(itemM.expiresAt).getTime() < nowM) continue;    // expired
+            if (!itemM.targets || itemM.targets.indexOf(String(empIdM)) < 0) continue;
+            if (itemM.responses && itemM.responses[empIdM]) continue;    // already answered
+            activeFlash = itemM;
+            break;
+          }
+        }
+
+        if (!activeFlash) return res.json({ ok: true, active: false });
+
+        // Return WITHOUT correct answer (security)
+        return res.json({
+          ok: true,
+          active: true,
+          flash: {
+            id: activeFlash.id,
+            q: activeFlash.q,
+            opts: shuffle([activeFlash.correct, activeFlash.wrong1, activeFlash.wrong2]),
+            type: activeFlash.type,
+            points: activeFlash.points,
+            expiresAt: activeFlash.expiresAt,
+            durationRemainingMs: new Date(activeFlash.expiresAt).getTime() - nowM,
+          },
+        });
+      }
+
+      /* ═══ v7.95 — FLASH: submit answer ═══ */
+      case 'flash-answer': {
+        if (req.method !== 'POST') return res.status(405).json({ error: 'POST required' });
+        var bodyA = req.body || {};
+        var flashIdA = bodyA.flashId;
+        var empIdA = bodyA.empId;
+        var answerTextA = bodyA.answer;
+        if (!flashIdA || !empIdA || !answerTextA) {
+          return res.status(400).json({ error: 'flashId + empId + answer required' });
+        }
+
+        var storeA = (await dbGet('flash_challenges')) || { items: [] };
+        var nowA = Date.now();
+        var flashA = (storeA.items || []).find(function(f){ return f.id === flashIdA; });
+        if (!flashA) return res.status(404).json({ error: 'flash not found' });
+
+        if (new Date(flashA.expiresAt).getTime() < nowA) {
+          return res.json({ ok: false, expired: true, error: 'انتهت صلاحية السؤال' });
+        }
+
+        if (!flashA.targets || flashA.targets.indexOf(String(empIdA)) < 0) {
+          return res.status(403).json({ error: 'not targeted' });
+        }
+
+        if (flashA.responses && flashA.responses[empIdA]) {
+          return res.json({ ok: false, alreadyAnswered: true });
+        }
+
+        // v7.96 — Enforce "in work" rule if required
+        if (flashA.rules && flashA.rules.requireInWork) {
+          // Rule: check-in today + GPS in branch radius + no check-out
+          var empsIW = (await dbGet('employees')) || [];
+          var empIW = empsIW.find(function(e){ return String(e.id) === String(empIdA); });
+          var attIW = (await dbGet('attendance')) || [];
+          var branchesIW = (await dbGet('branches')) || [];
+          var todayStrIW = new Date().toISOString().slice(0, 10);
+          var todayAttIW = attIW.filter(function(a){ return String(a.empId) === String(empIdA) && a.date === todayStrIW; });
+
+          var hasCheckinIW = todayAttIW.some(function(a){ return a.type === 'checkin'; });
+          var hasCheckoutIW = todayAttIW.some(function(a){ return a.type === 'checkout'; });
+
+          // Check 1: must have check-in today
+          if (!hasCheckinIW) {
+            return res.json({
+              ok: false,
+              notAllowed: true,
+              reason: 'not_checked_in',
+              message: 'لم تسجل حضورك اليوم',
+            });
+          }
+
+          // Check 2: must NOT have checked-out
+          if (hasCheckoutIW) {
+            return res.json({
+              ok: false,
+              notAllowed: true,
+              reason: 'already_checked_out',
+              message: 'سجلت انصرافك مسبقاً — التحدي للموظفين في الدوام',
+            });
+          }
+
+          // Check 3: GPS must be in branch radius (if provided)
+          var userLat = parseFloat(bodyA.lat);
+          var userLng = parseFloat(bodyA.lng);
+          if (!isFinite(userLat) || !isFinite(userLng)) {
+            return res.json({
+              ok: false,
+              notAllowed: true,
+              reason: 'no_location',
+              message: 'يجب تفعيل الموقع (GPS) للمشاركة',
+            });
+          }
+
+          // Find employee's branch
+          var empBranchId = empIW && (empIW.branchId || empIW.branch);
+          var empBranch = branchesIW.find(function(b){ return b.id === empBranchId || b.name === empBranchId; });
+          if (!empBranch || !isFinite(empBranch.lat) || !isFinite(empBranch.lng)) {
+            return res.json({
+              ok: false,
+              notAllowed: true,
+              reason: 'branch_config_missing',
+              message: 'لم يتم العثور على إعدادات موقع الفرع',
+            });
+          }
+
+          // Calculate distance (Haversine)
+          var R = 6371000; // meters
+          var φ1 = userLat * Math.PI / 180;
+          var φ2 = empBranch.lat * Math.PI / 180;
+          var Δφ = (empBranch.lat - userLat) * Math.PI / 180;
+          var Δλ = (empBranch.lng - userLng) * Math.PI / 180;
+          var aDist = Math.sin(Δφ/2) * Math.sin(Δφ/2) +
+                      Math.cos(φ1) * Math.cos(φ2) * Math.sin(Δλ/2) * Math.sin(Δλ/2);
+          var cDist = 2 * Math.atan2(Math.sqrt(aDist), Math.sqrt(1-aDist));
+          var distanceM = Math.round(R * cDist);
+          var allowedRadius = empBranch.radius || 150;
+
+          if (distanceM > allowedRadius) {
+            return res.json({
+              ok: false,
+              notAllowed: true,
+              reason: 'outside_work_location',
+              message: 'أنت خارج نطاق مقر العمل',
+              distance: distanceM,
+              allowedRadius: allowedRadius,
+              branchName: empBranch.name,
+            });
+          }
+          // All checks passed — continue to answer processing
+        }
+
+        var isCorrect = (answerTextA === flashA.correct);
+
+        // Save response
+        if (!flashA.responses) flashA.responses = {};
+        flashA.responses[empIdA] = {
+          answered: answerTextA,
+          correct: isCorrect,
+          ts: new Date(nowA).toISOString(),
+          correctAnswer: flashA.correct,
+        };
+        await dbSet('flash_challenges', storeA);
+
+        // Award points if correct
+        if (isCorrect) {
+          try {
+            var empsA = (await dbGet('employees')) || [];
+            var empIdx = empsA.findIndex(function(e){ return String(e.id) === String(empIdA); });
+            if (empIdx >= 0) {
+              empsA[empIdx].points = (empsA[empIdx].points || 0) + (flashA.points || 20);
+              await dbSet('employees', empsA);
+            }
+          } catch(e) {}
+        }
+
+        // Audit log
+        await auditLog(empIdA, 'flash_challenge_answered', flashIdA, {
+          correct: isCorrect,
+          answer: answerTextA,
+          points: isCorrect ? flashA.points : 0,
+        }, 'admin');
+
+        return res.json({
+          ok: true,
+          correct: isCorrect,
+          correctAnswer: flashA.correct,
+          pointsAwarded: isCorrect ? flashA.points : 0,
+        });
+      }
+
+      /* ═══ v7.95 — FLASH: list all (admin) ═══ */
+      case 'flash-list': {
+        if (req.method !== 'GET') return res.status(405).json({ error: 'GET required' });
+        var storeL = (await dbGet('flash_challenges')) || { items: [] };
+        var nowL = Date.now();
+        var items = (storeL.items || []).slice(-30).reverse().map(function(f){
+          var responseCount = f.responses ? Object.keys(f.responses).length : 0;
+          var correctCount = 0;
+          if (f.responses) {
+            Object.keys(f.responses).forEach(function(k){
+              if (f.responses[k].correct) correctCount++;
+            });
+          }
+          return {
+            id: f.id,
+            ts: f.ts,
+            expiresAt: f.expiresAt,
+            expired: new Date(f.expiresAt).getTime() < nowL,
+            createdBy: f.createdBy,
+            q: f.q,
+            correctAnswer: f.correct,
+            type: f.type,
+            points: f.points,
+            targetsCount: (f.targets || []).length,
+            responseCount: responseCount,
+            correctCount: correctCount,
+            responseRate: (f.targets || []).length > 0
+              ? Math.round((responseCount / f.targets.length) * 100) : 0,
+          };
+        });
+        return res.json({ ok: true, items: items });
       }
 
       case 'auto_violations': {

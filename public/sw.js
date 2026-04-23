@@ -141,6 +141,9 @@ self.addEventListener('notificationclick', function(event) {
   var targetUrl = '/';
   if (data.type === 'tawasul_new_task' || (data.tag && data.tag.indexOf('tawasul-') === 0)) {
     targetUrl = '/?page=tawasul' + (data.taskId ? '&task=' + data.taskId : '');
+  } else if (data.type === 'flash_challenge' || (data.tag && data.tag.indexOf('flash-') === 0)) {
+    // v7.95 — Flash Challenge — open to home; modal will appear from polling
+    targetUrl = '/?page=home&flash=' + (data.flashId || '');
   } else if (data.fakeCall || event.action === 'answer') {
     targetUrl = '/?action=fake_call_answer&type=' + (data.callType || 'checkin');
   }
@@ -151,6 +154,7 @@ self.addEventListener('notificationclick', function(event) {
           return clients[i].focus().then(function(client){
             if (data.fakeCall) client.postMessage({ type: 'fake_call', callType: data.callType || 'checkin' });
             else if (data.type === 'tawasul_new_task') client.postMessage({ type: 'tawasul_new_task', taskId: data.taskId });
+            else if (data.type === 'flash_challenge') client.postMessage({ type: 'flash_challenge', flashId: data.flashId });
             return client;
           });
         }

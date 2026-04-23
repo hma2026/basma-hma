@@ -5,7 +5,7 @@ import { exportFormalWarning, exportInvestigationRecord, exportAffidavit, export
 import { t as tr, setLang, getLang, subscribeLangChange } from "./i18n";
 
 const APP = "بصمة HMA";
-const VER = "7.94";
+const VER = "7.96";
 const CO = "هاني محمد عسيري للإستشارات الهندسية";
 const B = { blue: "#2B5EA7", yellow: "#FDD800", red: "#E2192C", black: "#1A1A1A", blueDk: "#1E4478", blueLt: "#EDF3FB", gold: "#D4A017" };
 
@@ -1848,6 +1848,526 @@ function EmployeeDetailPage({ t, B, emp, allEmps, leaves, branches, isMobile, on
 /* ═════════════════════════════════════════════════════════════════
  * v7.87 — PushBroadcastPanel — إرسال إشعارات للموظفين
  * ═════════════════════════════════════════════════════════════════ */
+/* ═════════════════════════════════════════════════════════════════
+ * v7.95 — FlashChallengePanel — سؤال تحدي على السريع (لوحة الإرسال)
+ * ═════════════════════════════════════════════════════════════════
+ * Features:
+ *   - Create custom question or pick from bank
+ *   - Target: all / branch / selected employees
+ *   - Points: default 20 (configurable)
+ *   - Duration: 1-10 minutes (default 5)
+ *   - History tab showing past flash challenges with response stats
+ * ═════════════════════════════════════════════════════════════════ */
+function FlashChallengePanel({ t, B, emps }) {
+  var [view, setView] = useState("send"); // send | settings | history
+  // Form state
+  var [qText, setQText] = useState("");
+  var [correct, setCorrect] = useState("");
+  var [wrong1, setWrong1] = useState("");
+  var [wrong2, setWrong2] = useState("");
+  var [points, setPoints] = useState(20);
+  var [duration, setDuration] = useState(5);
+  var [target, setTarget] = useState("all"); // all | branch | selected
+  var [selectedBranch, setSelectedBranch] = useState("");
+  var [selectedIds, setSelectedIds] = useState([]);
+  var [branches, setBranches] = useState([]);
+  var [questionBank, setQuestionBank] = useState([]);
+  var [sending, setSending] = useState(false);
+  var [result, setResult] = useState(null);
+  // History
+  var [history, setHistory] = useState([]);
+  var [loadingHistory, setLoadingHistory] = useState(false);
+  // v7.96 — Flash settings
+  var [flashSettings, setFlashSettings] = useState({
+    requireInWork: true,
+    notifyWho: 'all',       // all | in_work | checked_in
+    timerMode: 'unified',   // unified | personal (future)
+  });
+  var [savingSettings, setSavingSettings] = useState(false);
+  var [settingsMsg, setSettingsMsg] = useState(null);
+
+  useEffect(function(){
+    // Load branches + questions bank + flash settings
+    fetch("/api/data?action=branches").then(function(r){ return r.json(); }).then(function(d){
+      setBranches(Array.isArray(d) ? d : []);
+    });
+    fetch("/api/data?action=settings").then(function(r){ return r.json(); }).then(function(d){
+      if (d && Array.isArray(d.questions)) setQuestionBank(d.questions);
+      // v7.96 — Load flash settings
+      if (d && d.flashChallenge) {
+        setFlashSettings(Object.assign({
+          requireInWork: true,
+          notifyWho: 'all',
+          timerMode: 'unified',
+        }, d.flashChallenge));
+      }
+    });
+  }, []);
+
+  // v7.96 — Save flash settings
+  async function saveFlashSettings(newSettings) {
+    setSavingSettings(true);
+    setSettingsMsg(null);
+    try {
+      // Get current settings first, then merge
+      var currentR = await fetch("/api/data?action=settings");
+      var currentD = await currentR.json();
+      var merged = Object.assign({}, currentD || {}, { flashChallenge: newSettings });
+
+      var r = await fetch("/api/data?action=settings", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(merged),
+      });
+      var d = await r.json();
+      if (d.ok !== false) {
+        setFlashSettings(newSettings);
+        setSettingsMsg({ type: "success", text: "✓ تم الحفظ" });
+        setTimeout(function(){ setSettingsMsg(null); }, 2500);
+      } else {
+        setSettingsMsg({ type: "error", text: "فشل الحفظ" });
+      }
+    } catch(e) {
+      setSettingsMsg({ type: "error", text: "فشل: " + e.message });
+    }
+    setSavingSettings(false);
+  }
+
+  async function loadHistory() {
+    setLoadingHistory(true);
+    try {
+      var r = await fetch("/api/data?action=flash-list");
+      var d = await r.json();
+      if (d.ok) setHistory(d.items || []);
+    } catch(e) {}
+    setLoadingHistory(false);
+  }
+
+  useEffect(function(){
+    if (view === "history") loadHistory();
+  }, [view]);
+
+  function pickFromBank() {
+    if (questionBank.length === 0) {
+      setResult({ ok: false, msg: tr("بنك الأسئلة فارغ") });
+      return;
+    }
+    var q = questionBank[Math.floor(Math.random() * questionBank.length)];
+    setQText(q.q);
+    setCorrect(q.correct);
+    setWrong1(q.wrong1);
+    setWrong2(q.wrong2);
+  }
+
+  function toggleEmp(id) {
+    setSelectedIds(function(prev){
+      var idx = prev.indexOf(id);
+      if (idx >= 0) return prev.filter(function(x){ return x !== id; });
+      return prev.concat([id]);
+    });
+  }
+
+  async function send() {
+    if (!qText.trim() || !correct.trim() || !wrong1.trim() || !wrong2.trim()) {
+      setResult({ ok: false, msg: tr("جميع الحقول مطلوبة") });
+      return;
+    }
+
+    var empIds = [];
+    if (target === "all") {
+      empIds = (emps || []).filter(function(e){ return e.active !== false; }).map(function(e){ return e.id; });
+    } else if (target === "branch") {
+      if (!selectedBranch) { setResult({ ok: false, msg: tr("اختر فرعاً") }); return; }
+      empIds = (emps || []).filter(function(e){ return e.active !== false && (e.branchId === selectedBranch || e.branch === selectedBranch); }).map(function(e){ return e.id; });
+    } else {
+      empIds = selectedIds;
+    }
+
+    if (empIds.length === 0) {
+      setResult({ ok: false, msg: tr("لا يوجد موظفون في الفئة المختارة") });
+      return;
+    }
+
+    setSending(true);
+    setResult(null);
+    try {
+      var r = await fetch("/api/data?action=flash-send", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          q: qText, correct: correct, wrong1: wrong1, wrong2: wrong2,
+          type: "سريع", points: points, durationMinutes: duration,
+          empIds: empIds, actorId: "admin",
+        }),
+      });
+      var d = await r.json();
+      if (d.ok) {
+        setResult({
+          ok: true,
+          msg: tr("✓ تم الإرسال!") + " " + tr("نجح: ") + d.summary.sent + " · " + tr("فشل: ") + d.summary.failed,
+        });
+        // Reset form
+        setQText(""); setCorrect(""); setWrong1(""); setWrong2("");
+        setSelectedIds([]);
+      } else {
+        setResult({ ok: false, msg: d.error || tr("فشل الإرسال") });
+      }
+    } catch(e) {
+      setResult({ ok: false, msg: tr("فشل: ") + e.message });
+    }
+    setSending(false);
+  }
+
+  function fmtTs(ts) {
+    if (!ts) return "—";
+    try { return new Date(ts).toLocaleString(getLang() === "ar" ? "ar-SA" : "en-US", { month: "short", day: "numeric", hour: "numeric", minute: "numeric" }); }
+    catch(e) { return ts; }
+  }
+
+  return (
+    <div>
+      {/* Header */}
+      <div style={{ background: "linear-gradient(135deg, #7c3aed, #a855f7)", borderRadius: 14, padding: "18px 22px", color: "#fff", marginBottom: 14 }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+          <div style={{ fontSize: 36 }}>⚡</div>
+          <div style={{ flex: 1 }}>
+            <div style={{ fontSize: 18, fontWeight: 900 }}>{tr("سؤال تحدي على السريع")}</div>
+            <div style={{ fontSize: 11, opacity: 0.9, marginTop: 3 }}>{tr("أرسل سؤال فوري لموظفيك لكسب نقاط — وقت تقريره أنت")}</div>
+          </div>
+        </div>
+      </div>
+
+      {/* Tabs */}
+      <div style={{ display: "flex", gap: 6, marginBottom: 14 }}>
+        {[
+          { id: "send",    icon: "🚀", label: tr("إرسال تحدي") },
+          { id: "settings", icon: "🎛️", label: tr("إعدادات") },
+          { id: "history", icon: "📜", label: tr("السجل") },
+        ].map(function(v){
+          var active = view === v.id;
+          return <button key={v.id} onClick={function(){ setView(v.id); }} style={{
+            flex: 1, padding: "10px 14px", borderRadius: 10,
+            background: active ? "#7c3aed" : t.card,
+            color: active ? "#fff" : t.tx,
+            border: "1px solid " + (active ? "#7c3aed" : t.sep),
+            fontSize: 12, fontWeight: 700,
+            cursor: "pointer", fontFamily: "inherit",
+            display: "flex", alignItems: "center", justifyContent: "center", gap: 6,
+          }}>
+            <span>{v.icon}</span>
+            <span>{v.label}</span>
+          </button>;
+        })}
+      </div>
+
+      {/* SEND tab */}
+      {view === "send" && (
+        <div style={{ background: t.card, borderRadius: 14, padding: 16, border: "1px solid " + t.sep }}>
+
+          {/* Question source */}
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>
+            <div style={{ fontSize: 13, fontWeight: 800, color: t.tx }}>📝 {tr("السؤال")}</div>
+            <button onClick={pickFromBank} style={{
+              padding: "5px 12px", borderRadius: 8,
+              background: "#7c3aed15", color: "#7c3aed",
+              border: "1px solid #7c3aed30",
+              fontSize: 10, fontWeight: 700,
+              cursor: "pointer", fontFamily: "inherit",
+            }}>🎲 {tr("اختر عشوائياً من البنك")}</button>
+          </div>
+
+          <div style={{ marginBottom: 10 }}>
+            <label style={{ fontSize: 10, fontWeight: 700, color: t.txM, display: "block", marginBottom: 4 }}>{tr("نص السؤال")}</label>
+            <textarea value={qText} onChange={function(e){ setQText(e.target.value); }}
+              placeholder={tr("مثلاً: ما عاصمة السعودية؟")}
+              rows={2} maxLength={200}
+              style={{ width: "100%", padding: "10px 14px", borderRadius: 10, border: "1px solid " + t.sep, background: t.inp, color: t.tx, fontSize: 13, fontFamily: "inherit", boxSizing: "border-box", resize: "vertical" }} />
+          </div>
+
+          <div style={{ marginBottom: 10 }}>
+            <label style={{ fontSize: 10, fontWeight: 700, color: "#10b981", display: "block", marginBottom: 4 }}>✓ {tr("الإجابة الصحيحة")}</label>
+            <input type="text" value={correct} onChange={function(e){ setCorrect(e.target.value); }}
+              placeholder={tr("الإجابة الصحيحة")} maxLength={60}
+              style={{ width: "100%", padding: "10px 14px", borderRadius: 10, border: "1px solid #10b98140", background: t.inp, color: t.tx, fontSize: 13, fontFamily: "inherit", boxSizing: "border-box" }} />
+          </div>
+
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8, marginBottom: 14 }}>
+            <div>
+              <label style={{ fontSize: 10, fontWeight: 700, color: "#ef4444", display: "block", marginBottom: 4 }}>✗ {tr("خيار خاطئ 1")}</label>
+              <input type="text" value={wrong1} onChange={function(e){ setWrong1(e.target.value); }}
+                placeholder={tr("خيار 1")} maxLength={60}
+                style={{ width: "100%", padding: "10px 14px", borderRadius: 10, border: "1px solid " + t.sep, background: t.inp, color: t.tx, fontSize: 12, fontFamily: "inherit", boxSizing: "border-box" }} />
+            </div>
+            <div>
+              <label style={{ fontSize: 10, fontWeight: 700, color: "#ef4444", display: "block", marginBottom: 4 }}>✗ {tr("خيار خاطئ 2")}</label>
+              <input type="text" value={wrong2} onChange={function(e){ setWrong2(e.target.value); }}
+                placeholder={tr("خيار 2")} maxLength={60}
+                style={{ width: "100%", padding: "10px 14px", borderRadius: 10, border: "1px solid " + t.sep, background: t.inp, color: t.tx, fontSize: 12, fontFamily: "inherit", boxSizing: "border-box" }} />
+            </div>
+          </div>
+
+          {/* Points + Duration */}
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10, marginBottom: 14 }}>
+            <div>
+              <label style={{ fontSize: 11, fontWeight: 700, color: t.tx, display: "block", marginBottom: 6 }}>⭐ {tr("النقاط")}</label>
+              <input type="number" value={points} min={5} max={100} onChange={function(e){ setPoints(parseInt(e.target.value) || 20); }}
+                style={{ width: "100%", padding: "10px 14px", borderRadius: 10, border: "1px solid " + t.sep, background: t.inp, color: t.tx, fontSize: 14, fontWeight: 800, fontFamily: "inherit", boxSizing: "border-box" }} />
+            </div>
+            <div>
+              <label style={{ fontSize: 11, fontWeight: 700, color: t.tx, display: "block", marginBottom: 6 }}>⏱ {tr("المدة (دقيقة)")}</label>
+              <input type="number" value={duration} min={1} max={30} onChange={function(e){ setDuration(parseInt(e.target.value) || 5); }}
+                style={{ width: "100%", padding: "10px 14px", borderRadius: 10, border: "1px solid " + t.sep, background: t.inp, color: t.tx, fontSize: 14, fontWeight: 800, fontFamily: "inherit", boxSizing: "border-box" }} />
+            </div>
+          </div>
+
+          {/* Targets */}
+          <div style={{ marginBottom: 14 }}>
+            <label style={{ fontSize: 11, fontWeight: 700, color: t.tx, display: "block", marginBottom: 6 }}>🎯 {tr("المستهدفون")}</label>
+            <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+              {[
+                { id: "all", icon: "📣", label: tr("كل الموظفين النشطين") },
+                { id: "branch", icon: "🏢", label: tr("فرع محدد") },
+                { id: "selected", icon: "👤", label: tr("موظفون محددون") },
+              ].map(function(opt){
+                var active = target === opt.id;
+                return <div key={opt.id} onClick={function(){ setTarget(opt.id); }} style={{
+                  padding: "10px 14px", borderRadius: 10,
+                  background: active ? "#7c3aed15" : t.card,
+                  border: "2px solid " + (active ? "#7c3aed" : t.sep),
+                  cursor: "pointer",
+                  display: "flex", alignItems: "center", gap: 10,
+                }}>
+                  <span style={{ fontSize: 16 }}>{opt.icon}</span>
+                  <span style={{ fontSize: 12, fontWeight: 700, color: t.tx }}>{opt.label}</span>
+                </div>;
+              })}
+            </div>
+          </div>
+
+          {/* Branch selector */}
+          {target === "branch" && (
+            <div style={{ marginBottom: 14 }}>
+              <select value={selectedBranch} onChange={function(e){ setSelectedBranch(e.target.value); }}
+                style={{ width: "100%", padding: "10px 14px", borderRadius: 10, border: "1px solid " + t.sep, background: t.inp, color: t.tx, fontSize: 13, fontFamily: "inherit", boxSizing: "border-box" }}>
+                <option value="">— {tr("اختر الفرع")} —</option>
+                {branches.map(function(b){ return <option key={b.id} value={b.id}>{b.name}</option>; })}
+              </select>
+            </div>
+          )}
+
+          {/* Employee picker */}
+          {target === "selected" && (
+            <div style={{ marginBottom: 14, maxHeight: 200, overflowY: "auto", border: "1px solid " + t.sep, borderRadius: 10, padding: 8 }}>
+              {emps.filter(function(e){ return e.active !== false; }).map(function(e){
+                var checked = selectedIds.indexOf(e.id) >= 0;
+                return <div key={e.id} onClick={function(){ toggleEmp(e.id); }} style={{
+                  padding: "6px 10px", borderRadius: 8,
+                  background: checked ? "#7c3aed15" : "transparent",
+                  cursor: "pointer", display: "flex", alignItems: "center", gap: 10,
+                }}>
+                  <div style={{
+                    width: 18, height: 18, borderRadius: 4,
+                    border: "2px solid " + (checked ? "#7c3aed" : t.sep),
+                    background: checked ? "#7c3aed" : "transparent",
+                    display: "flex", alignItems: "center", justifyContent: "center",
+                    color: "#fff", fontSize: 12, fontWeight: 900,
+                  }}>{checked ? "✓" : ""}</div>
+                  <span style={{ fontSize: 12, color: t.tx, fontWeight: 600 }}>{e.name}</span>
+                </div>;
+              })}
+              {selectedIds.length > 0 && (
+                <div style={{ marginTop: 6, padding: "5px 10px", background: "#7c3aed15", borderRadius: 6, fontSize: 10, color: "#7c3aed", fontWeight: 700, textAlign: "center" }}>
+                  {tr("تم اختيار")} {selectedIds.length}
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* Result */}
+          {result && (
+            <div style={{
+              padding: "10px 14px", borderRadius: 10, marginBottom: 12,
+              background: result.ok ? "#10b98115" : "#ef444415",
+              color: result.ok ? "#10b981" : "#ef4444",
+              border: "1px solid " + (result.ok ? "#10b98140" : "#ef444440"),
+              fontSize: 11, fontWeight: 700, textAlign: "center",
+            }}>{result.msg}</div>
+          )}
+
+          {/* Send button */}
+          <button onClick={send} disabled={sending} style={{
+            width: "100%", padding: 14, borderRadius: 12,
+            background: sending ? t.sep : "linear-gradient(135deg, #7c3aed, #a855f7)",
+            color: "#fff", border: "none",
+            fontSize: 14, fontWeight: 900,
+            cursor: sending ? "wait" : "pointer", fontFamily: "inherit",
+            boxShadow: sending ? "none" : "0 4px 14px rgba(124,58,237,0.4)",
+          }}>
+            {sending ? ("⏳ " + tr("جاري الإرسال...")) : ("⚡ " + tr("إرسال التحدي الآن"))}
+          </button>
+        </div>
+      )}
+
+      {/* v7.96 — SETTINGS tab */}
+      {view === "settings" && (
+        <div style={{ background: t.card, borderRadius: 14, padding: 18, border: "1px solid " + t.sep }}>
+          <div style={{ fontSize: 14, fontWeight: 800, color: t.tx, marginBottom: 16 }}>
+            🎛️ {tr("إعدادات سؤال التحدي على السريع")}
+          </div>
+
+          {/* Setting 1: Require in-work */}
+          <div style={{ marginBottom: 18, padding: 14, background: t.bg, borderRadius: 10, border: "1px solid " + t.sep }}>
+            <div style={{ fontSize: 12, fontWeight: 800, color: t.tx, marginBottom: 6 }}>
+              🔹 {tr("اشتراط التواجد في الدوام")}
+            </div>
+            <div style={{ fontSize: 10, color: t.txM, marginBottom: 10, lineHeight: 1.7 }}>
+              {tr("إذا فُعِّل، الموظف يجب أن يكون في مقر العمل وسجّل حضوراً ولم يسجّل انصرافاً للإجابة على التحدي.")}
+            </div>
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
+              {[
+                { id: true,  icon: "✅", label: tr("مطلوب"),       hint: tr("فقط في مكان العمل") },
+                { id: false, icon: "🌐", label: tr("غير مطلوب"),   hint: tr("من أي مكان") },
+              ].map(function(opt){
+                var active = flashSettings.requireInWork === opt.id;
+                return <div key={String(opt.id)} onClick={function(){
+                  saveFlashSettings(Object.assign({}, flashSettings, { requireInWork: opt.id }));
+                }} style={{
+                  padding: "12px 14px", borderRadius: 10,
+                  background: active ? "#7c3aed15" : t.card,
+                  border: "2px solid " + (active ? "#7c3aed" : t.sep),
+                  cursor: savingSettings ? "wait" : "pointer",
+                  textAlign: "center",
+                }}>
+                  <div style={{ fontSize: 22 }}>{opt.icon}</div>
+                  <div style={{ fontSize: 12, fontWeight: 800, color: active ? "#7c3aed" : t.tx, marginTop: 4 }}>{opt.label}</div>
+                  <div style={{ fontSize: 9, color: t.txM, marginTop: 3 }}>{opt.hint}</div>
+                </div>;
+              })}
+            </div>
+          </div>
+
+          {/* Setting 2: Who receives notification */}
+          <div style={{ marginBottom: 18, padding: 14, background: t.bg, borderRadius: 10, border: "1px solid " + t.sep }}>
+            <div style={{ fontSize: 12, fontWeight: 800, color: t.tx, marginBottom: 6 }}>
+              🔹 {tr("من يستقبل الإشعار")}
+            </div>
+            <div style={{ fontSize: 10, color: t.txM, marginBottom: 10, lineHeight: 1.7 }}>
+              {tr("يحدد المستقبلين الفعليين للإشعار عند الإرسال — يمكن تصفيتهم حسب الحضور لتجنب الإزعاج.")}
+            </div>
+            <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+              {[
+                { id: "all",        icon: "📢", label: tr("الجميع"),                    hint: tr("كل الموظفين النشطين (قد يزعج بعضهم)") },
+                { id: "checked_in", icon: "✓",  label: tr("من سجّلوا حضوراً اليوم"),    hint: tr("أي موظف له بصمة حضور اليوم") },
+                { id: "in_work",    icon: "🏢", label: tr("الموجودون في الدوام فقط"),   hint: tr("حضور ✓ ولم يسجّل انصراف") },
+              ].map(function(opt){
+                var active = flashSettings.notifyWho === opt.id;
+                return <div key={opt.id} onClick={function(){
+                  saveFlashSettings(Object.assign({}, flashSettings, { notifyWho: opt.id }));
+                }} style={{
+                  padding: "10px 14px", borderRadius: 10,
+                  background: active ? "#7c3aed15" : t.card,
+                  border: "2px solid " + (active ? "#7c3aed" : t.sep),
+                  cursor: savingSettings ? "wait" : "pointer",
+                  display: "flex", alignItems: "center", gap: 10,
+                }}>
+                  <div style={{
+                    width: 20, height: 20, borderRadius: 10,
+                    border: "2px solid " + (active ? "#7c3aed" : t.sep),
+                    background: active ? "#7c3aed" : "transparent",
+                    display: "flex", alignItems: "center", justifyContent: "center",
+                    color: "#fff", fontSize: 12, fontWeight: 900,
+                    flexShrink: 0,
+                  }}>{active ? "●" : ""}</div>
+                  <div style={{ flex: 1 }}>
+                    <div style={{ fontSize: 12, fontWeight: 700, color: t.tx }}>
+                      <span style={{ marginLeft: 6 }}>{opt.icon}</span> {opt.label}
+                    </div>
+                    <div style={{ fontSize: 9, color: t.txM, marginTop: 2 }}>{opt.hint}</div>
+                  </div>
+                </div>;
+              })}
+            </div>
+          </div>
+
+          {/* Save status */}
+          {settingsMsg && (
+            <div style={{
+              padding: "10px 14px", borderRadius: 10, fontSize: 11, fontWeight: 700, textAlign: "center",
+              background: settingsMsg.type === "error" ? t.bad + "15" : "#10b98115",
+              color: settingsMsg.type === "error" ? t.bad : "#10b981",
+              border: "1px solid " + (settingsMsg.type === "error" ? t.bad + "40" : "#10b98140"),
+            }}>
+              {savingSettings ? "⏳ " + tr("جاري الحفظ...") : settingsMsg.text}
+            </div>
+          )}
+
+          {/* Info footer */}
+          <div style={{
+            marginTop: 14, padding: "10px 14px",
+            background: "rgba(124,58,237,0.08)",
+            border: "1px dashed rgba(124,58,237,0.3)",
+            borderRadius: 10, fontSize: 10, color: t.txM, lineHeight: 1.7,
+          }}>
+            ℹ️ <b>{tr("ملاحظة:")}</b> {tr("الإعدادات تُطبَّق على التحديات الجديدة فقط. التحديات المُرسَلة سابقاً تحتفظ بقواعدها.")}
+          </div>
+        </div>
+      )}
+
+      {/* HISTORY tab */}
+      {view === "history" && (
+        <div>
+          {loadingHistory ? (
+            <div style={{ padding: 40, textAlign: "center", color: t.txM }}>⏳ {tr("جاري التحميل...")}</div>
+          ) : history.length === 0 ? (
+            <div style={{ padding: 40, textAlign: "center", background: t.card, borderRadius: 14, border: "1px solid " + t.sep }}>
+              <div style={{ fontSize: 36, marginBottom: 8 }}>📜</div>
+              <div style={{ fontSize: 12, color: t.txM }}>{tr("لم يتم إرسال أي تحديات بعد")}</div>
+            </div>
+          ) : (
+            <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+              {history.map(function(h){
+                return <div key={h.id} style={{
+                  background: t.card, borderRadius: 12, padding: 14,
+                  border: "1px solid " + t.sep,
+                  borderRight: "3px solid " + (h.expired ? t.txM : "#7c3aed"),
+                }}>
+                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 6, flexWrap: "wrap", gap: 8 }}>
+                    <div style={{ fontSize: 13, fontWeight: 800, color: t.tx, flex: 1, minWidth: 0 }}>
+                      {h.q.length > 60 ? h.q.slice(0, 60) + "..." : h.q}
+                    </div>
+                    <div style={{ padding: "2px 8px", borderRadius: 10, fontSize: 9, fontWeight: 700,
+                      background: h.expired ? t.txM + "20" : "#10b98115",
+                      color: h.expired ? t.txM : "#10b981" }}>
+                      {h.expired ? tr("منتهي") : tr("نشط")}
+                    </div>
+                  </div>
+                  <div style={{ fontSize: 10, color: t.txM, marginBottom: 8 }}>
+                    ✓ {h.correctAnswer} · ⭐ {h.points} {tr("نقطة")} · 📅 {fmtTs(h.ts)}
+                  </div>
+                  <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 8 }}>
+                    <div style={{ padding: "6px 8px", background: t.bg, borderRadius: 8, textAlign: "center" }}>
+                      <div style={{ fontSize: 14, fontWeight: 800, color: t.tx }}>{h.targetsCount}</div>
+                      <div style={{ fontSize: 9, color: t.txM }}>{tr("المستهدفون")}</div>
+                    </div>
+                    <div style={{ padding: "6px 8px", background: "#7c3aed15", borderRadius: 8, textAlign: "center" }}>
+                      <div style={{ fontSize: 14, fontWeight: 800, color: "#7c3aed" }}>{h.responseCount}</div>
+                      <div style={{ fontSize: 9, color: t.txM }}>{tr("ردّوا")}</div>
+                    </div>
+                    <div style={{ padding: "6px 8px", background: "#10b98115", borderRadius: 8, textAlign: "center" }}>
+                      <div style={{ fontSize: 14, fontWeight: 800, color: "#10b981" }}>{h.correctCount}</div>
+                      <div style={{ fontSize: 9, color: t.txM }}>{tr("أجابوا صحيح")}</div>
+                    </div>
+                  </div>
+                </div>;
+              })}
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
 function PushBroadcastPanel({ t, B, emps }) {
   var [overview, setOverview] = useState(null);
   var [loading, setLoading] = useState(true);
@@ -16834,6 +17354,7 @@ function SettingsHub({ t, B, emps, onLogout, onOpenOldSettings }) {
         { id: "system",        icon: "🛠️", label: tr("إعدادات النظام") },
         { id: "emp_edits",     icon: "✏️", label: tr("تعديلات موظفين") },
         { id: "push",          icon: "🔔", label: tr("إشعارات الجوال") },
+        { id: "flash",         icon: "⚡", label: tr("سؤال تحدي على السريع") },
         { id: "audit",         icon: "📜", label: tr("سجل العمليات") },
         { id: "attach_queue",  icon: "📎", label: tr("مرفقات معلّقة") },
         { id: "attachments",   icon: "🗂", label: tr("أنواع المرفقات") },
@@ -16850,6 +17371,7 @@ function SettingsHub({ t, B, emps, onLogout, onOpenOldSettings }) {
     {sub === "system" && <SystemSettingsPanel t={t} B={B} />}
     {sub === "emp_edits" && <EmployeeEditsPanel t={t} B={B} actorName="HR" />}
     {sub === "push" && <PushBroadcastPanel t={t} B={B} emps={emps} />}
+    {sub === "flash" && <FlashChallengePanel t={t} B={B} emps={emps} />}
     {sub === "audit" && <AuditLogPanel t={t} B={B} emps={emps} />}
     {/* v7.10 — Pending attachments central queue */}
     {sub === "attach_queue" && <PendingAttachmentsQueue t={t} B={B} />}
@@ -17140,6 +17662,9 @@ function EventsPanel({ events, setEvents, t, B, Fn, Toggle }) {
   </>;
 }
 
+/* ═════════════════════════════════════════════════════════════════
+ * QuestionsPanel — بنك أسئلة تحدي الصباح
+ * ═════════════════════════════════════════════════════════════════ */
 function QuestionsPanel({ hrQuestions, setHrQuestions, saveSettings, newQ, setNewQ, t, B, Fn }) {
   return <>
     <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 14 }}><span style={{ fontSize: 14, fontWeight: 700 }}>بنك أسئلة تحدي الصباح</span><span style={{ fontSize: 11, color: t.txM }}>{"إجمالي: " + hrQuestions.length + " سؤال"}</span></div>

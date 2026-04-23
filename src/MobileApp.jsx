@@ -12,7 +12,7 @@ import { t as tr, setLang, getLang, getDir, isRTL, subscribeLangChange } from ".
 
 /* ═══════════ APP CONFIG (إعدادات التطبيق) ═══════════ */
 const APP_CONFIG = {
-  VER: "7.94",
+  VER: "7.96",
   NAME: "بصمة HMA",
   FULL_NAME: "نظام الحضور والانصراف الذكي",
   COMPANY: "هاني محمد عسيري للاستشارات الهندسية",
@@ -66,6 +66,8 @@ if (typeof document !== "undefined" && !document.getElementById("basma-css")) {
     "@keyframes pulse{0%,100%{opacity:1}50%{opacity:.5}}",
     "@keyframes pageIn{from{opacity:0;transform:translateX(8px)}to{opacity:1;transform:translateX(0)}}",
     "@keyframes tawasulDeadlinePulse{0%,100%{transform:scale(1);box-shadow:0 0 0 0 rgba(239,68,68,.5)}50%{transform:scale(1.05);box-shadow:0 0 0 6px rgba(239,68,68,0)}}",
+    "@keyframes basma-bounce-in{0%{opacity:0;transform:scale(0.7)}50%{opacity:1;transform:scale(1.05)}100%{transform:scale(1)}}",
+    "@keyframes basma-pulse-glow{0%,100%{transform:scale(1);box-shadow:0 8px 24px rgba(124,58,237,0.5),0 0 0 1px rgba(124,58,237,0.3)}50%{transform:scale(1.02);box-shadow:0 12px 32px rgba(124,58,237,0.7),0 0 0 3px rgba(124,58,237,0.4)}}",
     ".basma-fadein{animation:fadeIn .4s ease both}",
     ".basma-fadein-d1{animation:fadeIn .4s ease .1s both}",
     ".basma-fadein-d2{animation:fadeIn .4s ease .2s both}",
@@ -687,6 +689,13 @@ function MobileAppInner() {
   const [streak, setStreak] = useState(0);
   const [toast, setToast] = useState(null);
   const [online, setOnline] = useState(navigator.onLine);
+  // v7.95 — Challenge bank as React state (replaces problematic global CHALLENGES_CACHE)
+  // This ensures HomePage re-renders when questions become available
+  const [challengeBank, setChallengeBank] = useState([]);
+  // v7.95 — Flash Challenge (سؤال تحدي على السريع) — triggered from Admin
+  const [flashChallenge, setFlashChallenge] = useState(null);
+  // v7.96 — Pending flash (shown as notification badge, user must tap to open modal)
+  const [flashPending, setFlashPending] = useState(null);
   const [consentGiven, setConsentGiven] = useState(function(){
     var saved = localStorage.getItem("basma_consent_date");
     if (!saved) return false;
@@ -1150,11 +1159,34 @@ function MobileAppInner() {
     pollNotifications(); // immediate first check
     document.addEventListener("visibilitychange", onVis);
 
+    // v7.95 — Flash Challenge poller (every 30 seconds)
+    // v7.96 — Changed: يُخزَّن كـ notice (للنقر عليه) بدل popup تلقائي
+    var lastFlashId = null;
+    async function pollFlash() {
+      if (!user || !user.id) return;
+      try {
+        var r = await fetch('/api/data?action=flash-my&empId=' + user.id);
+        var d = await r.json();
+        if (d.ok && d.active && d.flash && d.flash.id !== lastFlashId) {
+          lastFlashId = d.flash.id;
+          // v7.96 — Store as pending notice (not auto-open)
+          setFlashPending(d.flash);
+        } else if (d.ok && !d.active) {
+          // No active flash — clear any stale notice
+          setFlashPending(null);
+          lastFlashId = null;
+        }
+      } catch(e) { /**/ }
+    }
+    var flashInterval = setInterval(pollFlash, 30000);
+    pollFlash(); // immediate check
+
     return function() {
       if (navigator.serviceWorker) {
         navigator.serviceWorker.removeEventListener('message', handleSwMsg);
       }
       stopPoll();
+      clearInterval(flashInterval);
       document.removeEventListener("visibilitychange", onVis);
     };
   }, [user]);
@@ -1251,22 +1283,23 @@ function MobileAppInner() {
           if (bnrD && Array.isArray(bnrD.banners)) setBanners(bnrD.banners);
         }),
         // Admin-managed challenge questions (stored in settings.questions)
+        // v7.95 — Uses React state setChallengeBank (not global var)
         fetch("/api/data?action=settings").then(function(r){ return r.json(); }).then(function(sd){
           if (sd && Array.isArray(sd.questions) && sd.questions.length > 0) {
-            CHALLENGES_CACHE = sd.questions;
+            CHALLENGES_CACHE = sd.questions;    // keep global for backwards compat
+            setChallengeBank(sd.questions);      // v7.95 — also update React state
           } else {
-            // v7.91 — Auto-seed if bank is empty (fire-and-forget)
-            // This ensures the morning challenge shows even if admin hasn't set up questions
+            // v7.91 — Auto-seed if bank is empty
             fetch("/api/data?action=seed_questions", {
               method: "POST",
               headers: { "Content-Type": "application/json" },
               body: JSON.stringify({ mode: "append" }),
             }).then(function(r){ return r.json(); }).then(function(seedD){
               if (seedD.ok) {
-                // Re-fetch settings to get the seeded questions
                 fetch("/api/data?action=settings").then(function(r){ return r.json(); }).then(function(sd2){
                   if (sd2 && Array.isArray(sd2.questions)) {
                     CHALLENGES_CACHE = sd2.questions;
+                    setChallengeBank(sd2.questions);   // v7.95 — update state
                   }
                 }).catch(function(){});
               }
@@ -1583,7 +1616,7 @@ function MobileAppInner() {
       {!online && <OfflineBanner />}
 
       <div key={page} style={{ flex: 1, display: "flex", flexDirection: "column", animation: "pageIn .3s ease" }}>
-        {page === "home" && <HomePage user={user} branch={branch} workType={workType} now={now} todayAtt={todayAtt} allAtt={allAtt} gps={gps} gpsDist={gpsDist} streak={streak} loading={loading} refreshing={refreshing} dayState={getDayState()} checkpoints={getCheckpoints()} isOffDay={isOffDay()} pendingCount={myLeaves.filter(function(l){ return ["pending_m1","handover_open","pending_delegates","pending_final"].indexOf(l.status) !== -1; }).length + myTickets.filter(function(t){ return t.status === "pending"; }).length} teamToday={teamToday} pwaPrompt={pwaPrompt} onPwaInstall={async function(){ if(pwaPrompt){pwaPrompt.prompt();await pwaPrompt.userChoice;setPwaPrompt(null);} }} onCheckin={requestCheckin} onChallenge={function(pts) { var u = { ...user, points: (user.points||0)+pts }; setUser(u); localStorage.setItem("basma_user", JSON.stringify(u)); showToast("🎉 +" + pts + " نقطة!"); }} onLeave={function(){ setLeaveModal(true); }} onRefresh={refresh} onPreAbsence={function(){ setPreAbsModal(true); }} onManualAtt={function(){ setManualAttModal(true); }} onPermission={function(){ setPermModal(true); }} kadwarNotifs={kadwarNotifs} darkMode={darkMode} announcements={announcements} banners={banners} fieldProjects={fieldProjects} onShowAnnouncements={function(){ setShowAnnModal(true); }} />}
+        {page === "home" && <HomePage user={user} branch={branch} workType={workType} now={now} todayAtt={todayAtt} allAtt={allAtt} gps={gps} gpsDist={gpsDist} streak={streak} loading={loading} refreshing={refreshing} dayState={getDayState()} checkpoints={getCheckpoints()} isOffDay={isOffDay()} pendingCount={myLeaves.filter(function(l){ return ["pending_m1","handover_open","pending_delegates","pending_final"].indexOf(l.status) !== -1; }).length + myTickets.filter(function(t){ return t.status === "pending"; }).length} teamToday={teamToday} pwaPrompt={pwaPrompt} onPwaInstall={async function(){ if(pwaPrompt){pwaPrompt.prompt();await pwaPrompt.userChoice;setPwaPrompt(null);} }} onCheckin={requestCheckin} onChallenge={function(pts) { var u = { ...user, points: (user.points||0)+pts }; setUser(u); localStorage.setItem("basma_user", JSON.stringify(u)); showToast("🎉 +" + pts + " نقطة!"); }} onLeave={function(){ setLeaveModal(true); }} onRefresh={refresh} onPreAbsence={function(){ setPreAbsModal(true); }} onManualAtt={function(){ setManualAttModal(true); }} onPermission={function(){ setPermModal(true); }} kadwarNotifs={kadwarNotifs} darkMode={darkMode} announcements={announcements} banners={banners} fieldProjects={fieldProjects} onShowAnnouncements={function(){ setShowAnnModal(true); }} challengeBank={challengeBank} />}
         {page === "report" && <ReportPage user={user} allAtt={allAtt} todayAtt={todayAtt} branch={branch} isOffDay={isOffDay()} myLeaves={myLeaves} allEmps={allEmps} />}
         {page === "benefits" && <BenefitsPage user={user} />}
         {page === "tawasul" && <TawasulPage user={user} allEmps={allEmps} />}
@@ -1600,6 +1633,16 @@ function MobileAppInner() {
 
       {toast && <Toast msg={toast.msg} type={toast.type} onDismiss={function(){ setToast(null); }} />}
       {callBanner && <CallBanner type={callBanner.type} msg={callBanner.msg} onDismiss={function(){ setCallBanner(null); }} />}
+      {/* v7.96 — Flash Challenge Badge (notification-style, tap to open) */}
+      {flashPending && !flashChallenge && user && (
+        <FlashChallengeBadge
+          flash={flashPending}
+          onOpen={function(){ setFlashChallenge(flashPending); }}
+        />
+      )}
+
+      {/* v7.95 — Flash Challenge Modal */}
+      {flashChallenge && user && <FlashChallengeModal flash={flashChallenge} user={user} onClose={function(){ setFlashChallenge(null); setFlashPending(null); }} onPointsAwarded={function(pts){ var u = { ...user, points: (user.points||0)+pts }; setUser(u); localStorage.setItem("basma_user", JSON.stringify(u)); showToast("🎉 +" + pts + " نقطة!"); }} />}
       {fakeCall && <FakeCallScreen type={fakeCall.type} label={fakeCall.label} user={user} onAnswer={function(){ var fc = fakeCall; setFakeCall(null); setFaceVerifyModal({ type: fc.type, label: fc.label, source: "call" }); }} onDecline={function(){ setFakeCall(null); }} />}
       {autoCheckinPrompt && <AutoCheckinBanner label={autoCheckinPrompt.label} onConfirm={function(){ var p = autoCheckinPrompt; setAutoCheckinPrompt(null); setFaceVerifyModal({ type: p.type, label: p.label, source: "auto" }); }} onDismiss={function(){ setAutoCheckinPrompt(null); window.__autoCheckinTriggered = false; }} />}
       {faceVerifyModal && <FaceModal empId={user.id} onVerified={function(photo){ doCheckin(faceVerifyModal.type, photo); setFaceVerifyModal(null); }} onSkip={function(){ setFaceVerifyModal(null); }} onCancel={function(){ setFaceVerifyModal(null); }} />}
@@ -2156,7 +2199,7 @@ function SurveyBanner({ user }) {
    KPIs الأداء الوظيفي التفصيلية مصدرها كوادر (HMA HR) — لا تظهر هنا. ═══ */
 /* v7.52 — orphan `GMKPICard` (179 سطر) حُذفت */
 
-function HomePage({ user, branch, workType, now, todayAtt, allAtt, gps, gpsDist, streak, loading, refreshing, dayState, checkpoints, isOffDay, pendingCount, teamToday, pwaPrompt, onPwaInstall, onCheckin, onChallenge, onLeave, onRefresh, onPreAbsence, onManualAtt, onPermission, kadwarNotifs, darkMode, announcements, banners, fieldProjects, onShowAnnouncements }) {
+function HomePage({ user, branch, workType, now, todayAtt, allAtt, gps, gpsDist, streak, loading, refreshing, dayState, checkpoints, isOffDay, pendingCount, teamToday, pwaPrompt, onPwaInstall, onCheckin, onChallenge, onLeave, onRefresh, onPreAbsence, onManualAtt, onPermission, kadwarNotifs, darkMode, announcements, banners, fieldProjects, onShowAnnouncements, challengeBank }) {
   const { time, sec, ampm } = formatTime(now);
   const badge = memberBadge(user.points || 0);
   const inRange = branch && gpsDist !== null && gpsDist <= (branch.radius || 150);
@@ -2188,11 +2231,9 @@ function HomePage({ user, branch, workType, now, todayAtt, allAtt, gps, gpsDist,
   }
 
   // Challenge state — only shows if admin has added questions to the bank
-  // v7.94 — FIX: use useState with retry mechanism via useEffect
-  // Previously: useState(pickChallenge()) ran once at mount — if cache was still null,
-  // challengeQ stayed null forever even after questions loaded. This was the root cause.
+  // v7.95 — MAJOR FIX: uses challengeBank prop (React state) instead of global CHALLENGES_CACHE
+  // This fixes the race condition where useState only runs once on mount
   var [challengeQ, setChallengeQ] = useState(function() {
-    // Try to restore today's challenge from localStorage so it doesn't change between re-renders
     try {
       var saved = localStorage.getItem("basma_challenge_q_" + todayStr());
       if (saved) {
@@ -2200,45 +2241,32 @@ function HomePage({ user, branch, workType, now, todayAtt, allAtt, gps, gpsDist,
         if (parsed && parsed.q && Array.isArray(parsed.opts)) return parsed;
       }
     } catch(e) {}
-    var fresh = pickChallenge();
-    if (fresh) {
-      try { localStorage.setItem("basma_challenge_q_" + todayStr(), JSON.stringify(fresh)); } catch(e) {}
-    }
-    return fresh; // may be null if cache not loaded yet — will retry via useEffect
+    return null; // will be set via useEffect below
   });
 
-  // v7.94 — Retry loading challenge when CHALLENGES_CACHE becomes available
-  // Checks every 2 seconds for up to 20 seconds (10 retries)
+  // v7.95 — Watch challengeBank (prop) and pick challenge when questions arrive
   useEffect(function(){
-    if (challengeQ) return; // already have one, skip
-    // Also skip if user already answered or dismissed today
+    // Skip if already have a challenge
+    if (challengeQ) return;
+    // Skip if already answered or dismissed today
     try {
       if (localStorage.getItem("basma_challenge_" + todayStr()) === "1") return;
       if (localStorage.getItem("basma_challenge_dismissed_" + todayStr()) === "1") return;
     } catch(e) {}
+    // Pick only when bank has questions
+    if (!Array.isArray(challengeBank) || challengeBank.length === 0) return;
 
-    var attempts = 0;
-    var maxAttempts = 10;
-    var interval = setInterval(function(){
-      attempts++;
-      if (attempts >= maxAttempts) {
-        clearInterval(interval);
-        return;
-      }
-      // Try to pick a challenge (CHALLENGES_CACHE may have been populated by now)
-      var fresh = pickChallenge();
-      if (fresh) {
-        try { localStorage.setItem("basma_challenge_q_" + todayStr(), JSON.stringify(fresh)); } catch(e) {}
-        setChallengeQ(fresh);
-        clearInterval(interval);
-      }
-    }, 2000);
-
-    return function(){ clearInterval(interval); };
-  }, [challengeQ]);
+    // Pick random question
+    var randomQ = challengeBank[Math.floor(Math.random() * challengeBank.length)];
+    if (!randomQ || !randomQ.q || !randomQ.correct) return;
+    var converted = adminQToChallenge(randomQ);
+    try {
+      localStorage.setItem("basma_challenge_q_" + todayStr(), JSON.stringify(converted));
+    } catch(e) {}
+    setChallengeQ(converted);
+  }, [challengeBank, challengeQ]);
 
   var [challengeAnswer, setChallengeAnswer] = useState(function() {
-    // Restore answer state from localStorage
     var saved = localStorage.getItem("basma_challenge_ans_" + todayStr());
     if (saved === "true") return true;
     if (saved === "false") return false;
@@ -2469,14 +2497,19 @@ function HomePage({ user, branch, workType, now, todayAtt, allAtt, gps, gpsDist,
         {/* Challenge text below clock */}
         {!hasCheckedIn && !showChallenge && challengeAnswer === null && challengeDoneToday && <div style={{ marginTop: SPACING.sm, ...TYPOGRAPHY.caption, color: COLORS.textSecondary }}>{tr("✓ أجبت على تحدي اليوم")}</div>}
 
-        {/* v7.94 — Debug: show hint if challenge should show but doesn't (help user/admin diagnose) */}
+        {/* v7.95 — Debug: show hint if challenge should show but doesn't */}
         {!hasCheckedIn && !showChallenge && challengeAnswer === null && !challengeDoneToday && !challengeDismissed && (function(){
           var now = new Date();
           var nowMins = now.getHours() * 60 + now.getMinutes();
           var shiftStart = branch ? timeToMin(branch.start) : 480;
           if (!challengeQ) {
-            return <div style={{ marginTop: SPACING.sm, padding: "6px 12px", borderRadius: 8, background: "rgba(251,191,36,0.1)", border: "1px solid rgba(251,191,36,0.3)", fontSize: 10, color: "#FCD34D", textAlign: "center", lineHeight: 1.5 }}>
-              ⏳ {tr("جاري تحميل الأسئلة...")} {tr("إذا استمرت الرسالة أكثر من دقيقة، اطلب من الإدارة إضافة أسئلة.")}
+            if (!Array.isArray(challengeBank) || challengeBank.length === 0) {
+              return <div style={{ marginTop: SPACING.sm, padding: "6px 12px", borderRadius: 8, background: "rgba(251,191,36,0.1)", border: "1px solid rgba(251,191,36,0.3)", fontSize: 10, color: "#FCD34D", textAlign: "center", lineHeight: 1.5 }}>
+                ⏳ {tr("جاري تحميل بنك الأسئلة...")}
+              </div>;
+            }
+            return <div style={{ marginTop: SPACING.sm, padding: "6px 12px", borderRadius: 8, background: "rgba(139,92,246,0.1)", border: "1px solid rgba(139,92,246,0.3)", fontSize: 10, color: "#c4b5fd", textAlign: "center", lineHeight: 1.5 }}>
+              ⚡ {tr("تحدي الصباح جاهز — اسحب للتحديث")}
             </div>;
           }
           if (nowMins < 240) {
@@ -11585,6 +11618,411 @@ function AnnouncementsModal({ announcements, user, onClose, onRead }) {
 }
 
 /* ═══════════ MODALS ═══════════ */
+
+/* ═════════════════════════════════════════════════════════════════
+ * v7.96 — FlashChallengeBadge — بانر إشعاري قابل للنقر
+ * ═════════════════════════════════════════════════════════════════
+ * يظهر أعلى الصفحة كبانر نابض بدل popup تلقائي.
+ * المستخدم ينقر → يفتح Modal التحدي الكامل.
+ * يعرض عدّاد تنازلي للوقت المتبقي.
+ * ═════════════════════════════════════════════════════════════════ */
+function FlashChallengeBadge({ flash, onOpen }) {
+  var [remaining, setRemaining] = useState(Math.max(0, Math.floor((flash.durationRemainingMs || 0) / 1000)));
+
+  useEffect(function(){
+    if (remaining <= 0) return;
+    var t = setTimeout(function(){ setRemaining(remaining - 1); }, 1000);
+    return function(){ clearTimeout(t); };
+  }, [remaining]);
+
+  // Format timer
+  function fmtTime(secs) {
+    if (secs <= 0) return "00:00";
+    var m = Math.floor(secs / 60);
+    var s = secs % 60;
+    return m + ":" + (s < 10 ? "0" + s : s);
+  }
+
+  if (remaining <= 0) return null;
+
+  var urgent = remaining <= 60;
+
+  return (
+    <div
+      onClick={onOpen}
+      style={{
+        position: "fixed",
+        top: 10,
+        left: 10,
+        right: 10,
+        zIndex: 9700,
+        background: urgent
+          ? "linear-gradient(135deg, #EF4444, #DC2626)"
+          : "linear-gradient(135deg, #7C3AED, #A855F7)",
+        borderRadius: 14,
+        padding: "12px 16px",
+        boxShadow: urgent
+          ? "0 8px 24px rgba(239,68,68,0.5), 0 0 0 1px rgba(239,68,68,0.3)"
+          : "0 8px 24px rgba(124,58,237,0.5), 0 0 0 1px rgba(124,58,237,0.3)",
+        cursor: "pointer",
+        display: "flex",
+        alignItems: "center",
+        gap: 12,
+        animation: "basma-pulse-glow 2s ease-in-out infinite",
+        WebkitTapHighlightColor: "transparent",
+      }}
+    >
+      {/* Icon */}
+      <div style={{
+        width: 42, height: 42, borderRadius: "50%",
+        background: "rgba(255,255,255,0.25)",
+        display: "flex", alignItems: "center", justifyContent: "center",
+        fontSize: 22,
+        flexShrink: 0,
+      }}>⚡</div>
+
+      {/* Text */}
+      <div style={{ flex: 1, minWidth: 0, color: "#fff" }}>
+        <div style={{
+          fontSize: 13,
+          fontWeight: 900,
+          marginBottom: 2,
+          fontFamily: TYPOGRAPHY.fontTajawal,
+        }}>
+          {tr("سؤال تحدي على السريع!")}
+        </div>
+        <div style={{
+          fontSize: 10,
+          opacity: 0.92,
+          fontWeight: 700,
+          fontFamily: TYPOGRAPHY.fontTajawal,
+        }}>
+          ⭐ +{flash.points} {tr("نقطة")} · {tr("اضغط للمشاركة")}
+        </div>
+      </div>
+
+      {/* Timer */}
+      <div style={{
+        padding: "6px 10px",
+        borderRadius: 10,
+        background: "rgba(0,0,0,0.25)",
+        color: "#fff",
+        fontSize: 13,
+        fontWeight: 900,
+        fontFamily: "monospace",
+        letterSpacing: 1,
+        flexShrink: 0,
+        minWidth: 48,
+        textAlign: "center",
+      }}>
+        {fmtTime(remaining)}
+      </div>
+    </div>
+  );
+}
+
+/* ═════════════════════════════════════════════════════════════════
+ * v7.95 — FlashChallengeModal — سؤال تحدي على السريع (للموظف)
+ * ═════════════════════════════════════════════════════════════════
+ * يظهر عند وصول flash challenge للموظف:
+ *   - Modal كبير مركّزي بتأثيرات ملفتة
+ *   - عدّاد تنازلي (5 دقائق افتراضياً)
+ *   - عند الإجابة: يعرض النتيجة فوراً
+ *   - يُغلَق تلقائياً بعد 3 ثوانٍ من الإجابة
+ * ═════════════════════════════════════════════════════════════════ */
+function FlashChallengeModal({ flash, user, onClose, onPointsAwarded }) {
+  var [submitting, setSubmitting] = useState(false);
+  var [result, setResult] = useState(null); // { correct, correctAnswer, pointsAwarded }
+  var [remaining, setRemaining] = useState(Math.max(0, Math.floor((flash.durationRemainingMs || 0) / 1000)));
+
+  // Countdown timer
+  useEffect(function(){
+    if (result) return; // stop timer after answering
+    if (remaining <= 0) {
+      // Auto-close when expired
+      setTimeout(onClose, 2000);
+      return;
+    }
+    var t = setTimeout(function(){ setRemaining(remaining - 1); }, 1000);
+    return function(){ clearTimeout(t); };
+  }, [remaining, result]);
+
+  async function submit(answerText) {
+    if (submitting || result) return;
+    setSubmitting(true);
+
+    // v7.96 — Get GPS location first (required if rule enforced)
+    async function getLocation() {
+      return new Promise(function(resolve){
+        if (!navigator.geolocation) { resolve({ lat: null, lng: null }); return; }
+        navigator.geolocation.getCurrentPosition(
+          function(pos){ resolve({ lat: pos.coords.latitude, lng: pos.coords.longitude }); },
+          function(){ resolve({ lat: null, lng: null }); },
+          { enableHighAccuracy: true, timeout: 8000, maximumAge: 30000 }
+        );
+      });
+    }
+
+    try {
+      var loc = await getLocation();
+      var r = await fetch('/api/data?action=flash-answer', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          flashId: flash.id,
+          empId: user.id,
+          answer: answerText,
+          lat: loc.lat,      // v7.96
+          lng: loc.lng,      // v7.96
+        }),
+      });
+      var d = await r.json();
+
+      // v7.96 — Handle "not allowed" (rule enforcement)
+      if (!d.ok && d.notAllowed) {
+        setResult({
+          correct: false,
+          notAllowed: true,
+          reason: d.reason,
+          message: d.message,
+          distance: d.distance,
+          allowedRadius: d.allowedRadius,
+          branchName: d.branchName,
+          pointsAwarded: 0,
+        });
+        setTimeout(onClose, 5000);  // longer to read
+        setSubmitting(false);
+        return;
+      }
+
+      if (d.ok) {
+        setResult({
+          correct: d.correct,
+          correctAnswer: d.correctAnswer,
+          pointsAwarded: d.pointsAwarded || 0,
+        });
+        if (d.correct && d.pointsAwarded > 0) {
+          onPointsAwarded(d.pointsAwarded);
+        }
+        // Auto-close after 3 seconds
+        setTimeout(onClose, 3000);
+      } else {
+        setResult({
+          correct: false,
+          correctAnswer: "—",
+          pointsAwarded: 0,
+          error: d.error || 'حدث خطأ',
+        });
+        setTimeout(onClose, 3000);
+      }
+    } catch(e) {
+      setResult({ correct: false, error: e.message, pointsAwarded: 0 });
+      setTimeout(onClose, 3000);
+    }
+    setSubmitting(false);
+  }
+
+  // Format timer (mm:ss)
+  function fmtTime(secs) {
+    var m = Math.floor(secs / 60);
+    var s = secs % 60;
+    return m + ":" + (s < 10 ? "0" + s : s);
+  }
+
+  // Timer color
+  var timerColor = remaining <= 30 ? "#EF4444" : remaining <= 60 ? "#F59E0B" : "#10B981";
+
+  return (
+    <div style={{
+      position: "fixed", inset: 0,
+      background: "rgba(8,12,20,0.88)",
+      backdropFilter: "blur(8px)",
+      WebkitBackdropFilter: "blur(8px)",
+      zIndex: 9800,
+      display: "flex", alignItems: "center", justifyContent: "center",
+      padding: 18,
+    }}>
+      <div style={{
+        background: "linear-gradient(180deg, #1a1d2e 0%, #0f1220 100%)",
+        borderRadius: 22,
+        maxWidth: 420, width: "100%",
+        padding: "28px 24px 22px",
+        border: "2px solid rgba(124,58,237,0.5)",
+        boxShadow: "0 25px 60px rgba(0,0,0,0.7), 0 0 40px rgba(124,58,237,0.3)",
+        position: "relative",
+        animation: "basma-bounce-in 0.5s",
+      }}>
+        {/* Close button */}
+        {!result && (
+          <button onClick={onClose} style={{
+            position: "absolute", top: 12, left: 12,
+            width: 34, height: 34, borderRadius: 17,
+            background: "rgba(255,255,255,0.08)",
+            border: "1px solid rgba(255,255,255,0.2)",
+            color: "#fff", fontSize: 18, fontWeight: 800,
+            cursor: "pointer",
+            display: "flex", alignItems: "center", justifyContent: "center",
+            lineHeight: 1, padding: 0,
+          }}>×</button>
+        )}
+
+        {/* Header */}
+        <div style={{ textAlign: "center", marginBottom: 18 }}>
+          <div style={{ fontSize: 40, marginBottom: 4 }}>⚡</div>
+          <div style={{
+            fontSize: 11, fontWeight: 900, letterSpacing: 2,
+            color: "#c4b5fd", textTransform: "uppercase",
+          }}>{tr("سؤال تحدي على السريع")}</div>
+
+          {/* Points badge */}
+          <div style={{
+            display: "inline-flex", alignItems: "center", gap: 6,
+            marginTop: 10,
+            padding: "6px 14px", borderRadius: 20,
+            background: "linear-gradient(135deg, #F59E0B, #EAB308)",
+            color: "#fff", fontSize: 13, fontWeight: 900,
+            boxShadow: "0 4px 12px rgba(245,158,11,0.4)",
+          }}>
+            ⭐ +{flash.points} {tr("نقطة")}
+          </div>
+        </div>
+
+        {/* Timer */}
+        {!result && (
+          <div style={{
+            textAlign: "center", marginBottom: 18,
+            padding: "8px 16px",
+            background: timerColor + "15",
+            border: "1px solid " + timerColor + "40",
+            borderRadius: 12,
+          }}>
+            <div style={{ fontSize: 10, color: "rgba(255,255,255,0.5)", fontWeight: 700 }}>{tr("الوقت المتبقي")}</div>
+            <div style={{ fontSize: 24, fontWeight: 900, color: timerColor, fontFamily: "monospace", letterSpacing: 2 }}>
+              {fmtTime(remaining)}
+            </div>
+          </div>
+        )}
+
+        {/* Question */}
+        {!result && (
+          <>
+            <div style={{
+              fontSize: 17, fontWeight: 800, color: "#fff",
+              lineHeight: 1.7, marginBottom: 18,
+              textAlign: "center", padding: "0 4px",
+            }}>{flash.q}</div>
+
+            {/* Options */}
+            <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+              {flash.opts.map(function(opt, idx){
+                return <button key={idx} onClick={function(){ submit(opt); }} disabled={submitting} style={{
+                  padding: "14px 18px", borderRadius: 14,
+                  background: submitting ? "rgba(255,255,255,0.04)" : "rgba(255,255,255,0.1)",
+                  border: "1px solid rgba(255,255,255,0.2)",
+                  fontSize: 15, fontWeight: 700, color: "#fff",
+                  cursor: submitting ? "wait" : "pointer",
+                  textAlign: "center",
+                  fontFamily: TYPOGRAPHY.fontTajawal,
+                  transition: "all .15s",
+                  WebkitTapHighlightColor: "transparent",
+                }}>{opt}</button>;
+              })}
+            </div>
+          </>
+        )}
+
+        {/* Result */}
+        {result && (
+          <div style={{ textAlign: "center", padding: "10px 0" }}>
+            {/* v7.96 — Not allowed (out of work location) */}
+            {result.notAllowed ? (
+              <>
+                <div style={{ fontSize: 64, marginBottom: 10 }}>🚫</div>
+                <div style={{
+                  fontSize: 20, fontWeight: 900,
+                  color: "#EF4444",
+                  marginBottom: 10,
+                }}>
+                  {tr("لا يمكنك المشاركة")}
+                </div>
+                <div style={{
+                  fontSize: 13, color: "rgba(255,255,255,0.9)",
+                  padding: "12px 14px",
+                  background: "rgba(239,68,68,0.15)",
+                  border: "1px solid rgba(239,68,68,0.3)",
+                  borderRadius: 10, marginTop: 8, lineHeight: 1.7,
+                }}>
+                  <div style={{ fontWeight: 800, marginBottom: 6 }}>{result.message}</div>
+                  {result.reason === "outside_work_location" && result.distance && (
+                    <div style={{ fontSize: 11, opacity: 0.9 }}>
+                      {tr("المسافة: ")}<b>{result.distance} {tr("متر")}</b> · {tr("المسموح: ")}<b>{result.allowedRadius} {tr("متر")}</b>
+                      {result.branchName && <><br/>{tr("الفرع: ")}{result.branchName}</>}
+                    </div>
+                  )}
+                </div>
+                <div style={{
+                  fontSize: 10, color: "rgba(255,255,255,0.5)",
+                  marginTop: 12, lineHeight: 1.6,
+                }}>
+                  {tr("التحدي متاح للموظفين في مقر العمل فقط")}
+                </div>
+              </>
+            ) : (
+              <>
+                <div style={{ fontSize: 64, marginBottom: 10 }}>
+                  {result.correct ? "🎉" : "😔"}
+                </div>
+                <div style={{
+                  fontSize: 22, fontWeight: 900,
+                  color: result.correct ? "#10B981" : "#EF4444",
+                  marginBottom: 8,
+                }}>
+                  {result.correct ? tr("إجابة صحيحة!") : tr("إجابة خاطئة")}
+                </div>
+                {result.correct && result.pointsAwarded > 0 && (
+                  <div style={{
+                    fontSize: 18, fontWeight: 800,
+                    color: "#F59E0B",
+                    marginBottom: 10,
+                  }}>+{result.pointsAwarded} {tr("نقطة")}</div>
+                )}
+                {!result.correct && result.correctAnswer && result.correctAnswer !== "—" && (
+                  <div style={{
+                    fontSize: 12, color: "rgba(255,255,255,0.7)",
+                    padding: "8px 14px",
+                    background: "rgba(255,255,255,0.08)",
+                    borderRadius: 10, marginTop: 10,
+                  }}>
+                    {tr("الإجابة الصحيحة: ")}<b style={{ color: "#10B981" }}>{result.correctAnswer}</b>
+                  </div>
+                )}
+                {result.error && (
+                  <div style={{
+                    fontSize: 11, color: "#FCA5A5",
+                    padding: "8px 14px",
+                    background: "rgba(239,68,68,0.15)",
+                    borderRadius: 10, marginTop: 10,
+                  }}>⚠️ {result.error}</div>
+                )}
+              </>
+            )}
+          </div>
+        )}
+
+        {/* Footer hint */}
+        {!result && (
+          <div style={{
+            marginTop: 16, fontSize: 10,
+            color: "rgba(255,255,255,0.4)",
+            textAlign: "center", lineHeight: 1.6,
+          }}>
+            🎯 {tr("محاولة واحدة فقط — اختر بحكمة")}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
 
 function Toast({ msg, type, onDismiss }) {
   var bg = type === "error" ? C.red : type === "warning" ? C.orange : C.green;
