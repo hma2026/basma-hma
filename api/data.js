@@ -4773,29 +4773,7 @@ export default async function handler(req, res) {
         return res.json({ ok: true, request: list[i] });
       }
 
-      case 'requests': {
-        if (req.method === 'GET') {
-          let reqs = await dbGet('admin_requests') || [];
-          const { empId } = req.query;
-          if (empId) reqs = reqs.filter(r => r.empId === empId);
-          return res.json(reqs);
-        }
-        if (req.method === 'POST') {
-          const reqs = await dbGet('admin_requests') || [];
-          const newReq = { id: 'REQ' + Date.now(), status: 'pending', ...req.body, ts: new Date().toISOString() };
-          reqs.push(newReq);
-          const saved = await dbSet('admin_requests', reqs);
-          return res.json({ ok: saved, saved, id: newReq.id, total: reqs.length });
-        }
-        if (req.method === 'PUT') {
-          const reqs = await dbGet('admin_requests') || [];
-          const { id, ...up } = req.body;
-          const i = reqs.findIndex(r => r.id === id);
-          if (i >= 0) { reqs[i] = { ...reqs[i], ...up }; await dbSet('admin_requests', reqs); }
-          return res.json({ ok: true });
-        }
-        break;
-      }
+      /* v7.75 — endpoint 'requests' القديم حُذف نهائياً، استُبدل بـ 'hr-requests' (v7.70+) */
 
       case 'clusters': {
         // Detect employee clusters (groups in same location)

@@ -2,6 +2,7 @@ import React, { useState, useEffect, useRef, useCallback } from "react";
 import { COLORS, SPACING, TYPOGRAPHY, RADIUS, SHADOWS, Button, Card, Section, Icons, setTheme } from "./theme";
 import { ALL_VIOLATIONS_DEFAULT, PENALTY_TYPES, LAIHA_INFO, COMPLAINT_STATUS, VIOLATION_STATUS } from "./laiha";
 import { exportEmploymentLetter, exportLeaveLetter, exportSalaryLetter, exportExperienceLetter } from "./formalPdfs";
+import { t as tr, setLang, getLang, getDir, isRTL, subscribeLangChange } from "./i18n";
 
 /* ═══════════════════════════════════════════
    بصمة HMA v4.51 — Mobile App
@@ -11,7 +12,7 @@ import { exportEmploymentLetter, exportLeaveLetter, exportSalaryLetter, exportEx
 
 /* ═══════════ APP CONFIG (إعدادات التطبيق) ═══════════ */
 const APP_CONFIG = {
-  VER: "7.72",
+  VER: "7.81",
   NAME: "بصمة HMA",
   FULL_NAME: "نظام الحضور والانصراف الذكي",
   COMPANY: "هاني محمد عسيري للاستشارات الهندسية",
@@ -524,8 +525,7 @@ function pickChallenge() {
   return list[Math.floor(Math.random() * list.length)];
 }
 
-// Legacy constant kept as empty array to avoid ReferenceError in edge cases
-const CHALLENGES = [];
+// v7.75 — const CHALLENGES = [] القديم حُذف (الأسئلة الآن من settings.questions في Redis)
 
 /* ── Mascot Messages ── */
 const MASCOT = {
@@ -676,6 +676,8 @@ function MobileAppInner() {
     var saved = localStorage.getItem("basma_dark");
     return saved === null ? true : saved === "1";
   });
+  // v7.77 — language state (ar | en) — يُستخدم لإعادة render عند تبديل اللغة
+  const [lang, setLangState] = useState(function(){ return getLang(); });
   const [todayAtt, setTodayAtt] = useState([]);
   const [allAtt, setAllAtt] = useState([]);
   const [now, setNow] = useState(new Date());
@@ -792,6 +794,20 @@ function MobileAppInner() {
   var [themeVersion, setThemeVersion] = useState(0);
 
   function toggleDark() { setDarkMode(function(d){ return !d; }); }
+
+  // v7.77 — اشتراك لتحديث الـ UI عند تبديل اللغة
+  useEffect(function(){
+    var unsub = subscribeLangChange(function(newLang){
+      setLangState(newLang);
+    });
+    return unsub;
+  }, []);
+
+  /* تبديل اللغة بين العربية والإنجليزية */
+  function toggleLang() {
+    var newLang = lang === "ar" ? "en" : "ar";
+    setLang(newLang);  // يُحدّث localStorage + dir + يُطلق subscribers
+  }
 
   function showToast(msg, type = "success") {
     setToast({ msg, type });
@@ -1555,7 +1571,7 @@ function MobileAppInner() {
         {page === "benefits" && <BenefitsPage user={user} />}
         {page === "tawasul" && <TawasulPage user={user} allEmps={allEmps} />}
         {page === "team" && <MyTeamPage user={user} allEmps={allEmps} />}
-        {page === "profile" && <ProfilePage user={user} branch={branch} workType={workType} onLogout={logout} onTicket={() => setTicketModal(true)} myTickets={myTickets} darkMode={darkMode} toggleDark={toggleDark} kadwarNotifs={kadwarNotifs} />}
+        {page === "profile" && <ProfilePage user={user} branch={branch} workType={workType} onLogout={logout} onTicket={() => setTicketModal(true)} myTickets={myTickets} darkMode={darkMode} toggleDark={toggleDark} lang={lang} toggleLang={toggleLang} kadwarNotifs={kadwarNotifs} />}
       </div>
 
       {!isDesktopSession && <BottomNav page={page} setPage={setPage} legalAlerts={legalAlerts} tawasulUnread={tawasulUnread} hrUnread={hrUnread} user={user} />}
@@ -2139,18 +2155,18 @@ function HomePage({ user, branch, workType, now, todayAtt, allAtt, gps, gpsDist,
   const currentProject = inAnyProject ? projectsInRange[0] : null;
   // Final in-range: either in main branch, OR (field-eligible AND in some project)
   const inAnyValidZone = inRange || inAnyProject;
-  // Build zone text
-  var zoneText = "تحديد الموقع...";
+  // Build zone text — v7.78 translated
+  var zoneText = tr("تحديد الموقع...");
   if (gps) {
     if (inRange) {
-      zoneText = "في النطاق — المركز الرئيسي بجدة";
+      zoneText = tr("في النطاق — المركز الرئيسي بجدة");
     } else if (inAnyProject) {
-      zoneText = "في النطاق — " + (currentProject.name || "مشروع");
+      zoneText = tr("في النطاق — ") + (currentProject.name || tr("مشروع"));
     } else {
       // Outside everything
       zoneText = canWorkField
-        ? "خارج النطاق — مواقع الإشراف والمركز الرئيسي"
-        : "خارج النطاق — المركز الرئيسي بجدة";
+        ? tr("خارج النطاق — مواقع الإشراف والمركز الرئيسي")
+        : tr("خارج النطاق — المركز الرئيسي بجدة");
     }
   }
 
@@ -2227,20 +2243,21 @@ function HomePage({ user, branch, workType, now, todayAtt, allAtt, gps, gpsDist,
 
   let btnText, btnAction, btnLabel;
   // v7.22 — fix: button must ALWAYS appear if no checkin today, even if after work hours (late checkin allowed)
+  // v7.78 — translated via tr()
   if (!checkpoints.checkin) {
     // No checkin yet today — always show checkin button regardless of dayState
-    btnText = dayState === "before" ? "☀️ سجّل حضورك" : dayState === "after" ? "⏰ سجّل حضورك (متأخر)" : "☀️ سجّل حضورك";
+    btnText = dayState === "before" ? tr("☀️ سجّل حضورك") : dayState === "after" ? tr("⏰ سجّل حضورك (متأخر)") : tr("☀️ سجّل حضورك");
     btnAction = "checkin";
-    btnLabel = "تسجيل الحضور";
+    btnLabel = tr("تسجيل الحضور");
   } else if (dayState === "during") {
-    if (!checkpoints.breakStart) { btnText = "☕ بداية الاستراحة"; btnAction = "break_start"; btnLabel = "بداية الاستراحة"; }
-    else if (!checkpoints.breakEnd) { btnText = "🔄 عودة من الاستراحة"; btnAction = "break_end"; btnLabel = "العودة من الاستراحة"; }
-    else if (!checkpoints.checkout) { btnText = "🌙 تسجيل انصراف"; btnAction = "checkout"; btnLabel = "تسجيل الانصراف"; }
-    else { btnText = "✓ اكتمل الدوام"; btnAction = null; }
+    if (!checkpoints.breakStart) { btnText = tr("☕ بداية الاستراحة"); btnAction = "break_start"; btnLabel = tr("بداية الاستراحة"); }
+    else if (!checkpoints.breakEnd) { btnText = tr("🔄 عودة من الاستراحة"); btnAction = "break_end"; btnLabel = tr("العودة من الاستراحة"); }
+    else if (!checkpoints.checkout) { btnText = tr("🌙 تسجيل انصراف"); btnAction = "checkout"; btnLabel = tr("تسجيل الانصراف"); }
+    else { btnText = tr("✓ اكتمل الدوام"); btnAction = null; }
   } else {
     // dayState === "after" — has checkin
-    if (!checkpoints.checkout) { btnText = "🌙 تسجيل انصراف"; btnAction = "checkout"; btnLabel = "تسجيل الانصراف"; }
-    else { btnText = "✓ اكتمل الدوام"; btnAction = null; }
+    if (!checkpoints.checkout) { btnText = tr("🌙 تسجيل انصراف"); btnAction = "checkout"; btnLabel = tr("تسجيل الانصراف"); }
+    else { btnText = tr("✓ اكتمل الدوام"); btnAction = null; }
   }
 
   const thisMonth = todayStr().slice(0, 7);
@@ -2261,7 +2278,7 @@ function HomePage({ user, branch, workType, now, todayAtt, allAtt, gps, gpsDist,
       {/* Header */}
       <div style={{ padding: "16px 20px 0", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
         <div>
-          <div style={{ color: C.text, fontSize: 18, fontWeight: 800, fontFamily: "'Cairo',sans-serif" }}>{"أهلاً، " + (user.name || "").split(" ")[0] + " 👋"}</div>
+          <div style={{ color: C.text, fontSize: 18, fontWeight: 800, fontFamily: "'Cairo',sans-serif" }}>{tr("أهلاً، ") + (user.name || "").split(" ")[0] + " 👋"}</div>
           <div style={{ color: C.sub, fontSize: 11 }}>{formatArabicDate(now)}</div>
         </div>
         <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
@@ -2399,7 +2416,7 @@ function HomePage({ user, branch, workType, now, todayAtt, allAtt, gps, gpsDist,
           </div>
 
         {/* Challenge text below clock */}
-        {!hasCheckedIn && !showChallenge && challengeAnswer === null && challengeDoneToday && <div style={{ marginTop: SPACING.sm, ...TYPOGRAPHY.caption, color: COLORS.textSecondary }}>{"✓ أجبت على تحدي اليوم"}</div>}
+        {!hasCheckedIn && !showChallenge && challengeAnswer === null && challengeDoneToday && <div style={{ marginTop: SPACING.sm, ...TYPOGRAPHY.caption, color: COLORS.textSecondary }}>{tr("✓ أجبت على تحدي اليوم")}</div>}
       </div>
 
       {/* ═══ BOTTOM (unified buttons, uniform height) ═══ */}
@@ -2434,9 +2451,9 @@ function HomePage({ user, branch, workType, now, todayAtt, allAtt, gps, gpsDist,
 
         {/* v7.56 — 3 أزرار: إجازة + إذن + إفادة (كلها bottom sheets، تبقى في الشاشة الرئيسية) */}
         <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: SPACING.sm }}>
-          <Button variant="secondary" size="md" icon={<Icons.clipboard size={20} />} onClick={onLeave}>إجازة</Button>
-          <Button variant="secondary" size="md" icon={<Icons.hand size={20} />} onClick={onPermission}>إذن</Button>
-          <Button variant="secondary" size="md" icon="🏥" onClick={onPreAbsence}>إفادة</Button>
+          <Button variant="secondary" size="md" icon={<Icons.clipboard size={20} />} onClick={onLeave}>{tr("إجازة")}</Button>
+          <Button variant="secondary" size="md" icon={<Icons.hand size={20} />} onClick={onPermission}>{tr("إذن")}</Button>
+          <Button variant="secondary" size="md" icon="🏥" onClick={onPreAbsence}>{tr("إفادة")}</Button>
         </div>
       </div>
 
@@ -2446,12 +2463,12 @@ function HomePage({ user, branch, workType, now, todayAtt, allAtt, gps, gpsDist,
         <div style={{ position: "fixed", inset: 0, background: "rgba(8,12,20,0.78)", backdropFilter: "blur(6px)", WebkitBackdropFilter: "blur(6px)", zIndex: 9500, display: "flex", alignItems: "center", justifyContent: "center", padding: 18 }}>
           <div style={{ background: "linear-gradient(180deg, #1a1d2e 0%, #0f1220 100%)", borderRadius: 20, maxWidth: 380, width: "100%", padding: "24px 22px 22px", border: "1px solid rgba(124,58,237,0.45)", boxShadow: "0 18px 50px rgba(0,0,0,0.6), 0 0 0 1px rgba(124,58,237,0.15) inset", position: "relative" }}>
             {/* Close (only the user can dismiss) */}
-            <button onClick={dismissChallenge} title="إغلاق" aria-label="إغلاق" style={{ position: "absolute", top: 10, left: 10, width: 32, height: 32, borderRadius: 16, background: "rgba(255,255,255,0.10)", border: "1px solid rgba(255,255,255,0.18)", color: "#fff", fontSize: 16, fontWeight: 800, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", lineHeight: 1, padding: 0, WebkitTapHighlightColor: "transparent" }}>×</button>
+            <button onClick={dismissChallenge} title={tr("إغلاق")} aria-label={tr("إغلاق")} style={{ position: "absolute", top: 10, left: 10, width: 32, height: 32, borderRadius: 16, background: "rgba(255,255,255,0.10)", border: "1px solid rgba(255,255,255,0.18)", color: "#fff", fontSize: 16, fontWeight: 800, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", lineHeight: 1, padding: 0, WebkitTapHighlightColor: "transparent" }}>×</button>
 
             {/* Header */}
             <div style={{ textAlign: "center", marginBottom: 14 }}>
               <div style={{ fontSize: 28, marginBottom: 4 }}>⚡</div>
-              <div style={{ fontSize: 11, fontWeight: 800, color: "#c4b5fd", letterSpacing: 0.5 }}>تحدي الصباح · {challengeQ.type}</div>
+              <div style={{ fontSize: 11, fontWeight: 800, color: "#c4b5fd", letterSpacing: 0.5 }}>{tr("تحدي الصباح")} · {challengeQ.type}</div>
             </div>
 
             {/* Question */}
@@ -2470,7 +2487,7 @@ function HomePage({ user, branch, workType, now, todayAtt, allAtt, gps, gpsDist,
 
             {/* Footer hint */}
             <div style={{ marginTop: 14, fontSize: 9, color: "rgba(255,255,255,0.45)", textAlign: "center", lineHeight: 1.6 }}>
-              +{POINTS.challenge_correct} نقطة عند الإجابة الصحيحة · يبقى السؤال حتى تجيب أو تغلق
+              +{POINTS.challenge_correct} {tr("نقطة عند الإجابة الصحيحة · يبقى السؤال حتى تجيب أو تغلق")}
             </div>
           </div>
         </div>
@@ -3343,19 +3360,19 @@ function RecordsHub({ user, onTicket, myTickets }) {
       </div>
 
       {/* v7.43 — Section 2: إجازاتي (accordion, default open) */}
-      <ProfileAccordion emoji="🏖️" title="إجازاتي" subtitle="الطلبات · التسليم · الرصيد" defaultOpen={true}>
+      <ProfileAccordion emoji="🏖️" title={tr("إجازاتي")} subtitle={tr("الطلبات · التسليم · الرصيد")} defaultOpen={true}>
         <MyLeavesHub user={user} />
       </ProfileAccordion>
 
       {/* v7.66 — "طلباتي للموارد البشرية" نُقل إلى "المعاملات الإدارية" (تطبيقاً للقاعدة الذهبية) */}
 
       {/* v7.43 — Section 5: عقودي (accordion) */}
-      <ProfileAccordion emoji="📄" title="عقودي" subtitle="العقود والتجديدات">
+      <ProfileAccordion emoji="📄" title={tr("عقودي")} subtitle={tr("العقود والتجديدات")}>
         <EmployeeRecordTab user={user} initialSubTab="contracts" hideSubTabs={true} />
       </ProfileAccordion>
 
       {/* v7.43 — Section 6: الترقيات (accordion) */}
-      <ProfileAccordion emoji="🚀" title="الترقيات" subtitle="سجل الترقيات والتدرج الوظيفي">
+      <ProfileAccordion emoji="🚀" title={tr("الترقيات")} subtitle={tr("سجل الترقيات والتدرج الوظيفي")}>
         <RecordsPromotionsView user={user} />
       </ProfileAccordion>
 
@@ -4217,18 +4234,18 @@ function PayHub({ user, onTicket, myTickets }) {
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: SPACING.md }}>
       {/* v7.65 — قسم الإشعارات الجديد (نُقل من الجرس العائم) */}
-      <ProfileAccordion emoji="🔔" title="الإشعارات" subtitle="التحديثات والتنبيهات الإدارية" defaultOpen={true}>
+      <ProfileAccordion emoji="🔔" title={tr("الإشعارات")} subtitle={tr("التحديثات والتنبيهات الإدارية")} defaultOpen={true}>
         <NotificationsInlineView user={user} />
       </ProfileAccordion>
 
       {/* v7.66 — مهام مُسنَدة لي من موظف لغرض إجازة (نُقل من tab "الإجازات") */}
-      <ProfileAccordion emoji="📤" title="مهام مُسنَدة لي من موظف لغرض إجازة" subtitle="تسلّم مهام الزملاء الذاهبين في إجازة">
+      <ProfileAccordion emoji="📤" title={tr("مهام مُسنَدة لي من موظف لغرض إجازة")} subtitle={tr("تسلّم مهام الزملاء الذاهبين في إجازة")}>
         <HandoverTasksHub user={user} />
       </ProfileAccordion>
 
       {/* v7.66 — طلباتي للموارد البشرية (نُقل من tab "الإجازات") */}
       {/* v7.67 — محتواها الآن: قوالب HR (10) + تذاكر الدعم الفني (في الأسفل) */}
-      <ProfileAccordion emoji="📨" title="طلباتي للموارد البشرية" subtitle="قوالب جاهزة · تعديل بيانات · دعم فني" badge={(myTickets || []).length > 0 ? String((myTickets || []).length) : null}>
+      <ProfileAccordion emoji="📨" title={tr("طلباتي للموارد البشرية")} subtitle={tr("قوالب جاهزة · تعديل بيانات · دعم فني")} badge={(myTickets || []).length > 0 ? String((myTickets || []).length) : null}>
         <HRRequestsHub user={user} onTicket={onTicket} myTickets={myTickets} />
       </ProfileAccordion>
 
@@ -4241,7 +4258,7 @@ function PayHub({ user, onTicket, myTickets }) {
       {/* 3. View current slip details button */}
       {latestSlip && (
         <Button variant="secondary" size="md" icon="📄" onClick={function(){ setSelected(latestSlip); }}>
-          عرض تفاصيل كشف آخر راتب
+          {tr("عرض تفاصيل كشف آخر راتب")}
         </Button>
       )}
 
@@ -4254,7 +4271,7 @@ function PayHub({ user, onTicket, myTickets }) {
       {/* v7.58 — BankAccountCard نُقل إلى ملفي → البيانات الوظيفية → 💰 المالية */}
 
       {/* 7. Full custody accordion (detailed view) */}
-      <ProfileAccordion emoji="🗄️" title="تفاصيل العُهَد" subtitle="كل العُهَد والفواتير والاستلام">
+      <ProfileAccordion emoji="🗄️" title={tr("تفاصيل العُهَد")} subtitle={tr("كل العُهَد والفواتير والاستلام")}>
         <CustodyTab user={user} />
       </ProfileAccordion>
     </div>
@@ -4747,7 +4764,7 @@ function LegalHub({ user }) {
   );
 }
 
-function ProfilePage({ user, branch, workType, onLogout, onTicket, myTickets, darkMode, toggleDark, kadwarNotifs }) {
+function ProfilePage({ user, branch, workType, onLogout, onTicket, myTickets, darkMode, toggleDark, lang, toggleLang, kadwarNotifs }) {
   // v7.15 — legacy tab IDs remapped to new 5-tab structure
   // Old (v7.14): profile/time/pay/perf/tickets → New (v7.15): profile/records/achievements/pay/legal
   // Older (v6.x): info/my_leaves/my_salary/my_evals/requests/docs/legal → mapped accordingly
@@ -4802,20 +4819,20 @@ function ProfilePage({ user, branch, workType, onLogout, onTicket, myTickets, da
     ["الالتحاق", user.joinDate || "—"],
   ];
   // v7.55 — Tab renames: "سجلي وطلباتي" → "الإجازات" · "الأجر والاستحقاقات" → "المعاملات الإدارية"
-  // (المحتوى سيتغير في إصدارات لاحقة — هنا تسمية فقط)
+  // v7.77 — labels مترجمة
   var tabs = [
-    { id: "profile",      emoji: "👤", label: "ملفي" },
-    { id: "records",      emoji: "🏖️", label: "الإجازات" },
-    { id: "achievements", emoji: "🏆", label: "إنجازاتي" },
-    { id: "pay",          emoji: "📋", label: "المعاملات الإدارية" },
-    { id: "legal",        emoji: "⚖️", label: "الشؤون القانونية" },
+    { id: "profile",      emoji: "👤", label: tr("ملفي") },
+    { id: "records",      emoji: "🏖️", label: tr("الإجازات") },
+    { id: "achievements", emoji: "🏆", label: tr("إنجازاتي") },
+    { id: "pay",          emoji: "📋", label: tr("المعاملات الإدارية") },
+    { id: "legal",        emoji: "⚖️", label: tr("الشؤون القانونية") },
   ];
 
   return (
     <div style={{ flex: 1, paddingBottom: 80, background: "linear-gradient(180deg, "+COLORS.bg1+" 0%, "+COLORS.bg2+" 50%, "+COLORS.bg3+" 100%)", minHeight: "100vh" }}>
       {/* Header */}
       <div style={{ padding: SPACING.lg, textAlign: "center" }}>
-        <div style={{ ...TYPOGRAPHY.h1, color: COLORS.textPrimary, fontFamily: TYPOGRAPHY.fontCairo }}>حسابي</div>
+        <div style={{ ...TYPOGRAPHY.h1, color: COLORS.textPrimary, fontFamily: TYPOGRAPHY.fontCairo }}>{tr("حسابي")}</div>
       </div>
 
       <div style={{ padding: "0 " + SPACING.lg + "px", display: "flex", flexDirection: "column", gap: SPACING.md }}>
@@ -4858,8 +4875,8 @@ function ProfilePage({ user, branch, workType, onLogout, onTicket, myTickets, da
             {/* 3. THREE ACCORDIONS */}
             <ProfileAccordion
               emoji="📋"
-              title="البيانات الأساسية"
-              subtitle="الفرع · الدوام · المسمى · الالتحاق"
+              title={tr("البيانات الأساسية")}
+              subtitle={tr("الفرع · الدوام · المسمى · الالتحاق")}
               defaultOpen={true}
             >
               <div style={{ display: "flex", flexDirection: "column" }}>
@@ -4867,7 +4884,7 @@ function ProfilePage({ user, branch, workType, onLogout, onTicket, myTickets, da
                   return (
                     <div key={row[0]} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "10px 0", borderBottom: i < rows.length - 1 ? "1px solid " + COLORS.cardRowBorder : "none" }}>
                       <span style={{ ...TYPOGRAPHY.body, fontWeight: 700, color: COLORS.textPrimary, fontFamily: TYPOGRAPHY.fontTajawal }}>{row[1]}</span>
-                      <span style={{ ...TYPOGRAPHY.caption, color: COLORS.textMuted, fontFamily: TYPOGRAPHY.fontTajawal }}>{row[0]}</span>
+                      <span style={{ ...TYPOGRAPHY.caption, color: COLORS.textMuted, fontFamily: TYPOGRAPHY.fontTajawal }}>{tr(row[0])}</span>
                     </div>
                   );
                 })}
@@ -4876,8 +4893,8 @@ function ProfilePage({ user, branch, workType, onLogout, onTicket, myTickets, da
 
             <ProfileAccordion
               emoji="💼"
-              title="البيانات الوظيفية"
-              subtitle="شخصية · وظيفية · مالية · عقد · مرافقين · المسؤولون · الهيئة"
+              title={tr("البيانات الوظيفية")}
+              subtitle={tr("شخصية · وظيفية · مالية · عقد · مرافقين · المسؤولون · الهيئة")}
             >
               <MyProfileCard user={user} />
 
@@ -4887,14 +4904,14 @@ function ProfilePage({ user, branch, workType, onLogout, onTicket, myTickets, da
               {user.sceNumber && (
                 <div style={{ marginTop: SPACING.md }}>
                   <Card>
-                    <SectionHeader emoji="🏛️" title="الهيئة السعودية للمهندسين" />
+                    <SectionHeader emoji="🏛️" title={tr("الهيئة السعودية للمهندسين")} />
                     <div style={{ display: "flex", justifyContent: "space-between", padding: SPACING.sm + "px 0" }}>
                       <span style={{ ...TYPOGRAPHY.body, fontWeight: 700, color: COLORS.textPrimary }}>{user.sceNumber}</span>
-                      <span style={{ ...TYPOGRAPHY.caption, color: COLORS.textMuted }}>رقم العضوية</span>
+                      <span style={{ ...TYPOGRAPHY.caption, color: COLORS.textMuted }}>{tr("رقم العضوية")}</span>
                     </div>
                     <div style={{ display: "flex", justifyContent: "space-between", padding: SPACING.sm + "px 0", borderTop: "1px solid " + COLORS.cardBorder }}>
-                      <span style={{ ...TYPOGRAPHY.body, fontWeight: 700, color: user.sceStatus === "active" ? COLORS.goldLight : COLORS.textDanger }}>{user.sceStatus === "active" ? "ساري" : "منتهي"}</span>
-                      <span style={{ ...TYPOGRAPHY.caption, color: COLORS.textMuted }}>{"انتهاء: " + user.sceExpiry}</span>
+                      <span style={{ ...TYPOGRAPHY.body, fontWeight: 700, color: user.sceStatus === "active" ? COLORS.goldLight : COLORS.textDanger }}>{user.sceStatus === "active" ? tr("ساري") : tr("منتهي")}</span>
+                      <span style={{ ...TYPOGRAPHY.caption, color: COLORS.textMuted }}>{tr("انتهاء: ") + user.sceExpiry}</span>
                     </div>
                   </Card>
                 </div>
@@ -4904,24 +4921,33 @@ function ProfilePage({ user, branch, workType, onLogout, onTicket, myTickets, da
             {/* v7.55 — الإعدادات نُقلت للأعلى (كانت في الأسفل قبل الخروج) */}
             <ProfileAccordion
               emoji="⚙️"
-              title="الإعدادات"
-              subtitle="المظهر · التذكيرات · بصمة الوجه · ربط الديسكتوب"
+              title={tr("الإعدادات")}
+              subtitle={tr("المظهر · التذكيرات · بصمة الوجه · ربط الديسكتوب")}
             >
               <BiometricSettingsCard user={user} />
 
               <div style={{ marginTop: SPACING.md, padding: SPACING.md, borderRadius: RADIUS.md, background: "rgba(255,255,255,0.03)", border: "1px solid " + COLORS.metallicBorder }}>
                 <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: SPACING.sm + "px 0", borderBottom: "1px solid " + COLORS.cardRowBorder }}>
-                  <span style={{ ...TYPOGRAPHY.bodySm, fontWeight: 600, color: COLORS.textPrimary }}>الوضع الليلي</span>
+                  <span style={{ ...TYPOGRAPHY.bodySm, fontWeight: 600, color: COLORS.textPrimary }}>{tr("الوضع الليلي")}</span>
                   <div onClick={toggleDark} style={{ width: 44, height: 24, borderRadius: 12, background: darkMode ? COLORS.goldLight : COLORS.metallic, border: "1px solid " + COLORS.metallicBorder, position: "relative", cursor: "pointer", transition: "background .3s" }}>
                     <div style={{ width: 18, height: 18, borderRadius: 9, background: COLORS.white, position: "absolute", top: 3, transition: "all .3s", left: darkMode ? 3 : undefined, right: darkMode ? undefined : 3, boxShadow: "0 1px 3px rgba(0,0,0,.2)" }} />
                   </div>
                 </div>
-                <ToggleRow label="تذكير بالحضور" storeKey="remind_in" border={true} />
-                <ToggleRow label="تذكير بالانصراف" storeKey="remind_out" border={true} />
+                {/* v7.77 — زر تبديل اللغة */}
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: SPACING.sm + "px 0", borderBottom: "1px solid " + COLORS.cardRowBorder }}>
+                  <span style={{ ...TYPOGRAPHY.bodySm, fontWeight: 600, color: COLORS.textPrimary }}>{tr("تغيير اللغة")}</span>
+                  <div onClick={toggleLang} style={{ display: "flex", alignItems: "center", gap: 6, padding: "4px 10px", borderRadius: 20, background: COLORS.metallic, border: "1px solid " + COLORS.metallicBorder, cursor: "pointer", transition: "all .2s" }}>
+                    <span style={{ fontSize: 14 }}>{lang === "ar" ? "🇸🇦" : "🇬🇧"}</span>
+                    <span style={{ fontSize: 11, fontWeight: 700, color: COLORS.goldLight }}>{lang === "ar" ? "العربية" : "English"}</span>
+                    <span style={{ fontSize: 10, color: COLORS.textMuted }}>⇄</span>
+                  </div>
+                </div>
+                <ToggleRow label={tr("تذكير بالحضور")} storeKey="remind_in" border={true} />
+                <ToggleRow label={tr("تذكير بالانصراف")} storeKey="remind_out" border={true} />
                 <FaceResetRow empId={user.id} />
                 <DesktopPairRow user={user} />
                 <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: SPACING.sm + "px 0", borderTop: "1px solid " + COLORS.cardRowBorder }}>
-                  <span style={{ ...TYPOGRAPHY.bodySm, fontWeight: 600, color: COLORS.textPrimary }}>إصدار التطبيق</span>
+                  <span style={{ ...TYPOGRAPHY.bodySm, fontWeight: 600, color: COLORS.textPrimary }}>{tr("الإصدار")}</span>
                   <span style={{ ...TYPOGRAPHY.caption, fontWeight: 800, color: COLORS.goldLight }}>{"v" + VER}</span>
                 </div>
               </div>
@@ -11903,20 +11929,20 @@ function PreAbsenceModal({ allEmps, user, onClose, onSubmit }) {
     <div style={S.overlay} onClick={onClose}>
       <div className="basma-slideup" style={{ ...S.modal, ...MODAL_BODY }} onClick={function(e){ e.stopPropagation(); }}>
         {/* v7.61 — العنوان أبيض صريح */}
-        <div style={{ ...ADMIN_MODAL_TITLE, marginBottom: 4, color: COLORS.textPrimary }}>📋 إفادة مسبقة بالغياب</div>
-        <div style={{ fontSize: 11, color: COLORS.textSecondary, textAlign: "center", marginBottom: 18 }}>{"الموظف لن يحضر غداً: " + tomorrowStr}</div>
+        <div style={{ ...ADMIN_MODAL_TITLE, marginBottom: 4, color: COLORS.textPrimary }}>📋 {tr("إفادة مسبقة بالغياب")}</div>
+        <div style={{ fontSize: 11, color: COLORS.textSecondary, textAlign: "center", marginBottom: 18 }}>{tr("الموظف لن يحضر غداً: ") + tomorrowStr}</div>
 
         <div style={{ marginBottom: 14 }}>
-          <label style={FORM_LABEL}>اختر الموظف</label>
+          <label style={FORM_LABEL}>{tr("اختر الموظف")}</label>
           <select value={empId} onChange={function(e){ setEmpId(e.target.value); }} style={ADMIN_INPUT}>
-            <option value="">— اختر —</option>
+            <option value="">{tr("— اختر —")}</option>
             {managed.map(function(e) { return React.createElement("option", { key: e.id, value: e.id }, e.name + " (" + e.id + ")"); })}
           </select>
         </div>
 
         <div style={{ marginBottom: 14 }}>
-          <label style={FORM_LABEL}>السبب</label>
-          <textarea value={reason} onChange={function(e){ setReason(e.target.value); }} placeholder="سبب الغياب..." rows={3} style={{ ...ADMIN_INPUT, resize: "none" }} />
+          <label style={FORM_LABEL}>{tr("السبب")}</label>
+          <textarea value={reason} onChange={function(e){ setReason(e.target.value); }} placeholder={tr("سبب الغياب...")} rows={3} style={{ ...ADMIN_INPUT, resize: "none" }} />
         </div>
 
         {/* v7.61 — Checkbox مع حدود ذهبية عند التفعيل */}
@@ -11924,18 +11950,18 @@ function PreAbsenceModal({ allEmps, user, onClose, onSubmit }) {
           <div onClick={function(){ setAsLeave(!asLeave); }} style={{ width: 22, height: 22, borderRadius: 6, border: "2px solid " + (asLeave ? COLORS.goldLight : COLORS.cardBorder), background: asLeave ? "rgba(212,175,55,0.15)" : COLORS.bgSecondary, display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer", flexShrink: 0 }}>
             {asLeave && <span style={{ color: COLORS.goldLight, fontSize: 14, fontWeight: 900 }}>✓</span>}
           </div>
-          <span style={{ fontSize: 13, fontWeight: 600, color: COLORS.textPrimary, fontFamily: TYPOGRAPHY.fontTajawal }}>احتساب من الإجازة السنوية</span>
+          <span style={{ fontSize: 13, fontWeight: 600, color: COLORS.textPrimary, fontFamily: TYPOGRAPHY.fontTajawal }}>{tr("احتساب من الإجازة السنوية")}</span>
         </div>
 
         {/* v7.61 — الملاحظة الصفراء بخلفية #3D2E12 ونص #FBBF24 */}
         <div style={{ fontSize: 11, color: COLORS.warningText, marginBottom: 14, padding: "10px 12px", borderRadius: 10, background: COLORS.warningBg, border: "1px solid rgba(251,191,36,0.3)", fontWeight: 600, lineHeight: 1.6 }}>
-          ⚖️ حسب لائحة العمل: طلب الإجازة يجب أن يكون قبل الغياب وليس بعده
+          ⚖️ {tr("حسب لائحة العمل: طلب الإجازة يجب أن يكون قبل الغياب وليس بعده")}
         </div>
 
         <div style={{ display: "flex", gap: 10 }}>
-          <button onClick={onClose} style={MODAL_CANCEL}>إلغاء</button>
+          <button onClick={onClose} style={MODAL_CANCEL}>{tr("إلغاء")}</button>
           <button onClick={function(){ if(empId) onSubmit({ empId: empId, date: tomorrowStr, reason: reason, asLeave: asLeave }); }} disabled={!empId} style={{ flex: 1, padding: 14, borderRadius: 12, border: "none", background: empId ? "linear-gradient(135deg, " + COLORS.goldLight + ", " + COLORS.goldDark + ")" : COLORS.bgSecondary, color: empId ? COLORS.textOnGold : COLORS.textMuted, fontSize: 14, fontWeight: 800, cursor: empId ? "pointer" : "default", fontFamily: TYPOGRAPHY.fontTajawal }}>
-            تأكيد الإفادة
+            {tr("تأكيد الإفادة")}
           </button>
         </div>
       </div>
@@ -12005,24 +12031,24 @@ function PermissionModal({ user, branch, onClose, onSubmit }) {
   var [reason, setReason] = useState("");
 
   var types = [
-    { id: "early_leave", label: "انصراف مبكر", icon: "🚶" },
-    { id: "late_arrival", label: "حضور متأخر", icon: "⏰" },
-    { id: "personal", label: "إذن شخصي", icon: "🙋" },
-    { id: "medical", label: "مراجعة طبية", icon: "🏥" },
+    { id: "early_leave", label: tr("انصراف مبكر"), icon: "🚶" },
+    { id: "late_arrival", label: tr("حضور متأخر"), icon: "⏰" },
+    { id: "personal", label: tr("إذن شخصي"), icon: "🙋" },
+    { id: "medical", label: tr("مراجعة طبية"), icon: "🏥" },
   ];
 
   return (
     <div style={S.overlay} onClick={onClose}>
       <div className="basma-slideup" style={{ ...S.modal, ...MODAL_BODY }} onClick={function(e){ e.stopPropagation(); }}>
         {/* v7.61 — العنوان أبيض */}
-        <div style={{ ...ADMIN_MODAL_TITLE, marginBottom: 16, color: COLORS.textPrimary }}>🙋 طلب إذن</div>
+        <div style={{ ...ADMIN_MODAL_TITLE, marginBottom: 16, color: COLORS.textPrimary }}>🙋 {tr("طلب إذن")}</div>
 
         {/* v7.61 — الأربعة كروت: خلفية #1A2B44 + نص أبيض + المختار ذهبي 2px */}
         <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8, marginBottom: 14 }}>
-          {types.map(function(t) {
-            var active = type === t.id;
+          {types.map(function(tt) {
+            var active = type === tt.id;
             return (
-              <button key={t.id} onClick={function(){ setType(t.id); }} style={{
+              <button key={tt.id} onClick={function(){ setType(tt.id); }} style={{
                 padding: "12px 8px",
                 borderRadius: 12,
                 background: COLORS.bgSecondary,
@@ -12034,8 +12060,8 @@ function PermissionModal({ user, branch, onClose, onSubmit }) {
                 fontFamily: TYPOGRAPHY.fontTajawal,
                 transition: "border-color .15s",
               }}>
-                <div style={{ fontSize: 22, marginBottom: 4 }}>{t.icon}</div>
-                <div>{t.label}</div>
+                <div style={{ fontSize: 22, marginBottom: 4 }}>{tt.icon}</div>
+                <div>{tt.label}</div>
               </button>
             );
           })}
@@ -12043,25 +12069,25 @@ function PermissionModal({ user, branch, onClose, onSubmit }) {
 
         <div style={{ marginBottom: 14 }}>
           <label style={FORM_LABEL}>
-            {type === "early_leave" ? "وقت الانصراف المطلوب" : type === "late_arrival" ? "وقت الحضور المتوقع" : "مدة الإذن (بالدقائق)"}
+            {type === "early_leave" ? tr("وقت الانصراف المطلوب") : type === "late_arrival" ? tr("وقت الحضور المتوقع") : tr("مدة الإذن (بالدقائق)")}
           </label>
           <input type="time" value={time} onChange={function(e){ setTime(e.target.value); }} style={ADMIN_INPUT} />
         </div>
 
         <div style={{ marginBottom: 16 }}>
-          <label style={FORM_LABEL}>السبب</label>
-          <textarea value={reason} onChange={function(e){ setReason(e.target.value); }} placeholder="سبب الإذن..." rows={3} style={{ ...ADMIN_INPUT, resize: "none" }} />
+          <label style={FORM_LABEL}>{tr("السبب")}</label>
+          <textarea value={reason} onChange={function(e){ setReason(e.target.value); }} placeholder={tr("سبب الإذن...")} rows={3} style={{ ...ADMIN_INPUT, resize: "none" }} />
         </div>
 
         {/* v7.61 — ملاحظة زرقاء بخلفية #17324D ونص #A3D5FF */}
         <div style={{ fontSize: 11, color: COLORS.infoText, marginBottom: 14, padding: "10px 12px", borderRadius: 10, background: COLORS.infoBg, border: "1px solid rgba(163,213,255,0.2)", fontWeight: 500, lineHeight: 1.6 }}>
-          📋 سيُرسل الطلب للمدير المباشر للموافقة — يُحسم من رصيد الإجازات إن تجاوز ساعتين
+          📋 {tr("سيُرسل الطلب للمدير المباشر للموافقة — يُحسم من رصيد الإجازات إن تجاوز ساعتين")}
         </div>
 
         <div style={{ display: "flex", gap: 10 }}>
-          <button onClick={onClose} style={MODAL_CANCEL}>إلغاء</button>
+          <button onClick={onClose} style={MODAL_CANCEL}>{tr("إلغاء")}</button>
           <button onClick={function(){ if(time && reason) onSubmit({ type: type, time: time, reason: reason }); }} disabled={!time || !reason} style={{ flex: 1, padding: 14, borderRadius: 12, border: "none", background: time && reason ? "linear-gradient(135deg, " + COLORS.goldLight + ", " + COLORS.goldDark + ")" : COLORS.bgSecondary, color: time && reason ? COLORS.textOnGold : COLORS.textMuted, fontSize: 14, fontWeight: 800, cursor: time && reason ? "pointer" : "default", fontFamily: TYPOGRAPHY.fontTajawal }}>
-            إرسال الطلب
+            {tr("إرسال الطلب")}
           </button>
         </div>
       </div>
@@ -12083,18 +12109,18 @@ function HRRequestsHub({ user, onTicket, myTickets }) {
   var [activeTemplate, setActiveTemplate] = useState(null);   // id of template being filled
   var [comingSoonMsg, setComingSoonMsg] = useState(null);     // "قريباً" toast for unbuilt templates
 
-  // v7.72 — 10 قوالب طلبات HR (7 مُفعّلة: 4 شهادات + 3 طلبات داخلية)
+  // v7.73 — كل الـ 10 قوالب مُفعّلة 🎉 (النظام مكتمل 100%)
   var templates = [
-    { id: "edit_data",     emoji: "✏️", label: "تعديل بياناتي",       color: "#6366F1", enabled: true,  desc: "تحديث الهاتف/العنوان/..." },
-    { id: "salary_cert",   emoji: "📄", label: "شهادة راتب",          color: "#059669", enabled: true,  desc: "للبنوك والتأشيرات" },
-    { id: "experience_cert", emoji: "🪪", label: "شهادة خبرة",         color: "#0891B2", enabled: true,  desc: "لأغراض التوظيف والهجرة" },
-    { id: "intro_letter",  emoji: "🏢", label: "خطاب تعريف",          color: "#7C3AED", enabled: true,  desc: "تعريف بجهة العمل" },
-    { id: "promotion",     emoji: "🚀", label: "طلب ترقية",            color: "#DC2626", enabled: false, desc: "طلب ترقية وظيفية" },
-    { id: "advance",       emoji: "💵", label: "سلفة على الراتب",      color: "#EA580C", enabled: true,  desc: "طلب سلفة مقدمة من الراتب" },
-    { id: "transfer",      emoji: "🏠", label: "تحويل فرع",            color: "#0284C7", enabled: true,  desc: "نقل لفرع آخر" },
-    { id: "hours_adjust",  emoji: "🕐", label: "تعديل ساعات الدوام",   color: "#9333EA", enabled: true,  desc: "تعديل وقت البداية/النهاية" },
-    { id: "medical_ins",   emoji: "🏥", label: "تأمين طبي",            color: "#16A34A", enabled: false, desc: "استفسار أو تعديل" },
-    { id: "other",         emoji: "❓", label: "طلب آخر",              color: "#64748B", enabled: false, desc: "نص حر لأي طلب" },
+    { id: "edit_data",     emoji: "✏️", label: "تعديل بياناتي",       color: "#6366F1", enabled: true, desc: "تحديث الهاتف/العنوان/..." },
+    { id: "salary_cert",   emoji: "📄", label: "شهادة راتب",          color: "#059669", enabled: true, desc: "للبنوك والتأشيرات" },
+    { id: "experience_cert", emoji: "🪪", label: "شهادة خبرة",         color: "#0891B2", enabled: true, desc: "لأغراض التوظيف والهجرة" },
+    { id: "intro_letter",  emoji: "🏢", label: "خطاب تعريف",          color: "#7C3AED", enabled: true, desc: "تعريف بجهة العمل" },
+    { id: "promotion",     emoji: "🚀", label: "طلب ترقية",            color: "#DC2626", enabled: true, desc: "طلب ترقية وظيفية" },
+    { id: "advance",       emoji: "💵", label: "سلفة على الراتب",      color: "#EA580C", enabled: true, desc: "طلب سلفة مقدمة من الراتب" },
+    { id: "transfer",      emoji: "🏠", label: "تحويل فرع",            color: "#0284C7", enabled: true, desc: "نقل لفرع آخر" },
+    { id: "hours_adjust",  emoji: "🕐", label: "تعديل ساعات الدوام",   color: "#9333EA", enabled: true, desc: "تعديل وقت البداية/النهاية" },
+    { id: "medical_ins",   emoji: "🏥", label: "تأمين طبي",            color: "#16A34A", enabled: true, desc: "استفسار أو تعديل أو إضافة تابع" },
+    { id: "other",         emoji: "❓", label: "طلب آخر",              color: "#64748B", enabled: true, desc: "طلب مخصص لم يرد أعلاه" },
   ];
 
   function handleTemplateClick(t) {
@@ -12111,10 +12137,10 @@ function HRRequestsHub({ user, onTicket, myTickets }) {
       {/* القسم الرئيسي: قوالب HR (10) */}
       <div style={{ marginBottom: SPACING.lg }}>
         <div style={{ ...TYPOGRAPHY.bodySm, fontWeight: 800, color: COLORS.textPrimary, marginBottom: SPACING.sm, paddingBottom: SPACING.xs, borderBottom: "1px solid " + COLORS.cardRowBorder, display: "flex", alignItems: "center", gap: 6 }}>
-          <span>📋</span> قوالب طلبات الموارد البشرية
+          <span>📋</span> {tr("قوالب طلبات الموارد البشرية")}
         </div>
         <div style={{ fontSize: 10, color: COLORS.textMuted, marginBottom: 10, lineHeight: 1.6 }}>
-          اختر نوع الطلب — سيُرسل للموارد البشرية للمراجعة والاعتماد
+          {tr("اختر نوع الطلب — سيُرسل للموارد البشرية للمراجعة والاعتماد")}
         </div>
 
         {/* Grid 2 columns */}
@@ -12140,14 +12166,14 @@ function HRRequestsHub({ user, onTicket, myTickets }) {
               >
                 <div style={{ fontSize: 22, marginBottom: 6 }}>{t.emoji}</div>
                 <div style={{ fontSize: 12, fontWeight: 800, color: COLORS.textPrimary, marginBottom: 3 }}>
-                  {t.label}
+                  {tr(t.label)}
                 </div>
                 <div style={{ fontSize: 9, color: COLORS.textMuted, lineHeight: 1.4 }}>
-                  {t.desc}
+                  {tr(t.desc)}
                 </div>
                 {!t.enabled && (
                   <div style={{ position: "absolute", top: 6, left: 6, padding: "2px 6px", borderRadius: 6, background: "rgba(201,168,76,0.15)", border: "1px solid " + COLORS.goldLight + "40", fontSize: 8, fontWeight: 800, color: COLORS.goldLight }}>
-                    قريباً
+                    {tr("قريباً")}
                   </div>
                 )}
               </button>
@@ -12158,7 +12184,7 @@ function HRRequestsHub({ user, onTicket, myTickets }) {
         {/* "قريباً" toast */}
         {comingSoonMsg && (
           <div style={{ marginTop: 10, padding: "10px 12px", borderRadius: 10, background: COLORS.infoBg, border: "1px solid rgba(163,213,255,0.3)", fontSize: 11, color: COLORS.infoText, textAlign: "center", fontWeight: 600, fontFamily: TYPOGRAPHY.fontTajawal }}>
-            ⏳ قالب "{comingSoonMsg}" قيد التطوير — سيتوفر قريباً
+            ⏳ {tr("قالب")} "{tr(comingSoonMsg)}" {tr("قيد التطوير — سيتوفر قريباً")}
           </div>
         )}
 
@@ -12213,6 +12239,27 @@ function HRRequestsHub({ user, onTicket, myTickets }) {
               {activeTemplate === "transfer" && <TransferRequestForm user={user} accentColor={tmpl.color} onSubmitted={function(){ setActiveTemplate(null); }} />}
               {activeTemplate === "hours_adjust" && <HoursAdjustForm user={user} accentColor={tmpl.color} onSubmitted={function(){ setActiveTemplate(null); }} />}
               {activeTemplate === "advance" && <AdvanceRequestForm user={user} accentColor={tmpl.color} onSubmitted={function(){ setActiveTemplate(null); }} />}
+            </div>
+          );
+        })()}
+
+        {/* v7.73 — Last 3 templates: Promotion + Medical Insurance + Other */}
+        {(activeTemplate === "promotion" || activeTemplate === "medical_ins" || activeTemplate === "other") && (() => {
+          var tmpl = templates.find(function(x){ return x.id === activeTemplate; });
+          if (!tmpl) return null;
+          return (
+            <div style={{ marginTop: SPACING.md, padding: 12, borderRadius: 10, background: tmpl.color + "0D", border: "1px solid " + tmpl.color + "4D" }}>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 10 }}>
+                <div style={{ fontSize: 12, fontWeight: 800, color: COLORS.textPrimary, display: "flex", alignItems: "center", gap: 6 }}>
+                  {tmpl.emoji} طلب {tmpl.label}
+                </div>
+                <button onClick={function(){ setActiveTemplate(null); }} style={{ padding: "4px 10px", borderRadius: 8, background: COLORS.bgSecondary, border: "1px solid " + COLORS.cardBorder, color: COLORS.textSecondary, fontSize: 10, fontWeight: 700, cursor: "pointer", fontFamily: TYPOGRAPHY.fontTajawal }}>
+                  ✕ إغلاق
+                </button>
+              </div>
+              {activeTemplate === "promotion" && <PromotionRequestForm user={user} accentColor={tmpl.color} onSubmitted={function(){ setActiveTemplate(null); }} />}
+              {activeTemplate === "medical_ins" && <MedicalInsRequestForm user={user} accentColor={tmpl.color} onSubmitted={function(){ setActiveTemplate(null); }} />}
+              {activeTemplate === "other" && <OtherRequestForm user={user} accentColor={tmpl.color} onSubmitted={function(){ setActiveTemplate(null); }} />}
             </div>
           );
         })()}
@@ -12280,8 +12327,8 @@ function HRCertificateForm({ user, templateId, templateLabel, accentColor, onSub
   var purposeOptions = purposeOptionsByType[templateId] || purposeOptionsByType.salary_cert;
 
   async function submit() {
-    if (!purpose) { setMsg({ type: "error", text: "اختر الغرض من الطلب" }); return; }
-    if (purpose === "other" && !purposeOther.trim()) { setMsg({ type: "error", text: "اكتب الغرض" }); return; }
+    if (!purpose) { setMsg({ type: "error", text: tr("اختر الغرض من الطلب") }); return; }
+    if (purpose === "other" && !purposeOther.trim()) { setMsg({ type: "error", text: tr("اكتب الغرض") }); return; }
     setSubmitting(true);
     setMsg(null);
     try {
@@ -12302,15 +12349,15 @@ function HRCertificateForm({ user, templateId, templateLabel, accentColor, onSub
       });
       var d = await r.json();
       if (d.ok) {
-        setMsg({ type: "success", text: "✓ تم إرسال طلبك للموارد البشرية — ستصلك إشعار عند الموافقة" });
+        setMsg({ type: "success", text: tr("✓ تم إرسال طلبك للموارد البشرية — ستصلك إشعار عند الموافقة") });
         setTimeout(function(){
           if (onSubmitted) onSubmitted();
         }, 1600);
       } else {
-        setMsg({ type: "error", text: d.error || "فشل إرسال الطلب" });
+        setMsg({ type: "error", text: d.error || tr("فشل إرسال الطلب") });
       }
     } catch(e) {
-      setMsg({ type: "error", text: "فشل الاتصال: " + e.message });
+      setMsg({ type: "error", text: tr("فشل الاتصال: ") + e.message });
     }
     setSubmitting(false);
   }
@@ -12320,22 +12367,22 @@ function HRCertificateForm({ user, templateId, templateLabel, accentColor, onSub
   return (
     <div>
       <div style={{ marginBottom: 12 }}>
-        <label style={FORM_LABEL}>الغرض من الطلب</label>
+        <label style={FORM_LABEL}>{tr("الغرض من الطلب")}</label>
         <select value={purpose} onChange={function(e){ setPurpose(e.target.value); }} style={FORM_INPUT}>
-          <option value="">— اختر الغرض —</option>
-          {purposeOptions.map(function(o){ return <option key={o.value} value={o.value}>{o.label}</option>; })}
+          <option value="">{tr("— اختر الغرض —")}</option>
+          {purposeOptions.map(function(o){ return <option key={o.value} value={o.value}>{tr(o.label)}</option>; })}
         </select>
       </div>
 
       {purpose === "other" && (
         <div style={{ marginBottom: 12 }}>
-          <label style={FORM_LABEL}>اكتب الغرض</label>
-          <input type="text" value={purposeOther} onChange={function(e){ setPurposeOther(e.target.value); }} placeholder="مثلاً: لجهة معيّنة..." style={FORM_INPUT} />
+          <label style={FORM_LABEL}>{tr("اكتب الغرض")}</label>
+          <input type="text" value={purposeOther} onChange={function(e){ setPurposeOther(e.target.value); }} placeholder={tr("مثلاً: لجهة معيّنة...")} style={FORM_INPUT} />
         </div>
       )}
 
       <div style={{ marginBottom: 12 }}>
-        <label style={FORM_LABEL}>لغة الوثيقة</label>
+        <label style={FORM_LABEL}>{tr("لغة الوثيقة")}</label>
         <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 6 }}>
           {[
             { v: "ar", l: "🇸🇦 عربي" },
@@ -12352,19 +12399,19 @@ function HRCertificateForm({ user, templateId, templateLabel, accentColor, onSub
               fontSize: 11, fontWeight: 700,
               cursor: "pointer",
               fontFamily: TYPOGRAPHY.fontTajawal,
-            }}>{o.l}</button>;
+            }}>{tr(o.l)}</button>;
           })}
         </div>
       </div>
 
       <div style={{ marginBottom: 12 }}>
-        <label style={FORM_LABEL}>عدد النسخ</label>
+        <label style={FORM_LABEL}>{tr("عدد النسخ")}</label>
         <input type="number" min="1" max="10" value={copies} onChange={function(e){ setCopies(Math.max(1, Math.min(10, Number(e.target.value) || 1))); }} style={FORM_INPUT} />
       </div>
 
       <div style={{ marginBottom: 12 }}>
-        <label style={FORM_LABEL}>ملاحظات إضافية (اختياري)</label>
-        <textarea value={notes} onChange={function(e){ setNotes(e.target.value); }} rows={2} placeholder="أي تفاصيل تريد إبلاغها للموارد البشرية..." style={{ ...FORM_INPUT, resize: "none" }} />
+        <label style={FORM_LABEL}>{tr("ملاحظات إضافية (اختياري)")}</label>
+        <textarea value={notes} onChange={function(e){ setNotes(e.target.value); }} rows={2} placeholder={tr("أي تفاصيل تريد إبلاغها للموارد البشرية...")} style={{ ...FORM_INPUT, resize: "none" }} />
       </div>
 
       {msg && (
@@ -12387,16 +12434,13 @@ function HRCertificateForm({ user, templateId, templateLabel, accentColor, onSub
         cursor: submitting ? "wait" : "pointer",
         fontFamily: TYPOGRAPHY.fontTajawal,
       }}>
-        {submitting ? "جارٍ الإرسال..." : "📤 إرسال الطلب للموارد البشرية"}
+        {submitting ? tr("جارٍ الإرسال...") : tr("📤 إرسال الطلب للموارد البشرية")}
       </button>
     </div>
   );
 }
 
-/* v7.70 — SalaryCertForm: alias — يستخدم HRCertificateForm الجديد (محتفظ به للتوافق) */
-function SalaryCertForm({ user, onSubmitted }) {
-  return <HRCertificateForm user={user} templateId="salary_cert" templateLabel="شهادة راتب" accentColor="#059669" onSubmitted={onSubmitted} />;
-}
+/* v7.75 — SalaryCertForm alias حُذف؛ استُبدل بـ HRCertificateForm موحّد (v7.71) */
 
 /* v7.72 — TransferRequestForm: نموذج طلب تحويل فرع */
 function TransferRequestForm({ user, accentColor, onSubmitted }) {
@@ -12425,9 +12469,9 @@ function TransferRequestForm({ user, accentColor, onSubmitted }) {
   var targetOptions = branches.filter(function(b){ return b.id !== currentBranchId; });
 
   async function submit() {
-    if (!targetBranch) { setMsg({ type: "error", text: "اختر الفرع المطلوب الانتقال إليه" }); return; }
-    if (targetBranch === "other" && !targetBranchOther.trim()) { setMsg({ type: "error", text: "اكتب اسم الفرع المطلوب" }); return; }
-    if (!reason.trim() || reason.trim().length < 10) { setMsg({ type: "error", text: "اكتب سبب الطلب بوضوح (10 أحرف على الأقل)" }); return; }
+    if (!targetBranch) { setMsg({ type: "error", text: tr("اختر الفرع المطلوب الانتقال إليه") }); return; }
+    if (targetBranch === "other" && !targetBranchOther.trim()) { setMsg({ type: "error", text: tr("اكتب اسم الفرع المطلوب") }); return; }
+    if (!reason.trim() || reason.trim().length < 10) { setMsg({ type: "error", text: tr("اكتب سبب الطلب بوضوح (10 أحرف على الأقل)") }); return; }
     setSubmitting(true);
     setMsg(null);
     try {
@@ -12454,13 +12498,13 @@ function TransferRequestForm({ user, accentColor, onSubmitted }) {
       });
       var d = await r.json();
       if (d.ok) {
-        setMsg({ type: "success", text: "✓ تم إرسال طلبك للموارد البشرية — ستصلك إشعار عند الموافقة" });
+        setMsg({ type: "success", text: tr("✓ تم إرسال طلبك للموارد البشرية — ستصلك إشعار عند الموافقة") });
         setTimeout(function(){ if (onSubmitted) onSubmitted(); }, 1600);
       } else {
-        setMsg({ type: "error", text: d.error || "فشل إرسال الطلب" });
+        setMsg({ type: "error", text: d.error || tr("فشل إرسال الطلب") });
       }
     } catch(e) {
-      setMsg({ type: "error", text: "فشل الاتصال: " + e.message });
+      setMsg({ type: "error", text: tr("فشل الاتصال: ") + e.message });
     }
     setSubmitting(false);
   }
@@ -12469,44 +12513,44 @@ function TransferRequestForm({ user, accentColor, onSubmitted }) {
     <div>
       {/* الفرع الحالي (للعرض فقط) */}
       <div style={{ marginBottom: 12, padding: "10px 12px", borderRadius: 10, background: COLORS.bgSecondary, border: "1px solid " + COLORS.cardBorder }}>
-        <div style={{ fontSize: 10, color: COLORS.textMuted, fontWeight: 700, marginBottom: 3 }}>🏢 فرعك الحالي</div>
+        <div style={{ fontSize: 10, color: COLORS.textMuted, fontWeight: 700, marginBottom: 3 }}>🏢 {tr("فرعك الحالي")}</div>
         <div style={{ fontSize: 14, fontWeight: 800, color: COLORS.textPrimary }}>{currentBranchName}</div>
       </div>
 
       <div style={{ marginBottom: 12 }}>
-        <label style={FORM_LABEL}>الفرع المطلوب الانتقال إليه</label>
+        <label style={FORM_LABEL}>{tr("الفرع المطلوب الانتقال إليه")}</label>
         {loadingBranches ? (
-          <div style={{ padding: 12, textAlign: "center", color: COLORS.textMuted, fontSize: 11 }}>جارِ تحميل الفروع...</div>
+          <div style={{ padding: 12, textAlign: "center", color: COLORS.textMuted, fontSize: 11 }}>{tr("جارٍ تحميل الفروع...")}</div>
         ) : (
           <select value={targetBranch} onChange={function(e){ setTargetBranch(e.target.value); }} style={FORM_INPUT}>
-            <option value="">— اختر الفرع —</option>
+            <option value="">{tr("— اختر الفرع —")}</option>
             {targetOptions.map(function(b){
               return <option key={b.id} value={b.id}>🏢 {b.name}</option>;
             })}
-            <option value="other">❓ فرع آخر (اكتبه)</option>
+            <option value="other">{tr("❓ فرع آخر (اكتبه)")}</option>
           </select>
         )}
       </div>
 
       {targetBranch === "other" && (
         <div style={{ marginBottom: 12 }}>
-          <label style={FORM_LABEL}>اسم الفرع المطلوب</label>
-          <input type="text" value={targetBranchOther} onChange={function(e){ setTargetBranchOther(e.target.value); }} placeholder="مثلاً: فرع مدينة معيّنة..." style={FORM_INPUT} />
+          <label style={FORM_LABEL}>{tr("اسم الفرع المطلوب")}</label>
+          <input type="text" value={targetBranchOther} onChange={function(e){ setTargetBranchOther(e.target.value); }} placeholder={tr("مثلاً: فرع مدينة معيّنة...")} style={FORM_INPUT} />
         </div>
       )}
 
       <div style={{ marginBottom: 12 }}>
-        <label style={FORM_LABEL}>التاريخ المُفضَّل للنقل (اختياري)</label>
+        <label style={FORM_LABEL}>{tr("التاريخ المُفضَّل للنقل (اختياري)")}</label>
         <input type="date" value={preferredDate} onChange={function(e){ setPreferredDate(e.target.value); }} min={new Date().toISOString().split("T")[0]} style={FORM_INPUT} />
       </div>
 
       <div style={{ marginBottom: 12 }}>
-        <label style={FORM_LABEL}>سبب طلب التحويل</label>
-        <textarea value={reason} onChange={function(e){ setReason(e.target.value); }} rows={4} placeholder="اذكر السبب بوضوح — ظروف عائلية، قرب السكن، فرصة مهنية..." style={{ ...FORM_INPUT, resize: "none" }} />
+        <label style={FORM_LABEL}>{tr("سبب طلب التحويل")}</label>
+        <textarea value={reason} onChange={function(e){ setReason(e.target.value); }} rows={4} placeholder={tr("اذكر السبب بوضوح — ظروف عائلية، قرب السكن، فرصة مهنية...")} style={{ ...FORM_INPUT, resize: "none" }} />
       </div>
 
       <div style={{ padding: "10px 12px", borderRadius: 10, background: COLORS.infoBg, border: "1px solid rgba(163,213,255,0.25)", fontSize: 10, color: COLORS.infoText, marginBottom: 10, lineHeight: 1.6, fontWeight: 500 }}>
-        ℹ️ قرار التحويل يخضع لحاجة العمل ومتطلبات كل فرع — قد يتطلب موافقة الإدارة العليا.
+        ℹ️ {tr("قرار التحويل يخضع لحاجة العمل ومتطلبات كل فرع — قد يتطلب موافقة الإدارة العليا.")}
       </div>
 
       {msg && (
@@ -12529,7 +12573,7 @@ function TransferRequestForm({ user, accentColor, onSubmitted }) {
         cursor: submitting ? "wait" : "pointer",
         fontFamily: TYPOGRAPHY.fontTajawal,
       }}>
-        {submitting ? "جارٍ الإرسال..." : "📤 إرسال الطلب للموارد البشرية"}
+        {submitting ? tr("جارٍ الإرسال...") : tr("📤 إرسال الطلب للموارد البشرية")}
       </button>
     </div>
   );
@@ -12590,13 +12634,13 @@ function HoursAdjustForm({ user, accentColor, onSubmitted }) {
       });
       var d = await r.json();
       if (d.ok) {
-        setMsg({ type: "success", text: "✓ تم إرسال طلبك للموارد البشرية — ستصلك إشعار عند الموافقة" });
+        setMsg({ type: "success", text: tr("✓ تم إرسال طلبك للموارد البشرية — ستصلك إشعار عند الموافقة") });
         setTimeout(function(){ if (onSubmitted) onSubmitted(); }, 1600);
       } else {
-        setMsg({ type: "error", text: d.error || "فشل إرسال الطلب" });
+        setMsg({ type: "error", text: d.error || tr("فشل إرسال الطلب") });
       }
     } catch(e) {
-      setMsg({ type: "error", text: "فشل الاتصال: " + e.message });
+      setMsg({ type: "error", text: tr("فشل الاتصال: ") + e.message });
     }
     setSubmitting(false);
   }
@@ -12704,7 +12748,7 @@ function HoursAdjustForm({ user, accentColor, onSubmitted }) {
         cursor: submitting ? "wait" : "pointer",
         fontFamily: TYPOGRAPHY.fontTajawal,
       }}>
-        {submitting ? "جارٍ الإرسال..." : "📤 إرسال الطلب للموارد البشرية"}
+        {submitting ? tr("جارٍ الإرسال...") : tr("📤 إرسال الطلب للموارد البشرية")}
       </button>
     </div>
   );
@@ -12733,17 +12777,17 @@ function AdvanceRequestForm({ user, accentColor, onSubmitted }) {
 
   async function submit() {
     var amt = Number(amount);
-    if (!amt || amt <= 0) { setMsg({ type: "error", text: "أدخل مبلغ السلفة" }); return; }
+    if (!amt || amt <= 0) { setMsg({ type: "error", text: tr("أدخل مبلغ السلفة") }); return; }
     if (maxAdvance > 0 && amt > maxAdvance) {
       setMsg({ type: "error", text: "الحد الأقصى للسلفة: " + maxAdvance.toLocaleString("en-US") + " ريال (راتب 3 أشهر)" });
       return;
     }
     if (!installments || installments < 1 || installments > 12) {
-      setMsg({ type: "error", text: "عدد الأشهر بين 1 و 12" });
+      setMsg({ type: "error", text: tr("عدد الأشهر بين 1 و 12") });
       return;
     }
     if (!reason.trim() || reason.trim().length < 10) {
-      setMsg({ type: "error", text: "اكتب سبب الحاجة بوضوح (10 أحرف على الأقل)" });
+      setMsg({ type: "error", text: tr("اكتب سبب الحاجة بوضوح (10 أحرف على الأقل)") });
       return;
     }
     setSubmitting(true);
@@ -12770,13 +12814,13 @@ function AdvanceRequestForm({ user, accentColor, onSubmitted }) {
       });
       var d = await r.json();
       if (d.ok) {
-        setMsg({ type: "success", text: "✓ تم إرسال طلبك للموارد البشرية — ستصلك إشعار عند الموافقة" });
+        setMsg({ type: "success", text: tr("✓ تم إرسال طلبك للموارد البشرية — ستصلك إشعار عند الموافقة") });
         setTimeout(function(){ if (onSubmitted) onSubmitted(); }, 1600);
       } else {
-        setMsg({ type: "error", text: d.error || "فشل إرسال الطلب" });
+        setMsg({ type: "error", text: d.error || tr("فشل إرسال الطلب") });
       }
     } catch(e) {
-      setMsg({ type: "error", text: "فشل الاتصال: " + e.message });
+      setMsg({ type: "error", text: tr("فشل الاتصال: ") + e.message });
     }
     setSubmitting(false);
   }
@@ -12886,7 +12930,437 @@ function AdvanceRequestForm({ user, accentColor, onSubmitted }) {
         cursor: submitting ? "wait" : "pointer",
         fontFamily: TYPOGRAPHY.fontTajawal,
       }}>
-        {submitting ? "جارٍ الإرسال..." : "📤 إرسال طلب السلفة"}
+        {submitting ? tr("جارٍ الإرسال...") : tr("📤 إرسال طلب السلفة")}
+      </button>
+    </div>
+  );
+}
+
+/* v7.73 — PromotionRequestForm: طلب ترقية وظيفية */
+function PromotionRequestForm({ user, accentColor, onSubmitted }) {
+  var [targetRole, setTargetRole] = useState("");
+  var [achievements, setAchievements] = useState("");
+  var [justification, setJustification] = useState("");
+  var [submitting, setSubmitting] = useState(false);
+  var [msg, setMsg] = useState(null);
+
+  // حساب سنوات الخبرة
+  var yearsAtCompany = 0;
+  if (user.joinDate) {
+    try {
+      var joinMs = new Date(user.joinDate).getTime();
+      var diffYears = (Date.now() - joinMs) / (1000 * 60 * 60 * 24 * 365.25);
+      yearsAtCompany = Math.floor(diffYears * 10) / 10;
+    } catch(e) {}
+  }
+
+  async function submit() {
+    if (!targetRole.trim() || targetRole.trim().length < 3) { setMsg({ type: "error", text: tr("اكتب المسمى الوظيفي المطلوب") }); return; }
+    if (!achievements.trim() || achievements.trim().length < 20) { setMsg({ type: "error", text: tr("اكتب إنجازاتك بوضوح (20 حرف على الأقل)") }); return; }
+    if (!justification.trim() || justification.trim().length < 20) { setMsg({ type: "error", text: tr("اكتب مبرر طلب الترقية (20 حرف على الأقل)") }); return; }
+    setSubmitting(true);
+    setMsg(null);
+    try {
+      var r = await fetch("/api/data?action=hr-requests", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          empId: user.id,
+          empName: user.name,
+          type: "promotion",
+          typeLabel: "طلب ترقية",
+          purpose: "ترقية من " + (user.role || "—") + " إلى " + targetRole.trim(),
+          notes: justification.trim(),
+          extraData: {
+            currentRole: user.role || "",
+            targetRole: targetRole.trim(),
+            yearsAtCompany: yearsAtCompany,
+            joinDate: user.joinDate || null,
+            achievements: achievements.trim(),
+          },
+        }),
+      });
+      var d = await r.json();
+      if (d.ok) {
+        setMsg({ type: "success", text: tr("✓ تم إرسال طلب الترقية — سيُراجعه المدير والموارد البشرية") });
+        setTimeout(function(){ if (onSubmitted) onSubmitted(); }, 1600);
+      } else {
+        setMsg({ type: "error", text: d.error || tr("فشل إرسال الطلب") });
+      }
+    } catch(e) {
+      setMsg({ type: "error", text: tr("فشل الاتصال: ") + e.message });
+    }
+    setSubmitting(false);
+  }
+
+  var buttonGradient = "linear-gradient(135deg, " + accentColor + ", " + accentColor + "CC)";
+
+  return (
+    <div>
+      {/* معلومات السياق (للعرض) */}
+      <div style={{ padding: 10, borderRadius: 8, background: COLORS.bgSecondary, border: "1px solid " + COLORS.cardBorder, marginBottom: 12, fontSize: 11, color: COLORS.textSecondary, lineHeight: 1.7 }}>
+        <div><b style={{ color: COLORS.textPrimary }}>المسمى الحالي:</b> {user.role || "—"}</div>
+        {user.joinDate && (
+          <div style={{ marginTop: 4 }}>
+            <b style={{ color: COLORS.textPrimary }}>تاريخ المباشرة:</b> {new Date(user.joinDate).toLocaleDateString("ar-SA")}
+            &nbsp;·&nbsp;<span style={{ color: accentColor, fontWeight: 700 }}>{yearsAtCompany} سنة</span>
+          </div>
+        )}
+      </div>
+
+      <div style={{ marginBottom: 12 }}>
+        <label style={FORM_LABEL}>المسمى الوظيفي المطلوب</label>
+        <input
+          type="text"
+          value={targetRole}
+          onChange={function(e){ setTargetRole(e.target.value); }}
+          placeholder="مثلاً: مهندس أول · مدير قسم · نائب مدير ..."
+          style={FORM_INPUT}
+        />
+      </div>
+
+      <div style={{ marginBottom: 12 }}>
+        <label style={FORM_LABEL}>أبرز إنجازاتك في المنصب الحالي</label>
+        <textarea
+          value={achievements}
+          onChange={function(e){ setAchievements(e.target.value); }}
+          rows={4}
+          placeholder="اذكر أهم المشاريع، المهام، والنتائج التي حققتها..."
+          style={{ ...FORM_INPUT, resize: "none" }}
+        />
+      </div>
+
+      <div style={{ marginBottom: 12 }}>
+        <label style={FORM_LABEL}>مبرر طلب الترقية</label>
+        <textarea
+          value={justification}
+          onChange={function(e){ setJustification(e.target.value); }}
+          rows={3}
+          placeholder="لماذا تستحق الترقية؟ ما المسؤوليات الجديدة التي ستتحملها؟"
+          style={{ ...FORM_INPUT, resize: "none" }}
+        />
+      </div>
+
+      {msg && (
+        <div style={{
+          padding: "10px 12px", borderRadius: 10, marginBottom: 10,
+          background: msg.type === "error" ? "rgba(239,68,68,0.15)" : "rgba(16,185,129,0.15)",
+          border: "1px solid " + (msg.type === "error" ? "rgba(239,68,68,0.3)" : "rgba(16,185,129,0.3)"),
+          color: msg.type === "error" ? "#FCA5A5" : "#6EE7B7",
+          fontSize: 11, fontWeight: 700, textAlign: "center",
+        }}>
+          {msg.text}
+        </div>
+      )}
+
+      <button onClick={submit} disabled={submitting} style={{
+        width: "100%", padding: 12, borderRadius: 12,
+        background: submitting ? COLORS.bgSecondary : buttonGradient,
+        color: "#fff", border: "none",
+        fontSize: 13, fontWeight: 800,
+        cursor: submitting ? "wait" : "pointer",
+        fontFamily: TYPOGRAPHY.fontTajawal,
+      }}>
+        {submitting ? tr("جارٍ الإرسال...") : "📤 إرسال طلب الترقية"}
+      </button>
+    </div>
+  );
+}
+
+/* v7.73 — MedicalInsRequestForm: طلب تأمين طبي */
+function MedicalInsRequestForm({ user, accentColor, onSubmitted }) {
+  var [requestKind, setRequestKind] = useState("");
+  var [dependentName, setDependentName] = useState("");
+  var [dependentRelation, setDependentRelation] = useState("");
+  var [dependentDob, setDependentDob] = useState("");
+  var [details, setDetails] = useState("");
+  var [submitting, setSubmitting] = useState(false);
+  var [msg, setMsg] = useState(null);
+
+  var kinds = [
+    { v: "inquiry",    l: "استفسار عن المنافع", icon: "ℹ️" },
+    { v: "add_dep",    l: "إضافة تابع",          icon: "➕" },
+    { v: "remove_dep", l: "حذف تابع",            icon: "➖" },
+    { v: "upgrade",    l: "ترقية الشريحة",       icon: "⬆️" },
+    { v: "replace_card", l: "إصدار بطاقة بديلة", icon: "🆔" },
+  ];
+
+  var relations = [
+    { v: "spouse", l: "زوجة" },
+    { v: "son",    l: "ابن" },
+    { v: "daughter", l: "ابنة" },
+    { v: "father", l: "أب" },
+    { v: "mother", l: "أم" },
+  ];
+
+  var needsDependent = requestKind === "add_dep" || requestKind === "remove_dep";
+
+  async function submit() {
+    if (!requestKind) { setMsg({ type: "error", text: "اختر نوع الطلب" }); return; }
+    if (needsDependent) {
+      if (!dependentName.trim()) { setMsg({ type: "error", text: "اكتب اسم التابع" }); return; }
+      if (!dependentRelation) { setMsg({ type: "error", text: "اختر صلة القرابة" }); return; }
+      if (requestKind === "add_dep" && !dependentDob) { setMsg({ type: "error", text: tr("أدخل تاريخ ميلاد التابع") }); return; }
+    }
+    if (!details.trim() || details.trim().length < 10) { setMsg({ type: "error", text: tr("اكتب تفاصيل الطلب (10 أحرف على الأقل)") }); return; }
+    setSubmitting(true);
+    setMsg(null);
+    try {
+      var kindLabel = (kinds.find(function(k){ return k.v === requestKind; }) || {}).l || requestKind;
+      var purposeText = kindLabel;
+      if (needsDependent && dependentName.trim()) {
+        var relLabel = (relations.find(function(r){ return r.v === dependentRelation; }) || {}).l || dependentRelation;
+        purposeText += " (" + relLabel + ": " + dependentName.trim() + ")";
+      }
+      var r = await fetch("/api/data?action=hr-requests", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          empId: user.id,
+          empName: user.name,
+          type: "medical_ins",
+          typeLabel: "تأمين طبي",
+          purpose: purposeText,
+          notes: details.trim(),
+          extraData: {
+            requestKind: requestKind,
+            requestKindLabel: kindLabel,
+            dependentName: needsDependent ? dependentName.trim() : null,
+            dependentRelation: needsDependent ? dependentRelation : null,
+            dependentRelationLabel: needsDependent ? (relations.find(function(r){ return r.v === dependentRelation; }) || {}).l : null,
+            dependentDob: needsDependent ? (dependentDob || null) : null,
+          },
+        }),
+      });
+      var d = await r.json();
+      if (d.ok) {
+        setMsg({ type: "success", text: tr("✓ تم إرسال طلبك — سيتواصل معك قسم التأمين الطبي") });
+        setTimeout(function(){ if (onSubmitted) onSubmitted(); }, 1600);
+      } else {
+        setMsg({ type: "error", text: d.error || tr("فشل إرسال الطلب") });
+      }
+    } catch(e) {
+      setMsg({ type: "error", text: tr("فشل الاتصال: ") + e.message });
+    }
+    setSubmitting(false);
+  }
+
+  var buttonGradient = "linear-gradient(135deg, " + accentColor + ", " + accentColor + "CC)";
+
+  return (
+    <div>
+      <div style={{ marginBottom: 12 }}>
+        <label style={FORM_LABEL}>نوع الطلب</label>
+        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 6 }}>
+          {kinds.map(function(k){
+            var active = requestKind === k.v;
+            return <button key={k.v} onClick={function(){ setRequestKind(k.v); }} style={{
+              padding: "10px 8px",
+              borderRadius: 10,
+              background: active ? accentColor + "26" : COLORS.bgSecondary,
+              border: "1px solid " + (active ? accentColor : COLORS.cardBorder),
+              color: COLORS.textPrimary,
+              fontSize: 11, fontWeight: 700,
+              cursor: "pointer",
+              textAlign: "right",
+              fontFamily: TYPOGRAPHY.fontTajawal,
+            }}>
+              <span style={{ marginLeft: 6 }}>{k.icon}</span>
+              {k.l}
+            </button>;
+          })}
+        </div>
+      </div>
+
+      {needsDependent && (
+        <div style={{ padding: 10, borderRadius: 8, background: accentColor + "10", border: "1px solid " + accentColor + "40", marginBottom: 12 }}>
+          <div style={{ fontSize: 11, fontWeight: 800, color: accentColor, marginBottom: 8 }}>📋 بيانات التابع</div>
+
+          <div style={{ marginBottom: 10 }}>
+            <label style={FORM_LABEL}>اسم التابع</label>
+            <input type="text" value={dependentName} onChange={function(e){ setDependentName(e.target.value); }} placeholder="الاسم الكامل" style={FORM_INPUT} />
+          </div>
+
+          <div style={{ marginBottom: 10 }}>
+            <label style={FORM_LABEL}>صلة القرابة</label>
+            <select value={dependentRelation} onChange={function(e){ setDependentRelation(e.target.value); }} style={FORM_INPUT}>
+              <option value="">— اختر —</option>
+              {relations.map(function(r){ return <option key={r.v} value={r.v}>{r.l}</option>; })}
+            </select>
+          </div>
+
+          {requestKind === "add_dep" && (
+            <div>
+              <label style={FORM_LABEL}>تاريخ الميلاد</label>
+              <input type="date" value={dependentDob} onChange={function(e){ setDependentDob(e.target.value); }} style={FORM_INPUT} />
+            </div>
+          )}
+        </div>
+      )}
+
+      <div style={{ marginBottom: 12 }}>
+        <label style={FORM_LABEL}>تفاصيل الطلب</label>
+        <textarea
+          value={details}
+          onChange={function(e){ setDetails(e.target.value); }}
+          rows={3}
+          placeholder="اشرح تفاصيل طلبك..."
+          style={{ ...FORM_INPUT, resize: "none" }}
+        />
+      </div>
+
+      {msg && (
+        <div style={{
+          padding: "10px 12px", borderRadius: 10, marginBottom: 10,
+          background: msg.type === "error" ? "rgba(239,68,68,0.15)" : "rgba(16,185,129,0.15)",
+          border: "1px solid " + (msg.type === "error" ? "rgba(239,68,68,0.3)" : "rgba(16,185,129,0.3)"),
+          color: msg.type === "error" ? "#FCA5A5" : "#6EE7B7",
+          fontSize: 11, fontWeight: 700, textAlign: "center",
+        }}>
+          {msg.text}
+        </div>
+      )}
+
+      <button onClick={submit} disabled={submitting} style={{
+        width: "100%", padding: 12, borderRadius: 12,
+        background: submitting ? COLORS.bgSecondary : buttonGradient,
+        color: "#fff", border: "none",
+        fontSize: 13, fontWeight: 800,
+        cursor: submitting ? "wait" : "pointer",
+        fontFamily: TYPOGRAPHY.fontTajawal,
+      }}>
+        {submitting ? tr("جارٍ الإرسال...") : "📤 إرسال الطلب"}
+      </button>
+    </div>
+  );
+}
+
+/* v7.73 — OtherRequestForm: طلب مخصص (نص حر) */
+function OtherRequestForm({ user, accentColor, onSubmitted }) {
+  var [subject, setSubject] = useState("");
+  var [details, setDetails] = useState("");
+  var [priority, setPriority] = useState("normal");
+  var [submitting, setSubmitting] = useState(false);
+  var [msg, setMsg] = useState(null);
+
+  var priorities = [
+    { v: "low",    l: "منخفضة",  color: "#64748B" },
+    { v: "normal", l: "عادية",   color: "#3B82F6" },
+    { v: "high",   l: "مرتفعة",  color: "#F59E0B" },
+    { v: "urgent", l: "عاجلة",   color: "#EF4444" },
+  ];
+
+  async function submit() {
+    if (!subject.trim() || subject.trim().length < 5) { setMsg({ type: "error", text: tr("اكتب موضوع الطلب (5 أحرف على الأقل)") }); return; }
+    if (!details.trim() || details.trim().length < 20) { setMsg({ type: "error", text: tr("اكتب تفاصيل الطلب (20 حرف على الأقل)") }); return; }
+    setSubmitting(true);
+    setMsg(null);
+    try {
+      var priorityLabel = (priorities.find(function(p){ return p.v === priority; }) || {}).l || priority;
+      var r = await fetch("/api/data?action=hr-requests", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          empId: user.id,
+          empName: user.name,
+          type: "other",
+          typeLabel: "طلب آخر",
+          purpose: subject.trim(),
+          notes: details.trim(),
+          extraData: {
+            subject: subject.trim(),
+            priority: priority,
+            priorityLabel: priorityLabel,
+          },
+        }),
+      });
+      var d = await r.json();
+      if (d.ok) {
+        setMsg({ type: "success", text: tr("✓ تم إرسال طلبك — سيراجعه المختص في الموارد البشرية") });
+        setTimeout(function(){ if (onSubmitted) onSubmitted(); }, 1600);
+      } else {
+        setMsg({ type: "error", text: d.error || tr("فشل إرسال الطلب") });
+      }
+    } catch(e) {
+      setMsg({ type: "error", text: tr("فشل الاتصال: ") + e.message });
+    }
+    setSubmitting(false);
+  }
+
+  var buttonGradient = "linear-gradient(135deg, " + accentColor + ", " + accentColor + "CC)";
+
+  return (
+    <div>
+      <div style={{ padding: 10, borderRadius: 8, background: COLORS.infoBg, border: "1px solid " + COLORS.infoText + "40", marginBottom: 12, fontSize: 10, color: COLORS.infoText, lineHeight: 1.6 }}>
+        💡 استخدم هذا القالب لأي طلب لا يندرج ضمن القوالب الأخرى. كن واضحاً قدر الإمكان.
+      </div>
+
+      <div style={{ marginBottom: 12 }}>
+        <label style={FORM_LABEL}>موضوع الطلب</label>
+        <input
+          type="text"
+          value={subject}
+          onChange={function(e){ setSubject(e.target.value); }}
+          placeholder="عنوان مختصر للطلب..."
+          style={FORM_INPUT}
+          maxLength={100}
+        />
+        <div style={{ fontSize: 9, color: COLORS.textMuted, marginTop: 4, textAlign: "left" }}>
+          {subject.length}/100
+        </div>
+      </div>
+
+      <div style={{ marginBottom: 12 }}>
+        <label style={FORM_LABEL}>مستوى الأولوية</label>
+        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr 1fr", gap: 4 }}>
+          {priorities.map(function(p){
+            var active = priority === p.v;
+            return <button key={p.v} onClick={function(){ setPriority(p.v); }} style={{
+              padding: "8px 4px",
+              borderRadius: 8,
+              background: active ? p.color + "26" : COLORS.bgSecondary,
+              border: "1px solid " + (active ? p.color : COLORS.cardBorder),
+              color: active ? p.color : COLORS.textPrimary,
+              fontSize: 10, fontWeight: 700,
+              cursor: "pointer",
+              fontFamily: TYPOGRAPHY.fontTajawal,
+            }}>{p.l}</button>;
+          })}
+        </div>
+      </div>
+
+      <div style={{ marginBottom: 12 }}>
+        <label style={FORM_LABEL}>تفاصيل الطلب الكاملة</label>
+        <textarea
+          value={details}
+          onChange={function(e){ setDetails(e.target.value); }}
+          rows={6}
+          placeholder="اشرح طلبك بالتفصيل — ماذا تريد؟ لماذا؟ ما التوقيت المطلوب؟"
+          style={{ ...FORM_INPUT, resize: "none" }}
+        />
+      </div>
+
+      {msg && (
+        <div style={{
+          padding: "10px 12px", borderRadius: 10, marginBottom: 10,
+          background: msg.type === "error" ? "rgba(239,68,68,0.15)" : "rgba(16,185,129,0.15)",
+          border: "1px solid " + (msg.type === "error" ? "rgba(239,68,68,0.3)" : "rgba(16,185,129,0.3)"),
+          color: msg.type === "error" ? "#FCA5A5" : "#6EE7B7",
+          fontSize: 11, fontWeight: 700, textAlign: "center",
+        }}>
+          {msg.text}
+        </div>
+      )}
+
+      <button onClick={submit} disabled={submitting} style={{
+        width: "100%", padding: 12, borderRadius: 12,
+        background: submitting ? COLORS.bgSecondary : buttonGradient,
+        color: "#fff", border: "none",
+        fontSize: 13, fontWeight: 800,
+        cursor: submitting ? "wait" : "pointer",
+        fontFamily: TYPOGRAPHY.fontTajawal,
+      }}>
+        {submitting ? tr("جارٍ الإرسال...") : "📤 إرسال الطلب"}
       </button>
     </div>
   );
@@ -13699,43 +14173,7 @@ function DesktopPairModal({ user, onClose }) {
 }
 
 /* ═══════════ NOTIFICATION PANEL ═══════════ */
-function NotificationPanel({ notifications, onClose, onMarkRead, onGoToLegal }) {
-  var typeIcons = { violation: "⚖️", investigation: "🔍", appeal_result: "📢", complaint_update: "📣" };
-  var typeLabels = { violation: "مخالفة", investigation: "تحقيق", appeal_result: "نتيجة تظلم", complaint_update: "تحديث شكوى" };
-
-  return (
-    <div onClick={onClose} style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,.7)", zIndex: 100, display: "flex", flexDirection: "column", justifyContent: "flex-start" }}>
-      <div onClick={function(e){ e.stopPropagation(); }} style={{ background: "linear-gradient(180deg, " + COLORS.bg1 + ", " + COLORS.bg2 + ")", borderRadius: "0 0 " + RADIUS.xl + "px " + RADIUS.xl + "px", maxHeight: "70vh", overflow: "auto", boxShadow: "0 8px 32px rgba(0,0,0,.5)" }}>
-        <div style={{ padding: SPACING.lg, display: "flex", justifyContent: "space-between", alignItems: "center", borderBottom: "1px solid " + COLORS.metallicBorder }}>
-          <div style={{ ...TYPOGRAPHY.h2, color: COLORS.textPrimary }}>🔔 الإشعارات</div>
-          <div style={{ display: "flex", gap: SPACING.sm }}>
-            <button onClick={onMarkRead} style={{ padding: "6px 12px", borderRadius: RADIUS.sm, background: COLORS.metallic, border: "1px solid " + COLORS.metallicBorder, color: COLORS.textMuted, ...TYPOGRAPHY.tiny, fontWeight: 700, cursor: "pointer" }}>قراءة الكل</button>
-            <button onClick={onClose} style={{ background: "none", border: "none", color: COLORS.textMuted, fontSize: 22, cursor: "pointer" }}>×</button>
-          </div>
-        </div>
-
-        <div style={{ padding: SPACING.md }}>
-          {notifications.length === 0 && <EmptyState text="لا توجد إشعارات" />}
-          {notifications.slice(0, 30).map(function(n) {
-            return (
-              <div key={n.id} onClick={function(){ if (n.type === "violation" || n.type === "investigation") onGoToLegal(); }} style={{ display: "flex", gap: SPACING.sm, padding: SPACING.md, borderBottom: "1px solid " + COLORS.metallicBorder, cursor: "pointer", background: n.read ? "transparent" : COLORS.goldDark + "15", borderRadius: RADIUS.sm, marginBottom: 4 }}>
-                <div style={{ fontSize: 20, width: 32, textAlign: "center" }}>{typeIcons[n.type] || "📌"}</div>
-                <div style={{ flex: 1 }}>
-                  <div style={{ ...FLEX_BETWEEN, marginBottom: 4 }}>
-                    <div style={{ ...TYPOGRAPHY.caption, fontWeight: 800, color: n.read ? COLORS.textMuted : COLORS.textPrimary }}>{n.title}</div>
-                    {!n.read && <div style={{ width: 8, height: 8, borderRadius: 4, background: COLORS.textDanger }} />}
-                  </div>
-                  <div style={{ ...TYPOGRAPHY.tiny, color: COLORS.textMuted, lineHeight: 1.6 }}>{n.body}</div>
-                  <div style={{ ...TYPOGRAPHY.tiny, color: COLORS.goldLight, marginTop: 4, fontSize: 9 }}>{n.createdAt ? new Date(n.createdAt).toLocaleString("ar-SA") : ""}</div>
-                </div>
-              </div>
-            );
-          })}
-        </div>
-      </div>
-    </div>
-  );
-}
+/* v7.75 — NotificationPanel (الـ modal العائم) حُذف نهائياً، استُبدل بـ NotificationsInlineView */
 
 /* v7.65 — NotificationsInlineView: الإشعارات كقسم inline في tab "المعاملات الإدارية"
    - يعرض 5 افتراضياً
@@ -14296,14 +14734,15 @@ function MyTeamPage({ user, allEmps }) {
 
 function BottomNav({ page, setPage, legalAlerts, tawasulUnread, hrUnread, user }) {
   // v7.65 — "فريقي" يظهر لكل الموظفين (الموظف يرى مدراءه، المدير يرى مدراءه + مرؤوسيه)
+  // v7.77 — labels مترجمة
   var items = [
-    { id: "home", icon: Icons.home, label: "الرئيسية" },
-    { id: "tawasul", icon: Icons.message, label: "تواصل", badge: tawasulUnread || 0 },
-    { id: "team", icon: Icons.users || Icons.user, label: "فريقي" },
+    { id: "home", icon: Icons.home, label: tr("الرئيسية") },
+    { id: "tawasul", icon: Icons.message, label: tr("تواصل"), badge: tawasulUnread || 0 },
+    { id: "team", icon: Icons.users || Icons.user, label: tr("فريقي") },
   ];
-  items.push({ id: "benefits", icon: Icons.medal, label: "الامتيازات" });
-  items.push({ id: "report", icon: Icons.chart, label: "تقريري" });
-  items.push({ id: "profile", icon: Icons.user, label: "حسابي", badge: (legalAlerts || 0) + (hrUnread || 0) });
+  items.push({ id: "benefits", icon: Icons.medal, label: tr("الامتيازات") });
+  items.push({ id: "report", icon: Icons.chart, label: tr("تقريري") });
+  items.push({ id: "profile", icon: Icons.user, label: tr("حسابي"), badge: (legalAlerts || 0) + (hrUnread || 0) });
   return (
     <div style={{ position: "fixed", bottom: 0, left: 0, right: 0, maxWidth: 430, margin: "0 auto", background: "rgba(" + (C === DARK ? "7,20,40" : "255,255,255") + ",.85)", backdropFilter: "blur(10px)", borderTop: "1px solid " + COLORS.metallicBorder, display: "flex", justifyContent: "space-around", padding: "10px 0 16px", zIndex: 50 }}>
       {items.map(function(n) {
@@ -16489,7 +16928,7 @@ function EditRequestCard({ user }) {
           <div style={{ fontSize: 11, color: COLORS.textMuted, marginBottom: 4 }}>سبب التعديل (اختياري)</div>
           <textarea value={reason} onChange={function(e){ setReason(e.target.value); }} placeholder="مثال: تغيّر رقم جوالي..." rows={2} style={{ width: "100%", padding: 10, borderRadius: 8, border: "1px solid " + COLORS.cardBorder, fontSize: 12, background: COLORS.cardBg, color: COLORS.textPrimary, marginBottom: 10, fontFamily: "inherit", boxSizing: "border-box", resize: "none" }} />
           <button onClick={submit} disabled={saving} style={{ width: "100%", padding: 12, background: COLORS.goldLight, color: "#fff", border: "none", borderRadius: 10, fontSize: 13, fontWeight: 900, cursor: saving ? "wait" : "pointer", fontFamily: "inherit" }}>
-            {saving ? "جارٍ الإرسال..." : "📤 إرسال الطلب لـ HR"}
+            {saving ? tr("جارٍ الإرسال...") : "📤 إرسال الطلب لـ HR"}
           </button>
         </div>
       )}
@@ -17710,7 +18149,7 @@ function EvaluationForm({ evaluation, user, onClose }) {
           opacity: (saving || !canSubmit) ? 0.6 : 1
         }}
       >
-        {saving ? "جارٍ الإرسال..." :
+        {saving ? tr("جارٍ الإرسال...") :
           !canSubmit ? "⚠ أكمل كل المعايير أولاً (" + filledCount + "/" + criteria.length + ")" :
           "📤 إرسال نهائي"}
       </button>
@@ -18111,8 +18550,8 @@ function LeaveRequestForm({ user, onClose }) {
   }
 
   async function submit() {
-    if (!from || !to) { setMsg({type:"error",text:"حدد تاريخ البداية والنهاية"}); return; }
-    if (new Date(to) < new Date(from)) { setMsg({type:"error",text:"تاريخ النهاية قبل البداية"}); return; }
+    if (!from || !to) { setMsg({type:"error",text:tr("حدد تاريخ البداية والنهاية")}); return; }
+    if (new Date(to) < new Date(from)) { setMsg({type:"error",text:tr("تاريخ النهاية قبل البداية")}); return; }
     setSaving(true);
     try {
       var r = await fetch("/api/data?action=leave-requests", {
@@ -18124,12 +18563,12 @@ function LeaveRequestForm({ user, onClose }) {
       });
       var d = await r.json();
       if (d.ok) {
-        setMsg({ type: "success", text: "✓ تم إرسال طلبك للمدير" });
+        setMsg({ type: "success", text: tr("✓ تم إرسال طلبك للمدير") });
         setTimeout(onClose, 1200);
       } else {
-        setMsg({ type: "error", text: d.error || "فشل الإرسال" });
+        setMsg({ type: "error", text: d.error || tr("فشل الإرسال") });
       }
-    } catch(e) { setMsg({ type: "error", text: "فشل: " + e.message }); }
+    } catch(e) { setMsg({ type: "error", text: tr("فشل: ") + e.message }); }
     setSaving(false);
   }
 
@@ -18141,61 +18580,61 @@ function LeaveRequestForm({ user, onClose }) {
         fontSize: 18
       }}>×</button>
       <div style={{ ...TYPOGRAPHY.h3, color: COLORS.textPrimary, fontFamily: TYPOGRAPHY.fontCairo }}>
-        🏖️ طلب إجازة جديد
+        🏖️ {tr("طلب إجازة جديد")}
       </div>
     </div>
 
     <Card>
       <div style={{ marginBottom: SPACING.md }}>
-        <label style={FORM_LABEL}>نوع الإجازة</label>
+        <label style={FORM_LABEL}>{tr("نوع الإجازة")}</label>
         <select value={type} onChange={function(e){setType(e.target.value);}} style={FORM_INPUT}>
-          <option value="annual">🌴 سنوية</option>
-          <option value="sick">🤒 مرضية</option>
-          <option value="emergency">🚨 طارئة</option>
-          <option value="personal">🙋 شخصية</option>
-          <option value="maternity">👶 أمومة</option>
-          <option value="bereavement">🕊️ وفاة</option>
-          <option value="hajj">🕋 حج</option>
-          <option value="unpaid">💼 بدون راتب</option>
+          <option value="annual">🌴 {tr("سنوية")}</option>
+          <option value="sick">🤒 {tr("مرضية")}</option>
+          <option value="emergency">🚨 {tr("طارئة")}</option>
+          <option value="personal">🙋 {tr("شخصية")}</option>
+          <option value="maternity">👶 {tr("أمومة")}</option>
+          <option value="bereavement">🕊️ {tr("وفاة")}</option>
+          <option value="hajj">🕋 {tr("حج")}</option>
+          <option value="unpaid">💼 {tr("بدون راتب")}</option>
         </select>
       </div>
 
       <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10, marginBottom: SPACING.md }}>
         <div>
-          <label style={FORM_LABEL}>من</label>
+          <label style={FORM_LABEL}>{tr("من")}</label>
           <input type="date" value={from} onChange={function(e){setFrom(e.target.value);}} style={FORM_INPUT} />
         </div>
         <div>
-          <label style={FORM_LABEL}>إلى</label>
+          <label style={FORM_LABEL}>{tr("إلى")}</label>
           <input type="date" value={to} onChange={function(e){setTo(e.target.value);}} style={FORM_INPUT} />
         </div>
       </div>
 
       {from && to && <div style={{ padding: 12, background: COLORS.infoBg, borderRadius: 10, marginBottom: SPACING.md, fontSize: 13, fontWeight: 800, color: COLORS.infoText, textAlign: "center", border: "1px solid rgba(163,213,255,0.25)" }}>
-        📅 {days} يوم
+        📅 {days} {tr("يوم")}
       </div>}
 
       <div style={{ marginBottom: SPACING.md }}>
-        <label style={FORM_LABEL}>السبب (اختياري)</label>
+        <label style={FORM_LABEL}>{tr("السبب (اختياري)")}</label>
         <textarea value={reason} onChange={function(e){setReason(e.target.value);}} rows={3}
-          placeholder="اكتب سبب الإجازة..."
+          placeholder={tr("اكتب سبب الإجازة...")}
           style={{...FORM_INPUT, resize: "vertical"}} />
       </div>
 
       <div style={{ marginBottom: SPACING.md }}>
-        <label style={FORM_LABEL}>كيفية التواصل خلال الإجازة</label>
+        <label style={FORM_LABEL}>{tr("كيفية التواصل خلال الإجازة")}</label>
         <input type="text" value={contact} onChange={function(e){setContact(e.target.value);}}
-          placeholder="جوال احتياطي، إيميل، أو لا يمكن التواصل..."
+          placeholder={tr("جوال احتياطي، إيميل، أو لا يمكن التواصل...")}
           style={FORM_INPUT} />
       </div>
 
       {/* v7.61 — صندوق المعلومات بخلفية #17324D ونص #A3D5FF */}
       <div style={{ padding: 12, background: COLORS.infoBg, borderRadius: 10, fontSize: 11, color: COLORS.infoText, marginBottom: SPACING.md, lineHeight: 1.7, border: "1px solid rgba(163,213,255,0.2)" }}>
-        ℹ️ <b>بعد الإرسال:</b><br/>
-        1. المدير المباشر يراجع الطلب<br/>
-        2. إن وافق مبدئياً، ستفتح لك شاشة تسليم المهام<br/>
-        3. المفوَّضون يوافقون على استلام بنودك<br/>
-        4. المراجعة النهائية من المدير + HR
+        ℹ️ <b>{tr("بعد الإرسال:")}</b><br/>
+        1. {tr("المدير المباشر يراجع الطلب")}<br/>
+        2. {tr("إن وافق مبدئياً، ستفتح لك شاشة تسليم المهام")}<br/>
+        3. {tr("المفوَّضون يوافقون على استلام بنودك")}<br/>
+        4. {tr("المراجعة النهائية من المدير + HR")}
       </div>
 
       {msg && <div style={{
@@ -18213,7 +18652,7 @@ function LeaveRequestForm({ user, onClose }) {
         border: "none", borderRadius: 12, fontSize: 14, fontWeight: 900,
         cursor: saving ? "wait" : "pointer", fontFamily: TYPOGRAPHY.fontTajawal,
         boxShadow: saving ? "none" : "0 4px 12px rgba(212,175,55,0.4)"
-      }}>{saving ? "جارٍ الإرسال..." : "📤 إرسال الطلب"}</button>
+      }}>{saving ? tr("جارٍ الإرسال...") : tr("📤 إرسال الطلب")}</button>
     </Card>
   </div>;
 }
@@ -18357,7 +18796,7 @@ function LeaveHandoverForm({ request, user, onClose }) {
       border: "none", borderRadius: 14, fontSize: 13, fontWeight: 800,
       cursor: (saving || items.length === 0) ? "not-allowed" : "pointer",
       fontFamily: TYPOGRAPHY.fontTajawal, opacity: (saving || items.length === 0) ? 0.6 : 1
-    }}>{saving ? "جارٍ الإرسال..." : items.length === 0 ? "أضف بنداً أولاً" : "📤 إرسال التسليم للمفوَّضين (" + items.length + ")"}</button>
+    }}>{saving ? tr("جارٍ الإرسال...") : items.length === 0 ? "أضف بنداً أولاً" : "📤 إرسال التسليم للمفوَّضين (" + items.length + ")"}</button>
   </div>;
 }
 

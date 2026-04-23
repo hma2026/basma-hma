@@ -4,7 +4,7 @@ import { generateAttendanceReport, generateEmployeeReport, generateMonthlySummar
 import { exportFormalWarning, exportInvestigationRecord, exportAffidavit, exportEmploymentLetter, exportSalaryLetter, exportLeaveLetter } from "./formalPdfs";
 
 const APP = "بصمة HMA";
-const VER = "7.72";
+const VER = "7.81";
 const CO = "هاني محمد عسيري للإستشارات الهندسية";
 const B = { blue: "#2B5EA7", yellow: "#FDD800", red: "#E2192C", black: "#1A1A1A", blueDk: "#1E4478", blueLt: "#EDF3FB", gold: "#D4A017" };
 
@@ -1343,7 +1343,7 @@ export default function AdminApp() {
             { l: "تحقيقات (بالرد)", v: badgeCounts.investigations, i: "🔍", c: B.blue },
             { l: "مخالفات سارية", v: badgeCounts.violations, i: "⚖️", c: t.bad },
             { l: "تظلمات معلقة", v: badgeCounts.appeals, i: "📢", c: "#F97316" },
-          ].map(function(s, i) { return <div key={i} onClick={function(){ setTab(["complaints","investigations","violations_v2","appeals"][i]); }} style={{ background: t.card, borderRadius: 14, padding: 16, border: "1px solid " + t.sep, cursor: "pointer" }}><div style={{ display: "flex", justifyContent: "space-between" }}><div><div style={{ fontSize: 11, color: t.txM }}>{s.l}</div><div style={{ fontSize: 28, fontWeight: 800, color: s.c, marginTop: 4 }}>{s.v}</div></div><div style={{ width: 40, height: 40, borderRadius: 10, background: s.c + "12", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 20 }}>{s.i}</div></div></div>; })}
+          ].map(function(s, i) { return <div key={i} onClick={function(){ setTab("discipline_hub"); }} style={{ background: t.card, borderRadius: 14, padding: 16, border: "1px solid " + t.sep, cursor: "pointer" }}><div style={{ display: "flex", justifyContent: "space-between" }}><div><div style={{ fontSize: 11, color: t.txM }}>{s.l}</div><div style={{ fontSize: 28, fontWeight: 800, color: s.c, marginTop: 4 }}>{s.v}</div></div><div style={{ width: 40, height: 40, borderRadius: 10, background: s.c + "12", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 20 }}>{s.i}</div></div></div>; })}
         </div>
       </>}
 
@@ -1501,66 +1501,11 @@ export default function AdminApp() {
         </div>
       </>}
 
-      {/* ═══ LEAVES ═══ */}
-      {tab === "leaves" && <>
-        {leaves.map(l => { const sc = l.status === "معلّق" ? t.warn : l.status === "معتمد" ? t.ok : t.bad; return <div key={l.id} style={{ background: t.card, borderRadius: 14, padding: "16px 18px", border: "1px solid " + t.sep, marginBottom: 10, display: "flex", alignItems: "center", gap: 14 }}>
-          <div style={{ width: 44, height: 44, borderRadius: 12, background: `${sc}12`, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 20 }}>{l.status === "معلّق" ? "⏳" : l.status === "معتمد" ? "✅" : "❌"}</div>
-          <div style={{ flex: 1 }}><div style={{ fontSize: 14, fontWeight: 700 }}>{l.emp}</div><div style={{ fontSize: 11, color: t.tx2, marginTop: 2 }}>{l.type} · {l.days} أيام · {l.from} → {l.to}</div>{l.reason && <div style={{ fontSize: 10, color: t.txM, marginTop: 2 }}>{l.reason}</div>}</div>
-          <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", gap: 6 }}><span style={{ padding: "3px 10px", borderRadius: 6, fontSize: 10, fontWeight: 700, background: `${sc}15`, color: sc }}>{l.status}</span>
-            {l.status === "معلّق" && role === "manager" && <div style={{ display: "flex", gap: 4 }}><button onClick={() => approve(l.id)} style={{ padding: "5px 10px", borderRadius: 6, background: t.ok, color: "#fff", fontSize: 10, fontWeight: 700, border: "none", cursor: "pointer" }}>اعتماد</button><button onClick={() => reject(l.id)} style={{ padding: "5px 10px", borderRadius: 6, background: t.bad, color: "#fff", fontSize: 10, fontWeight: 700, border: "none", cursor: "pointer" }}>رفض</button></div>}
-            {l.status === "معلّق" && role === "assistant" && <span style={{ fontSize: 9, color: t.txM }}>بانتظار المدير</span>}
-          </div>
-        </div>; })}
-      </>}
+      {/* v7.76 — dead tab "leaves" حُذف، استُبدل بـ LeavesHub (sub: legacy) */}
 
-      {/* ═══ ADMIN REQUESTS ═══ */}
+      {/* ═══ ADMIN REQUESTS ═══ v7.75: النظام القديم حُذف نهائياً، بقي فقط HR Requests الموحّد */}
       {tab === "admin_requests" && <>
-        {/* v7.70 — طلبات HR الجديدة (قوالب شهادات + خطابات) */}
         <HRRequestsAdminPanel t={t} B={B} safeEmps={safeEmps} />
-
-        <div style={{ background: t.card, borderRadius: 14, padding: "18px", border: "1px solid " + t.sep, marginBottom: 14 }}>
-          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 14 }}>
-            <div><div style={{ fontSize: 14, fontWeight: 700 }}>📝 طلبات الموظفين (النظام القديم)</div><div style={{ fontSize: 11, color: t.txM, marginTop: 2 }}>سيتم دمجها مع الطلبات الجديدة قريباً</div></div>
-            <button onClick={async function() {
-              var reqs = await api("requests") || [];
-              if (!Array.isArray(reqs)) reqs = [];
-              var el = document.getElementById("admin-requests-list");
-              if (reqs.length === 0) { el.innerHTML = "<div style='text-align:center;padding:20px;color:#8E8E93'>لا توجد طلبات</div>"; return; }
-              var types = { experience_letter: "📄 شهادة خبرة", intro_letter: "📋 خطاب تعريف", salary_cert: "💰 شهادة راتب", advance: "💵 سلفة", compensation: "⏰ تعويض", overtime: "🕐 أوفرتايم", device_change: "📱 تغيير جهاز", other: "📝 أخرى" };
-              var html = reqs.sort(function(a,b) { return (b.ts||"").localeCompare(a.ts||""); }).map(function(r) {
-                var sc = r.status === "approved" ? "#30D158" : r.status === "rejected" ? "#FF3B30" : "#FF9F0A";
-                var sl = r.status === "approved" ? "مُوافق" : r.status === "rejected" ? "مرفوض" : "قيد المراجعة";
-                return "<div style='padding:12px;border-radius:10px;background:#F8F9FA;margin-bottom:8px;border:1px solid #E5E5EA' id='req-" + r.id + "'>" +
-                  "<div style='display:flex;justify-content:space-between;align-items:center'>" +
-                  "<div><div style='font-size:13px;font-weight:700'>" + (r.empName || r.empId) + "</div>" +
-                  "<div style='font-size:11px;color:#6E6E73'>" + (types[r.type] || r.type) + "</div></div>" +
-                  "<span style='padding:3px 10px;border-radius:6px;font-size:10px;font-weight:700;background:" + sc + "15;color:" + sc + "'>" + sl + "</span></div>" +
-                  "<div style='font-size:11px;color:#3C3C43;margin-top:6px'>" + (r.note || "") + "</div>" +
-                  "<div style='font-size:9px;color:#8E8E93;margin-top:4px'>" + (r.ts ? new Date(r.ts).toLocaleString("ar-SA") : "") + "</div>" +
-                  (r.status === "pending" ? "<div style='display:flex;gap:6px;margin-top:8px'>" +
-                    "<button onclick='approveReq(\"" + r.id + "\")' style='flex:1;padding:7px;border-radius:8px;background:#30D158;color:#fff;font-size:11px;font-weight:700;border:none;cursor:pointer'>✅ موافقة</button>" +
-                    "<button onclick='rejectReq(\"" + r.id + "\")' style='flex:1;padding:7px;border-radius:8px;background:#FF3B30;color:#fff;font-size:11px;font-weight:700;border:none;cursor:pointer'>❌ رفض</button></div>" : "") +
-                  "</div>";
-              }).join("");
-              el.innerHTML = html;
-              // Add global functions for approve/reject
-              window.approveReq = async function(id) {
-                var reply = prompt("رد الإدارة (اختياري):");
-                await fetch("/api/data?action=requests", { method: "PUT", headers: {"Content-Type":"application/json"}, body: JSON.stringify({ id: id, status: "approved", adminReply: reply || "تمت الموافقة" }) });
-                document.getElementById("req-" + id).style.opacity = "0.5";
-                alert("✅ تمت الموافقة");
-              };
-              window.rejectReq = async function(id) {
-                var reply = prompt("سبب الرفض:");
-                if (!reply) return;
-                await fetch("/api/data?action=requests", { method: "PUT", headers: {"Content-Type":"application/json"}, body: JSON.stringify({ id: id, status: "rejected", adminReply: reply }) });
-                document.getElementById("req-" + id).style.opacity = "0.5";
-                alert("تم الرفض");
-              };
-            }} style={{ padding: "8px 16px", borderRadius: 8, background: B.blue, color: "#fff", fontSize: 11, fontWeight: 700, border: "none", cursor: "pointer" }}>🔄 تحديث</button>
-          </div>
-          <div id="admin-requests-list"><div style={{ textAlign: "center", padding: 12, color: t.txM, fontSize: 11 }}>اضغط "تحديث" لعرض الطلبات</div></div>
-        </div>
       </>}
 
       {/* ═══ VIOLATIONS ═══ */}
@@ -1604,15 +1549,7 @@ export default function AdminApp() {
         <TerminationsList t={t} B={B} emps={safeEmps} />
       </>}
 
-      {/* ═══ GEOFENCE ═══ */}
-      {tab === "geofence" && <GeofencePanel branches={branches} saveBranches={saveBranches} safeEmps={safeEmps} mapTarget={mapTarget} setMapTarget={setMapTarget} role={role} t={t} B={B} Fn={Fn} />}
-
-      {/* ═══ TRACKING (Admin only — secret) ═══ */}
-      {tab === "tracking" && <TrackingPanel t={t} B={B} emps={safeEmps} branches={branches} />}
-
-      {/* ═══ CUSTODY ADMIN ═══ */}
-      {tab === "custody_admin" && <CustodyPanel t={t} B={B} emps={safeEmps} />}
-      {tab === "asset_management" && <AssetManagementPanel t={t} B={B} emps={safeEmps} />}
+      {/* v7.76 — dead tabs حُذفت: geofence, tracking (داخل AttendanceHub)، custody_admin, asset_management (داخل CustodyHub) */}
 
       {/* ═══ v6.96 — 3 admin hubs ═══ */}
       {tab === "custody_hub" && <CustodyHub t={t} B={B} emps={safeEmps} />}
@@ -1750,26 +1687,9 @@ export default function AdminApp() {
         </div>
       </>}
 
-      {/* ═══ EVENTS (المناسبات الإدارية) ═══ */}
-      {tab === "events" && <EventsPanel events={events} setEvents={setEvents} t={t} B={B} Fn={Fn} Toggle={Toggle} />}
-
-      {/* ═══ QUESTIONS (إدارة أسئلة الصباح) ═══ */}
-      {tab === "questions" && <QuestionsPanel hrQuestions={hrQuestions} setHrQuestions={setHrQuestions} saveSettings={saveSettings} newQ={newQ} setNewQ={setNewQ} t={t} B={B} Fn={Fn} />}
-
-      {/* ═══ LAIHA — إدارة لائحة العمل (المدير العام) ═══ */}
-      {tab === "laiha" && <LaihaPanel t={t} B={B} />}
-
-      {/* ═══ COMPLAINTS — HR Panel ═══ */}
-      {tab === "complaints" && <ComplaintsPanel t={t} B={B} emps={emps} />}
-
-      {/* ═══ INVESTIGATIONS — HR Panel ═══ */}
-      {tab === "investigations" && <InvestigationsPanel t={t} B={B} emps={emps} />}
-
-      {/* ═══ VIOLATIONS V2 — المخالفات الرسمية ═══ */}
-      {tab === "violations_v2" && <ViolationsV2Panel t={t} B={B} emps={emps} />}
-
-      {/* ═══ APPEALS — التظلمات ═══ */}
-      {tab === "appeals" && <AppealsPanel t={t} B={B} emps={emps} />}
+      {/* v7.76 — dead tabs حُذفت:
+          • events, questions → داخل ContentHub
+          • laiha, complaints, investigations, violations_v2, appeals → داخل DisciplineHub */}
 
       {/* ═══ v6.93 — DISCIPLINE HUB (موحّد: لائحة + شكاوى + تحقيقات + مخالفات + تظلمات) ═══ */}
       {tab === "discipline_hub" && <DisciplineHub t={t} B={B} emps={emps} badgeCounts={badgeCounts} />}
@@ -1981,30 +1901,23 @@ export default function AdminApp() {
       </>}
 
       {/* ═══ ADMIN PROFILE — تعديل حساب المدير العام ═══ */}
-      {tab === "work_types" && <WorkTypesPanel t={t} B={B} emps={safeEmps} />}
-      {tab === "leave_balances" && <LeaveBalancesPanel t={t} B={B} emps={safeEmps} />}
+      {/* v7.76 — 14 dead tab حُذفت (كلها داخل Hubs):
+          • AttendanceHub:  work_types, branches, att_insights, (+ geofence, tracking)
+          • LeavesHub:      leave_balances
+          • ContentHub:     announcements, banners
+          • SettingsHub:    system_settings, backup, benefits, test_panel, system_check, storage, admin_profile
+          • CustodyHub:     (custody_admin, asset_management حُذفتا سابقاً)
+      */}
       {tab === "letters" && <LettersPanel t={t} B={B} emps={safeEmps} />}
-      {tab === "branches" && <BranchesPanel t={t} B={B} />}
-      {tab === "att_insights" && <AttendanceInsightsPanel t={t} B={B} emps={safeEmps} />}
-      {tab === "system_settings" && <SystemSettingsPanel t={t} B={B} />}
       {tab === "surveys" && <SurveysPanel t={t} B={B} emps={safeEmps} />}
-      {tab === "backup" && <BackupPanel t={t} B={B} />}
       {tab === "hr_tickets" && <HRTicketsPanel t={t} B={B} emps={safeEmps} />}
       {tab === "kadwar_sync" && <KadwarSyncPanel t={t} B={B} emps={safeEmps} />}
       {tab === "evaluations_hr" && <EvaluationsHRPanel t={t} B={B} emps={safeEmps} />}
       {tab === "leave_requests_v2" && <LeaveRequestsHRPanel t={t} B={B} emps={safeEmps} />}
       {tab === "payroll" && <PayrollPanel t={t} B={B} emps={safeEmps} />}
       {tab === "salary_changes" && <SalaryChangeApprovalsPanel t={t} B={B} role={role} />}
-      {tab === "benefits" && <BenefitsPanel t={t} B={B} />}
-      {tab === "announcements" && <AnnouncementsPanel t={t} B={B} emps={safeEmps} branches={branches} />}
-      {tab === "banners" && <BannersPanel t={t} B={B} />}
       {tab === "tawasul" && <TawasulAdminPanel t={t} B={B} />}
-      {tab === "test_panel" && <TestPanel t={t} B={B} emps={safeEmps} />}
       {tab === "org_hierarchy" && <OrgHierarchyPanel t={t} B={B} />}
-      {tab === "system_check" && <SystemCheckPanel t={t} B={B} />}
-      {tab === "storage" && <StoragePanel t={t} B={B} />}
-
-      {tab === "admin_profile" && <AdminProfile t={t} B={B} onLogout={function(){ localStorage.removeItem("basma_admin_email"); localStorage.removeItem("basma_last_mode"); setLoggedIn(false); }} />}
     </div>
 
     {/* v7.24 — Mobile Bottom Nav (only visible on mobile) */}
@@ -3465,7 +3378,13 @@ function HRRequestsAdminPanel({ t, B, safeEmps }) {
   var [requests, setRequests] = useState([]);
   var [loading, setLoading] = useState(true);
   var [filter, setFilter] = useState("pending"); // all | pending | approved | ready | rejected | delivered
+  var [typeFilter, setTypeFilter] = useState("all"); // v7.74 — filter by template type
+  var [search, setSearch] = useState(""); // v7.74 — search by employee name
   var [busy, setBusy] = useState(false);
+
+  // v7.74 — القوالب التي تحتاج "جاهز" (شهادات بـ PDF)
+  var CERT_TYPES = ["salary_cert", "experience_cert", "intro_letter"];
+  function needsReadyStep(type) { return CERT_TYPES.indexOf(type) >= 0; }
 
   async function load() {
     setLoading(true);
@@ -3507,12 +3426,17 @@ function HRRequestsAdminPanel({ t, B, safeEmps }) {
   }
 
   function handleApprove(req) {
-    if (!confirm("الموافقة على الطلب؟ سيتم إشعار الموظف.")) return;
+    // v7.74 — للشهادات: موافقة فقط (ثم "جاهز" بعدها). للطلبات الداخلية: موافقة نهائية
+    if (needsReadyStep(req.type)) {
+      if (!confirm("الموافقة على طلب " + (req.typeLabel || req.type) + "؟\n\nسيتم إشعار الموظف، وستحتاج بعدها للضغط على 'جاهز' عند إتمام الشهادة.")) return;
+    } else {
+      if (!confirm("الموافقة النهائية على طلب " + (req.typeLabel || req.type) + "؟\n\nسيتم إشعار الموظف بالموافقة.")) return;
+    }
     updateStatus(req, "approved");
   }
 
   function handleReady(req) {
-    var note = prompt("ملاحظة للموظف (اختياري):");
+    var note = prompt("ملاحظة للموظف عند استلام الشهادة (اختياري):");
     updateStatus(req, "ready", { deliveryNote: note || "الشهادة جاهزة — يمكنك تحميلها من التطبيق" });
   }
 
@@ -3527,7 +3451,70 @@ function HRRequestsAdminPanel({ t, B, safeEmps }) {
     updateStatus(req, "rejected", { rejectReason: reason.trim() });
   }
 
-  var filtered = filter === "all" ? requests : requests.filter(function(r){ return r.status === filter; });
+  // v7.74 — تصدير CSV (يفتح في Excel مباشرة)
+  function exportCSV() {
+    var dataToExport = filter === "all" && typeFilter === "all" && !search ? requests : filtered;
+    if (dataToExport.length === 0) { alert("لا توجد طلبات للتصدير"); return; }
+
+    var headers = [
+      "رقم الطلب", "الموظف", "الرقم الوظيفي", "نوع الطلب", "الغرض",
+      "اللغة", "عدد النسخ", "الحالة", "تاريخ الطلب",
+      "تاريخ القرار", "اتُّخذ بواسطة", "سبب الرفض", "ملاحظة التسليم", "ملاحظات الموظف",
+    ];
+    function esc(v) {
+      if (v === null || v === undefined) return "";
+      var s = String(v).replace(/"/g, '""');
+      return '"' + s + '"';
+    }
+    var statusAr = { pending: "قيد المراجعة", approved: "مُوافق", ready: "جاهز", delivered: "مُسلَّم", rejected: "مرفوض" };
+    var langAr = { ar: "عربي", en: "إنجليزي", both: "عربي + إنجليزي" };
+
+    var rows = dataToExport.map(function(r){
+      return [
+        r.id,
+        r.empName || "",
+        r.empId || "",
+        r.typeLabel || r.type,
+        r.purpose || "",
+        r.language ? (langAr[r.language] || r.language) : "",
+        r.copies || "",
+        statusAr[r.status] || r.status,
+        r.ts ? new Date(r.ts).toLocaleString("ar-SA") : "",
+        r.decidedAt ? new Date(r.decidedAt).toLocaleString("ar-SA") : "",
+        r.decidedByName || r.decidedBy || "",
+        r.rejectReason || "",
+        r.deliveryNote || "",
+        r.notes || "",
+      ].map(esc).join(",");
+    });
+
+    // UTF-8 BOM to ensure Excel opens Arabic correctly
+    var csv = "\uFEFF" + headers.map(esc).join(",") + "\n" + rows.join("\n");
+    var blob = new Blob([csv], { type: "text/csv;charset=utf-8" });
+    var url = URL.createObjectURL(blob);
+    var a = document.createElement("a");
+    a.href = url;
+    var today = new Date().toISOString().slice(0, 10);
+    a.download = "طلبات_الموارد_البشرية_" + today + ".csv";
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+  }
+
+  // v7.74 — التصفية المتقدمة (status + type + search)
+  var filtered = requests.filter(function(r){
+    if (filter !== "all" && r.status !== filter) return false;
+    if (typeFilter !== "all" && r.type !== typeFilter) return false;
+    if (search) {
+      var q = search.toLowerCase().trim();
+      var name = (r.empName || "").toLowerCase();
+      var eid = String(r.empId || "").toLowerCase();
+      var label = (r.typeLabel || "").toLowerCase();
+      if (name.indexOf(q) < 0 && eid.indexOf(q) < 0 && label.indexOf(q) < 0) return false;
+    }
+    return true;
+  });
 
   var statusCounts = {
     all: requests.length,
@@ -3538,6 +3525,31 @@ function HRRequestsAdminPanel({ t, B, safeEmps }) {
     rejected: requests.filter(function(r){ return r.status === "rejected"; }).length,
   };
 
+  // v7.74 — إحصائيات ذكية
+  var now = Date.now();
+  var MS_PER_DAY = 24 * 60 * 60 * 1000;
+  var thisMonth = requests.filter(function(r){
+    if (!r.ts) return false;
+    var d = new Date(r.ts);
+    var nowD = new Date();
+    return d.getFullYear() === nowD.getFullYear() && d.getMonth() === nowD.getMonth();
+  });
+  var lastWeek = requests.filter(function(r){
+    if (!r.ts) return false;
+    return (now - new Date(r.ts).getTime()) < 7 * MS_PER_DAY;
+  });
+  var decidedReqs = requests.filter(function(r){ return r.decidedAt && r.ts; });
+  var avgResponseHours = 0;
+  if (decidedReqs.length > 0) {
+    var totalHours = decidedReqs.reduce(function(sum, r){
+      return sum + (new Date(r.decidedAt).getTime() - new Date(r.ts).getTime()) / (60 * 60 * 1000);
+    }, 0);
+    avgResponseHours = Math.round(totalHours / decidedReqs.length);
+  }
+  var approvalRate = decidedReqs.length > 0
+    ? Math.round((decidedReqs.filter(function(r){ return r.status !== "rejected"; }).length / decidedReqs.length) * 100)
+    : 0;
+
   var filterTabs = [
     { id: "pending", label: "⏳ قيد المراجعة", color: "#F59E0B" },
     { id: "approved", label: "✓ مُوافق", color: "#10B981" },
@@ -3547,11 +3559,27 @@ function HRRequestsAdminPanel({ t, B, safeEmps }) {
     { id: "all", label: "الكل", color: "#6B7280" },
   ];
 
+  // v7.74 — قائمة أنواع الطلبات للفلترة
+  var typeFilterOptions = [
+    { id: "all", label: "كل الأنواع" },
+    { id: "salary_cert", label: "📄 شهادة راتب" },
+    { id: "experience_cert", label: "🪪 شهادة خبرة" },
+    { id: "intro_letter", label: "🏢 خطاب تعريف" },
+    { id: "promotion", label: "🚀 طلب ترقية" },
+    { id: "advance", label: "💵 سلفة" },
+    { id: "transfer", label: "🏠 تحويل فرع" },
+    { id: "hours_adjust", label: "🕐 تعديل ساعات" },
+    { id: "medical_ins", label: "🏥 تأمين طبي" },
+    { id: "other", label: "❓ طلب آخر" },
+    { id: "edit_data", label: "✏️ تعديل بيانات" },
+  ];
+
   function typeEmoji(type) {
     var m = {
       salary_cert: "📄", experience_cert: "🪪", intro_letter: "🏢",
       promotion: "🚀", advance: "💵", transfer: "🏠",
       hours_adjust: "🕐", medical_ins: "🏥", other: "❓",
+      edit_data: "✏️",
     };
     return m[type] || "📋";
   }
@@ -3561,14 +3589,62 @@ function HRRequestsAdminPanel({ t, B, safeEmps }) {
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 14 }}>
         <div>
           <div style={{ fontSize: 14, fontWeight: 700, color: t.tx }}>📨 طلبات الموارد البشرية</div>
-          <div style={{ fontSize: 11, color: t.txM, marginTop: 2 }}>شهادة راتب، خبرة، خطاب تعريف، وغيرها — نظام v7.70</div>
+          <div style={{ fontSize: 11, color: t.txM, marginTop: 2 }}>نظام v7.74 — 10 قوالب + إحصائيات + تصدير Excel</div>
         </div>
-        <button onClick={load} disabled={loading} style={{ padding: "8px 16px", borderRadius: 8, background: B.blue, color: "#fff", fontSize: 11, fontWeight: 700, border: "none", cursor: "pointer" }}>
-          🔄 تحديث
-        </button>
+        <div style={{ display: "flex", gap: 6 }}>
+          <button onClick={exportCSV} disabled={loading || requests.length === 0} style={{ padding: "8px 14px", borderRadius: 8, background: "#16A34A", color: "#fff", fontSize: 11, fontWeight: 700, border: "none", cursor: "pointer" }}>
+            📊 تصدير Excel
+          </button>
+          <button onClick={load} disabled={loading} style={{ padding: "8px 16px", borderRadius: 8, background: B.blue, color: "#fff", fontSize: 11, fontWeight: 700, border: "none", cursor: "pointer" }}>
+            🔄 تحديث
+          </button>
+        </div>
       </div>
 
-      {/* Filter tabs */}
+      {/* v7.74 — إحصائيات ذكية */}
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(140px, 1fr))", gap: 8, marginBottom: 14 }}>
+        <div style={{ padding: 10, borderRadius: 10, background: "rgba(59,130,246,0.1)", border: "1px solid rgba(59,130,246,0.3)" }}>
+          <div style={{ fontSize: 10, color: "#3B82F6", fontWeight: 700 }}>📅 هذا الشهر</div>
+          <div style={{ fontSize: 20, fontWeight: 800, color: t.tx, marginTop: 2 }}>{thisMonth.length}</div>
+          <div style={{ fontSize: 9, color: t.txM, marginTop: 2 }}>طلب مُقدَّم</div>
+        </div>
+        <div style={{ padding: 10, borderRadius: 10, background: "rgba(139,92,246,0.1)", border: "1px solid rgba(139,92,246,0.3)" }}>
+          <div style={{ fontSize: 10, color: "#8B5CF6", fontWeight: 700 }}>🗓️ آخر 7 أيام</div>
+          <div style={{ fontSize: 20, fontWeight: 800, color: t.tx, marginTop: 2 }}>{lastWeek.length}</div>
+          <div style={{ fontSize: 9, color: t.txM, marginTop: 2 }}>طلب</div>
+        </div>
+        <div style={{ padding: 10, borderRadius: 10, background: "rgba(245,158,11,0.1)", border: "1px solid rgba(245,158,11,0.3)" }}>
+          <div style={{ fontSize: 10, color: "#F59E0B", fontWeight: 700 }}>⏳ معلّقة</div>
+          <div style={{ fontSize: 20, fontWeight: 800, color: t.tx, marginTop: 2 }}>{statusCounts.pending}</div>
+          <div style={{ fontSize: 9, color: t.txM, marginTop: 2 }}>بانتظار المراجعة</div>
+        </div>
+        <div style={{ padding: 10, borderRadius: 10, background: "rgba(16,185,129,0.1)", border: "1px solid rgba(16,185,129,0.3)" }}>
+          <div style={{ fontSize: 10, color: "#10B981", fontWeight: 700 }}>✓ نسبة الموافقة</div>
+          <div style={{ fontSize: 20, fontWeight: 800, color: t.tx, marginTop: 2 }}>{approvalRate}%</div>
+          <div style={{ fontSize: 9, color: t.txM, marginTop: 2 }}>من المقرَّرة</div>
+        </div>
+        <div style={{ padding: 10, borderRadius: 10, background: "rgba(236,72,153,0.1)", border: "1px solid rgba(236,72,153,0.3)" }}>
+          <div style={{ fontSize: 10, color: "#EC4899", fontWeight: 700 }}>⏱️ متوسط الرد</div>
+          <div style={{ fontSize: 20, fontWeight: 800, color: t.tx, marginTop: 2 }}>{avgResponseHours < 24 ? avgResponseHours + " س" : Math.round(avgResponseHours / 24) + " يوم"}</div>
+          <div style={{ fontSize: 9, color: t.txM, marginTop: 2 }}>من الطلب للقرار</div>
+        </div>
+      </div>
+
+      {/* v7.74 — بحث + فلتر النوع */}
+      <div style={{ display: "grid", gridTemplateColumns: "2fr 1fr", gap: 8, marginBottom: 12 }}>
+        <input
+          type="text"
+          value={search}
+          onChange={function(e){ setSearch(e.target.value); }}
+          placeholder="🔍 بحث (اسم الموظف، رقم وظيفي، نوع طلب...)"
+          style={{ padding: 10, borderRadius: 8, border: "1px solid " + t.sep, background: t.inp, color: t.tx, fontSize: 12 }}
+        />
+        <select value={typeFilter} onChange={function(e){ setTypeFilter(e.target.value); }} style={{ padding: 10, borderRadius: 8, border: "1px solid " + t.sep, background: t.inp, color: t.tx, fontSize: 12 }}>
+          {typeFilterOptions.map(function(o){ return <option key={o.id} value={o.id}>{o.label}</option>; })}
+        </select>
+      </div>
+
+      {/* Filter tabs (status) */}
       <div style={{ display: "flex", gap: 6, marginBottom: 12, flexWrap: "wrap" }}>
         {filterTabs.map(function(ft){
           var active = filter === ft.id;
@@ -3586,6 +3662,18 @@ function HRRequestsAdminPanel({ t, B, safeEmps }) {
           );
         })}
       </div>
+
+      {/* Results count */}
+      {(search || typeFilter !== "all") && (
+        <div style={{ fontSize: 11, color: t.txM, marginBottom: 10, padding: "6px 10px", borderRadius: 6, background: t.inp }}>
+          🔍 نتائج البحث: <b style={{ color: t.tx }}>{filtered.length}</b> من أصل {requests.length} طلب
+          {(search || typeFilter !== "all") && (
+            <button onClick={function(){ setSearch(""); setTypeFilter("all"); }} style={{ marginRight: 10, padding: "2px 8px", borderRadius: 6, background: t.sep, border: "none", color: t.tx, fontSize: 10, cursor: "pointer" }}>
+              ✕ مسح البحث
+            </button>
+          )}
+        </div>
+      )}
 
       {loading && <div style={{ textAlign: "center", padding: 20, color: t.txM, fontSize: 11 }}>جارِ التحميل...</div>}
 
@@ -3664,6 +3752,60 @@ function HRRequestsAdminPanel({ t, B, safeEmps }) {
                   </div>
                 )}
 
+                {/* v7.73 — عرض تفاصيل promotion (طلب ترقية) */}
+                {r.type === "promotion" && r.extraData && (
+                  <div style={{ marginTop: 8, padding: 8, borderRadius: 8, background: "rgba(220,38,38,0.1)", border: "1px solid rgba(220,38,38,0.3)" }}>
+                    <div style={{ fontSize: 10, color: "#DC2626", fontWeight: 800, marginBottom: 4 }}>🚀 تفاصيل طلب الترقية</div>
+                    <div style={{ fontSize: 10, color: t.tx2, lineHeight: 1.7 }}>
+                      <div><b>من:</b> {r.extraData.currentRole || "—"}</div>
+                      <div><b>إلى:</b> <span style={{ color: "#DC2626", fontWeight: 700 }}>{r.extraData.targetRole || "—"}</span></div>
+                      {r.extraData.yearsAtCompany > 0 && (
+                        <div><b>سنوات الخدمة:</b> {r.extraData.yearsAtCompany} سنة</div>
+                      )}
+                      {r.extraData.achievements && (
+                        <div style={{ marginTop: 6, paddingTop: 6, borderTop: "1px dashed " + t.sep }}>
+                          <b>أبرز الإنجازات:</b>
+                          <div style={{ marginTop: 2, fontStyle: "italic", padding: 4, borderRadius: 4, background: "rgba(255,255,255,0.04)" }}>
+                            {r.extraData.achievements}
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                )}
+
+                {/* v7.73 — عرض تفاصيل medical_ins (تأمين طبي) */}
+                {r.type === "medical_ins" && r.extraData && (
+                  <div style={{ marginTop: 8, padding: 8, borderRadius: 8, background: "rgba(22,163,74,0.1)", border: "1px solid rgba(22,163,74,0.3)" }}>
+                    <div style={{ fontSize: 10, color: "#16A34A", fontWeight: 800, marginBottom: 4 }}>🏥 تفاصيل طلب التأمين الطبي</div>
+                    <div style={{ fontSize: 10, color: t.tx2, lineHeight: 1.7 }}>
+                      <div><b>نوع الطلب:</b> <span style={{ color: "#16A34A", fontWeight: 700 }}>{r.extraData.requestKindLabel || "—"}</span></div>
+                      {r.extraData.dependentName && (
+                        <div style={{ marginTop: 4, paddingTop: 4, borderTop: "1px dashed " + t.sep }}>
+                          <div><b>التابع:</b> {r.extraData.dependentName}</div>
+                          {r.extraData.dependentRelationLabel && <div><b>الصلة:</b> {r.extraData.dependentRelationLabel}</div>}
+                          {r.extraData.dependentDob && <div><b>تاريخ الميلاد:</b> {new Date(r.extraData.dependentDob).toLocaleDateString("ar-SA")}</div>}
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                )}
+
+                {/* v7.73 — عرض تفاصيل other (طلب آخر) */}
+                {r.type === "other" && r.extraData && (
+                  <div style={{ marginTop: 8, padding: 8, borderRadius: 8, background: "rgba(100,116,139,0.1)", border: "1px solid rgba(100,116,139,0.3)" }}>
+                    <div style={{ fontSize: 10, color: "#64748B", fontWeight: 800, marginBottom: 4, display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                      <span>❓ طلب مخصص</span>
+                      {r.extraData.priority === "urgent" && <span style={{ padding: "1px 6px", borderRadius: 6, background: "#EF4444", color: "#fff", fontSize: 9 }}>🚨 عاجلة</span>}
+                      {r.extraData.priority === "high" && <span style={{ padding: "1px 6px", borderRadius: 6, background: "#F59E0B", color: "#fff", fontSize: 9 }}>⚡ مرتفعة</span>}
+                    </div>
+                    <div style={{ fontSize: 10, color: t.tx2, lineHeight: 1.7 }}>
+                      <div><b>الموضوع:</b> <span style={{ fontWeight: 700 }}>{r.extraData.subject || r.purpose || "—"}</span></div>
+                      {r.extraData.priorityLabel && <div><b>الأولوية:</b> {r.extraData.priorityLabel}</div>}
+                    </div>
+                  </div>
+                )}
+
                 {r.notes && <div style={{ fontSize: 10, color: t.tx2, marginTop: 6, fontStyle: "italic", padding: 6, borderRadius: 6, background: "rgba(255,255,255,0.04)" }}>"{r.notes}"</div>}
                 <div style={{ fontSize: 9, color: t.txM, marginTop: 6 }}>
                   📅 قُدِّم: {r.ts ? new Date(r.ts).toLocaleString("ar-SA") : "—"}
@@ -3700,16 +3842,23 @@ function HRRequestsAdminPanel({ t, B, safeEmps }) {
               </div>
             </div>
 
-            {/* Action buttons */}
+            {/* Action buttons — v7.74 workflow ذكي (شهادات: pending→approved→ready→delivered، باقي: pending→approved=delivered) */}
             {r.status === "pending" && (
               <div style={{ display: "flex", gap: 6, marginTop: 10 }}>
-                <button onClick={function(){ handleApprove(r); }} disabled={busy} style={{ flex: 1, padding: 8, borderRadius: 8, background: "#10B981", color: "#fff", border: "none", fontSize: 11, fontWeight: 700, cursor: "pointer" }}>✓ موافقة</button>
+                <button onClick={function(){ handleApprove(r); }} disabled={busy} style={{ flex: 1, padding: 8, borderRadius: 8, background: "#10B981", color: "#fff", border: "none", fontSize: 11, fontWeight: 700, cursor: "pointer" }}>
+                  {needsReadyStep(r.type) ? "✓ موافقة" : "✓ موافقة نهائية"}
+                </button>
                 <button onClick={function(){ handleReject(r); }} disabled={busy} style={{ flex: 1, padding: 8, borderRadius: 8, background: "#EF4444", color: "#fff", border: "none", fontSize: 11, fontWeight: 700, cursor: "pointer" }}>✕ رفض</button>
               </div>
             )}
-            {r.status === "approved" && (
+            {r.status === "approved" && needsReadyStep(r.type) && (
               <div style={{ display: "flex", gap: 6, marginTop: 10 }}>
-                <button onClick={function(){ handleReady(r); }} disabled={busy} style={{ flex: 1, padding: 8, borderRadius: 8, background: "#3B82F6", color: "#fff", border: "none", fontSize: 11, fontWeight: 700, cursor: "pointer" }}>📄 وضع جاهز</button>
+                <button onClick={function(){ handleReady(r); }} disabled={busy} style={{ flex: 1, padding: 8, borderRadius: 8, background: "#3B82F6", color: "#fff", border: "none", fontSize: 11, fontWeight: 700, cursor: "pointer" }}>📄 الشهادة جاهزة</button>
+              </div>
+            )}
+            {r.status === "approved" && !needsReadyStep(r.type) && (
+              <div style={{ display: "flex", gap: 6, marginTop: 10 }}>
+                <button onClick={function(){ handleDelivered(r); }} disabled={busy} style={{ flex: 1, padding: 8, borderRadius: 8, background: "#059669", color: "#fff", border: "none", fontSize: 11, fontWeight: 700, cursor: "pointer" }}>✅ تم التنفيذ/الإغلاق</button>
               </div>
             )}
             {r.status === "ready" && (
