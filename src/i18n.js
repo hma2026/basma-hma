@@ -167,6 +167,52 @@ var EN_TRANSLATIONS = {
 
 
 
+
+
+  // ────── v7.109 — Unified Question Bank ──────
+  "بنك الأسئلة الموحّد": "Unified Question Bank",
+  "مستودع مركزي لكل الأسئلة — يخدم تحدي الصباح وتحدي السريع": "Central repository — serves both Morning and Flash challenges",
+  "إضافة سؤال": "Add Question",
+  "نقل تلقائي": "Auto Migration",
+  "يوجد": "Found",
+  "سؤال في النظام القديم يمكن نقله": "questions in legacy system to migrate",
+  "نقل الكل": "Migrate All",
+  "نقل": "Migrate",
+  "سؤال من النظام القديم؟": "questions from legacy system?",
+  "إجمالي الأسئلة": "Total Questions",
+  "نشطة": "Active",
+  "مرة مُستخدم": "Times Used",
+  "دقة عامة": "Overall Accuracy",
+  "🔍 بحث في النص...": "🔍 Search text...",
+  "كل التصنيفات": "All Categories",
+  "كل الصعوبات": "All Difficulties",
+  "سؤال": "questions",
+  "البنك فارغ": "Bank is empty",
+  "ابدأ بإضافة أول سؤال": "Add your first question",
+  "لا نتائج مطابقة": "No matching results",
+  "جرّب فلاتر مختلفة": "Try different filters",
+  "معطل": "Disabled",
+  "تعطيل": "Disable",
+  "حذف هذا السؤال نهائياً؟": "Delete this question permanently?",
+  "إضافة سؤال جديد": "Add New Question",
+  "تعديل السؤال": "Edit Question",
+  "مثلاً: ما أهم مبدأ في الهندسة الإنشائية؟": "E.g., What's the key principle in structural engineering?",
+  "إجابات خاطئة (2-3)": "Wrong Answers (2-3)",
+  "خيار": "Option",
+  "الصعوبة": "Difficulty",
+  "النص والإجابة الصحيحة مطلوبان": "Text and correct answer required",
+
+  // ────── v7.108 — Mobile Admin Smart Card ──────
+  "جاري تحميل لوحة الإدارة...": "Loading admin panel...",
+  "لوحة الإدارة": "Admin Panel",
+  "تنبيه نشط": "active alerts",
+  "كل شيء على ما يرام ✓": "All is well ✓",
+  "تنبيه إضافي": "more alerts",
+  "طلبات": "Requests",
+  "مخالفات": "Violations",
+  "موظفون": "Employees",
+  "فتح اللوحة الكاملة": "Open Full Dashboard",
+
   // ────── v7.106 — Legacy Violations Migration ──────
   "تنظيف: نقل المخالفات القديمة": "Cleanup: Migrate Legacy Violations",
   "يوحّد البيانات من النظام القديم 'violations' إلى النظام الموحّد 'violations_v2' — آمن تماماً (يحفظ نسخة احتياطية)": "Unifies data from legacy 'violations' to 'violations_v2' — fully safe (creates backup)",

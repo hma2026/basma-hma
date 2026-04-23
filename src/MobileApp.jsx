@@ -12,7 +12,7 @@ import { t as tr, setLang, getLang, getDir, isRTL, subscribeLangChange } from ".
 
 /* ═══════════ APP CONFIG (إعدادات التطبيق) ═══════════ */
 const APP_CONFIG = {
-  VER: "7.107",
+  VER: "7.109",
   NAME: "بصمة HMA",
   FULL_NAME: "نظام الحضور والانصراف الذكي",
   COMPANY: "هاني محمد عسيري للاستشارات الهندسية",
@@ -666,9 +666,37 @@ function MobileAppInner() {
       setTimeout(function(){ localStorage.setItem("basma_profile_tab", "profile"); window.dispatchEvent(new CustomEvent("basma:profile-tab-changed")); }, 50);
     }
     window.addEventListener("basma_goto_profile", handleGotoProfile);
+
+    // v7.108 — Admin shortcut navigation
+    function handleAdminNav(e) {
+      var action = e && e.detail && e.detail.action;
+      if (!action) return;
+      switch (action) {
+        case "view_leaves":
+          setPage("profile");
+          setTimeout(function(){ localStorage.setItem("basma_profile_tab", "leaves"); window.dispatchEvent(new CustomEvent("basma:profile-tab-changed")); }, 50);
+          break;
+        case "view_requests":
+          setPage("profile");
+          setTimeout(function(){ localStorage.setItem("basma_profile_tab", "admin"); window.dispatchEvent(new CustomEvent("basma:profile-tab-changed")); }, 50);
+          break;
+        case "view_attendance":
+        case "view_employees":
+        case "view_violations":
+        case "view_all_alerts":
+          // Open full admin panel in new tab
+          if (typeof window !== "undefined") window.open("/admin", "_blank");
+          break;
+        default:
+          break;
+      }
+    }
+    window.addEventListener("basma_admin_nav", handleAdminNav);
+
     return function() {
       window.removeEventListener("basma:goto-legal", handleGotoLegal);
       window.removeEventListener("basma_goto_profile", handleGotoProfile);
+      window.removeEventListener("basma_admin_nav", handleAdminNav);
     };
   }, []);
   const [branch, setBranch] = useState(null);
@@ -2077,10 +2105,14 @@ function SurveyBanner({ user }) {
 
   async function load() {
     try {
-      var r = await fetch("/api/data?action=surveys&status=active");
+      var r = await fetch("/api/data?action=surveys&status=active&empId=" + encodeURIComponent(user.id));
       var d = await r.json();
       var list = Array.isArray(d) ? d : [];
       setSurveys(list);
+      // v7.110 — Debug log for troubleshooting
+      if (typeof window !== "undefined" && window.localStorage && window.localStorage.getItem("basma_debug") === "1") {
+        console.log("[SurveyBanner]", { count: list.length, list: list, userId: user.id });
+      }
       // Check voted status for each
       var map = {};
       await Promise.all(list.map(async function(s){
@@ -2403,6 +2435,9 @@ function HomePage({ user, branch, workType, now, todayAtt, allAtt, gps, gpsDist,
         })}
         <InvestigationBanner user={user} /><MembershipFreezeNotice user={user} /><BranchHolidayBanner branch={branch} /><OccasionBanner user={user} /><SurveyBanner user={user} /><HRMessagesBanner user={user} onOpenProfile={function(){ if (typeof window !== "undefined" && window.dispatchEvent) { window.dispatchEvent(new CustomEvent("basma_goto_profile")); } }} />
         <HomeBanner banners={banners} user={user} onShowAnnouncements={onShowAnnouncements} announcements={announcements} />
+
+        {/* v7.108 — Admin Smart Card (visible only to admin/HR) */}
+        {isAdminUser(user) && <AdminSmartCard user={user} />}
       </div>
 
       {/* Clock centered */}
@@ -16506,6 +16541,246 @@ function MembershipFreezeNotice({ user }) {
 }
 
 /* ═══════════ BRANCH HOLIDAYS (الإجازات الرسمية لكل فرع) ═══════════ */
+/* ═════════════════════════════════════════════════════════════════
+ * v7.108 — AdminSmartCard — لوحة الإدارة الذكية (Mobile)
+ * ═════════════════════════════════════════════════════════════════
+ * Visible only to admin/HR users on HomePage.
+ * Shows: live alerts, quick stats, and shortcuts to admin actions.
+ */
+function AdminSmartCard({ user }) {
+  var [data, setData] = useState(null);
+  var [loading, setLoading] = useState(true);
+  var [expanded, setExpanded] = useState(true);
+
+  // Determine role for filtering content
+  var role = user && user.role === "hr_manager" ? "hr" : "admin";
+
+  async function load() {
+    try {
+      var r = await fetch("/api/data?action=admin-summary&role=" + role + "&empId=" + encodeURIComponent(user.id || ""));
+      var d = await r.json();
+      if (d.ok) setData(d);
+    } catch(e) {}
+    setLoading(false);
+  }
+
+  useEffect(function(){
+    load();
+    // Auto-refresh every 2 minutes
+    var iv = setInterval(load, 120000);
+    return function(){ clearInterval(iv); };
+  }, []);
+
+  // Handle shortcut click — dispatch custom events for navigation
+  function handleShortcut(action) {
+    if (typeof window === "undefined") return;
+    // Dispatch event that MobileApp root listens for
+    var eventName = "basma_admin_nav";
+    var payload = { action: action };
+    try {
+      window.dispatchEvent(new CustomEvent(eventName, { detail: payload }));
+    } catch(e) {}
+  }
+
+  if (loading) {
+    return (
+      <div style={{
+        background: "linear-gradient(135deg, rgba(239,68,68,0.08), rgba(220,38,38,0.04))",
+        border: "1px solid rgba(239,68,68,0.25)",
+        borderRadius: 14, padding: 14, marginBottom: 10,
+      }}>
+        <div style={{ color: "rgba(255,255,255,0.6)", fontSize: 11, textAlign: "center" }}>
+          ⏳ {tr("جاري تحميل لوحة الإدارة...")}
+        </div>
+      </div>
+    );
+  }
+
+  if (!data) return null;
+
+  var hasCriticalAlerts = data.alertCounts.high > 0;
+  var hasAnyAlerts = data.alertCounts.total > 0;
+
+  return (
+    <div style={{
+      background: hasCriticalAlerts
+        ? "linear-gradient(135deg, rgba(239,68,68,0.15), rgba(220,38,38,0.05))"
+        : "linear-gradient(135deg, rgba(201,168,76,0.12), rgba(239,68,68,0.05))",
+      border: "1.5px solid " + (hasCriticalAlerts ? "rgba(239,68,68,0.5)" : "rgba(201,168,76,0.35)"),
+      borderRadius: 14, padding: 14, marginBottom: 10,
+      animation: hasCriticalAlerts ? "pulse 2s ease infinite" : "none",
+    }}>
+      {/* Header */}
+      <div style={{
+        display: "flex", alignItems: "center", justifyContent: "space-between",
+        marginBottom: expanded ? 10 : 0, gap: 10, flexWrap: "wrap",
+      }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 10, flex: 1, minWidth: 0 }}>
+          <div style={{
+            width: 38, height: 38, borderRadius: 10,
+            background: hasCriticalAlerts
+              ? "linear-gradient(135deg, #ef4444, #dc2626)"
+              : "linear-gradient(135deg, #c9a84c, #8b7335)",
+            display: "flex", alignItems: "center", justifyContent: "center",
+            fontSize: 18, flexShrink: 0,
+          }}>🛡️</div>
+          <div style={{ flex: 1, minWidth: 0 }}>
+            <div style={{ color: "#fff", fontSize: 13, fontWeight: 900 }}>
+              {tr("لوحة الإدارة")}
+              {role === "hr" && <span style={{ fontSize: 10, opacity: 0.7, marginRight: 6 }}>(HR)</span>}
+            </div>
+            <div style={{ color: "rgba(255,255,255,0.65)", fontSize: 10, marginTop: 2 }}>
+              {hasAnyAlerts
+                ? data.alertCounts.total + " " + tr("تنبيه نشط")
+                : tr("كل شيء على ما يرام ✓")}
+            </div>
+          </div>
+        </div>
+
+        <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
+          {hasCriticalAlerts && (
+            <div style={{
+              padding: "3px 8px", borderRadius: 8,
+              background: "#ef4444", color: "#fff",
+              fontSize: 9, fontWeight: 800,
+            }}>{data.alertCounts.high} {tr("حرج")}</div>
+          )}
+          <button onClick={function(){ setExpanded(!expanded); }} style={{
+            background: "rgba(255,255,255,0.12)",
+            border: "none", borderRadius: 6,
+            width: 26, height: 26,
+            color: "#fff", fontSize: 13, cursor: "pointer",
+            display: "flex", alignItems: "center", justifyContent: "center",
+            padding: 0, flexShrink: 0,
+          }}>{expanded ? "▼" : "◀"}</button>
+        </div>
+      </div>
+
+      {/* Expanded content */}
+      {expanded && (
+        <>
+          {/* Quick stats (today) */}
+          {!data.today.isWeekend && !data.today.isHoliday && (
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 6, marginBottom: 10 }}>
+              <div style={{
+                padding: "8px 4px", background: "rgba(16,185,129,0.15)",
+                borderRadius: 8, textAlign: "center",
+              }}>
+                <div style={{ color: "#10b981", fontSize: 16, fontWeight: 900 }}>{data.stats.present}</div>
+                <div style={{ color: "rgba(255,255,255,0.6)", fontSize: 8, marginTop: 2 }}>{tr("حاضر")}</div>
+              </div>
+              <div style={{
+                padding: "8px 4px", background: "rgba(239,68,68,0.15)",
+                borderRadius: 8, textAlign: "center",
+              }}>
+                <div style={{ color: "#ef4444", fontSize: 16, fontWeight: 900 }}>{data.stats.absent}</div>
+                <div style={{ color: "rgba(255,255,255,0.6)", fontSize: 8, marginTop: 2 }}>{tr("غائب")}</div>
+              </div>
+              <div style={{
+                padding: "8px 4px", background: "rgba(245,158,11,0.15)",
+                borderRadius: 8, textAlign: "center",
+              }}>
+                <div style={{ color: "#f59e0b", fontSize: 16, fontWeight: 900 }}>{data.stats.late}</div>
+                <div style={{ color: "rgba(255,255,255,0.6)", fontSize: 8, marginTop: 2 }}>{tr("متأخر")}</div>
+              </div>
+              <div style={{
+                padding: "8px 4px", background: "rgba(59,130,246,0.15)",
+                borderRadius: 8, textAlign: "center",
+              }}>
+                <div style={{ color: "#3b82f6", fontSize: 16, fontWeight: 900 }}>{data.stats.onLeave}</div>
+                <div style={{ color: "rgba(255,255,255,0.6)", fontSize: 8, marginTop: 2 }}>{tr("إجازة")}</div>
+              </div>
+            </div>
+          )}
+
+          {/* Holiday/Weekend notice */}
+          {(data.today.isWeekend || data.today.isHoliday) && (
+            <div style={{
+              padding: "8px 10px", background: "rgba(201,168,76,0.15)",
+              border: "1px solid rgba(201,168,76,0.35)",
+              borderRadius: 8, marginBottom: 10, textAlign: "center",
+              color: "#c9a84c", fontSize: 10, fontWeight: 700,
+            }}>
+              {data.today.isHoliday
+                ? "🌴 " + tr("عطلة رسمية") + (data.today.holidayName ? ": " + data.today.holidayName : "")
+                : "🏖️ " + tr("نهاية الأسبوع")}
+            </div>
+          )}
+
+          {/* Alerts (max 3 visible) */}
+          {hasAnyAlerts && (
+            <div style={{ display: "flex", flexDirection: "column", gap: 5, marginBottom: 10 }}>
+              {data.alerts.slice(0, 3).map(function(alert){
+                var severityColor = alert.severity === "high" ? "#ef4444" : "#f59e0b";
+                return <div key={alert.id} onClick={function(){ handleShortcut(alert.action); }} style={{
+                  padding: "8px 10px",
+                  background: "rgba(255,255,255,0.06)",
+                  borderRadius: 8,
+                  borderRight: "3px solid " + severityColor,
+                  display: "flex", alignItems: "center", gap: 8,
+                  cursor: "pointer",
+                }}>
+                  <div style={{ fontSize: 16, flexShrink: 0 }}>{alert.icon}</div>
+                  <div style={{ flex: 1, minWidth: 0, fontSize: 10, color: "#fff", fontWeight: 600 }}>
+                    {alert.message}
+                  </div>
+                  <div style={{ fontSize: 14, color: "rgba(255,255,255,0.4)", flexShrink: 0 }}>›</div>
+                </div>;
+              })}
+              {data.alerts.length > 3 && (
+                <div onClick={function(){ handleShortcut("view_all_alerts"); }} style={{
+                  padding: "6px 10px",
+                  background: "rgba(255,255,255,0.05)",
+                  borderRadius: 8, textAlign: "center",
+                  color: "rgba(255,255,255,0.7)",
+                  fontSize: 10, fontWeight: 700, cursor: "pointer",
+                }}>
+                  + {data.alerts.length - 3} {tr("تنبيه إضافي")}
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* Quick shortcuts (4 actions) */}
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 6 }}>
+            {[
+              { icon: "🏖️", label: tr("إجازات"), action: "view_leaves" },
+              { icon: "📨", label: tr("طلبات"), action: "view_requests" },
+              { icon: "👥", label: tr("حضور"), action: "view_attendance" },
+              { icon: role === "admin" ? "⚖️" : "📄", label: role === "admin" ? tr("مخالفات") : tr("موظفون"), action: role === "admin" ? "view_violations" : "view_employees" },
+            ].map(function(s, i){
+              return <div key={i} onClick={function(){ handleShortcut(s.action); }} style={{
+                padding: "10px 4px",
+                background: "rgba(255,255,255,0.08)",
+                borderRadius: 10, textAlign: "center",
+                cursor: "pointer", transition: "background 0.2s",
+              }}>
+                <div style={{ fontSize: 18, marginBottom: 3 }}>{s.icon}</div>
+                <div style={{ color: "#fff", fontSize: 9, fontWeight: 700 }}>{s.label}</div>
+              </div>;
+            })}
+          </div>
+
+          {/* Footer: link to full admin */}
+          <div style={{ marginTop: 10, textAlign: "center" }}>
+            <a href="/admin" target="_blank" rel="noopener noreferrer" style={{
+              display: "inline-block",
+              padding: "7px 14px",
+              background: "rgba(255,255,255,0.08)",
+              border: "1px solid rgba(255,255,255,0.15)",
+              borderRadius: 8,
+              color: "rgba(255,255,255,0.85)",
+              fontSize: 10, fontWeight: 700,
+              textDecoration: "none",
+              fontFamily: "inherit",
+            }}>🖥️ {tr("فتح اللوحة الكاملة")}</a>
+          </div>
+        </>
+      )}
+    </div>
+  );
+}
+
 /* ═════════════════════════════════════════════════════════════════
  * v7.103 — MyBadgesCard — شارات وإنجازات الموظف
  * ═════════════════════════════════════════════════════════════════ */

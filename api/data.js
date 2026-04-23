@@ -4424,6 +4424,522 @@ export default async function handler(req, res) {
       }
 
       /* ═══════════════════════════════════════════════════════════════
+       * v7.109 — UNIFIED QUESTION BANK (بنك أسئلة موحّد)
+       * ═══════════════════════════════════════════════════════════════
+       * Separate from legacy settings.questions — dedicated bank
+       * with categories, stats, and advanced features.
+       *
+       * Redis key: question_bank
+       * Structure: [
+       *   { id, text, correct, wrongs[], category, difficulty,
+       *     usedCount, correctCount, createdAt, createdBy, active }
+       * ]
+       *
+       * Endpoints:
+       *   GET /api/data?action=question-bank — list all
+       *   GET /api/data?action=question-bank&id=X — get one
+       *   GET /api/data?action=question-bank&category=engineering — filter
+       *   POST /api/data?action=question-bank — add/import
+       *   PUT /api/data?action=question-bank — update
+       *   DELETE /api/data?action=question-bank&id=X — delete
+       *   GET /api/data?action=question-bank-stats — overall stats
+       *   POST /api/data?action=question-bank-import — bulk import CSV/JSON
+       *   GET /api/data?action=question-bank-random — get random (for flash/morning)
+       */
+      case 'question-bank': {
+        var bankQB = (await dbGet('question_bank')) || [];
+
+        if (req.method === 'GET') {
+          var idQB = req.query.id;
+          if (idQB) {
+            var oneQB = bankQB.find(function(q){ return q.id === idQB; });
+            if (!oneQB) return res.status(404).json({ error: 'not found' });
+            return res.json(oneQB);
+          }
+          var categoryQB = req.query.category;
+          var activeOnlyQB = req.query.activeOnly === '1';
+          var filtered = bankQB;
+          if (categoryQB && categoryQB !== 'all') filtered = filtered.filter(function(q){ return q.category === categoryQB; });
+          if (activeOnlyQB) filtered = filtered.filter(function(q){ return q.active !== false; });
+          return res.json(filtered);
+        }
+
+        if (req.method === 'POST') {
+          var bodyQB = req.body || {};
+          if (!bodyQB.text || !bodyQB.correct) {
+            return res.status(400).json({ error: 'text + correct required' });
+          }
+          var newQB = {
+            id: 'Q_' + Date.now() + Math.random().toString(36).slice(2, 5),
+            text: bodyQB.text,
+            correct: bodyQB.correct,
+            wrongs: Array.isArray(bodyQB.wrongs) ? bodyQB.wrongs : (bodyQB.wrongs ? [bodyQB.wrongs] : []),
+            category: bodyQB.category || 'general',
+            difficulty: bodyQB.difficulty || 'medium',  // easy, medium, hard
+            usedCount: 0,
+            correctCount: 0,
+            wrongCount: 0,
+            active: bodyQB.active !== false,
+            createdAt: new Date().toISOString(),
+            createdBy: bodyQB.actorId || 'admin',
+            tags: Array.isArray(bodyQB.tags) ? bodyQB.tags : [],
+          };
+          bankQB.push(newQB);
+          await dbSet('question_bank', bankQB);
+          await auditLog(bodyQB.actorId || 'admin', 'question_added', null, { id: newQB.id, category: newQB.category }, 'admin');
+          return res.json({ ok: true, question: newQB });
+        }
+
+        if (req.method === 'PUT') {
+          var bodyQBP = req.body || {};
+          if (!bodyQBP.id) return res.status(400).json({ error: 'id required' });
+          var idxQB = bankQB.findIndex(function(q){ return q.id === bodyQBP.id; });
+          if (idxQB < 0) return res.status(404).json({ error: 'not found' });
+          ['text', 'correct', 'wrongs', 'category', 'difficulty', 'active', 'tags'].forEach(function(k){
+            if (bodyQBP[k] !== undefined) bankQB[idxQB][k] = bodyQBP[k];
+          });
+          bankQB[idxQB].updatedAt = new Date().toISOString();
+          await dbSet('question_bank', bankQB);
+          await auditLog(bodyQBP.actorId || 'admin', 'question_updated', null, { id: bodyQBP.id }, 'admin');
+          return res.json({ ok: true, question: bankQB[idxQB] });
+        }
+
+        if (req.method === 'DELETE') {
+          var delIdQB = req.query.id;
+          if (!delIdQB) return res.status(400).json({ error: 'id required' });
+          var beforeLenQB = bankQB.length;
+          bankQB = bankQB.filter(function(q){ return q.id !== delIdQB; });
+          if (bankQB.length === beforeLenQB) return res.status(404).json({ error: 'not found' });
+          await dbSet('question_bank', bankQB);
+          await auditLog('admin', 'question_deleted', null, { id: delIdQB }, 'admin');
+          return res.json({ ok: true, deleted: delIdQB });
+        }
+
+        return res.status(405).json({ error: 'method not allowed' });
+      }
+
+      /* ═══════════════════════════════════════════════════════════════
+       * v7.109 — BULK IMPORT (CSV/JSON)
+       * POST /api/data?action=question-bank-import
+       * Body: { questions: [...], mode: 'append'|'replace' }
+       */
+      case 'question-bank-import': {
+        if (req.method !== 'POST') return res.status(405).json({ error: 'POST required' });
+        var bodyQBI = req.body || {};
+        var importedQ = Array.isArray(bodyQBI.questions) ? bodyQBI.questions : [];
+        var modeQBI = bodyQBI.mode || 'append';
+
+        if (importedQ.length === 0) return res.status(400).json({ error: 'no questions provided' });
+
+        var current = (await dbGet('question_bank')) || [];
+
+        // Validate & normalize
+        var validated = [];
+        var errors = [];
+        importedQ.forEach(function(q, i){
+          if (!q.text || !q.correct) {
+            errors.push({ index: i, error: 'missing text or correct' });
+            return;
+          }
+          validated.push({
+            id: 'Q_' + Date.now() + '_' + i + Math.random().toString(36).slice(2, 5),
+            text: q.text,
+            correct: q.correct,
+            wrongs: Array.isArray(q.wrongs) ? q.wrongs : (Array.isArray(q.options) ? q.options.filter(function(o){ return o !== q.correct; }) : []),
+            category: q.category || 'general',
+            difficulty: q.difficulty || 'medium',
+            usedCount: 0, correctCount: 0, wrongCount: 0,
+            active: true,
+            createdAt: new Date().toISOString(),
+            createdBy: bodyQBI.actorId || 'admin',
+            tags: Array.isArray(q.tags) ? q.tags : [],
+          });
+        });
+
+        var finalBank;
+        if (modeQBI === 'replace') {
+          finalBank = validated;
+        } else {
+          finalBank = current.concat(validated);
+        }
+
+        await dbSet('question_bank', finalBank);
+        await auditLog(bodyQBI.actorId || 'admin', 'question_bulk_import', null, {
+          mode: modeQBI,
+          imported: validated.length,
+          errors: errors.length,
+          total: finalBank.length,
+        }, 'admin');
+
+        return res.json({
+          ok: true,
+          imported: validated.length,
+          errors: errors,
+          total: finalBank.length,
+        });
+      }
+
+      /* ═══════════════════════════════════════════════════════════════
+       * v7.109 — STATS
+       * GET /api/data?action=question-bank-stats
+       */
+      case 'question-bank-stats': {
+        var bankS = (await dbGet('question_bank')) || [];
+        var categories = {};
+        var difficulties = { easy: 0, medium: 0, hard: 0 };
+        var activeCount = 0;
+        var totalUsed = 0;
+        var totalCorrect = 0;
+
+        bankS.forEach(function(q){
+          categories[q.category || 'general'] = (categories[q.category || 'general'] || 0) + 1;
+          difficulties[q.difficulty || 'medium'] = (difficulties[q.difficulty || 'medium'] || 0) + 1;
+          if (q.active !== false) activeCount++;
+          totalUsed += q.usedCount || 0;
+          totalCorrect += q.correctCount || 0;
+        });
+
+        // Most/least used
+        var sortedByUse = bankS.slice().sort(function(a, b){ return (b.usedCount || 0) - (a.usedCount || 0); });
+        var hardest = bankS
+          .filter(function(q){ return q.usedCount >= 3; })
+          .map(function(q){
+            return { id: q.id, text: q.text, rate: Math.round(((q.correctCount || 0) / q.usedCount) * 100), used: q.usedCount };
+          })
+          .sort(function(a, b){ return a.rate - b.rate; })
+          .slice(0, 5);
+
+        return res.json({
+          ok: true,
+          total: bankS.length,
+          active: activeCount,
+          categories: categories,
+          difficulties: difficulties,
+          usage: {
+            totalShown: totalUsed,
+            totalCorrect: totalCorrect,
+            overallAccuracy: totalUsed > 0 ? Math.round((totalCorrect / totalUsed) * 100) : 0,
+          },
+          mostUsed: sortedByUse.slice(0, 5).map(function(q){ return { id: q.id, text: q.text, used: q.usedCount || 0 }; }),
+          hardest: hardest,
+        });
+      }
+
+      /* ═══════════════════════════════════════════════════════════════
+       * v7.109 — GET RANDOM QUESTION (for Morning/Flash challenges)
+       * GET /api/data?action=question-bank-random&category=X&difficulty=Y
+       */
+      case 'question-bank-random': {
+        var bankR = (await dbGet('question_bank')) || [];
+        bankR = bankR.filter(function(q){ return q.active !== false; });
+
+        if (req.query.category && req.query.category !== 'all') {
+          bankR = bankR.filter(function(q){ return q.category === req.query.category; });
+        }
+        if (req.query.difficulty && req.query.difficulty !== 'all') {
+          bankR = bankR.filter(function(q){ return q.difficulty === req.query.difficulty; });
+        }
+
+        if (bankR.length === 0) return res.status(404).json({ error: 'no questions available', ok: false });
+
+        // Prefer less-used questions
+        bankR.sort(function(a, b){ return (a.usedCount || 0) - (b.usedCount || 0); });
+        var pool = bankR.slice(0, Math.max(10, Math.floor(bankR.length / 2)));
+        var picked = pool[Math.floor(Math.random() * pool.length)];
+
+        // Increment usage counter
+        var fullBank = (await dbGet('question_bank')) || [];
+        var idx = fullBank.findIndex(function(q){ return q.id === picked.id; });
+        if (idx >= 0) {
+          fullBank[idx].usedCount = (fullBank[idx].usedCount || 0) + 1;
+          fullBank[idx].lastUsedAt = new Date().toISOString();
+          await dbSet('question_bank', fullBank);
+        }
+
+        return res.json({ ok: true, question: picked });
+      }
+
+      /* ═══════════════════════════════════════════════════════════════
+       * v7.109 — MIGRATE legacy settings.questions → question_bank
+       * POST /api/data?action=migrate-questions-to-bank
+       */
+      case 'migrate-questions-to-bank': {
+        if (req.method !== 'POST') return res.status(405).json({ error: 'POST required' });
+        var modeMQ = (req.body || {}).mode || 'dry_run';
+        var settingsMQ = (await dbGet('settings')) || {};
+        var legacyQ = settingsMQ.questions || [];
+        var bankMQ = (await dbGet('question_bank')) || [];
+
+        // Check for already-migrated
+        var migratedIds = new Set();
+        bankMQ.forEach(function(q){ if (q.migratedFrom) migratedIds.add(q.migratedFrom); });
+
+        var toMigrate = legacyQ.filter(function(q, i){
+          var key = 'legacy_' + i + '_' + (q.q || '').slice(0, 30);
+          return !migratedIds.has(key);
+        });
+
+        if (modeMQ === 'dry_run') {
+          return res.json({
+            ok: true,
+            mode: 'dry_run',
+            legacyCount: legacyQ.length,
+            bankCount: bankMQ.length,
+            willMigrate: toMigrate.length,
+            sample: toMigrate.slice(0, 3),
+          });
+        }
+
+        // Execute
+        if (toMigrate.length === 0) {
+          return res.json({ ok: true, mode: 'execute', migrated: 0, message: 'لا توجد أسئلة للنقل' });
+        }
+
+        var newQuestions = toMigrate.map(function(q, i){
+          return {
+            id: 'Q_MIG_' + Date.now() + '_' + i,
+            migratedFrom: 'legacy_' + i + '_' + (q.q || '').slice(0, 30),
+            text: q.q || '',
+            correct: q.correct || '',
+            wrongs: [q.wrong1, q.wrong2].filter(function(x){ return x; }),
+            category: q.type === 'هندسي' ? 'engineering' : q.type === 'سلامة' ? 'safety' : q.type === 'ذكر' ? 'religion' : 'general',
+            difficulty: 'medium',
+            usedCount: 0, correctCount: 0, wrongCount: 0,
+            active: true,
+            createdAt: new Date().toISOString(),
+            createdBy: 'migration',
+            tags: ['legacy'],
+          };
+        });
+
+        var merged = bankMQ.concat(newQuestions);
+        await dbSet('question_bank', merged);
+
+        await auditLog('admin', 'migrate_questions_to_bank', null, {
+          migrated: newQuestions.length,
+          total: merged.length,
+        }, 'admin');
+
+        return res.json({
+          ok: true,
+          mode: 'execute',
+          migrated: newQuestions.length,
+          total: merged.length,
+          message: 'تم النقل بنجاح!',
+        });
+      }
+
+      /* ═══════════════════════════════════════════════════════════════
+       * v7.108 — ADMIN SUMMARY (Mobile Admin Smart Card)
+       * ═══════════════════════════════════════════════════════════════
+       * GET /api/data?action=admin-summary&role=admin|hr&empId=X
+       * Returns comprehensive mobile dashboard data for admin/HR users
+       */
+      case 'admin-summary': {
+        if (req.method !== 'GET') return res.status(405).json({ error: 'GET required' });
+        var roleAS = req.query.role || 'admin';
+        var empIdAS = req.query.empId;
+
+        var empsAS = (await dbGet('employees')) || [];
+        var attAS = (await dbGet('attendance')) || [];
+        var leavesAS = (await dbGet('leaves')) || [];
+        var violsAS = (await dbGet('violations_v2')) || [];
+        var holidaysDataAS = (await dbGet('holidays')) || { weekendDays: [5, 6], list: [] };
+
+        var todayAS = new Date().toISOString().slice(0, 10);
+        var nowAS = new Date();
+        var nowHourAS = nowAS.getHours();
+        var todayDowAS = nowAS.getDay();
+        var thisMonthAS = todayAS.slice(0, 7);
+
+        // Check if today is weekend/holiday
+        var isWeekendAS = (holidaysDataAS.weekendDays || [5, 6]).indexOf(todayDowAS) >= 0;
+        var isHolidayAS = (holidaysDataAS.list || []).some(function(h){
+          if (!h.date) return false;
+          if (h.date === todayAS) return true;
+          if (h.recurring && h.date.slice(5) === todayAS.slice(5)) return true;
+          if (h.endDate && todayAS >= h.date && todayAS <= h.endDate) return true;
+          return false;
+        });
+
+        // Active employees
+        var activeEmps = empsAS.filter(function(e){
+          return e.active !== false && !e.terminated;
+        });
+
+        // Today's attendance
+        var todayAtt = attAS.filter(function(a){ return a.date === todayAS; });
+        var todayCheckins = todayAtt.filter(function(a){ return a.type === 'checkin'; });
+        var presentIds = new Set(todayCheckins.map(function(a){ return String(a.empId); }));
+        var lateToday = todayCheckins.filter(function(a){ return a.late; }).length;
+
+        // On leave today
+        var onLeaveToday = leavesAS.filter(function(l){
+          if (l.status !== 'approved') return false;
+          return l.startDate && l.endDate && todayAS >= l.startDate && todayAS <= l.endDate;
+        });
+        var onLeaveIds = new Set(onLeaveToday.map(function(l){ return String(l.empId); }));
+
+        var presentCount = presentIds.size;
+        var onLeaveCount = onLeaveToday.length;
+        var absentCount = activeEmps.filter(function(e){
+          return !presentIds.has(String(e.id)) && !onLeaveIds.has(String(e.id));
+        }).length;
+
+        // ═══ Build alerts (role-filtered) ═══
+        var alertsAS = [];
+
+        // 1) Pending leaves (HR + Admin)
+        var pendingLeaveStatuses = ['pending_m1', 'pending_m2', 'pending_final', 'handover_open', 'pending_delegates'];
+        var pendingLeavesCount = leavesAS.filter(function(l){
+          return pendingLeaveStatuses.indexOf(l.status) >= 0;
+        }).length;
+
+        if (pendingLeavesCount > 0) {
+          alertsAS.push({
+            id: 'PENDING_LEAVES',
+            icon: '🏖️',
+            severity: pendingLeavesCount >= 5 ? 'high' : 'medium',
+            message: pendingLeavesCount + ' إجازة بانتظار الموافقة',
+            action: 'view_leaves',
+            count: pendingLeavesCount,
+            for: 'all',
+          });
+        }
+
+        // 2) Absent today (Admin only — during work hours)
+        if (roleAS === 'admin' && !isWeekendAS && !isHolidayAS && nowHourAS >= 10 && absentCount > 0) {
+          alertsAS.push({
+            id: 'ABSENT_TODAY',
+            icon: '🚫',
+            severity: absentCount >= 3 ? 'high' : 'medium',
+            message: absentCount + ' موظف غائب اليوم',
+            action: 'view_attendance',
+            count: absentCount,
+            for: 'admin',
+          });
+        }
+
+        // 3) High violations employees (Admin only)
+        if (roleAS === 'admin') {
+          var violsByEmp = {};
+          violsAS.forEach(function(v){
+            if (v.status === 'open' || v.status === 'ACTIVE') {
+              violsByEmp[v.empId] = (violsByEmp[v.empId] || 0) + 1;
+            }
+          });
+          var highVioEmps = Object.keys(violsByEmp).filter(function(eid){ return violsByEmp[eid] >= 3; });
+          if (highVioEmps.length > 0) {
+            alertsAS.push({
+              id: 'HIGH_VIOLATIONS',
+              icon: '⚖️',
+              severity: 'high',
+              message: highVioEmps.length + ' موظف بمخالفات متعددة',
+              action: 'view_violations',
+              count: highVioEmps.length,
+              for: 'admin',
+            });
+          }
+        }
+
+        // 4) Contracts expiring (HR + Admin)
+        var thirtyDays = new Date(nowAS.getTime() + 30 * 24 * 3600 * 1000);
+        var expiringContracts = activeEmps.filter(function(e){
+          if (!e.contractEndDate) return false;
+          var d = new Date(e.contractEndDate);
+          return d > nowAS && d <= thirtyDays;
+        }).length;
+        if (expiringContracts > 0) {
+          alertsAS.push({
+            id: 'CONTRACTS_EXPIRING',
+            icon: '📄',
+            severity: 'medium',
+            message: expiringContracts + ' عقد ينتهي خلال 30 يوم',
+            action: 'view_employees',
+            count: expiringContracts,
+            for: 'all',
+          });
+        }
+
+        // 5) Late pattern (Admin only)
+        if (roleAS === 'admin') {
+          var lateByEmp = {};
+          attAS.forEach(function(a){
+            if (a.type === 'checkin' && a.late && a.date && a.date.startsWith(thisMonthAS)) {
+              lateByEmp[a.empId] = (lateByEmp[a.empId] || 0) + 1;
+            }
+          });
+          var chronicLate = Object.keys(lateByEmp).filter(function(eid){ return lateByEmp[eid] >= 3; }).length;
+          if (chronicLate > 0) {
+            alertsAS.push({
+              id: 'LATE_PATTERN',
+              icon: '⏰',
+              severity: 'medium',
+              message: chronicLate + ' موظف بتأخر متكرر',
+              action: 'view_attendance',
+              count: chronicLate,
+              for: 'admin',
+            });
+          }
+        }
+
+        // 6) Pending HR requests (HR + Admin) — any admin_requests
+        var hrRequestsCount = 0;
+        try {
+          var hrReqs = (await dbGet('hr_requests')) || [];
+          hrRequestsCount = hrReqs.filter(function(r){ return r.status === 'pending' || r.status === 'under_review'; }).length;
+        } catch(e) {}
+
+        if (hrRequestsCount > 0) {
+          alertsAS.push({
+            id: 'HR_REQUESTS',
+            icon: '📨',
+            severity: 'medium',
+            message: hrRequestsCount + ' طلب بانتظار المعالجة',
+            action: 'view_requests',
+            count: hrRequestsCount,
+            for: 'all',
+          });
+        }
+
+        // Sort alerts by severity (high first)
+        var severityOrder = { high: 0, medium: 1, low: 2 };
+        alertsAS.sort(function(a, b){
+          return (severityOrder[a.severity] || 3) - (severityOrder[b.severity] || 3);
+        });
+
+        return res.json({
+          ok: true,
+          ts: new Date().toISOString(),
+          role: roleAS,
+          today: {
+            date: todayAS,
+            isWeekend: isWeekendAS,
+            isHoliday: isHolidayAS,
+            holidayName: isHolidayAS ? ((holidaysDataAS.list || []).find(function(h){
+              if (h.date === todayAS) return true;
+              if (h.recurring && h.date && h.date.slice(5) === todayAS.slice(5)) return true;
+              return false;
+            }) || {}).name : null,
+          },
+          stats: {
+            totalEmployees: activeEmps.length,
+            present: presentCount,
+            absent: absentCount,
+            late: lateToday,
+            onLeave: onLeaveCount,
+            attendanceRate: activeEmps.length > 0 ? Math.round((presentCount / activeEmps.length) * 100) : 0,
+          },
+          alerts: alertsAS,
+          alertCounts: {
+            total: alertsAS.length,
+            high: alertsAS.filter(function(a){ return a.severity === 'high'; }).length,
+            medium: alertsAS.filter(function(a){ return a.severity === 'medium'; }).length,
+          },
+        });
+      }
+
+      /* ═══════════════════════════════════════════════════════════════
        * v7.106 — MIGRATE violations (v1) → violations_v2 (CLEANUP)
        * ═══════════════════════════════════════════════════════════════
        * POST /api/data?action=migrate-violations
@@ -6078,7 +6594,7 @@ export default async function handler(req, res) {
       case 'surveys': {
         if (req.method === 'GET') {
           let list = (await dbGet('surveys')) || [];
-          const { status, id } = req.query || {};
+          const { status, id, empId } = req.query || {};
           if (id) {
             var one = list.find(function(s){ return s.id === id; });
             if (!one) return res.status(404).json({ error: 'not found' });
@@ -6089,9 +6605,35 @@ export default async function handler(req, res) {
             list = list.filter(function(s){
               if (s.status !== 'active') return false;
               if (s.endDate && s.endDate < today) return false;
+              if (s.startDate && s.startDate > today) return false;  // not yet started
               return true;
             });
           }
+
+          // v7.110 — FIX: Filter by targetGroups if empId provided
+          if (empId) {
+            var empsX = (await dbGet('employees')) || [];
+            var currentEmp = empsX.find(function(e){ return String(e.id) === String(empId); });
+            if (currentEmp) {
+              list = list.filter(function(s){
+                var tg = s.targetGroups || ['all'];
+                // If "all" is in target groups, everyone sees it
+                if (tg.indexOf('all') >= 0) return true;
+                // Check branch match
+                if (tg.indexOf(currentEmp.branch) >= 0 || tg.indexOf(currentEmp.branchId) >= 0) return true;
+                // Check role match
+                if (tg.indexOf(currentEmp.role) >= 0) return true;
+                // Check specific empId match
+                if (tg.indexOf(currentEmp.id) >= 0 || tg.indexOf(String(currentEmp.id)) >= 0) return true;
+                // Check department match
+                if (currentEmp.department && tg.indexOf(currentEmp.department) >= 0) return true;
+                // Check jobTitle match
+                if (currentEmp.jobTitle && tg.indexOf(currentEmp.jobTitle) >= 0) return true;
+                return false;
+              });
+            }
+          }
+
           return res.json(list);
         }
         if (req.method === 'POST') {

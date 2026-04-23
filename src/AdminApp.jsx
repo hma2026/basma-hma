@@ -5,7 +5,7 @@ import { exportFormalWarning, exportInvestigationRecord, exportAffidavit, export
 import { t as tr, setLang, getLang, subscribeLangChange } from "./i18n";
 
 const APP = "بصمة HMA";
-const VER = "7.107";
+const VER = "7.109";
 const CO = "هاني محمد عسيري للإستشارات الهندسية";
 const B = { blue: "#2B5EA7", yellow: "#FDD800", red: "#E2192C", black: "#1A1A1A", blueDk: "#1E4478", blueLt: "#EDF3FB", gold: "#D4A017" };
 
@@ -18928,6 +18928,444 @@ function AttendanceHub({ t, B, emps, branches, saveBranches, mapTarget, setMapTa
 }
 
 /* ContentHub — المحتوى المعروض للموظفين (2 named, events+questions remain separate) */
+/* ═════════════════════════════════════════════════════════════════
+ * v7.109 — QuestionBankPanel — بنك الأسئلة الموحّد
+ * ═════════════════════════════════════════════════════════════════ */
+function QuestionBankPanel({ t, B }) {
+  var [questions, setQuestions] = useState([]);
+  var [stats, setStats] = useState(null);
+  var [loading, setLoading] = useState(true);
+  var [filterCategory, setFilterCategory] = useState("all");
+  var [filterDifficulty, setFilterDifficulty] = useState("all");
+  var [filterText, setFilterText] = useState("");
+  var [editingQ, setEditingQ] = useState(null);
+  var [addingNew, setAddingNew] = useState(false);
+  var [migrationResult, setMigrationResult] = useState(null);
+  var [showMigrate, setShowMigrate] = useState(false);
+
+  var CATEGORIES = [
+    { id: "general",      label: "عام",          icon: "💡", color: "#6b7280" },
+    { id: "engineering",  label: "هندسي",        icon: "⚙️", color: "#2b5ea7" },
+    { id: "safety",       label: "سلامة",        icon: "🛡️", color: "#dc2626" },
+    { id: "hr",           label: "موارد بشرية",  icon: "👥", color: "#7c3aed" },
+    { id: "religion",     label: "ذكر",          icon: "🕌", color: "#059669" },
+    { id: "culture",      label: "ثقافة عامة",   icon: "🎭", color: "#f59e0b" },
+    { id: "company",      label: "سياسات المكتب", icon: "🏢", color: "#0891b2" },
+  ];
+
+  var DIFFICULTIES = [
+    { id: "easy",    label: "سهل",   color: "#10b981" },
+    { id: "medium",  label: "متوسط", color: "#f59e0b" },
+    { id: "hard",    label: "صعب",   color: "#dc2626" },
+  ];
+
+  async function load() {
+    setLoading(true);
+    try {
+      var r = await fetch("/api/data?action=question-bank");
+      var d = await r.json();
+      setQuestions(Array.isArray(d) ? d : []);
+      var sR = await fetch("/api/data?action=question-bank-stats");
+      var sD = await sR.json();
+      if (sD.ok) setStats(sD);
+    } catch(e) {}
+    setLoading(false);
+  }
+
+  useEffect(function(){ load(); }, []);
+
+  async function checkMigration() {
+    try {
+      var r = await fetch("/api/data?action=migrate-questions-to-bank", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ mode: "dry_run" }),
+      });
+      var d = await r.json();
+      if (d.ok && d.willMigrate > 0) {
+        setShowMigrate(true);
+        setMigrationResult(d);
+      }
+    } catch(e) {}
+  }
+
+  useEffect(function(){ checkMigration(); }, []);
+
+  async function executeMigration() {
+    if (!confirm(tr("نقل") + " " + migrationResult.willMigrate + " " + tr("سؤال من النظام القديم؟"))) return;
+    try {
+      var r = await fetch("/api/data?action=migrate-questions-to-bank", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ mode: "execute" }),
+      });
+      var d = await r.json();
+      if (d.ok) {
+        alert("✅ " + d.message + "\n\n" + tr("تم نقل:") + " " + d.migrated);
+        setShowMigrate(false);
+        await load();
+      }
+    } catch(e) { alert("خطأ: " + e.message); }
+  }
+
+  async function saveQuestion(q) {
+    var isUpdate = !!q.id;
+    try {
+      var r = await fetch("/api/data?action=question-bank", {
+        method: isUpdate ? "PUT" : "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ ...q, actorId: "admin" }),
+      });
+      var d = await r.json();
+      if (d.ok) {
+        setEditingQ(null);
+        setAddingNew(false);
+        await load();
+      } else {
+        alert(d.error || "فشل");
+      }
+    } catch(e) { alert("خطأ: " + e.message); }
+  }
+
+  async function deleteQuestion(id) {
+    if (!confirm(tr("حذف هذا السؤال نهائياً؟"))) return;
+    try {
+      var r = await fetch("/api/data?action=question-bank&id=" + encodeURIComponent(id), { method: "DELETE" });
+      var d = await r.json();
+      if (d.ok) await load();
+    } catch(e) {}
+  }
+
+  async function toggleActive(q) {
+    try {
+      await fetch("/api/data?action=question-bank", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ id: q.id, active: !q.active, actorId: "admin" }),
+      });
+      await load();
+    } catch(e) {}
+  }
+
+  // Filter
+  var filtered = questions.filter(function(q){
+    if (filterCategory !== "all" && q.category !== filterCategory) return false;
+    if (filterDifficulty !== "all" && q.difficulty !== filterDifficulty) return false;
+    if (filterText && !((q.text || "").toLowerCase().includes(filterText.toLowerCase()))) return false;
+    return true;
+  });
+
+  function getCategoryInfo(id) {
+    return CATEGORIES.find(function(c){ return c.id === id; }) || CATEGORIES[0];
+  }
+  function getDifficultyInfo(id) {
+    return DIFFICULTIES.find(function(d){ return d.id === id; }) || DIFFICULTIES[1];
+  }
+
+  return (
+    <div>
+      {/* Header */}
+      <div style={{
+        background: "linear-gradient(135deg, #7c3aed, #a855f7)",
+        borderRadius: 14, padding: "18px 22px", color: "#fff",
+        marginBottom: 14,
+      }}>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 10 }}>
+          <div>
+            <div style={{ fontSize: 18, fontWeight: 900 }}>📚 {tr("بنك الأسئلة الموحّد")}</div>
+            <div style={{ fontSize: 11, opacity: 0.9, marginTop: 4 }}>
+              {tr("مستودع مركزي لكل الأسئلة — يخدم تحدي الصباح وتحدي السريع")}
+            </div>
+          </div>
+          <button onClick={function(){ setAddingNew(true); setEditingQ({ text: "", correct: "", wrongs: ["", ""], category: "general", difficulty: "medium", active: true, tags: [] }); }} style={{
+            padding: "10px 18px", borderRadius: 10,
+            background: "rgba(255,255,255,0.25)",
+            border: "1px solid rgba(255,255,255,0.4)",
+            color: "#fff", fontSize: 12, fontWeight: 800,
+            cursor: "pointer", fontFamily: "inherit",
+          }}>➕ {tr("إضافة سؤال")}</button>
+        </div>
+      </div>
+
+      {/* Migration banner */}
+      {showMigrate && migrationResult && (
+        <div style={{
+          background: "linear-gradient(135deg, #F59E0B15, #EAB30810)",
+          border: "2px solid #F59E0B50",
+          borderRadius: 12, padding: 14, marginBottom: 14,
+          display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 10,
+        }}>
+          <div>
+            <div style={{ fontSize: 13, fontWeight: 900, color: "#D97706" }}>
+              🔄 {tr("نقل تلقائي")}
+            </div>
+            <div style={{ fontSize: 11, color: t.tx, marginTop: 4 }}>
+              {tr("يوجد")} <b>{migrationResult.willMigrate}</b> {tr("سؤال في النظام القديم يمكن نقله")}
+            </div>
+          </div>
+          <button onClick={executeMigration} style={{
+            padding: "10px 18px", borderRadius: 10,
+            background: "linear-gradient(135deg, #F59E0B, #D97706)",
+            color: "#fff", border: "none", fontSize: 12, fontWeight: 800,
+            cursor: "pointer", fontFamily: "inherit",
+          }}>🚀 {tr("نقل الكل")}</button>
+        </div>
+      )}
+
+      {/* Stats */}
+      {stats && (
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(140px, 1fr))", gap: 10, marginBottom: 14 }}>
+          <div style={{ padding: 14, background: t.card, borderRadius: 10, border: "1px solid " + t.sep, textAlign: "center" }}>
+            <div style={{ fontSize: 24, fontWeight: 900, color: B.blue }}>{stats.total}</div>
+            <div style={{ fontSize: 10, color: t.txM, marginTop: 3 }}>{tr("إجمالي الأسئلة")}</div>
+          </div>
+          <div style={{ padding: 14, background: t.card, borderRadius: 10, border: "1px solid " + t.sep, textAlign: "center" }}>
+            <div style={{ fontSize: 24, fontWeight: 900, color: t.ok }}>{stats.active}</div>
+            <div style={{ fontSize: 10, color: t.txM, marginTop: 3 }}>{tr("نشطة")}</div>
+          </div>
+          <div style={{ padding: 14, background: t.card, borderRadius: 10, border: "1px solid " + t.sep, textAlign: "center" }}>
+            <div style={{ fontSize: 24, fontWeight: 900, color: "#8B5CF6" }}>{stats.usage.totalShown}</div>
+            <div style={{ fontSize: 10, color: t.txM, marginTop: 3 }}>{tr("مرة مُستخدم")}</div>
+          </div>
+          <div style={{ padding: 14, background: t.card, borderRadius: 10, border: "1px solid " + t.sep, textAlign: "center" }}>
+            <div style={{ fontSize: 24, fontWeight: 900, color: "#F59E0B" }}>{stats.usage.overallAccuracy}%</div>
+            <div style={{ fontSize: 10, color: t.txM, marginTop: 3 }}>{tr("دقة عامة")}</div>
+          </div>
+        </div>
+      )}
+
+      {/* Filters */}
+      <div style={{ background: t.card, borderRadius: 12, padding: 12, border: "1px solid " + t.sep, marginBottom: 12 }}>
+        <div style={{ display: "flex", gap: 10, flexWrap: "wrap", alignItems: "center" }}>
+          <input type="text" value={filterText} onChange={function(e){ setFilterText(e.target.value); }} placeholder={tr("🔍 بحث في النص...")} style={{
+            flex: 1, minWidth: 180,
+            padding: "8px 12px", borderRadius: 8,
+            border: "1px solid " + t.sep, background: t.inp, color: t.tx,
+            fontSize: 12, fontFamily: "inherit",
+          }} />
+          <select value={filterCategory} onChange={function(e){ setFilterCategory(e.target.value); }} style={{
+            padding: "8px 12px", borderRadius: 8,
+            border: "1px solid " + t.sep, background: t.inp, color: t.tx,
+            fontSize: 12, fontFamily: "inherit", cursor: "pointer",
+          }}>
+            <option value="all">{tr("كل التصنيفات")}</option>
+            {CATEGORIES.map(function(c){ return <option key={c.id} value={c.id}>{c.icon} {c.label}</option>; })}
+          </select>
+          <select value={filterDifficulty} onChange={function(e){ setFilterDifficulty(e.target.value); }} style={{
+            padding: "8px 12px", borderRadius: 8,
+            border: "1px solid " + t.sep, background: t.inp, color: t.tx,
+            fontSize: 12, fontFamily: "inherit", cursor: "pointer",
+          }}>
+            <option value="all">{tr("كل الصعوبات")}</option>
+            {DIFFICULTIES.map(function(d){ return <option key={d.id} value={d.id}>{d.label}</option>; })}
+          </select>
+        </div>
+        <div style={{ fontSize: 10, color: t.txM, marginTop: 8 }}>
+          {tr("عرض")} {filtered.length} {tr("من")} {questions.length} {tr("سؤال")}
+        </div>
+      </div>
+
+      {/* Questions list */}
+      {loading ? (
+        <div style={{ padding: 40, textAlign: "center", color: t.txM }}>⏳ {tr("جاري التحميل...")}</div>
+      ) : filtered.length === 0 ? (
+        <div style={{ padding: 40, textAlign: "center", background: t.card, borderRadius: 14, border: "1px dashed " + t.sep }}>
+          <div style={{ fontSize: 40, marginBottom: 10 }}>📚</div>
+          <div style={{ fontSize: 13, fontWeight: 700, color: t.tx, marginBottom: 4 }}>
+            {questions.length === 0 ? tr("البنك فارغ") : tr("لا نتائج مطابقة")}
+          </div>
+          <div style={{ fontSize: 11, color: t.txM }}>
+            {questions.length === 0 ? tr("ابدأ بإضافة أول سؤال") : tr("جرّب فلاتر مختلفة")}
+          </div>
+        </div>
+      ) : (
+        <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+          {filtered.map(function(q){
+            var cat = getCategoryInfo(q.category);
+            var dif = getDifficultyInfo(q.difficulty);
+            var accuracyRate = q.usedCount > 0 ? Math.round(((q.correctCount || 0) / q.usedCount) * 100) : null;
+
+            return <div key={q.id} style={{
+              background: t.card, borderRadius: 12,
+              padding: 14, border: "1px solid " + t.sep,
+              borderRight: "3px solid " + cat.color,
+              opacity: q.active === false ? 0.5 : 1,
+            }}>
+              {/* Question text */}
+              <div style={{ fontSize: 13, fontWeight: 800, color: t.tx, marginBottom: 10, lineHeight: 1.6 }}>
+                {q.text}
+              </div>
+
+              {/* Correct + wrong */}
+              <div style={{ display: "flex", flexDirection: "column", gap: 4, marginBottom: 10 }}>
+                <div style={{ fontSize: 11, color: t.ok, padding: "4px 8px", background: t.okLt, borderRadius: 6, display: "flex", alignItems: "center", gap: 6 }}>
+                  ✓ <b>{q.correct}</b>
+                </div>
+                {(q.wrongs || []).map(function(w, i){
+                  return w ? <div key={i} style={{ fontSize: 11, color: t.txM, padding: "4px 8px", background: t.bg, borderRadius: 6 }}>
+                    ✗ {w}
+                  </div> : null;
+                })}
+              </div>
+
+              {/* Meta row */}
+              <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center", marginBottom: 10 }}>
+                <span style={{ padding: "3px 8px", borderRadius: 6, background: cat.color + "20", color: cat.color, fontSize: 10, fontWeight: 700 }}>
+                  {cat.icon} {cat.label}
+                </span>
+                <span style={{ padding: "3px 8px", borderRadius: 6, background: dif.color + "20", color: dif.color, fontSize: 10, fontWeight: 700 }}>
+                  {dif.label}
+                </span>
+                {q.usedCount > 0 && (
+                  <span style={{ padding: "3px 8px", borderRadius: 6, background: t.bg, color: t.txM, fontSize: 10 }}>
+                    👁 {q.usedCount}
+                  </span>
+                )}
+                {accuracyRate !== null && (
+                  <span style={{ padding: "3px 8px", borderRadius: 6, background: accuracyRate >= 70 ? t.ok + "20" : accuracyRate >= 40 ? "#f59e0b20" : t.bad + "20", color: accuracyRate >= 70 ? t.ok : accuracyRate >= 40 ? "#f59e0b" : t.bad, fontSize: 10, fontWeight: 700 }}>
+                    📊 {accuracyRate}%
+                  </span>
+                )}
+                {q.active === false && (
+                  <span style={{ padding: "3px 8px", borderRadius: 6, background: t.bad + "20", color: t.bad, fontSize: 10, fontWeight: 700 }}>
+                    ⏸ {tr("معطل")}
+                  </span>
+                )}
+              </div>
+
+              {/* Actions */}
+              <div style={{ display: "flex", gap: 6 }}>
+                <button onClick={function(){ setEditingQ(q); setAddingNew(false); }} style={{
+                  flex: 1, padding: "6px 10px", borderRadius: 6,
+                  background: B.blue, color: "#fff", border: "none",
+                  fontSize: 11, fontWeight: 700, cursor: "pointer", fontFamily: "inherit",
+                }}>✏️ {tr("تعديل")}</button>
+                <button onClick={function(){ toggleActive(q); }} style={{
+                  flex: 1, padding: "6px 10px", borderRadius: 6,
+                  background: q.active ? "#f59e0b" : t.ok, color: "#fff", border: "none",
+                  fontSize: 11, fontWeight: 700, cursor: "pointer", fontFamily: "inherit",
+                }}>{q.active ? "⏸ " + tr("تعطيل") : "▶️ " + tr("تفعيل")}</button>
+                <button onClick={function(){ deleteQuestion(q.id); }} style={{
+                  padding: "6px 10px", borderRadius: 6,
+                  background: t.bad, color: "#fff", border: "none",
+                  fontSize: 11, fontWeight: 700, cursor: "pointer", fontFamily: "inherit",
+                }}>🗑</button>
+              </div>
+            </div>;
+          })}
+        </div>
+      )}
+
+      {/* Edit/Add Modal */}
+      {editingQ && (
+        <div style={{
+          position: "fixed", inset: 0,
+          background: "rgba(0,0,0,0.7)",
+          zIndex: 9000,
+          display: "flex", alignItems: "center", justifyContent: "center",
+          padding: 16,
+        }} onClick={function(){ setEditingQ(null); setAddingNew(false); }}>
+          <div onClick={function(e){ e.stopPropagation(); }} style={{
+            background: t.card, borderRadius: 16, padding: 20,
+            maxWidth: 500, width: "100%", maxHeight: "85vh", overflowY: "auto",
+            border: "1px solid " + t.sep,
+          }}>
+            <div style={{ fontSize: 15, fontWeight: 900, color: t.tx, marginBottom: 14 }}>
+              {addingNew ? "➕ " + tr("إضافة سؤال جديد") : "✏️ " + tr("تعديل السؤال")}
+            </div>
+
+            <div style={{ marginBottom: 12 }}>
+              <label style={{ fontSize: 11, fontWeight: 700, color: t.tx, display: "block", marginBottom: 6 }}>{tr("نص السؤال")}</label>
+              <textarea value={editingQ.text} onChange={function(e){ setEditingQ({ ...editingQ, text: e.target.value }); }} rows={3} placeholder={tr("مثلاً: ما أهم مبدأ في الهندسة الإنشائية؟")} style={{
+                width: "100%", padding: "10px 12px", borderRadius: 10,
+                border: "1px solid " + t.sep, background: t.inp, color: t.tx,
+                fontSize: 13, fontFamily: "inherit", boxSizing: "border-box", resize: "vertical",
+              }} />
+            </div>
+
+            <div style={{ marginBottom: 12 }}>
+              <label style={{ fontSize: 11, fontWeight: 700, color: t.ok, display: "block", marginBottom: 6 }}>✓ {tr("الإجابة الصحيحة")}</label>
+              <input type="text" value={editingQ.correct} onChange={function(e){ setEditingQ({ ...editingQ, correct: e.target.value }); }} style={{
+                width: "100%", padding: "10px 12px", borderRadius: 10,
+                border: "1px solid " + t.ok + "60", background: t.inp, color: t.tx,
+                fontSize: 13, fontFamily: "inherit", boxSizing: "border-box",
+              }} />
+            </div>
+
+            <div style={{ marginBottom: 12 }}>
+              <label style={{ fontSize: 11, fontWeight: 700, color: t.bad, display: "block", marginBottom: 6 }}>✗ {tr("إجابات خاطئة (2-3)")}</label>
+              {(editingQ.wrongs || ["", ""]).map(function(w, i){
+                return <input key={i} type="text" value={w} onChange={function(e){
+                  var ws = (editingQ.wrongs || []).slice();
+                  ws[i] = e.target.value;
+                  setEditingQ({ ...editingQ, wrongs: ws });
+                }} placeholder={tr("إجابة خاطئة") + " " + (i + 1)} style={{
+                  width: "100%", padding: "8px 12px", borderRadius: 8,
+                  border: "1px solid " + t.sep, background: t.inp, color: t.tx,
+                  fontSize: 12, fontFamily: "inherit", boxSizing: "border-box",
+                  marginBottom: 6,
+                }} />;
+              })}
+              <button onClick={function(){
+                setEditingQ({ ...editingQ, wrongs: (editingQ.wrongs || []).concat([""]) });
+              }} style={{
+                padding: "4px 10px", borderRadius: 6,
+                background: "transparent", border: "1px dashed " + t.txM,
+                color: t.txM, fontSize: 10, cursor: "pointer",
+              }}>+ {tr("خيار")}</button>
+            </div>
+
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10, marginBottom: 14 }}>
+              <div>
+                <label style={{ fontSize: 11, fontWeight: 700, color: t.tx, display: "block", marginBottom: 6 }}>{tr("التصنيف")}</label>
+                <select value={editingQ.category} onChange={function(e){ setEditingQ({ ...editingQ, category: e.target.value }); }} style={{
+                  width: "100%", padding: "8px 10px", borderRadius: 8,
+                  border: "1px solid " + t.sep, background: t.inp, color: t.tx,
+                  fontSize: 12, fontFamily: "inherit",
+                }}>
+                  {CATEGORIES.map(function(c){ return <option key={c.id} value={c.id}>{c.icon} {c.label}</option>; })}
+                </select>
+              </div>
+              <div>
+                <label style={{ fontSize: 11, fontWeight: 700, color: t.tx, display: "block", marginBottom: 6 }}>{tr("الصعوبة")}</label>
+                <select value={editingQ.difficulty} onChange={function(e){ setEditingQ({ ...editingQ, difficulty: e.target.value }); }} style={{
+                  width: "100%", padding: "8px 10px", borderRadius: 8,
+                  border: "1px solid " + t.sep, background: t.inp, color: t.tx,
+                  fontSize: 12, fontFamily: "inherit",
+                }}>
+                  {DIFFICULTIES.map(function(d){ return <option key={d.id} value={d.id}>{d.label}</option>; })}
+                </select>
+              </div>
+            </div>
+
+            <div style={{ display: "flex", gap: 10 }}>
+              <button onClick={function(){ setEditingQ(null); setAddingNew(false); }} style={{
+                flex: 1, padding: 12, borderRadius: 10,
+                background: t.bg, color: t.tx,
+                border: "1px solid " + t.sep,
+                fontSize: 12, fontWeight: 700, cursor: "pointer", fontFamily: "inherit",
+              }}>{tr("إلغاء")}</button>
+              <button onClick={function(){
+                if (!editingQ.text || !editingQ.correct) {
+                  alert(tr("النص والإجابة الصحيحة مطلوبان"));
+                  return;
+                }
+                saveQuestion(editingQ);
+              }} style={{
+                flex: 2, padding: 12, borderRadius: 10,
+                background: "linear-gradient(135deg, " + B.blue + ", " + B.blueDk + ")",
+                color: "#fff", border: "none",
+                fontSize: 13, fontWeight: 800, cursor: "pointer", fontFamily: "inherit",
+              }}>💾 {tr("حفظ")}</button>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+/* ContentHub */
 function ContentHub({ t, B, emps, branches, events, setEvents, hrQuestions, setHrQuestions, saveSettings, newQ, setNewQ, Fn, Toggle }) {
   var [sub, setSub] = useState("announcements");
   return <div>
@@ -18936,11 +19374,13 @@ function ContentHub({ t, B, emps, branches, events, setEvents, hrQuestions, setH
         { id: "announcements", icon: "📢", label: "التعاميم" },
         { id: "banners",       icon: "🎨", label: "البنرات" },
         { id: "events",        icon: "🎉", label: "المناسبات" },
-        { id: "questions",     icon: "❓", label: "أسئلة الصباح" },
+        { id: "question_bank", icon: "📚", label: "بنك الأسئلة" },
+        { id: "questions",     icon: "❓", label: "أسئلة الصباح (قديم)" },
       ]} />
     {sub === "announcements" && <AnnouncementsPanel t={t} B={B} emps={emps} branches={branches} />}
     {sub === "banners" && <BannersPanel t={t} B={B} />}
     {sub === "events" && <EventsPanel events={events} setEvents={setEvents} t={t} B={B} Fn={Fn} Toggle={Toggle} />}
+    {sub === "question_bank" && <QuestionBankPanel t={t} B={B} />}
     {sub === "questions" && <QuestionsPanel hrQuestions={hrQuestions} setHrQuestions={setHrQuestions} saveSettings={saveSettings} newQ={newQ} setNewQ={setNewQ} t={t} B={B} Fn={Fn} />}
   </div>;
 }
