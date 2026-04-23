@@ -12,7 +12,7 @@ import { t as tr, setLang, getLang, getDir, isRTL, subscribeLangChange } from ".
 
 /* ═══════════ APP CONFIG (إعدادات التطبيق) ═══════════ */
 const APP_CONFIG = {
-  VER: "7.100",
+  VER: "7.106",
   NAME: "بصمة HMA",
   FULL_NAME: "نظام الحضور والانصراف الذكي",
   COMPANY: "هاني محمد عسيري للاستشارات الهندسية",
@@ -3466,6 +3466,11 @@ function RecordsHub({ user, onTicket, myTickets }) {
         <MyRequestsTab user={user} />
       </div>
 
+      {/* v7.103 — Badges & Achievements */}
+      <ProfileAccordion emoji="🏅" title={tr("شاراتي وإنجازاتي")} subtitle={tr("الإنجازات المكتسبة والقادمة")}>
+        <MyBadgesCard user={user} />
+      </ProfileAccordion>
+
       {/* v7.100 E — Leaderboard: top employees by points */}
       <ProfileAccordion emoji="🏆" title={tr("المتصدرون")} subtitle={tr("أعلى الموظفين نقاطاً")}>
         <LeaderboardCard user={user} />
@@ -3647,154 +3652,6 @@ function AchievementsBadgesStrip({ user, stats, loading }) {
   );
 }
 
-/* ── LeaderboardView — rank among colleagues ── */
-function LeaderboardView({ user }) {
-  var [loading, setLoading] = useState(true);
-  var [ranked, setRanked] = useState([]);
-  var [myRank, setMyRank] = useState(null);
-  var [showAll, setShowAll] = useState(false);  // v7.64 — يجب أن يكون قبل أي conditional return (Rules of Hooks)
-
-  useEffect(function(){
-    if (!user || !user.id) return;
-    fetch("/api/data?action=employees")
-      .then(function(r){ return r.json(); })
-      .then(function(emps){
-        var list = Array.isArray(emps) ? emps : [];
-        // Filter active + has points
-        var active = list.filter(function(e){
-          return (e.status !== "terminated" && e.status !== "resigned") && typeof e.points !== "undefined";
-        });
-        // Sort by points descending
-        active.sort(function(a, b){ return (b.points || 0) - (a.points || 0); });
-        // Find user's rank
-        var myIdx = active.findIndex(function(e){ return String(e.id) === String(user.id) || String(e.username) === String(user.username); });
-        setRanked(active);
-        setMyRank(myIdx >= 0 ? myIdx + 1 : null);
-        setLoading(false);
-      })
-      .catch(function(){ setLoading(false); });
-  }, [user && user.id]);
-
-  if (loading) {
-    return <EmptyState text="جارٍ تحميل الترتيب..." />;
-  }
-  if (ranked.length === 0) {
-    return <EmptyState text="لا توجد بيانات ترتيب" />;
-  }
-
-  var topShown = showAll ? ranked.slice(0, 10) : ranked.slice(0, 5);
-  var userInTopShown = myRank && myRank <= topShown.length;
-
-  return (
-    <div>
-      {/* My rank highlight */}
-      {myRank && !userInTopShown && (
-        <div style={{
-          padding: SPACING.md,
-          borderRadius: RADIUS.md,
-          background: "linear-gradient(135deg, rgba(201,168,76,0.15), rgba(232,213,163,0.08))",
-          border: "1px solid " + COLORS.goldLight,
-          marginBottom: SPACING.md,
-          display: "flex", alignItems: "center", gap: SPACING.sm,
-        }}>
-          <div style={{
-            width: 44, height: 44, borderRadius: "50%",
-            background: COLORS.goldGradient,
-            display: "flex", alignItems: "center", justifyContent: "center",
-            fontSize: 16, fontWeight: 900, color: COLORS.textOnGold,
-            flexShrink: 0,
-          }}>{myRank}</div>
-          <div style={{ flex: 1 }}>
-            <div style={{ fontSize: 11, color: COLORS.textMuted, fontWeight: 700, fontFamily: TYPOGRAPHY.fontTajawal }}>ترتيبك الحالي</div>
-            <div style={{ fontSize: 14, color: COLORS.textPrimary, fontWeight: 900, fontFamily: TYPOGRAPHY.fontCairo }}>{user.name}</div>
-          </div>
-          <div style={{ textAlign: "left" }}>
-            <div style={{ fontSize: 18, fontWeight: 900, color: COLORS.goldLight, fontFamily: TYPOGRAPHY.fontCairo, lineHeight: 1 }}>{(user.points || 0).toLocaleString("ar-SA")}</div>
-            <div style={{ fontSize: 9, color: COLORS.textMuted, marginTop: 2 }}>نقطة</div>
-          </div>
-        </div>
-      )}
-
-      {/* v7.58 — Top 5 (or 10 when expanded) */}
-      <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-        {topShown.map(function(e, i){
-          var rank = i + 1;
-          var isMe = String(e.id) === String(user.id) || String(e.username) === String(user.username);
-          var rankColor = rank === 1 ? "#FFD700" : rank === 2 ? "#C0C0C0" : rank === 3 ? "#CD7F32" : COLORS.textMuted;
-          var rankIcon = rank === 1 ? "🥇" : rank === 2 ? "🥈" : rank === 3 ? "🥉" : null;
-          return (
-            <div key={e.id || i} style={{
-              display: "flex", alignItems: "center", gap: SPACING.sm,
-              padding: "10px 12px",
-              borderRadius: RADIUS.md,
-              background: isMe ? "rgba(201,168,76,0.12)" : "rgba(255,255,255,0.03)",
-              border: "1px solid " + (isMe ? COLORS.goldLight : COLORS.metallicBorder),
-            }}>
-              <div style={{
-                width: 32, height: 32, borderRadius: "50%",
-                background: rank <= 3 ? rankColor + "25" : "rgba(255,255,255,0.05)",
-                border: "1px solid " + (rank <= 3 ? rankColor : COLORS.metallicBorder),
-                display: "flex", alignItems: "center", justifyContent: "center",
-                fontSize: rankIcon ? 16 : 12, fontWeight: 900,
-                color: rank <= 3 ? rankColor : COLORS.textSecondary,
-                flexShrink: 0,
-              }}>
-                {rankIcon || rank}
-              </div>
-              <div style={{ flex: 1, minWidth: 0 }}>
-                <div style={{
-                  fontSize: 12, fontWeight: isMe ? 900 : 700,
-                  color: isMe ? COLORS.goldLight : COLORS.textPrimary,
-                  fontFamily: TYPOGRAPHY.fontTajawal,
-                  overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap",
-                }}>
-                  {e.name || e.username || "—"}
-                  {isMe && <span style={{ fontSize: 9, fontWeight: 800, color: COLORS.goldLight, marginInlineStart: 6, padding: "1px 6px", borderRadius: RADIUS.pill, background: "rgba(201,168,76,0.25)", border: "1px solid " + COLORS.goldLight }}>أنت</span>}
-                </div>
-                {e.role && <div style={{ fontSize: 9, color: COLORS.textMuted, marginTop: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{e.role}</div>}
-              </div>
-              <div style={{ textAlign: "left", flexShrink: 0 }}>
-                <div style={{ fontSize: 14, fontWeight: 900, color: isMe ? COLORS.goldLight : COLORS.textPrimary, fontFamily: TYPOGRAPHY.fontCairo, lineHeight: 1 }}>{(e.points || 0).toLocaleString("ar-SA")}</div>
-                <div style={{ fontSize: 8, color: COLORS.textMuted, marginTop: 2 }}>نقطة</div>
-              </div>
-            </div>
-          );
-        })}
-      </div>
-
-      {/* v7.58 — زر "إظهار المزيد" يظهر فقط عند وجود أكثر من 5 موظفين */}
-      {!showAll && ranked.length > 5 && (
-        <button
-          onClick={function(){ setShowAll(true); }}
-          style={{
-            width: "100%",
-            marginTop: SPACING.sm,
-            padding: "10px",
-            borderRadius: RADIUS.md,
-            background: "rgba(201,168,76,0.12)",
-            border: "1px solid " + COLORS.goldLight,
-            color: COLORS.goldLight,
-            fontSize: 12, fontWeight: 800,
-            cursor: "pointer",
-            fontFamily: TYPOGRAPHY.fontTajawal,
-          }}
-        >
-          ⬇️ إظهار المزيد ({ranked.length - 5}+)
-        </button>
-      )}
-      {showAll && ranked.length > 10 && (
-        <div style={{ marginTop: SPACING.sm, textAlign: "center", fontSize: 10, color: COLORS.textMuted, fontStyle: "italic" }}>
-          عرض أعلى 10 من أصل {ranked.length}
-        </div>
-      )}
-
-      {/* Total count footer */}
-      <div style={{ marginTop: SPACING.md, textAlign: "center", fontSize: 10, color: COLORS.textMuted, fontFamily: TYPOGRAPHY.fontTajawal }}>
-        إجمالي الموظفين في الترتيب: <strong style={{ color: COLORS.goldLight }}>{ranked.length}</strong>
-      </div>
-    </div>
-  );
-}
 
 /* v7.51 — Helper مشترك لحساب إحصائيات الإنجازات (كان مكرر في AchievementsHub + AchievementsCard) */
 function computeAchievementStats(att, tl, user) {
@@ -3888,10 +3745,10 @@ function AchievementsHub({ user }) {
         <PointsLogCard user={user} allAtt={[]} />
       </div>
 
-      {/* v7.50 — Leaderboard as open list (accordion removed) */}
+      {/* v7.50 → v7.106 unified with LeaderboardCard (removed duplicate) */}
       <div style={{ background: COLORS.metallic, border: "1px solid " + COLORS.metallicBorder, borderRadius: RADIUS.xl, padding: SPACING.lg, boxShadow: SHADOWS.button }}>
         <SectionHeader emoji="📊" title="ترتيبي بين الزملاء" />
-        <LeaderboardView user={user} />
+        <LeaderboardCard user={user} />
       </div>
     </div>
   );
@@ -16623,6 +16480,181 @@ function MembershipFreezeNotice({ user }) {
 }
 
 /* ═══════════ BRANCH HOLIDAYS (الإجازات الرسمية لكل فرع) ═══════════ */
+/* ═════════════════════════════════════════════════════════════════
+ * v7.103 — MyBadgesCard — شارات وإنجازات الموظف
+ * ═════════════════════════════════════════════════════════════════ */
+function MyBadgesCard({ user }) {
+  var [data, setData] = useState(null);
+  var [loading, setLoading] = useState(true);
+  var [error, setError] = useState(null);
+  var [activeTab, setActiveTab] = useState("earned"); // earned | progress
+
+  useEffect(function(){
+    setLoading(true);
+    fetch("/api/data?action=my-badges&empId=" + encodeURIComponent(user.id))
+      .then(function(r){ return r.json(); })
+      .then(function(d){
+        if (d.ok) setData(d);
+        else setError(d.error || tr("فشل التحميل"));
+        setLoading(false);
+      })
+      .catch(function(e){
+        setError(tr("فشل الاتصال"));
+        setLoading(false);
+      });
+  }, []);
+
+  if (loading) {
+    return <div style={{ padding: 20, textAlign: "center", color: COLORS.textMuted, fontSize: 11 }}>⏳ {tr("جاري التحميل...")}</div>;
+  }
+  if (error) {
+    return <div style={{ padding: 14, background: "rgba(239,68,68,0.08)", borderRadius: 10, color: "#ef4444", fontSize: 11, textAlign: "center" }}>⚠️ {error}</div>;
+  }
+  if (!data) return null;
+
+  var categoryColors = {
+    attendance: { bg: "rgba(43,94,167,0.15)", color: "#2B5EA7" },
+    punctuality: { bg: "rgba(16,185,129,0.15)", color: "#10B981" },
+    streak: { bg: "rgba(249,115,22,0.15)", color: "#F97316" },
+    engagement: { bg: "rgba(245,158,11,0.15)", color: "#F59E0B" },
+    challenges: { bg: "rgba(124,58,237,0.15)", color: "#7C3AED" },
+    discipline: { bg: "rgba(5,150,105,0.15)", color: "#059669" },
+  };
+
+  return (
+    <div>
+      {/* Level card */}
+      <div style={{
+        background: "linear-gradient(135deg, " + COLORS.goldMedium + "25, " + COLORS.goldLight + "15)",
+        border: "1px solid " + COLORS.goldMedium + "50",
+        borderRadius: 14, padding: "14px 16px", marginBottom: 12,
+        display: "flex", alignItems: "center", gap: 14,
+      }}>
+        <div style={{
+          width: 56, height: 56, borderRadius: "50%",
+          background: "linear-gradient(135deg, " + COLORS.goldMedium + ", " + COLORS.goldLight + ")",
+          color: "#fff",
+          display: "flex", alignItems: "center", justifyContent: "center",
+          fontSize: 22, fontWeight: 900,
+          boxShadow: "0 4px 12px rgba(201,168,76,0.3)",
+        }}>L{data.level}</div>
+        <div style={{ flex: 1 }}>
+          <div style={{ fontSize: 13, fontWeight: 900, color: COLORS.goldLight }}>{tr("المستوى")} {data.level} / 10</div>
+          <div style={{ fontSize: 10, color: COLORS.textMuted, marginTop: 3 }}>
+            {data.earnedCount} / {data.totalBadges} {tr("شارة مكتسبة")}
+          </div>
+          <div style={{ marginTop: 6, height: 6, background: COLORS.metallic, borderRadius: 3, overflow: "hidden" }}>
+            <div style={{
+              height: "100%",
+              width: Math.round((data.earnedCount / data.totalBadges) * 100) + "%",
+              background: "linear-gradient(90deg, " + COLORS.goldMedium + ", " + COLORS.goldLight + ")",
+              transition: "width 0.5s",
+            }} />
+          </div>
+        </div>
+      </div>
+
+      {/* Tabs */}
+      <div style={{ display: "flex", gap: 6, marginBottom: 12 }}>
+        <button onClick={function(){ setActiveTab("earned"); }} style={{
+          flex: 1, padding: "8px 12px", borderRadius: 8,
+          background: activeTab === "earned" ? COLORS.goldMedium : COLORS.metallic,
+          color: activeTab === "earned" ? "#fff" : COLORS.textPrimary,
+          border: "1px solid " + (activeTab === "earned" ? COLORS.goldMedium : COLORS.metallicBorder),
+          fontSize: 11, fontWeight: 700, cursor: "pointer",
+          fontFamily: TYPOGRAPHY.fontTajawal,
+        }}>✨ {tr("مكتسبة")} ({data.earnedCount})</button>
+        <button onClick={function(){ setActiveTab("progress"); }} style={{
+          flex: 1, padding: "8px 12px", borderRadius: 8,
+          background: activeTab === "progress" ? COLORS.goldMedium : COLORS.metallic,
+          color: activeTab === "progress" ? "#fff" : COLORS.textPrimary,
+          border: "1px solid " + (activeTab === "progress" ? COLORS.goldMedium : COLORS.metallicBorder),
+          fontSize: 11, fontWeight: 700, cursor: "pointer",
+          fontFamily: TYPOGRAPHY.fontTajawal,
+        }}>🎯 {tr("قادمة")} ({data.inProgress.length})</button>
+      </div>
+
+      {/* Earned badges */}
+      {activeTab === "earned" && (
+        <div>
+          {data.earned.length === 0 ? (
+            <div style={{ padding: 30, textAlign: "center", color: COLORS.textMuted }}>
+              <div style={{ fontSize: 40, marginBottom: 8 }}>🎯</div>
+              <div style={{ fontSize: 12 }}>{tr("لم تكتسب شارات بعد")}</div>
+              <div style={{ fontSize: 10, marginTop: 4, opacity: 0.7 }}>{tr("واصل الحضور والتفاعل لكسب أول شارة!")}</div>
+            </div>
+          ) : (
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(2, 1fr)", gap: 8 }}>
+              {data.earned.map(function(b){
+                var c = categoryColors[b.category] || categoryColors.attendance;
+                return <div key={b.id} style={{
+                  padding: "14px 10px",
+                  background: c.bg,
+                  border: "1px solid " + c.color + "40",
+                  borderRadius: 12, textAlign: "center",
+                }}>
+                  <div style={{ fontSize: 32, marginBottom: 6 }}>{b.icon}</div>
+                  <div style={{ fontSize: 11, fontWeight: 800, color: c.color }}>{b.name}</div>
+                  <div style={{ fontSize: 9, color: COLORS.textMuted, marginTop: 3, lineHeight: 1.4 }}>{b.desc}</div>
+                </div>;
+              })}
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* In progress */}
+      {activeTab === "progress" && (
+        <div>
+          {data.inProgress.length === 0 ? (
+            <div style={{ padding: 30, textAlign: "center", color: COLORS.textMuted }}>
+              <div style={{ fontSize: 40, marginBottom: 8 }}>👑</div>
+              <div style={{ fontSize: 12, fontWeight: 700 }}>{tr("رائع! حصلت على جميع الشارات")}</div>
+            </div>
+          ) : (
+            <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+              {data.inProgress.map(function(b){
+                var c = categoryColors[b.category] || categoryColors.attendance;
+                return <div key={b.id} style={{
+                  padding: "10px 12px",
+                  background: COLORS.metallic,
+                  border: "1px solid " + COLORS.metallicBorder,
+                  borderRadius: 10,
+                }}>
+                  <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 6 }}>
+                    <div style={{
+                      width: 36, height: 36, borderRadius: 8,
+                      background: c.bg, color: c.color,
+                      display: "flex", alignItems: "center", justifyContent: "center",
+                      fontSize: 20, filter: "grayscale(0.5)", opacity: 0.7,
+                    }}>{b.icon}</div>
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <div style={{ fontSize: 11, fontWeight: 800, color: COLORS.textPrimary }}>{b.name}</div>
+                      <div style={{ fontSize: 9, color: COLORS.textMuted, marginTop: 2 }}>{b.desc}</div>
+                    </div>
+                    <div style={{ fontSize: 12, fontWeight: 900, color: c.color }}>{b.progress}%</div>
+                  </div>
+                  <div style={{ height: 5, background: COLORS.metallicBorder, borderRadius: 3, overflow: "hidden" }}>
+                    <div style={{
+                      height: "100%",
+                      width: b.progress + "%",
+                      background: "linear-gradient(90deg, " + c.color + ", " + c.color + "cc)",
+                      transition: "width 0.5s",
+                    }} />
+                  </div>
+                  <div style={{ fontSize: 9, color: COLORS.textMuted, marginTop: 4, textAlign: "left" }}>
+                    {b.current} / {b.threshold}
+                  </div>
+                </div>;
+              })}
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
 /* ═════════════════════════════════════════════════════════════════
  * v7.100 E — LeaderboardCard — المتصدرون (top 10 by points)
  * ═════════════════════════════════════════════════════════════════ */

@@ -4423,6 +4423,145 @@ export default async function handler(req, res) {
         break;
       }
 
+      /* ═══════════════════════════════════════════════════════════════
+       * v7.106 — MIGRATE violations (v1) → violations_v2 (CLEANUP)
+       * ═══════════════════════════════════════════════════════════════
+       * POST /api/data?action=migrate-violations
+       * Body: { mode: "dry_run" | "execute", actorId? }
+       *
+       * Steps:
+       *   1. Read all from 'violations' (old)
+       *   2. Read all from 'violations_v2' (new)
+       *   3. Convert old format to new format
+       *   4. Check for conflicts (same ID in both)
+       *   5. Merge into violations_v2
+       *   6. Create backup in 'violations_backup_YYYYMMDD'
+       *   7. DO NOT delete old 'violations' key (safety net)
+       *
+       * Idempotent: safe to run multiple times (skips already-migrated items)
+       */
+      case 'migrate-violations': {
+        if (req.method !== 'POST') return res.status(405).json({ error: 'POST required' });
+        var bodyMV = req.body || {};
+        var modeMV = bodyMV.mode || 'dry_run';
+        var actorMV = bodyMV.actorId || 'admin';
+
+        var oldViolations = (await dbGet('violations')) || [];
+        var newViolations = (await dbGet('violations_v2')) || [];
+
+        // Create lookup map for v2 (by original id)
+        var existingIdsV2 = new Set();
+        newViolations.forEach(function(v){
+          if (v.id) existingIdsV2.add(String(v.id));
+          if (v.migratedFromV1) existingIdsV2.add(String(v.migratedFromV1));
+        });
+
+        // Convert old → new format
+        function convertOldToNew(oldV) {
+          return {
+            id: oldV.id || 'VIO_MIG_' + Date.now() + Math.random().toString(36).slice(2, 6),
+            migratedFromV1: oldV.id,        // track original
+            empId: oldV.empId,
+            empName: oldV.empName || '',
+            violationId: oldV.violationId || oldV.type || 'legacy',
+            chapter: oldV.chapter || 'legacy',
+            desc: oldV.desc || oldV.details || '',
+            status: oldV.status === 'open' ? 'ACTIVE' : (oldV.status === 'closed' ? 'RESOLVED' : (oldV.status || 'ACTIVE')),
+            occurrence: oldV.occurrence || 1,
+            penalty: oldV.penalty || 'UNKNOWN',
+            penaltyKey: oldV.penaltyKey || 'first',
+            createdAt: oldV.ts || oldV.createdAt || new Date().toISOString(),
+            createdBy: oldV.createdBy || 'legacy-migration',
+            type: oldV.type,
+            details: oldV.details,
+            // Preserve any legacy fields
+            _legacyData: {
+              originalStatus: oldV.status,
+              originalType: oldV.type,
+            },
+          };
+        }
+
+        var toMigrate = oldViolations.filter(function(v){
+          return !existingIdsV2.has(String(v.id));
+        });
+
+        var alreadyMigrated = oldViolations.length - toMigrate.length;
+
+        // Dry run: just return what WOULD happen
+        if (modeMV === 'dry_run') {
+          return res.json({
+            ok: true,
+            mode: 'dry_run',
+            analysis: {
+              oldCount: oldViolations.length,
+              newCount: newViolations.length,
+              alreadyMigrated: alreadyMigrated,
+              willMigrate: toMigrate.length,
+              sample: toMigrate.slice(0, 3).map(function(v){
+                return {
+                  id: v.id,
+                  empId: v.empId,
+                  type: v.type,
+                  status: v.status,
+                  ts: v.ts,
+                };
+              }),
+            },
+          });
+        }
+
+        // Execute: perform migration
+        if (modeMV !== 'execute') {
+          return res.status(400).json({ error: 'mode must be "dry_run" or "execute"' });
+        }
+
+        if (toMigrate.length === 0) {
+          return res.json({
+            ok: true,
+            mode: 'execute',
+            migrated: 0,
+            alreadyMigrated: alreadyMigrated,
+            message: 'لا توجد بيانات جديدة للنقل — كل شيء متزامن',
+          });
+        }
+
+        // 1) Create timestamped backup
+        var backupKey = 'violations_backup_' + new Date().toISOString().slice(0, 10).replace(/-/g, '');
+        await dbSet(backupKey, {
+          ts: new Date().toISOString(),
+          byActor: actorMV,
+          originalViolations: oldViolations,
+          originalViolationsV2: newViolations,
+          note: 'Automatic backup before v7.106 migration',
+        });
+
+        // 2) Convert and merge
+        var convertedNew = toMigrate.map(convertOldToNew);
+        var merged = newViolations.concat(convertedNew);
+
+        // 3) Save to violations_v2
+        await dbSet('violations_v2', merged);
+
+        // 4) Audit log
+        await auditLog(actorMV, 'migrate_violations_v1_to_v2', null, {
+          oldCount: oldViolations.length,
+          migrated: convertedNew.length,
+          alreadyMigrated: alreadyMigrated,
+          backupKey: backupKey,
+        }, 'admin');
+
+        return res.json({
+          ok: true,
+          mode: 'execute',
+          migrated: convertedNew.length,
+          alreadyMigrated: alreadyMigrated,
+          totalInV2: merged.length,
+          backupKey: backupKey,
+          message: 'تم النقل بنجاح! البيانات القديمة محفوظة كنسخة احتياطية.',
+        });
+      }
+
       case 'violations': {
         if (req.method === 'GET') {
           let vs = await dbGet('violations') || [];
@@ -9728,7 +9867,7 @@ export default async function handler(req, res) {
 
         // 2) Push payroll slips
         if (types.indexOf('payroll') >= 0) {
-          var slipsKP = (await dbGet('payroll_slips')) || [];
+          var slipsKP = (await dbGet('payroll-slips')) || [];
           var pendingSlipsKP = slipsKP.filter(function(s){
             if (s.kadwarSynced) return false;
             if (filterIds && filterIds.indexOf(String(s.empId)) < 0) return false;
@@ -9760,7 +9899,7 @@ export default async function handler(req, res) {
             }
           }
           if (summary.payroll.sent > 0) {
-            await dbSet('payroll_slips', slipsKP);
+            await dbSet('payroll-slips', slipsKP);
           }
         }
 
@@ -9826,6 +9965,686 @@ export default async function handler(req, res) {
        * v7.99 — Get pending Kadwar push count (for dashboard badge)
        * GET /api/data?action=kadwar-pending-count
        */
+      /* ═══════════════════════════════════════════════════════════════
+       * v7.105 — BULK SALARY SHEET GENERATION
+       * ═══════════════════════════════════════════════════════════════
+       * POST /api/data?action=generate-salary-sheet
+       * Body: { period: "YYYY-MM", empIds?: [...], actorId? }
+       *
+       * Generates payroll slips for all (or selected) active employees,
+       * computing salary based on attendance, benefits, and deductions.
+       */
+      case 'generate-salary-sheet': {
+        if (req.method !== 'POST') return res.status(405).json({ error: 'POST required' });
+        var bodyGS = req.body || {};
+        var periodGS = bodyGS.period; // YYYY-MM
+        var empIdsFilter = Array.isArray(bodyGS.empIds) ? bodyGS.empIds.map(String) : null;
+        var actorGS = bodyGS.actorId || 'admin';
+
+        if (!periodGS || !/^\d{4}-\d{2}$/.test(periodGS)) {
+          return res.status(400).json({ error: 'period required (YYYY-MM)' });
+        }
+
+        var empsGS = (await dbGet('employees')) || [];
+        var targetsGS = empsGS.filter(function(e){
+          if (e.active === false || e.terminated) return false;
+          if (empIdsFilter && empIdsFilter.indexOf(String(e.id)) < 0) return false;
+          return true;
+        });
+
+        var attGS = (await dbGet('attendance')) || [];
+        var existingSlips = (await dbGet('payroll-slips')) || [];
+
+        // Calculate period boundaries
+        var [yearGS, monthGS] = periodGS.split('-');
+        var lastDayGS = new Date(parseInt(yearGS), parseInt(monthGS), 0).getDate();
+        var periodStart = periodGS + '-01';
+        var periodEnd = periodGS + '-' + String(lastDayGS).padStart(2, '0');
+
+        // Get work days in period (respects holidays)
+        var workDaysResult = await calculateWorkDays(periodStart, periodEnd);
+        var totalWorkDays = workDaysResult.workDays;
+
+        var generated = 0;
+        var skipped = 0;
+        var errors = [];
+        var newSlips = [];
+
+        for (var iGS = 0; iGS < targetsGS.length; iGS++) {
+          var empGS = targetsGS[iGS];
+
+          // Check if slip already exists for this period
+          var existingSlip = existingSlips.find(function(s){
+            return String(s.empId) === String(empGS.id) && s.period === periodGS;
+          });
+          if (existingSlip) {
+            skipped++;
+            continue;
+          }
+
+          try {
+            // Count attendance days in period
+            var empAttGS = attGS.filter(function(a){
+              return String(a.empId) === String(empGS.id) &&
+                     a.type === 'checkin' &&
+                     a.date >= periodStart && a.date <= periodEnd;
+            });
+            var presentDays = new Set(empAttGS.map(function(a){ return a.date; })).size;
+            var absentDays = Math.max(0, totalWorkDays - presentDays);
+            var attRateGS = totalWorkDays > 0 ? presentDays / totalWorkDays : 1;
+
+            // Get employee profile
+            var profileGS = {
+              compensation: empGS.compensation || {},
+              jobGrade: empGS.jobGrade || {},
+            };
+
+            // Compute salary
+            var computation = computeMonthlySalary(
+              profileGS,
+              {},
+              {},
+              { presentDays: presentDays, totalDays: totalWorkDays, absentDays: absentDays },
+              { startISO: periodStart, endISO: periodEnd }
+            );
+
+            var slipId = 'SLIP_' + empGS.id + '_' + periodGS + '_' + Date.now().toString(36);
+
+            newSlips.push({
+              id: slipId,
+              empId: empGS.id,
+              empName: empGS.name,
+              period: periodGS,
+              generatedAt: new Date().toISOString(),
+              generatedBy: actorGS,
+              presentDays: presentDays,
+              absentDays: absentDays,
+              totalWorkDays: totalWorkDays,
+              attendanceRate: Math.round(attRateGS * 100),
+              computation: computation,
+              gross: computation.gross || 0,
+              deductions: computation.deductions || 0,
+              net: computation.net || 0,
+              kadwarSynced: false,
+            });
+
+            generated++;
+          } catch(e) {
+            errors.push({ empId: empGS.id, empName: empGS.name, error: e.message });
+          }
+        }
+
+        // Save all new slips
+        if (newSlips.length > 0) {
+          var updatedSlips = existingSlips.concat(newSlips);
+          await dbSet('payroll-slips', updatedSlips);
+        }
+
+        // Audit log
+        await auditLog(actorGS, 'bulk_salary_generation', null, {
+          period: periodGS,
+          targets: targetsGS.length,
+          generated: generated,
+          skipped: skipped,
+          errors: errors.length,
+        }, 'admin');
+
+        return res.json({
+          ok: true,
+          period: periodGS,
+          summary: {
+            totalTargets: targetsGS.length,
+            generated: generated,
+            skipped: skipped,
+            errors: errors.length,
+            totalWorkDays: totalWorkDays,
+          },
+          errors: errors.slice(0, 10),  // first 10 errors only
+          newSlipsIds: newSlips.map(function(s){ return s.id; }).slice(0, 20),
+        });
+      }
+
+      /* ═══════════════════════════════════════════════════════════════
+       * v7.105 — LIST SALARY SHEETS (by period)
+       * GET /api/data?action=list-salary-sheets&period=YYYY-MM
+       */
+      case 'list-salary-sheets': {
+        var periodLS = req.query.period;
+        var slipsLS = (await dbGet('payroll-slips')) || [];
+
+        var filtered = periodLS
+          ? slipsLS.filter(function(s){ return s.period === periodLS; })
+          : slipsLS;
+
+        // Sort by generated date desc
+        filtered.sort(function(a, b){
+          return new Date(b.generatedAt || 0) - new Date(a.generatedAt || 0);
+        });
+
+        // Summary
+        var totalGross = filtered.reduce(function(sum, s){ return sum + (s.gross || 0); }, 0);
+        var totalDeductions = filtered.reduce(function(sum, s){ return sum + (s.deductions || 0); }, 0);
+        var totalNet = filtered.reduce(function(sum, s){ return sum + (s.net || 0); }, 0);
+        var unsynced = filtered.filter(function(s){ return !s.kadwarSynced; }).length;
+
+        return res.json({
+          ok: true,
+          period: periodLS,
+          slips: filtered.slice(0, 200),
+          summary: {
+            count: filtered.length,
+            totalGross: totalGross,
+            totalDeductions: totalDeductions,
+            totalNet: totalNet,
+            unsynced: unsynced,
+          },
+        });
+      }
+
+      /* ═══════════════════════════════════════════════════════════════
+       * v7.104 — CROSS-BRANCH ANALYTICS
+       * ═══════════════════════════════════════════════════════════════
+       * GET /api/data?action=branch-analytics
+       * Returns comparative performance data per branch
+       */
+      case 'branch-analytics': {
+        var empsBX = (await dbGet('employees')) || [];
+        var attBX = (await dbGet('attendance')) || [];
+        var violsBX = (await dbGet('violations_v2')) || [];
+        var branchesBX = (await dbGet('branches')) || [];
+        var leavesBX = (await dbGet('leaves')) || [];
+
+        var thisMonthBX = new Date().toISOString().slice(0, 7);
+
+        // Group by branch
+        var branchStats = branchesBX.map(function(b){
+          var branchEmps = empsBX.filter(function(e){
+            if (e.active === false || e.terminated) return false;
+            return e.branchId === b.id || e.branch === b.id || e.branch === b.name;
+          });
+          var empIds = branchEmps.map(function(e){ return String(e.id); });
+
+          // Attendance this month
+          var monthAttBX = attBX.filter(function(a){
+            return a.date && a.date.startsWith(thisMonthBX) &&
+                   empIds.indexOf(String(a.empId)) >= 0;
+          });
+          var checkins = monthAttBX.filter(function(a){ return a.type === 'checkin'; });
+          var uniqueDaysPresent = new Set(checkins.map(function(a){ return a.date + '_' + a.empId; })).size;
+          var workDaysCount = new Set(checkins.map(function(a){ return a.date; })).size || 1;
+          var expectedDays = branchEmps.length * workDaysCount;
+          var attRate = expectedDays > 0 ? Math.round((uniqueDaysPresent / expectedDays) * 100) : 0;
+
+          var lateCount = checkins.filter(function(a){ return a.late; }).length;
+
+          // Violations this month
+          var monthViolBX = violsBX.filter(function(v){
+            if (empIds.indexOf(String(v.empId)) < 0) return false;
+            return v.date && v.date.startsWith(thisMonthBX);
+          });
+
+          // Leaves this month
+          var monthLeavesBX = leavesBX.filter(function(l){
+            if (l.status !== 'approved') return false;
+            if (empIds.indexOf(String(l.empId)) < 0) return false;
+            if (!l.startDate) return false;
+            return l.startDate.startsWith(thisMonthBX) || (l.endDate && l.endDate.startsWith(thisMonthBX));
+          });
+
+          // Total points
+          var totalPoints = branchEmps.reduce(function(sum, e){ return sum + (e.points || 0); }, 0);
+          var avgPoints = branchEmps.length > 0 ? Math.round(totalPoints / branchEmps.length) : 0;
+
+          // Today's attendance (check-ins)
+          var todayBX = new Date().toISOString().slice(0, 10);
+          var todayCheckins = attBX.filter(function(a){
+            return a.date === todayBX && a.type === 'checkin' &&
+                   empIds.indexOf(String(a.empId)) >= 0;
+          }).length;
+
+          return {
+            id: b.id,
+            name: b.name,
+            employees: branchEmps.length,
+            presentToday: todayCheckins,
+            presentRate: branchEmps.length > 0 ? Math.round((todayCheckins / branchEmps.length) * 100) : 0,
+            attendanceRate: attRate,
+            lateCount: lateCount,
+            violations: monthViolBX.length,
+            openViolations: monthViolBX.filter(function(v){ return v.status === 'open'; }).length,
+            leavesThisMonth: monthLeavesBX.length,
+            totalPoints: totalPoints,
+            avgPoints: avgPoints,
+          };
+        });
+
+        // Rank branches by score (composite)
+        branchStats.forEach(function(b){
+          // Composite score: attendance 40% + low violations 30% + engagement 30%
+          var attScore = b.attendanceRate;
+          var violPenalty = Math.min(30, b.openViolations * 5);
+          var pointsScore = Math.min(30, b.avgPoints / 10);
+          b.score = Math.max(0, Math.min(100, Math.round(attScore * 0.4 + (30 - violPenalty) + pointsScore * 0.3)));
+        });
+
+        // Sort by score descending
+        branchStats.sort(function(a, b){ return b.score - a.score; });
+        branchStats.forEach(function(b, i){ b.rank = i + 1; });
+
+        return res.json({
+          ok: true,
+          period: thisMonthBX,
+          branches: branchStats,
+          summary: {
+            totalBranches: branchStats.length,
+            bestBranch: branchStats.length > 0 ? branchStats[0].name : null,
+            worstBranch: branchStats.length > 0 ? branchStats[branchStats.length - 1].name : null,
+          },
+        });
+      }
+
+      /* ═══════════════════════════════════════════════════════════════
+       * v7.103 — BADGES / ACHIEVEMENTS SYSTEM
+       * ═══════════════════════════════════════════════════════════════
+       * GET /api/data?action=my-badges&empId=X
+       * Returns: list of earned + next badges for the employee
+       */
+      case 'my-badges': {
+        if (req.method !== 'GET') return res.status(405).json({ error: 'GET required' });
+        var empIdMB = req.query.empId;
+        if (!empIdMB) return res.status(400).json({ error: 'empId required' });
+
+        var empsMB = (await dbGet('employees')) || [];
+        var empMB = empsMB.find(function(e){ return String(e.id) === String(empIdMB); });
+        if (!empMB) return res.status(404).json({ error: 'employee not found' });
+
+        var attMB = (await dbGet('attendance')) || [];
+        var empAttMB = attMB.filter(function(a){ return String(a.empId) === String(empIdMB); });
+
+        var violsMB = (await dbGet('violations_v2')) || [];
+        var empViolsMB = violsMB.filter(function(v){ return String(v.empId) === String(empIdMB); });
+
+        var flashStoreMB = (await dbGet('flash_challenges')) || { items: [] };
+        var flashResponsesMB = 0;
+        var flashCorrectMB = 0;
+        (flashStoreMB.items || []).forEach(function(f){
+          if (f.responses && f.responses[empIdMB]) {
+            flashResponsesMB++;
+            if (f.responses[empIdMB].correct) flashCorrectMB++;
+          }
+        });
+
+        // Calculate metrics
+        var totalCheckins = empAttMB.filter(function(a){ return a.type === 'checkin'; }).length;
+        var earlyCheckins = empAttMB.filter(function(a){ return a.type === 'checkin' && !a.late; }).length;
+        var lateCheckins = empAttMB.filter(function(a){ return a.type === 'checkin' && a.late; }).length;
+        var points = empMB.points || 0;
+        var streak = empMB.streak || 0;
+        var violationsCount = empViolsMB.length;
+        var openViolations = empViolsMB.filter(function(v){ return v.status === 'open'; }).length;
+
+        // Define all badges
+        var BADGES = [
+          // Attendance-based
+          { id: 'first_day',       icon: '🎯', name: 'يوم البداية',         desc: 'أول يوم حضور',              threshold: 1,   current: totalCheckins, category: 'attendance' },
+          { id: 'week_warrior',    icon: '📅', name: 'مقاتل الأسبوع',       desc: '7 أيام حضور',               threshold: 7,   current: totalCheckins, category: 'attendance' },
+          { id: 'month_master',    icon: '🗓️', name: 'سيد الشهر',          desc: '30 يوم حضور',               threshold: 30,  current: totalCheckins, category: 'attendance' },
+          { id: 'century',         icon: '💯', name: 'المئة الأولى',        desc: '100 يوم حضور',              threshold: 100, current: totalCheckins, category: 'attendance' },
+          { id: 'year_legend',     icon: '🏆', name: 'أسطورة السنة',       desc: '250 يوم حضور',              threshold: 250, current: totalCheckins, category: 'attendance' },
+
+          // Punctuality
+          { id: 'on_time_10',      icon: '⏰', name: 'ملتزم',               desc: '10 أيام حضور مبكر',          threshold: 10,  current: earlyCheckins, category: 'punctuality' },
+          { id: 'on_time_50',      icon: '⚡', name: 'سريع البرق',          desc: '50 يوم حضور مبكر',           threshold: 50,  current: earlyCheckins, category: 'punctuality' },
+          { id: 'perfect_month',   icon: '💎', name: 'الشهر المثالي',       desc: 'شهر بدون تأخير',             threshold: 1,   current: (lateCheckins === 0 && totalCheckins >= 20) ? 1 : 0, category: 'punctuality' },
+
+          // Streak
+          { id: 'streak_7',        icon: '🔥', name: 'سلسلة 7 أيام',         desc: 'حضور متواصل 7 أيام',        threshold: 7,   current: streak, category: 'streak' },
+          { id: 'streak_30',       icon: '🌟', name: 'سلسلة 30 يوم',        desc: 'حضور متواصل 30 يوم',        threshold: 30,  current: streak, category: 'streak' },
+          { id: 'streak_100',      icon: '👑', name: 'ملك السلسلة',         desc: 'حضور متواصل 100 يوم',        threshold: 100, current: streak, category: 'streak' },
+
+          // Points
+          { id: 'points_100',      icon: '⭐', name: 'متفاعل',              desc: 'كسب 100 نقطة',               threshold: 100, current: points, category: 'engagement' },
+          { id: 'points_500',      icon: '🌟', name: 'نجم التفاعل',         desc: 'كسب 500 نقطة',               threshold: 500, current: points, category: 'engagement' },
+          { id: 'points_1000',     icon: '💫', name: 'ممتاز',                desc: 'كسب 1000 نقطة',              threshold: 1000, current: points, category: 'engagement' },
+
+          // Challenges
+          { id: 'quiz_starter',    icon: '🎓', name: 'مبتدئ الأسئلة',       desc: 'الإجابة على 5 تحديات',       threshold: 5,   current: flashResponsesMB, category: 'challenges' },
+          { id: 'quiz_expert',     icon: '🧠', name: 'خبير الأسئلة',        desc: 'الإجابة على 50 تحدي',        threshold: 50,  current: flashResponsesMB, category: 'challenges' },
+          { id: 'perfect_quiz',    icon: '✨', name: 'إجابات دقيقة',         desc: '10 إجابات صحيحة متتالية',   threshold: 10,  current: flashCorrectMB, category: 'challenges' },
+
+          // Discipline
+          { id: 'clean_record',    icon: '🛡️', name: 'سجل نظيف',            desc: 'بدون مخالفات',              threshold: 1,   current: violationsCount === 0 ? 1 : 0, category: 'discipline' },
+          { id: 'no_open_viol',    icon: '✅', name: 'قدوة',                desc: 'لا مخالفات مفتوحة',          threshold: 1,   current: openViolations === 0 ? 1 : 0, category: 'discipline' },
+        ];
+
+        // Classify: earned vs in-progress
+        var earned = BADGES.filter(function(b){ return b.current >= b.threshold; });
+        var inProgress = BADGES.filter(function(b){ return b.current < b.threshold; });
+
+        // Sort in-progress by closest to achievement
+        inProgress.sort(function(a, b){
+          var ap = a.current / a.threshold;
+          var bp = b.current / b.threshold;
+          return bp - ap;
+        });
+
+        // Calculate overall level (based on earned badges)
+        var level = Math.min(10, Math.floor(earned.length / 3) + 1);
+
+        return res.json({
+          ok: true,
+          empId: empIdMB,
+          level: level,
+          totalBadges: BADGES.length,
+          earnedCount: earned.length,
+          earned: earned.map(function(b){
+            return { id: b.id, icon: b.icon, name: b.name, desc: b.desc, category: b.category };
+          }),
+          inProgress: inProgress.slice(0, 6).map(function(b){
+            return {
+              id: b.id, icon: b.icon, name: b.name, desc: b.desc, category: b.category,
+              progress: Math.round((b.current / b.threshold) * 100),
+              current: b.current,
+              threshold: b.threshold,
+            };
+          }),
+        });
+      }
+
+      /* ═══════════════════════════════════════════════════════════════
+       * v7.102 — SMART ADMIN ALERTS (تنبيهات ذكية للإدارة)
+       * ═══════════════════════════════════════════════════════════════
+       * Returns actionable insights for admin dashboard:
+       *   - Employees chronically late (>=3 times/month)
+       *   - Employees with upcoming leave approvals
+       *   - Employees without check-in today (past work hour)
+       *   - High violation concentration (employee with >=3 open)
+       *   - Contracts expiring soon (30 days)
+       *   - Inactive employees (no check-in 7+ days)
+       *
+       * GET /api/data?action=admin-alerts
+       */
+      case 'admin-alerts': {
+        var empsAA = (await dbGet('employees')) || [];
+        var attAA = (await dbGet('attendance')) || [];
+        var leavesAA = (await dbGet('leaves')) || [];
+        var violsAA = (await dbGet('violations_v2')) || [];
+        var branchesAA = (await dbGet('branches')) || [];
+        var holidaysDataAA = (await dbGet('holidays')) || { weekendDays: [5, 6], list: [] };
+
+        var todayAA = new Date().toISOString().slice(0, 10);
+        var nowAA = new Date();
+        var nowHour = nowAA.getHours();
+        var todayDowAA = nowAA.getDay();
+        var thisMonthAA = todayAA.slice(0, 7);
+
+        var alerts = [];
+
+        // Skip check on weekends/holidays
+        var isWeekendAA = (holidaysDataAA.weekendDays || [5, 6]).indexOf(todayDowAA) >= 0;
+        var isHolidayAA = (holidaysDataAA.list || []).some(function(h){
+          if (!h.date) return false;
+          if (h.date === todayAA) return true;
+          if (h.recurring && h.date.slice(5) === todayAA.slice(5)) return true;
+          return false;
+        });
+
+        // 1) Chronically late (3+ times this month)
+        var activeEmps = empsAA.filter(function(e){ return e.active !== false && !e.terminated; });
+        var lateByEmp = {};
+        attAA.forEach(function(a){
+          if (a.type !== 'checkin' || !a.late) return;
+          if (!a.date || !a.date.startsWith(thisMonthAA)) return;
+          lateByEmp[a.empId] = (lateByEmp[a.empId] || 0) + 1;
+        });
+        Object.keys(lateByEmp).forEach(function(empId){
+          if (lateByEmp[empId] >= 3) {
+            var eLate = empsAA.find(function(e){ return String(e.id) === String(empId); });
+            if (!eLate) return;
+            alerts.push({
+              id: 'LATE_' + empId,
+              type: 'late_pattern',
+              severity: lateByEmp[empId] >= 5 ? 'high' : 'medium',
+              icon: '⏰',
+              title: 'تأخر متكرر',
+              message: eLate.name + ' تأخر ' + lateByEmp[empId] + ' مرات هذا الشهر',
+              empId: empId,
+              empName: eLate.name,
+              count: lateByEmp[empId],
+              action: 'الاتصال به أو فتح مخالفة',
+            });
+          }
+        });
+
+        // 2) Absent today (didn't check in, past work hour, working day)
+        if (!isWeekendAA && !isHolidayAA && nowHour >= 10) {
+          var checkedInToday = new Set(attAA.filter(function(a){ return a.date === todayAA && a.type === 'checkin'; }).map(function(a){ return String(a.empId); }));
+          var onLeaveToday = new Set(leavesAA.filter(function(l){
+            if (l.status !== 'approved') return false;
+            return l.startDate && l.endDate && todayAA >= l.startDate && todayAA <= l.endDate;
+          }).map(function(l){ return String(l.empId); }));
+
+          var absentToday = activeEmps.filter(function(e){
+            return !checkedInToday.has(String(e.id)) && !onLeaveToday.has(String(e.id));
+          });
+
+          if (absentToday.length > 0) {
+            alerts.push({
+              id: 'ABSENT_TODAY',
+              type: 'absent_today',
+              severity: absentToday.length > 3 ? 'high' : 'medium',
+              icon: '🚫',
+              title: 'غائبون اليوم',
+              message: absentToday.length + ' موظف لم يسجّل حضوراً (بعد الساعة ' + nowHour + ':00)',
+              count: absentToday.length,
+              empIds: absentToday.map(function(e){ return e.id; }),
+              empNames: absentToday.slice(0, 3).map(function(e){ return e.name; }),
+              action: 'مراجعة أسباب الغياب',
+            });
+          }
+        }
+
+        // 3) High open violations (3+ open)
+        var openViolsByEmp = {};
+        violsAA.forEach(function(v){
+          if (v.status !== 'open') return;
+          openViolsByEmp[v.empId] = (openViolsByEmp[v.empId] || 0) + 1;
+        });
+        Object.keys(openViolsByEmp).forEach(function(empId){
+          if (openViolsByEmp[empId] >= 3) {
+            var eViol = empsAA.find(function(e){ return String(e.id) === String(empId); });
+            if (!eViol) return;
+            alerts.push({
+              id: 'VIOL_' + empId,
+              type: 'high_violations',
+              severity: 'high',
+              icon: '⚖️',
+              title: 'مخالفات متعددة',
+              message: eViol.name + ' لديه ' + openViolsByEmp[empId] + ' مخالفات مفتوحة',
+              empId: empId,
+              empName: eViol.name,
+              count: openViolsByEmp[empId],
+              action: 'مراجعة الحالة التأديبية',
+            });
+          }
+        });
+
+        // 4) Contracts expiring soon (30 days)
+        var thirtyDaysFromNow = new Date(nowAA.getTime() + 30 * 24 * 60 * 60 * 1000);
+        var expiringContracts = activeEmps.filter(function(e){
+          if (!e.contractEndDate) return false;
+          var endDate = new Date(e.contractEndDate);
+          return endDate > nowAA && endDate <= thirtyDaysFromNow;
+        });
+        if (expiringContracts.length > 0) {
+          alerts.push({
+            id: 'CONTRACTS_EXPIRING',
+            type: 'contracts_expiring',
+            severity: 'medium',
+            icon: '📄',
+            title: 'عقود تنتهي قريباً',
+            message: expiringContracts.length + ' عقد ينتهي خلال 30 يوم',
+            count: expiringContracts.length,
+            empIds: expiringContracts.map(function(e){ return e.id; }),
+            empNames: expiringContracts.slice(0, 3).map(function(e){ return e.name; }),
+            action: 'التجديد أو اتخاذ قرار',
+          });
+        }
+
+        // 5) Inactive employees (no check-in 7+ days)
+        var sevenDaysAgo = new Date(nowAA.getTime() - 7 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
+        var inactiveEmps = activeEmps.filter(function(e){
+          var lastCheckin = attAA
+            .filter(function(a){ return String(a.empId) === String(e.id) && a.type === 'checkin'; })
+            .map(function(a){ return a.date; })
+            .sort()
+            .pop();
+          if (!lastCheckin) return true;
+          return lastCheckin < sevenDaysAgo;
+        });
+        if (inactiveEmps.length > 0) {
+          alerts.push({
+            id: 'INACTIVE_EMPS',
+            type: 'inactive',
+            severity: 'medium',
+            icon: '😴',
+            title: 'موظفون غير نشطين',
+            message: inactiveEmps.length + ' موظف بدون تسجيل حضور 7 أيام',
+            count: inactiveEmps.length,
+            empIds: inactiveEmps.map(function(e){ return e.id; }),
+            empNames: inactiveEmps.slice(0, 3).map(function(e){ return e.name; }),
+            action: 'التواصل معهم',
+          });
+        }
+
+        // 6) Pending leaves waiting approval (> 2 days)
+        var twoDaysAgo = new Date(nowAA.getTime() - 2 * 24 * 60 * 60 * 1000).toISOString();
+        var stalePending = leavesAA.filter(function(l){
+          var pendingStatuses = ['pending_m1', 'pending_m2', 'pending_final', 'handover_open', 'pending_delegates'];
+          if (pendingStatuses.indexOf(l.status) < 0) return false;
+          return l.createdAt && l.createdAt < twoDaysAgo;
+        });
+        if (stalePending.length > 0) {
+          alerts.push({
+            id: 'STALE_LEAVES',
+            type: 'stale_leaves',
+            severity: 'high',
+            icon: '🏖️',
+            title: 'إجازات تنتظر الموافقة',
+            message: stalePending.length + ' طلب إجازة بانتظار الموافقة لأكثر من يومين',
+            count: stalePending.length,
+            action: 'مراجعة وموافقة',
+          });
+        }
+
+        // Sort by severity
+        var severityOrder = { high: 0, medium: 1, low: 2 };
+        alerts.sort(function(a, b){
+          return (severityOrder[a.severity] || 3) - (severityOrder[b.severity] || 3);
+        });
+
+        return res.json({
+          ok: true,
+          ts: new Date().toISOString(),
+          counts: {
+            total: alerts.length,
+            high: alerts.filter(function(a){ return a.severity === 'high'; }).length,
+            medium: alerts.filter(function(a){ return a.severity === 'medium'; }).length,
+          },
+          alerts: alerts,
+        });
+      }
+
+      /* ═══════════════════════════════════════════════════════════════
+       * v7.101 F — CHALLENGES DASHBOARD (admin analytics)
+       * ═══════════════════════════════════════════════════════════════
+       * GET /api/data?action=challenges-dashboard
+       * Returns comprehensive stats for both Morning Challenge + Flash Challenge
+       */
+      case 'challenges-dashboard': {
+        var nowCD = new Date();
+        var today30 = new Date(nowCD.getTime() - 30 * 24 * 60 * 60 * 1000);
+
+        // 1) Flash Challenge stats
+        var flashStore = (await dbGet('flash_challenges')) || { items: [] };
+        var flashItems = flashStore.items || [];
+        var flash30 = flashItems.filter(function(f){
+          return new Date(f.ts) >= today30;
+        });
+
+        var flashTotalSent = flash30.length;
+        var flashTotalResponses = 0;
+        var flashTotalCorrect = 0;
+        var flashTotalTargets = 0;
+        flash30.forEach(function(f){
+          flashTotalTargets += (f.targets || []).length;
+          if (f.responses) {
+            Object.keys(f.responses).forEach(function(eid){
+              flashTotalResponses++;
+              if (f.responses[eid].correct) flashTotalCorrect++;
+            });
+          }
+        });
+
+        // Find hardest questions (low correct rate)
+        var hardestQuestions = flash30
+          .filter(function(f){ return f.responses && Object.keys(f.responses).length >= 3; })
+          .map(function(f){
+            var total = Object.keys(f.responses).length;
+            var correct = 0;
+            Object.keys(f.responses).forEach(function(eid){
+              if (f.responses[eid].correct) correct++;
+            });
+            return {
+              q: f.q,
+              correctAnswer: f.correct,
+              total: total,
+              correct: correct,
+              correctRate: Math.round((correct / total) * 100),
+            };
+          })
+          .sort(function(a, b){ return a.correctRate - b.correctRate; })
+          .slice(0, 5);
+
+        // 2) Top performers (from employee records)
+        var empsCD = (await dbGet('employees')) || [];
+        var topPerformers = empsCD
+          .filter(function(e){ return e.active !== false && !e.terminated; })
+          .map(function(e){
+            return {
+              empId: e.id,
+              name: e.name,
+              points: e.points || 0,
+              streak: e.streak || 0,
+              challengesCount: e.challengesCount || 0,
+            };
+          })
+          .sort(function(a, b){ return (b.points || 0) - (a.points || 0); })
+          .slice(0, 10);
+
+        // 3) Morning Challenge questions count
+        var settingsCD = (await dbGet('settings')) || {};
+        var morningQuestionsCount = (settingsCD.questions || []).length;
+
+        return res.json({
+          ok: true,
+          period: 'last_30_days',
+          flashChallenge: {
+            totalSent: flashTotalSent,
+            totalTargets: flashTotalTargets,
+            totalResponses: flashTotalResponses,
+            totalCorrect: flashTotalCorrect,
+            responseRate: flashTotalTargets > 0 ? Math.round((flashTotalResponses / flashTotalTargets) * 100) : 0,
+            accuracyRate: flashTotalResponses > 0 ? Math.round((flashTotalCorrect / flashTotalResponses) * 100) : 0,
+          },
+          morningChallenge: {
+            questionsInBank: morningQuestionsCount,
+          },
+          topPerformers: topPerformers,
+          hardestQuestions: hardestQuestions,
+        });
+      }
+
       /* ═══════════════════════════════════════════════════════════════
        * v7.100 E — LEADERBOARD (top employees by points)
        * ═══════════════════════════════════════════════════════════════
@@ -9901,7 +10720,7 @@ export default async function handler(req, res) {
 
       case 'kadwar-pending-count': {
         var vKPC = (await dbGet('violations_v2')) || [];
-        var sKPC = (await dbGet('payroll_slips')) || [];
+        var sKPC = (await dbGet('payroll-slips')) || [];
         var tKPC = (await dbGet('terminations')) || [];
 
         var pendingV = vKPC.filter(function(x){ return !x.kadwarSynced; }).length;

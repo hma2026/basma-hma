@@ -5,7 +5,7 @@ import { exportFormalWarning, exportInvestigationRecord, exportAffidavit, export
 import { t as tr, setLang, getLang, subscribeLangChange } from "./i18n";
 
 const APP = "بصمة HMA";
-const VER = "7.100";
+const VER = "7.106";
 const CO = "هاني محمد عسيري للإستشارات الهندسية";
 const B = { blue: "#2B5EA7", yellow: "#FDD800", red: "#E2192C", black: "#1A1A1A", blueDk: "#1E4478", blueLt: "#EDF3FB", gold: "#D4A017" };
 
@@ -197,6 +197,9 @@ function SmartDashboard({ t, B, safeEmps, leaves, present, absent, late, pending
   var [monthData, setMonthData] = useState(null);
   var [trendData, setTrendData] = useState(null);
   var [loading, setLoading] = useState(true);
+  // v7.102 — Smart alerts
+  var [alerts, setAlerts] = useState(null);
+  var [alertsLoading, setAlertsLoading] = useState(true);
 
   // Greeting based on time
   var greet = (function(){
@@ -269,6 +272,18 @@ function SmartDashboard({ t, B, safeEmps, leaves, present, absent, late, pending
       setLoading(false);
     }
     load();
+
+    // v7.102 — Load smart alerts
+    async function loadAlerts() {
+      setAlertsLoading(true);
+      try {
+        var r = await fetch("/api/data?action=admin-alerts");
+        var d = await r.json();
+        if (d.ok) setAlerts(d);
+      } catch(e) {}
+      setAlertsLoading(false);
+    }
+    loadAlerts();
   }, [safeEmps.length]);
 
   // Top & bottom performers
@@ -390,6 +405,71 @@ function SmartDashboard({ t, B, safeEmps, leaves, present, absent, late, pending
           </div>
         </div>
       </div>
+
+      {/* v7.102 — Smart Alerts Panel */}
+      {alerts && alerts.counts.total > 0 && (
+        <div style={{
+          background: t.card, borderRadius: 14, padding: 16,
+          border: "1px solid " + (alerts.counts.high > 0 ? t.bad + "40" : "#F59E0B40"),
+          marginBottom: 14,
+        }}>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12, flexWrap: "wrap", gap: 8 }}>
+            <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+              <div style={{
+                width: 40, height: 40, borderRadius: 10,
+                background: alerts.counts.high > 0 ? "linear-gradient(135deg, #ef4444, #dc2626)" : "linear-gradient(135deg, #F59E0B, #EAB308)",
+                color: "#fff", display: "flex", alignItems: "center", justifyContent: "center",
+                fontSize: 20,
+              }}>🔔</div>
+              <div>
+                <div style={{ fontSize: 14, fontWeight: 900, color: t.tx }}>{tr("تنبيهات ذكية")}</div>
+                <div style={{ fontSize: 10, color: t.txM, marginTop: 2 }}>
+                  {alerts.counts.high > 0 && <span style={{ color: t.bad, fontWeight: 700 }}>{alerts.counts.high} {tr("حرج")} · </span>}
+                  {alerts.counts.medium > 0 && <span style={{ color: "#F59E0B", fontWeight: 700 }}>{alerts.counts.medium} {tr("متوسط")}</span>}
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+            {alerts.alerts.slice(0, 5).map(function(alert){
+              var severityColor = alert.severity === "high" ? t.bad : "#F59E0B";
+              return <div key={alert.id} style={{
+                padding: "10px 12px",
+                background: t.bg, borderRadius: 10,
+                borderRight: "3px solid " + severityColor,
+                display: "flex", alignItems: "flex-start", gap: 10,
+              }}>
+                <div style={{ fontSize: 20, flexShrink: 0 }}>{alert.icon}</div>
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div style={{ fontSize: 12, fontWeight: 800, color: t.tx, marginBottom: 2 }}>
+                    {alert.title}
+                  </div>
+                  <div style={{ fontSize: 10, color: t.txM, lineHeight: 1.6 }}>
+                    {alert.message}
+                  </div>
+                  {alert.empNames && alert.empNames.length > 0 && (
+                    <div style={{ fontSize: 9, color: severityColor, marginTop: 4, fontWeight: 700 }}>
+                      {alert.empNames.join("، ")}{alert.count > 3 ? " +" + (alert.count - 3) : ""}
+                    </div>
+                  )}
+                  {alert.action && (
+                    <div style={{ fontSize: 9, color: severityColor, marginTop: 4 }}>
+                      → {alert.action}
+                    </div>
+                  )}
+                </div>
+              </div>;
+            })}
+          </div>
+
+          {alerts.alerts.length > 5 && (
+            <div style={{ marginTop: 8, padding: "6px 10px", background: t.bg, borderRadius: 8, textAlign: "center", fontSize: 10, color: t.txM }}>
+              {tr("و")} {alerts.alerts.length - 5} {tr("تنبيهات إضافية")}
+            </div>
+          )}
+        </div>
+      )}
 
       {/* ─── v7.83 — Quick Actions (shortcuts للمدير) ─── */}
       <div style={{ display: "grid", gridTemplateColumns: "repeat(6, 1fr)", gap: 10, marginBottom: 14 }}>
@@ -1272,8 +1352,8 @@ function EmployeeDetailPage({ t, B, emp, allEmps, leaves, branches, isMobile, on
         var auditD = await auditR.json();
         if (auditD.ok) setEmpAudit(auditD.entries || []);
 
-        // Violations
-        var vR = await fetch("/api/data?action=violations&empId=" + encodeURIComponent(emp.id));
+        // Violations (v7.106 — upgraded to violations_v2)
+        var vR = await fetch("/api/data?action=violations_v2&empId=" + encodeURIComponent(emp.id));
         var vD = await vR.json();
         setEmpViolations(Array.isArray(vD) ? vD : []);
 
@@ -2055,6 +2135,401 @@ function EmployeeDetailPage({ t, B, emp, allEmps, leaves, branches, isMobile, on
 /* ═════════════════════════════════════════════════════════════════
  * v7.87 — PushBroadcastPanel — إرسال إشعارات للموظفين
  * ═════════════════════════════════════════════════════════════════ */
+/* ═════════════════════════════════════════════════════════════════
+ * v7.105 — SalarySheetsPanel — إنشاء مسيرات رواتب شهرية
+ * ═════════════════════════════════════════════════════════════════ */
+function SalarySheetsPanel({ t, B, emps }) {
+  var now = new Date();
+  var defaultPeriod = now.toISOString().slice(0, 7);
+
+  var [period, setPeriod] = useState(defaultPeriod);
+  var [slips, setSlips] = useState([]);
+  var [summary, setSummary] = useState(null);
+  var [loading, setLoading] = useState(true);
+  var [generating, setGenerating] = useState(false);
+  var [genResult, setGenResult] = useState(null);
+
+  async function load() {
+    setLoading(true);
+    try {
+      var r = await fetch("/api/data?action=list-salary-sheets&period=" + period);
+      var d = await r.json();
+      if (d.ok) {
+        setSlips(d.slips || []);
+        setSummary(d.summary);
+      }
+    } catch(e) {}
+    setLoading(false);
+  }
+
+  useEffect(function(){ load(); }, [period]);
+
+  async function generateAll() {
+    var activeCount = (emps || []).filter(function(e){ return e.active !== false && !e.terminated; }).length;
+    if (!confirm(tr("سيتم إنشاء مسيرات لـ") + " " + activeCount + " " + tr("موظف للفترة") + " " + period + ". " + tr("متابعة؟"))) return;
+    setGenerating(true);
+    setGenResult(null);
+    try {
+      var r = await fetch("/api/data?action=generate-salary-sheet", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ period: period, actorId: "admin" }),
+      });
+      var d = await r.json();
+      setGenResult(d);
+      if (d.ok) await load();
+    } catch(e) {
+      setGenResult({ ok: false, error: e.message });
+    }
+    setGenerating(false);
+  }
+
+  function exportCSV() {
+    if (slips.length === 0) return alert(tr("لا توجد مسيرات للتصدير"));
+    var csv = "\uFEFF";
+    csv += "الرقم الوظيفي,الاسم,الفترة,أيام الحضور,أيام الغياب,أيام العمل,نسبة الحضور,إجمالي الراتب,الخصومات,الصافي\n";
+    slips.forEach(function(s){
+      csv += [
+        s.empId,
+        '"' + (s.empName || "") + '"',
+        s.period,
+        s.presentDays,
+        s.absentDays,
+        s.totalWorkDays,
+        s.attendanceRate + "%",
+        s.gross || 0,
+        s.deductions || 0,
+        s.net || 0,
+      ].join(",") + "\n";
+    });
+    var blob = new Blob([csv], { type: "text/csv;charset=utf-8" });
+    var url = URL.createObjectURL(blob);
+    var a = document.createElement("a");
+    a.href = url;
+    a.download = "salary_sheet_" + period + ".csv";
+    a.click();
+    URL.revokeObjectURL(url);
+  }
+
+  return (
+    <div>
+      {/* Header */}
+      <div style={{
+        background: "linear-gradient(135deg, #10B981, #059669)",
+        borderRadius: 14, padding: "16px 20px", color: "#fff",
+        marginBottom: 14,
+      }}>
+        <div style={{ fontSize: 16, fontWeight: 900 }}>💰 {tr("مسيرات الرواتب")}</div>
+        <div style={{ fontSize: 11, opacity: 0.9, marginTop: 4 }}>
+          {tr("إنشاء مسيرات شهرية محسوبة تلقائياً من الحضور")}
+        </div>
+      </div>
+
+      {/* Period selector + actions */}
+      <div style={{
+        background: t.card, borderRadius: 14, padding: 16,
+        border: "1px solid " + t.sep, marginBottom: 14,
+      }}>
+        <div style={{ display: "flex", gap: 10, flexWrap: "wrap", alignItems: "center" }}>
+          <label style={{ fontSize: 12, fontWeight: 800, color: t.tx }}>📅 {tr("الشهر:")}</label>
+          <input type="month" value={period} onChange={function(e){ setPeriod(e.target.value); }} style={{
+            padding: "8px 14px", borderRadius: 10,
+            border: "1px solid " + t.sep, background: t.inp, color: t.tx,
+            fontSize: 12, fontFamily: "inherit",
+          }} />
+          <button onClick={generateAll} disabled={generating} style={{
+            padding: "10px 20px", borderRadius: 10,
+            background: generating ? t.sep : "linear-gradient(135deg, #10B981, #059669)",
+            color: "#fff", border: "none",
+            fontSize: 12, fontWeight: 800,
+            cursor: generating ? "wait" : "pointer", fontFamily: "inherit",
+          }}>{generating ? "⏳ " + tr("جاري الإنشاء...") : "⚡ " + tr("إنشاء مسيرات الكل")}</button>
+          {slips.length > 0 && (
+            <button onClick={exportCSV} style={{
+              padding: "10px 16px", borderRadius: 10,
+              background: B.blue, color: "#fff", border: "none",
+              fontSize: 12, fontWeight: 800, cursor: "pointer", fontFamily: "inherit",
+            }}>📥 {tr("تصدير CSV")}</button>
+          )}
+        </div>
+
+        {/* Generation result */}
+        {genResult && (
+          <div style={{
+            marginTop: 12, padding: "10px 14px", borderRadius: 10,
+            background: genResult.ok ? t.okLt : t.badLt,
+            border: "1px solid " + (genResult.ok ? t.ok : t.bad) + "40",
+            fontSize: 11,
+          }}>
+            {genResult.ok ? (
+              <div>
+                <div style={{ fontWeight: 800, color: t.ok, marginBottom: 4 }}>✅ {tr("تم الإنشاء!")}</div>
+                <div style={{ color: t.tx }}>
+                  {tr("تم إنشاء:")} <b>{genResult.summary.generated}</b> · {tr("تم تجاهل:")} <b>{genResult.summary.skipped}</b> {tr("(موجود مسبقاً)")} · {tr("أخطاء:")} <b>{genResult.summary.errors}</b>
+                </div>
+              </div>
+            ) : (
+              <div style={{ color: t.bad }}>❌ {genResult.error}</div>
+            )}
+          </div>
+        )}
+      </div>
+
+      {/* Summary */}
+      {summary && summary.count > 0 && (
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(140px, 1fr))", gap: 10, marginBottom: 14 }}>
+          <div style={{ padding: 14, background: t.card, borderRadius: 10, border: "1px solid " + t.sep, textAlign: "center" }}>
+            <div style={{ fontSize: 22, fontWeight: 900, color: B.blue }}>{summary.count}</div>
+            <div style={{ fontSize: 10, color: t.txM, marginTop: 3 }}>{tr("عدد المسيرات")}</div>
+          </div>
+          <div style={{ padding: 14, background: t.card, borderRadius: 10, border: "1px solid " + t.sep, textAlign: "center" }}>
+            <div style={{ fontSize: 18, fontWeight: 900, color: "#10B981" }}>
+              {summary.totalGross.toLocaleString()} ر.س
+            </div>
+            <div style={{ fontSize: 10, color: t.txM, marginTop: 3 }}>{tr("إجمالي الرواتب")}</div>
+          </div>
+          <div style={{ padding: 14, background: t.card, borderRadius: 10, border: "1px solid " + t.sep, textAlign: "center" }}>
+            <div style={{ fontSize: 18, fontWeight: 900, color: "#EF4444" }}>
+              {summary.totalDeductions.toLocaleString()} ر.س
+            </div>
+            <div style={{ fontSize: 10, color: t.txM, marginTop: 3 }}>{tr("الخصومات")}</div>
+          </div>
+          <div style={{ padding: 14, background: t.card, borderRadius: 10, border: "1px solid " + t.sep, textAlign: "center" }}>
+            <div style={{ fontSize: 18, fontWeight: 900, color: "#059669" }}>
+              {summary.totalNet.toLocaleString()} ر.س
+            </div>
+            <div style={{ fontSize: 10, color: t.txM, marginTop: 3 }}>{tr("الصافي")}</div>
+          </div>
+          {summary.unsynced > 0 && (
+            <div style={{ padding: 14, background: "#F59E0B15", borderRadius: 10, border: "1px solid #F59E0B40", textAlign: "center" }}>
+              <div style={{ fontSize: 22, fontWeight: 900, color: "#F59E0B" }}>{summary.unsynced}</div>
+              <div style={{ fontSize: 10, color: t.txM, marginTop: 3 }}>{tr("بانتظار كوادر")}</div>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Slips list */}
+      {loading ? (
+        <div style={{ padding: 30, textAlign: "center", color: t.txM }}>⏳ {tr("جاري التحميل...")}</div>
+      ) : slips.length === 0 ? (
+        <div style={{
+          padding: 40, textAlign: "center", color: t.txM,
+          background: t.card, borderRadius: 14, border: "1px dashed " + t.sep,
+        }}>
+          <div style={{ fontSize: 40, marginBottom: 10 }}>💰</div>
+          <div style={{ fontSize: 13, marginBottom: 4 }}>{tr("لا توجد مسيرات لهذا الشهر")}</div>
+          <div style={{ fontSize: 10, opacity: 0.7 }}>{tr("اضغط \"إنشاء مسيرات الكل\" لتوليدها تلقائياً")}</div>
+        </div>
+      ) : (
+        <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+          {slips.map(function(s){
+            return <div key={s.id} style={{
+              display: "flex", alignItems: "center", gap: 12,
+              padding: "12px 14px",
+              background: t.card, borderRadius: 10, border: "1px solid " + t.sep,
+              borderRight: "3px solid " + (s.kadwarSynced ? t.ok : "#F59E0B"),
+            }}>
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <div style={{ fontSize: 12, fontWeight: 700, color: t.tx }}>{s.empName}</div>
+                <div style={{ fontSize: 10, color: t.txM, marginTop: 2 }}>
+                  {s.empId} · {s.presentDays}/{s.totalWorkDays} {tr("يوم")} · {s.attendanceRate}%
+                </div>
+              </div>
+              <div style={{ textAlign: "left" }}>
+                <div style={{ fontSize: 14, fontWeight: 900, color: "#059669" }}>
+                  {(s.net || 0).toLocaleString()} ر.س
+                </div>
+                <div style={{ fontSize: 9, color: t.txM, marginTop: 2 }}>
+                  {tr("إجمالي:")} {(s.gross || 0).toLocaleString()}
+                </div>
+              </div>
+              <div style={{
+                padding: "4px 8px", borderRadius: 6,
+                background: s.kadwarSynced ? t.ok + "20" : "#F59E0B20",
+                color: s.kadwarSynced ? t.ok : "#F59E0B",
+                fontSize: 9, fontWeight: 700,
+              }}>{s.kadwarSynced ? "✓ " + tr("متزامن") : "⏳ " + tr("بانتظار")}</div>
+            </div>;
+          })}
+        </div>
+      )}
+    </div>
+  );
+}
+
+/* ═════════════════════════════════════════════════════════════════
+ * v7.101 F — ChallengesDashboardPanel — إحصائيات التحديات
+ * ═════════════════════════════════════════════════════════════════ */
+function ChallengesDashboardPanel({ t, B }) {
+  var [data, setData] = useState(null);
+  var [loading, setLoading] = useState(true);
+  var [error, setError] = useState(null);
+
+  async function load() {
+    setLoading(true);
+    try {
+      var r = await fetch("/api/data?action=challenges-dashboard");
+      var d = await r.json();
+      if (d.ok) setData(d);
+      else setError(d.error || tr("فشل التحميل"));
+    } catch(e) {
+      setError(tr("فشل الاتصال"));
+    }
+    setLoading(false);
+  }
+
+  useEffect(function(){ load(); }, []);
+
+  if (loading) {
+    return <div style={{ padding: 40, textAlign: "center", color: t.txM }}>⏳ {tr("جاري التحميل...")}</div>;
+  }
+  if (error) {
+    return <div style={{ padding: 20, textAlign: "center", color: t.bad }}>⚠️ {error}</div>;
+  }
+  if (!data) return null;
+
+  return (
+    <div>
+      {/* Header */}
+      <div style={{
+        background: "linear-gradient(135deg, #7c3aed, #a855f7)",
+        borderRadius: 14, padding: "18px 22px", color: "#fff",
+        marginBottom: 14,
+        display: "flex", justifyContent: "space-between", alignItems: "center", gap: 14, flexWrap: "wrap",
+      }}>
+        <div>
+          <div style={{ fontSize: 18, fontWeight: 900 }}>📊 {tr("إحصائيات التحديات")}</div>
+          <div style={{ fontSize: 11, opacity: 0.9, marginTop: 4 }}>
+            {tr("آخر 30 يوم")}
+          </div>
+        </div>
+        <button onClick={load} style={{
+          padding: "8px 14px", borderRadius: 10,
+          background: "rgba(255,255,255,0.2)",
+          border: "1px solid rgba(255,255,255,0.3)",
+          color: "#fff", fontSize: 11, fontWeight: 700,
+          cursor: "pointer", fontFamily: "inherit",
+        }}>🔄 {tr("تحديث")}</button>
+      </div>
+
+      {/* Flash Challenge Stats */}
+      <div style={{ background: t.card, borderRadius: 14, padding: 16, border: "1px solid " + t.sep, marginBottom: 14 }}>
+        <div style={{ fontSize: 13, fontWeight: 800, color: t.tx, marginBottom: 14 }}>
+          ⚡ {tr("سؤال تحدي على السريع")}
+        </div>
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(140px, 1fr))", gap: 10 }}>
+          <div style={{ padding: 14, background: "linear-gradient(135deg, #8B5CF615, #A855F715)", border: "1px solid #8B5CF640", borderRadius: 10, textAlign: "center" }}>
+            <div style={{ fontSize: 26, fontWeight: 900, color: "#8B5CF6" }}>{data.flashChallenge.totalSent}</div>
+            <div style={{ fontSize: 10, color: t.txM, marginTop: 4 }}>{tr("تحدي مُرسَل")}</div>
+          </div>
+          <div style={{ padding: 14, background: "linear-gradient(135deg, #F59E0B15, #EAB30815)", border: "1px solid #F59E0B40", borderRadius: 10, textAlign: "center" }}>
+            <div style={{ fontSize: 26, fontWeight: 900, color: "#F59E0B" }}>{data.flashChallenge.totalResponses}</div>
+            <div style={{ fontSize: 10, color: t.txM, marginTop: 4 }}>{tr("استجابة")}</div>
+          </div>
+          <div style={{ padding: 14, background: "linear-gradient(135deg, #10B98115, #059669" + "15)", border: "1px solid #10B98140", borderRadius: 10, textAlign: "center" }}>
+            <div style={{ fontSize: 26, fontWeight: 900, color: "#10B981" }}>{data.flashChallenge.totalCorrect}</div>
+            <div style={{ fontSize: 10, color: t.txM, marginTop: 4 }}>✓ {tr("صحيحة")}</div>
+          </div>
+          <div style={{ padding: 14, background: "linear-gradient(135deg, " + B.blue + "15, " + B.blueDk + "15)", border: "1px solid " + B.blue + "40", borderRadius: 10, textAlign: "center" }}>
+            <div style={{ fontSize: 26, fontWeight: 900, color: B.blue }}>{data.flashChallenge.responseRate}%</div>
+            <div style={{ fontSize: 10, color: t.txM, marginTop: 4 }}>{tr("نسبة الاستجابة")}</div>
+          </div>
+          <div style={{ padding: 14, background: "linear-gradient(135deg, #06B6D415, #0891B215)", border: "1px solid #06B6D440", borderRadius: 10, textAlign: "center" }}>
+            <div style={{ fontSize: 26, fontWeight: 900, color: "#06B6D4" }}>{data.flashChallenge.accuracyRate}%</div>
+            <div style={{ fontSize: 10, color: t.txM, marginTop: 4 }}>{tr("نسبة الدقة")}</div>
+          </div>
+        </div>
+      </div>
+
+      {/* Morning Challenge */}
+      <div style={{ background: t.card, borderRadius: 14, padding: 16, border: "1px solid " + t.sep, marginBottom: 14 }}>
+        <div style={{ fontSize: 13, fontWeight: 800, color: t.tx, marginBottom: 14 }}>
+          🌅 {tr("تحدي الصباح")}
+        </div>
+        <div style={{ padding: 14, background: t.bg, borderRadius: 10, textAlign: "center" }}>
+          <div style={{ fontSize: 30, fontWeight: 900, color: data.morningChallenge.questionsInBank > 0 ? t.ok : t.warn }}>
+            {data.morningChallenge.questionsInBank}
+          </div>
+          <div style={{ fontSize: 11, color: t.txM, marginTop: 4 }}>
+            {tr("سؤال في بنك الأسئلة")}
+          </div>
+        </div>
+      </div>
+
+      {/* Top Performers */}
+      <div style={{ background: t.card, borderRadius: 14, padding: 16, border: "1px solid " + t.sep, marginBottom: 14 }}>
+        <div style={{ fontSize: 13, fontWeight: 800, color: t.tx, marginBottom: 12 }}>
+          🏆 {tr("أفضل 10 موظفين (نقاط)")}
+        </div>
+        {data.topPerformers && data.topPerformers.length > 0 ? (
+          <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+            {data.topPerformers.map(function(p, i){
+              var medal = i === 0 ? "🥇" : i === 1 ? "🥈" : i === 2 ? "🥉" : "#" + (i + 1);
+              var medalBg = i === 0 ? "#FFD700" : i === 1 ? "#C0C0C0" : i === 2 ? "#CD7F32" : t.sep;
+              return <div key={p.empId} style={{
+                display: "flex", alignItems: "center", gap: 10,
+                padding: "10px 12px", borderRadius: 10,
+                background: t.bg, border: "1px solid " + t.sep,
+              }}>
+                <div style={{
+                  width: 32, height: 32, borderRadius: "50%",
+                  background: medalBg,
+                  color: "#fff", display: "flex", alignItems: "center", justifyContent: "center",
+                  fontSize: i < 3 ? 16 : 11, fontWeight: 900, flexShrink: 0,
+                }}>{medal}</div>
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div style={{ fontSize: 12, fontWeight: 700, color: t.tx, overflow: "hidden", textOverflow: "ellipsis" }}>{p.name}</div>
+                  <div style={{ fontSize: 9, color: t.txM, marginTop: 2 }}>
+                    {p.streak > 0 && <span>🔥 {p.streak} · </span>}
+                    {p.challengesCount > 0 && <span>⚡ {p.challengesCount} {tr("تحديات")}</span>}
+                  </div>
+                </div>
+                <div style={{ fontSize: 15, fontWeight: 900, color: "#F59E0B", flexShrink: 0 }}>⭐ {p.points}</div>
+              </div>;
+            })}
+          </div>
+        ) : (
+          <div style={{ padding: 20, textAlign: "center", color: t.txM, fontSize: 11 }}>{tr("لا توجد بيانات")}</div>
+        )}
+      </div>
+
+      {/* Hardest Questions */}
+      {data.hardestQuestions && data.hardestQuestions.length > 0 && (
+        <div style={{ background: t.card, borderRadius: 14, padding: 16, border: "1px solid " + t.sep }}>
+          <div style={{ fontSize: 13, fontWeight: 800, color: t.tx, marginBottom: 12 }}>
+            🧠 {tr("أصعب الأسئلة")} ({tr("أقل نسبة إجابات صحيحة")})
+          </div>
+          <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+            {data.hardestQuestions.map(function(q, i){
+              return <div key={i} style={{
+                padding: 12, background: t.bg, borderRadius: 10,
+                borderRight: "3px solid " + (q.correctRate < 30 ? t.bad : q.correctRate < 60 ? t.warn : t.ok),
+              }}>
+                <div style={{ fontSize: 12, fontWeight: 700, color: t.tx, marginBottom: 4 }}>
+                  {q.q}
+                </div>
+                <div style={{ fontSize: 10, color: "#10b981", fontWeight: 700 }}>✓ {q.correctAnswer}</div>
+                <div style={{ display: "flex", gap: 8, marginTop: 8, fontSize: 10 }}>
+                  <span style={{ padding: "3px 8px", background: t.card, borderRadius: 6 }}>
+                    {q.correct}/{q.total} {tr("صحيحة")}
+                  </span>
+                  <span style={{
+                    padding: "3px 8px",
+                    background: q.correctRate < 30 ? t.bad + "20" : q.correctRate < 60 ? t.warn + "20" : t.ok + "20",
+                    color: q.correctRate < 30 ? t.bad : q.correctRate < 60 ? t.warn : t.ok,
+                    borderRadius: 6, fontWeight: 800,
+                  }}>{q.correctRate}%</span>
+                </div>
+              </div>;
+            })}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 /* ═════════════════════════════════════════════════════════════════
  * v7.95 — FlashChallengePanel — سؤال تحدي على السريع (لوحة الإرسال)
  * ═════════════════════════════════════════════════════════════════
@@ -4810,7 +5285,7 @@ export default function AdminApp() {
               try {
                 var now = new Date();
                 var attR = await fetch("/api/data?action=attendance"); var att = await attR.json();
-                var vioR = await fetch("/api/data?action=violations"); var vio = await vioR.json();
+                var vioR = await fetch("/api/data?action=violations_v2"); var vio = await vioR.json();
                 generateMonthlySummary({ month: now.getMonth() + 1, year: now.getFullYear(), attendance: Array.isArray(att) ? att : [], employees: safeEmps, violations: Array.isArray(vio) ? vio : [], leaves: leaves });
               } catch(e) { alert("خطأ: " + e.message); }
             }} style={{ padding: 14, borderRadius: 10, background: "#10b981", color: "#fff", border: "none", fontSize: 12, fontWeight: 700, cursor: "pointer", textAlign: "right" }}>
@@ -4829,7 +5304,7 @@ export default function AdminApp() {
 
             <button onClick={async function() {
               try {
-                var vioR = await fetch("/api/data?action=violations"); var vio = await vioR.json();
+                var vioR = await fetch("/api/data?action=violations_v2"); var vio = await vioR.json();
                 generateViolationsReport({ violations: Array.isArray(vio) ? vio : [], employees: safeEmps });
               } catch(e) { alert("خطأ: " + e.message); }
             }} style={{ padding: 14, borderRadius: 10, background: "#ef4444", color: "#fff", border: "none", fontSize: 12, fontWeight: 700, cursor: "pointer", textAlign: "right" }}>
@@ -4875,7 +5350,7 @@ export default function AdminApp() {
               if (!emp) { alert("الموظف غير موجود"); return; }
               try {
                 var attR = await fetch("/api/data?action=attendance&empId=" + emp.id); var att = await attR.json();
-                var vioR = await fetch("/api/data?action=violations&empId=" + emp.id); var vio = await vioR.json();
+                var vioR = await fetch("/api/data?action=violations_v2&empId=" + emp.id); var vio = await vioR.json();
                 generateEmployeeReport({ employee: emp, attendance: Array.isArray(att) ? att : [], violations: Array.isArray(vio) ? vio : [], leaves: leaves, tickets: [], branches: branches });
               } catch(e) { alert("خطأ: " + e.message); }
             }} style={{ padding: 14, borderRadius: 10, background: "#0891b2", color: "#fff", border: "none", fontSize: 12, fontWeight: 700, cursor: "pointer", textAlign: "right" }}>
@@ -8780,6 +9255,166 @@ function AttendanceInsightsPanel({ t, B, emps }) {
 }
 
 /* ═══ BRANCHES PANEL — إدارة الفروع (v6.53) ═══ */
+/* ═════════════════════════════════════════════════════════════════
+ * v7.104 — BranchAnalyticsPanel — مقارنة أداء الفروع
+ * ═════════════════════════════════════════════════════════════════ */
+function BranchAnalyticsPanel({ t, B }) {
+  var [data, setData] = useState(null);
+  var [loading, setLoading] = useState(true);
+  var [error, setError] = useState(null);
+
+  async function load() {
+    setLoading(true);
+    try {
+      var r = await fetch("/api/data?action=branch-analytics");
+      var d = await r.json();
+      if (d.ok) setData(d);
+      else setError(d.error || tr("فشل التحميل"));
+    } catch(e) {
+      setError(tr("فشل الاتصال"));
+    }
+    setLoading(false);
+  }
+
+  useEffect(function(){ load(); }, []);
+
+  if (loading) {
+    return <div style={{ padding: 40, textAlign: "center", color: t.txM }}>⏳ {tr("جاري التحميل...")}</div>;
+  }
+  if (error) {
+    return <div style={{ padding: 20, textAlign: "center", color: t.bad }}>⚠️ {error}</div>;
+  }
+  if (!data || !data.branches || data.branches.length === 0) {
+    return <div style={{ padding: 30, textAlign: "center", color: t.txM }}>📭 {tr("لا توجد بيانات")}</div>;
+  }
+
+  function rankMedal(rank) {
+    if (rank === 1) return { icon: "🥇", color: "#FFD700" };
+    if (rank === 2) return { icon: "🥈", color: "#C0C0C0" };
+    if (rank === 3) return { icon: "🥉", color: "#CD7F32" };
+    return { icon: "#" + rank, color: t.txM };
+  }
+
+  function scoreColor(score) {
+    if (score >= 80) return t.ok;
+    if (score >= 60) return "#F59E0B";
+    return t.bad;
+  }
+
+  return (
+    <div>
+      {/* Header */}
+      <div style={{
+        background: "linear-gradient(135deg, " + B.blue + ", " + B.blueDk + ")",
+        borderRadius: 14, padding: "16px 20px", color: "#fff",
+        marginBottom: 14,
+        display: "flex", justifyContent: "space-between", alignItems: "center", gap: 14, flexWrap: "wrap",
+      }}>
+        <div>
+          <div style={{ fontSize: 17, fontWeight: 900 }}>📊 {tr("مقارنة أداء الفروع")}</div>
+          <div style={{ fontSize: 11, opacity: 0.9, marginTop: 4 }}>
+            {tr("هذا الشهر")} · {data.summary.totalBranches} {tr("فروع")}
+          </div>
+        </div>
+        <button onClick={load} style={{
+          padding: "8px 14px", borderRadius: 10,
+          background: "rgba(255,255,255,0.2)",
+          border: "1px solid rgba(255,255,255,0.3)",
+          color: "#fff", fontSize: 11, fontWeight: 700,
+          cursor: "pointer", fontFamily: "inherit",
+        }}>🔄 {tr("تحديث")}</button>
+      </div>
+
+      {/* Summary cards */}
+      {data.summary.bestBranch && (
+        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10, marginBottom: 14 }}>
+          <div style={{
+            background: "linear-gradient(135deg, " + t.ok + "15, " + t.ok + "05)",
+            border: "1px solid " + t.ok + "40",
+            borderRadius: 12, padding: "14px 16px",
+          }}>
+            <div style={{ fontSize: 10, color: t.txM, fontWeight: 700 }}>🏆 {tr("الفرع الأفضل")}</div>
+            <div style={{ fontSize: 16, fontWeight: 900, color: t.ok, marginTop: 4 }}>{data.summary.bestBranch}</div>
+          </div>
+          <div style={{
+            background: "linear-gradient(135deg, " + t.warn + "15, " + t.warn + "05)",
+            border: "1px solid " + t.warn + "40",
+            borderRadius: 12, padding: "14px 16px",
+          }}>
+            <div style={{ fontSize: 10, color: t.txM, fontWeight: 700 }}>⚠️ {tr("يحتاج اهتمام")}</div>
+            <div style={{ fontSize: 16, fontWeight: 900, color: t.warn, marginTop: 4 }}>{data.summary.worstBranch}</div>
+          </div>
+        </div>
+      )}
+
+      {/* Branches ranking */}
+      <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+        {data.branches.map(function(br){
+          var medal = rankMedal(br.rank);
+          var sc = scoreColor(br.score);
+          return <div key={br.id} style={{
+            background: t.card, borderRadius: 12,
+            padding: 14, border: "1px solid " + t.sep,
+            borderRight: "4px solid " + sc,
+          }}>
+            {/* Header: rank + name + score */}
+            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 10, gap: 10 }}>
+              <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                <div style={{
+                  width: 38, height: 38, borderRadius: "50%",
+                  background: medal.color,
+                  color: "#fff", display: "flex", alignItems: "center", justifyContent: "center",
+                  fontSize: br.rank <= 3 ? 18 : 13, fontWeight: 900,
+                }}>{medal.icon}</div>
+                <div>
+                  <div style={{ fontSize: 14, fontWeight: 900, color: t.tx }}>{br.name}</div>
+                  <div style={{ fontSize: 10, color: t.txM, marginTop: 2 }}>
+                    👥 {br.employees} {tr("موظف")} · {br.presentToday} {tr("حاضرون اليوم")}
+                  </div>
+                </div>
+              </div>
+              <div style={{ textAlign: "center" }}>
+                <div style={{ fontSize: 26, fontWeight: 900, color: sc, lineHeight: 1 }}>{br.score}</div>
+                <div style={{ fontSize: 9, color: t.txM, marginTop: 2 }}>{tr("الدرجة")}</div>
+              </div>
+            </div>
+
+            {/* Stats grid */}
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 6 }}>
+              <div style={{ padding: "8px 10px", background: t.bg, borderRadius: 8, textAlign: "center" }}>
+                <div style={{ fontSize: 14, fontWeight: 900, color: t.ok }}>{br.attendanceRate}%</div>
+                <div style={{ fontSize: 9, color: t.txM, marginTop: 2 }}>{tr("الحضور")}</div>
+              </div>
+              <div style={{ padding: "8px 10px", background: t.bg, borderRadius: 8, textAlign: "center" }}>
+                <div style={{ fontSize: 14, fontWeight: 900, color: br.lateCount > 5 ? t.warn : t.txM }}>{br.lateCount}</div>
+                <div style={{ fontSize: 9, color: t.txM, marginTop: 2 }}>{tr("تأخير")}</div>
+              </div>
+              <div style={{ padding: "8px 10px", background: t.bg, borderRadius: 8, textAlign: "center" }}>
+                <div style={{ fontSize: 14, fontWeight: 900, color: br.openViolations > 0 ? t.bad : t.ok }}>{br.openViolations}</div>
+                <div style={{ fontSize: 9, color: t.txM, marginTop: 2 }}>{tr("مخالفات")}</div>
+              </div>
+              <div style={{ padding: "8px 10px", background: t.bg, borderRadius: 8, textAlign: "center" }}>
+                <div style={{ fontSize: 14, fontWeight: 900, color: "#F59E0B" }}>⭐ {br.avgPoints}</div>
+                <div style={{ fontSize: 9, color: t.txM, marginTop: 2 }}>{tr("نقاط/موظف")}</div>
+              </div>
+            </div>
+          </div>;
+        })}
+      </div>
+
+      {/* Info footer */}
+      <div style={{
+        marginTop: 14, padding: "10px 14px",
+        background: B.blue + "10", border: "1px dashed " + B.blue + "40",
+        borderRadius: 10, fontSize: 10, color: t.txM, textAlign: "center",
+      }}>
+        ℹ️ {tr("الدرجة تحسب من: الحضور 40% + قلة المخالفات 30% + متوسط النقاط 30%")}
+      </div>
+    </div>
+  );
+}
+
+/* BranchesPanel */
 function BranchesPanel({ t, B }) {
   var [branches, setBranches] = useState([]);
   var [loading, setLoading] = useState(true);
@@ -14676,6 +15311,164 @@ function FacesManager({ t, B, emps }) {
 }
 
 /* ═══ DATA CLEANUP MANAGER — تنظيف بيانات الفترة التجريبية ═══ */
+/* ═════════════════════════════════════════════════════════════════
+ * v7.106 — ViolationsMigrationCard — نقل المخالفات القديمة (آمن)
+ * ═════════════════════════════════════════════════════════════════ */
+function ViolationsMigrationCard({ t, B }) {
+  var [analysis, setAnalysis] = useState(null);
+  var [loading, setLoading] = useState(false);
+  var [executing, setExecuting] = useState(false);
+  var [result, setResult] = useState(null);
+
+  async function dryRun() {
+    setLoading(true);
+    setResult(null);
+    try {
+      var r = await fetch("/api/data?action=migrate-violations", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ mode: "dry_run", actorId: "admin" }),
+      });
+      var d = await r.json();
+      if (d.ok) setAnalysis(d.analysis);
+      else setResult({ ok: false, error: d.error });
+    } catch(e) {
+      setResult({ ok: false, error: e.message });
+    }
+    setLoading(false);
+  }
+
+  async function execute() {
+    if (!confirm(tr("تأكيد: سيتم نقل المخالفات القديمة إلى النظام الجديد. هذه العملية آمنة — سيتم إنشاء نسخة احتياطية تلقائياً. متابعة؟"))) return;
+    setExecuting(true);
+    setResult(null);
+    try {
+      var r = await fetch("/api/data?action=migrate-violations", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ mode: "execute", actorId: "admin" }),
+      });
+      var d = await r.json();
+      setResult(d);
+      if (d.ok) setAnalysis(null); // clear analysis after migration
+    } catch(e) {
+      setResult({ ok: false, error: e.message });
+    }
+    setExecuting(false);
+  }
+
+  useEffect(function(){ dryRun(); }, []);
+
+  return (
+    <div style={{
+      background: "linear-gradient(135deg, " + B.blue + "15, " + B.blue + "05)",
+      border: "2px solid " + B.blue + "40",
+      borderRadius: 12, padding: 16, marginBottom: 14,
+    }}>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 10, flexWrap: "wrap", gap: 10 }}>
+        <div>
+          <div style={{ fontSize: 13, fontWeight: 900, color: B.blue, marginBottom: 4 }}>
+            🔄 {tr("تنظيف: نقل المخالفات القديمة")}
+          </div>
+          <div style={{ fontSize: 10, color: t.tx2, lineHeight: 1.6 }}>
+            {tr("يوحّد البيانات من النظام القديم 'violations' إلى النظام الموحّد 'violations_v2' — آمن تماماً (يحفظ نسخة احتياطية)")}
+          </div>
+        </div>
+      </div>
+
+      {/* Analysis */}
+      {loading && <div style={{ padding: 14, textAlign: "center", color: t.txM, fontSize: 11 }}>⏳ {tr("جاري الفحص...")}</div>}
+
+      {analysis && !loading && (
+        <div style={{ padding: 12, background: t.card, borderRadius: 10, marginBottom: 10 }}>
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(110px, 1fr))", gap: 8 }}>
+            <div style={{ textAlign: "center", padding: 10, background: t.bg, borderRadius: 8 }}>
+              <div style={{ fontSize: 20, fontWeight: 900, color: t.tx }}>{analysis.oldCount}</div>
+              <div style={{ fontSize: 9, color: t.tx2, marginTop: 3 }}>{tr("في النظام القديم")}</div>
+            </div>
+            <div style={{ textAlign: "center", padding: 10, background: t.bg, borderRadius: 8 }}>
+              <div style={{ fontSize: 20, fontWeight: 900, color: t.ok }}>{analysis.newCount}</div>
+              <div style={{ fontSize: 9, color: t.tx2, marginTop: 3 }}>{tr("في النظام الجديد")}</div>
+            </div>
+            <div style={{ textAlign: "center", padding: 10, background: t.bg, borderRadius: 8 }}>
+              <div style={{ fontSize: 20, fontWeight: 900, color: analysis.alreadyMigrated > 0 ? t.ok : t.txM }}>{analysis.alreadyMigrated}</div>
+              <div style={{ fontSize: 9, color: t.tx2, marginTop: 3 }}>{tr("منقول مسبقاً")}</div>
+            </div>
+            <div style={{ textAlign: "center", padding: 10, background: analysis.willMigrate > 0 ? "#F59E0B15" : t.bg, borderRadius: 8, border: analysis.willMigrate > 0 ? "1px solid #F59E0B60" : "none" }}>
+              <div style={{ fontSize: 20, fontWeight: 900, color: analysis.willMigrate > 0 ? "#F59E0B" : t.txM }}>{analysis.willMigrate}</div>
+              <div style={{ fontSize: 9, color: t.tx2, marginTop: 3 }}>{tr("سيُنقل")}</div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Result */}
+      {result && (
+        <div style={{
+          padding: 12, borderRadius: 10, marginBottom: 10,
+          background: result.ok ? t.okLt : t.badLt,
+          border: "1px solid " + (result.ok ? t.ok : t.bad) + "40",
+          fontSize: 11,
+        }}>
+          {result.ok ? (
+            <div>
+              <div style={{ fontWeight: 800, color: t.ok, marginBottom: 6 }}>✅ {result.message || tr("تم بنجاح!")}</div>
+              {result.migrated !== undefined && (
+                <div style={{ color: t.tx, fontSize: 10 }}>
+                  {tr("تم نقل:")} <b>{result.migrated}</b> · {tr("إجمالي في النظام الجديد:")} <b>{result.totalInV2}</b>
+                  {result.backupKey && (
+                    <div style={{ fontSize: 9, color: t.tx2, marginTop: 4, fontFamily: "monospace" }}>
+                      {tr("النسخة الاحتياطية:")} {result.backupKey}
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+          ) : (
+            <div style={{ color: t.bad }}>❌ {result.error}</div>
+          )}
+        </div>
+      )}
+
+      {/* Actions */}
+      <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+        <button onClick={dryRun} disabled={loading} style={{
+          padding: "9px 14px", borderRadius: 8,
+          background: t.card, color: t.tx,
+          border: "1px solid " + t.sep,
+          fontSize: 11, fontWeight: 700,
+          cursor: loading ? "wait" : "pointer", fontFamily: "inherit",
+        }}>🔍 {tr("فحص")}</button>
+
+        {analysis && analysis.willMigrate > 0 && (
+          <button onClick={execute} disabled={executing} style={{
+            padding: "9px 14px", borderRadius: 8,
+            background: executing ? t.sep : "linear-gradient(135deg, " + B.blue + ", " + B.blueDk + ")",
+            color: "#fff", border: "none",
+            fontSize: 11, fontWeight: 800,
+            cursor: executing ? "wait" : "pointer", fontFamily: "inherit",
+          }}>
+            {executing ? "⏳ " + tr("جاري النقل...") : "🚀 " + tr("تنفيذ النقل") + " (" + analysis.willMigrate + ")"}
+          </button>
+        )}
+
+        {analysis && analysis.willMigrate === 0 && analysis.oldCount > 0 && (
+          <div style={{ padding: "9px 14px", borderRadius: 8, background: t.okLt, color: t.ok, fontSize: 11, fontWeight: 700 }}>
+            ✓ {tr("كل البيانات متزامنة")}
+          </div>
+        )}
+
+        {analysis && analysis.oldCount === 0 && (
+          <div style={{ padding: "9px 14px", borderRadius: 8, background: t.bg, color: t.txM, fontSize: 11 }}>
+            ℹ️ {tr("لا توجد بيانات قديمة للنقل")}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+/* DataCleanupManager (existing) */
 function DataCleanupManager({ t, B }) {
   var [sizes, setSizes] = useState(null);
   var [loading, setLoading] = useState(true);
@@ -14767,6 +15560,9 @@ function DataCleanupManager({ t, B }) {
         <div style={{ fontSize: 14, fontWeight: 900, color: B.red, marginBottom: 4 }}>🧹 تنظيف بيانات الفترة التجريبية</div>
         <div style={{ fontSize: 11, color: t.tx2 }}>هذه الأداة تحذف بيانات تجريبية بشكل انتقائي — استخدمها بحذر</div>
       </div>
+
+      {/* v7.106 — Migration Card (safe, non-destructive) */}
+      <ViolationsMigrationCard t={t} B={B} />
 
       {/* Data sizes */}
       <div style={{ background: t.card, borderRadius: 12, padding: 14, marginBottom: 14, border: "1px solid " + t.sep }}>
@@ -18008,6 +18804,8 @@ function SettingsHub({ t, B, emps, onLogout, onOpenOldSettings }) {
         { id: "emp_edits",     icon: "✏️", label: tr("تعديلات موظفين") },
         { id: "push",          icon: "🔔", label: tr("إشعارات الجوال") },
         { id: "flash",         icon: "⚡", label: tr("سؤال تحدي على السريع") },
+        { id: "challenges_stats", icon: "📊", label: tr("إحصائيات التحديات") },
+        { id: "salary_sheets", icon: "💰", label: tr("مسيرات الرواتب") },
         { id: "audit",         icon: "📜", label: tr("سجل العمليات") },
         { id: "attach_queue",  icon: "📎", label: tr("مرفقات معلّقة") },
         { id: "attachments",   icon: "🗂", label: tr("أنواع المرفقات") },
@@ -18025,6 +18823,8 @@ function SettingsHub({ t, B, emps, onLogout, onOpenOldSettings }) {
     {sub === "emp_edits" && <EmployeeEditsPanel t={t} B={B} actorName="HR" />}
     {sub === "push" && <PushBroadcastPanel t={t} B={B} emps={emps} />}
     {sub === "flash" && <FlashChallengePanel t={t} B={B} emps={emps} />}
+    {sub === "challenges_stats" && <ChallengesDashboardPanel t={t} B={B} />}
+    {sub === "salary_sheets" && <SalarySheetsPanel t={t} B={B} emps={emps} />}
     {sub === "audit" && <AuditLogPanel t={t} B={B} emps={emps} />}
     {/* v7.10 — Pending attachments central queue */}
     {sub === "attach_queue" && <PendingAttachmentsQueue t={t} B={B} />}
@@ -18113,12 +18913,14 @@ function AttendanceHub({ t, B, emps, branches, saveBranches, mapTarget, setMapTa
       tabs={[
         { id: "insights",  icon: "📈", label: "ذكاء الحضور" },
         { id: "branches",  icon: "🏢", label: "الفروع" },
+        { id: "analytics", icon: "📊", label: "مقارنة الفروع" },
         { id: "work",      icon: "⏰", label: "أنواع الدوام" },
         { id: "geofence",  icon: "📍", label: "النطاق الجغرافي" },
         { id: "tracking",  icon: "🛰️", label: "تتبّع الحركة" },
       ]} />
     {sub === "insights" && <AttendanceInsightsPanel t={t} B={B} emps={emps} />}
     {sub === "branches" && <BranchesPanel t={t} B={B} />}
+    {sub === "analytics" && <BranchAnalyticsPanel t={t} B={B} />}
     {sub === "work" && <WorkTypesPanel t={t} B={B} emps={emps} />}
     {sub === "geofence" && <GeofencePanel branches={branches} saveBranches={saveBranches} safeEmps={emps} mapTarget={mapTarget} setMapTarget={setMapTarget} role={role} t={t} B={B} Fn={Fn} />}
     {sub === "tracking" && <TrackingPanel t={t} B={B} emps={emps} branches={branches} />}

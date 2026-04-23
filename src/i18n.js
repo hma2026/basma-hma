@@ -161,6 +161,96 @@ var EN_TRANSLATIONS = {
 
 
 
+
+
+
+
+
+
+  // ────── v7.106 — Legacy Violations Migration ──────
+  "تنظيف: نقل المخالفات القديمة": "Cleanup: Migrate Legacy Violations",
+  "يوحّد البيانات من النظام القديم 'violations' إلى النظام الموحّد 'violations_v2' — آمن تماماً (يحفظ نسخة احتياطية)": "Unifies data from legacy 'violations' to 'violations_v2' — fully safe (creates backup)",
+  "جاري الفحص...": "Analyzing...",
+  "في النظام القديم": "Legacy",
+  "في النظام الجديد": "Unified",
+  "منقول مسبقاً": "Already migrated",
+  "سيُنقل": "Will migrate",
+  "تم نقل:": "Migrated:",
+  "إجمالي في النظام الجديد:": "Total in new:",
+  "النسخة الاحتياطية:": "Backup:",
+  "فحص": "Analyze",
+  "جاري النقل...": "Migrating...",
+  "تنفيذ النقل": "Execute Migration",
+  "كل البيانات متزامنة": "All data synced",
+  "لا توجد بيانات قديمة للنقل": "No legacy data to migrate",
+  "تأكيد: سيتم نقل المخالفات القديمة إلى النظام الجديد. هذه العملية آمنة — سيتم إنشاء نسخة احتياطية تلقائياً. متابعة؟": "Confirm: Legacy violations will be migrated to the new system. Safe operation — automatic backup created. Continue?",
+
+  // ────── v7.105 — Bulk Salary Sheet Generation ──────
+  "مسيرات الرواتب": "Salary Sheets",
+  "إنشاء مسيرات شهرية محسوبة تلقائياً من الحضور": "Auto-generate monthly payrolls from attendance",
+  "الشهر:": "Month:",
+  "جاري الإنشاء...": "Generating...",
+  "إنشاء مسيرات الكل": "Generate All Salaries",
+  "موظف للفترة": "employees for period",
+  "متابعة؟": "Continue?",
+  "سيتم إنشاء مسيرات لـ": "Will generate payrolls for",
+  "تم الإنشاء!": "Generated!",
+  "تم إنشاء:": "Generated:",
+  "تم تجاهل:": "Skipped:",
+  "(موجود مسبقاً)": "(already exists)",
+  "أخطاء:": "Errors:",
+  "عدد المسيرات": "Payroll Count",
+  "إجمالي الرواتب": "Total Gross",
+  "الخصومات": "Deductions",
+  "الصافي": "Net",
+  "بانتظار كوادر": "Pending Kadwar",
+  "لا توجد مسيرات لهذا الشهر": "No payrolls for this month",
+  "اضغط \"إنشاء مسيرات الكل\" لتوليدها تلقائياً": "Click 'Generate All' to create them",
+  "إجمالي:": "Gross:",
+  "متزامن": "Synced",
+  "بانتظار": "Pending",
+  "لا توجد مسيرات للتصدير": "No payrolls to export",
+
+  // ────── v7.104 — Cross-branch Analytics ──────
+  "مقارنة أداء الفروع": "Branch Performance Comparison",
+  "فروع": "branches",
+  "الفرع الأفضل": "Best Branch",
+  "يحتاج اهتمام": "Needs Attention",
+  "حاضرون اليوم": "present today",
+  "الدرجة": "Score",
+  "تأخير": "Late",
+  "نقاط/موظف": "Pts/Employee",
+  "الدرجة تحسب من: الحضور 40% + قلة المخالفات 30% + متوسط النقاط 30%": "Score: Attendance 40% + Low violations 30% + Avg points 30%",
+
+  // ────── v7.103 — Badges & Achievements ──────
+  "شاراتي وإنجازاتي": "Badges & Achievements",
+  "الإنجازات المكتسبة والقادمة": "Earned and upcoming",
+  "المستوى": "Level",
+  "شارة مكتسبة": "badges earned",
+  "مكتسبة": "Earned",
+  "قادمة": "Upcoming",
+  "لم تكتسب شارات بعد": "No badges earned yet",
+  "واصل الحضور والتفاعل لكسب أول شارة!": "Keep attending and engaging to earn your first badge!",
+  "رائع! حصلت على جميع الشارات": "Amazing! You have all badges",
+
+  // ────── v7.102 — Smart Admin Alerts ──────
+  "تنبيهات ذكية": "Smart Alerts",
+  "تنبيهات إضافية": "more alerts",
+
+  // ────── v7.101 F — Challenges Dashboard ──────
+  "إحصائيات التحديات": "Challenges Stats",
+  "آخر 30 يوم": "Last 30 days",
+  "تحدي مُرسَل": "Challenges sent",
+  "استجابة": "Responses",
+  "صحيحة": "Correct",
+  "نسبة الاستجابة": "Response rate",
+  "نسبة الدقة": "Accuracy rate",
+  "سؤال في بنك الأسئلة": "questions in bank",
+  "أفضل 10 موظفين (نقاط)": "Top 10 employees (points)",
+  "تحديات": "challenges",
+  "أصعب الأسئلة": "Hardest Questions",
+  "أقل نسبة إجابات صحيحة": "Lowest correct rate",
+
   // ────── v7.100 E — Mobile Leaderboard ──────
   "المتصدرون": "Leaderboard",
   "أعلى الموظفين نقاطاً": "Top employees by points",
