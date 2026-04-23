@@ -2,9 +2,10 @@ import { useState, useEffect, useRef } from "react";
 import { ALL_VIOLATIONS_DEFAULT, PENALTY_TYPES, LAIHA_INFO, COMPLAINT_STATUS, VIOLATION_STATUS, PROCEDURE_RULES } from "./laiha";
 import { generateAttendanceReport, generateEmployeeReport, generateMonthlySummary, generateViolationsReport, generateEmployeesListReport, generateBenefitsReport, generateAnnouncementsReport } from "./pdfReports";
 import { exportFormalWarning, exportInvestigationRecord, exportAffidavit, exportEmploymentLetter, exportSalaryLetter, exportLeaveLetter } from "./formalPdfs";
+import { t as tr, setLang, getLang, subscribeLangChange } from "./i18n";
 
 const APP = "بصمة HMA";
-const VER = "7.81";
+const VER = "7.88";
 const CO = "هاني محمد عسيري للإستشارات الهندسية";
 const B = { blue: "#2B5EA7", yellow: "#FDD800", red: "#E2192C", black: "#1A1A1A", blueDk: "#1E4478", blueLt: "#EDF3FB", gold: "#D4A017" };
 
@@ -185,6 +186,2261 @@ function SlidePage({ children, tabKey }) {
       }}
     >
       {children}
+    </div>
+  );
+}
+
+/* ═════════════════════════════════════════════════════════════════
+ * v7.82 — SmartDashboard — لوحة تحكم ذكية مع AR/EN كامل
+ * ═════════════════════════════════════════════════════════════════ */
+function SmartDashboard({ t, B, safeEmps, leaves, present, absent, late, pending, badgeCounts, branches, setTab }) {
+  var [monthData, setMonthData] = useState(null);
+  var [trendData, setTrendData] = useState(null);
+  var [loading, setLoading] = useState(true);
+
+  // Greeting based on time
+  var greet = (function(){
+    var hr = new Date().getHours();
+    return hr < 12 ? tr("☀️ صباح الخير") : hr < 18 ? tr("🌤️ نهارك سعيد") : tr("🌙 مساء الخير");
+  })();
+
+  var dateStr = new Date().toLocaleDateString(getLang() === "ar" ? "ar-SA" : "en-US", {
+    weekday: "long", year: "numeric", month: "long", day: "numeric"
+  });
+
+  // Load monthly + trend data
+  useEffect(function(){
+    async function load() {
+      try {
+        setLoading(true);
+        var r = await fetch("/api/data?action=attendance");
+        var all = await r.json();
+        if (!Array.isArray(all)) all = [];
+
+        var now = new Date();
+        var thisMonth = now.toISOString().slice(0, 7); // YYYY-MM
+        var lastMonthDate = new Date(now.getFullYear(), now.getMonth() - 1, 1);
+        var lastMonth = lastMonthDate.toISOString().slice(0, 7);
+
+        var thisM = all.filter(function(a){ return a.date && a.date.startsWith(thisMonth); });
+        var lastM = all.filter(function(a){ return a.date && a.date.startsWith(lastMonth); });
+
+        var thisPresent = new Set(thisM.filter(function(a){ return a.type === "checkin"; }).map(function(a){ return a.date + "_" + a.empId; }));
+        var lastPresent = new Set(lastM.filter(function(a){ return a.type === "checkin"; }).map(function(a){ return a.date + "_" + a.empId; }));
+        var thisLate = thisM.filter(function(a){ return a.type === "checkin" && a.late; }).length;
+        var lastLate = lastM.filter(function(a){ return a.type === "checkin" && a.late; }).length;
+
+        // Calculate monthly attendance rate (days present / expected days)
+        var totalEmps = Math.max(safeEmps.length, 1);
+        var workDaysThisMonth = new Set(thisM.map(function(a){ return a.date; })).size || 1;
+        var workDaysLastMonth = new Set(lastM.map(function(a){ return a.date; })).size || 1;
+        var thisRate = Math.round((thisPresent.size / (totalEmps * workDaysThisMonth)) * 100);
+        var lastRate = Math.round((lastPresent.size / (totalEmps * workDaysLastMonth)) * 100);
+
+        setMonthData({
+          thisMonth: thisMonth,
+          thisRate: thisRate,
+          lastRate: lastRate,
+          thisLate: thisLate,
+          lastLate: lastLate,
+          thisPresent: thisPresent.size,
+          workDays: workDaysThisMonth,
+        });
+
+        // 4-week trend
+        var weeks = [];
+        for (var i = 3; i >= 0; i--) {
+          var weekStart = new Date(now);
+          weekStart.setDate(weekStart.getDate() - (i * 7 + 6));
+          var weekEnd = new Date(now);
+          weekEnd.setDate(weekEnd.getDate() - (i * 7));
+          var weekAtt = all.filter(function(a){
+            if (!a.date) return false;
+            var d = new Date(a.date);
+            return d >= weekStart && d <= weekEnd && a.type === "checkin";
+          });
+          var uniquePresent = new Set(weekAtt.map(function(a){ return a.date + "_" + a.empId; }));
+          var weekDays = new Set(weekAtt.map(function(a){ return a.date; })).size || 1;
+          var rate = Math.round((uniquePresent.size / (totalEmps * weekDays)) * 100);
+          weeks.push({ label: tr("الأسبوع " + (4 - i)), rate: rate });
+        }
+        setTrendData(weeks);
+      } catch(e) { console.error("Dashboard load error:", e); }
+      setLoading(false);
+    }
+    load();
+  }, [safeEmps.length]);
+
+  // Top & bottom performers
+  var sortedByPct = [...safeEmps].filter(function(e){ return typeof e.pct === "number"; }).sort(function(a, b){ return b.pct - a.pct; });
+  var topPerformers = sortedByPct.slice(0, 3);
+  var bottomPerformers = [...sortedByPct].reverse().slice(0, 3);
+
+  // Smart insights calculation
+  var insights = [];
+  if (monthData) {
+    var diff = monthData.thisRate - monthData.lastRate;
+    if (diff > 2) {
+      insights.push({
+        icon: "📈",
+        color: t.ok,
+        label: tr("معدل الحضور") + " (" + tr("مقارنة بالشهر الماضي") + ")",
+        value: "+" + diff + "%",
+        sub: tr("نمو"),
+      });
+    } else if (diff < -2) {
+      insights.push({
+        icon: "📉",
+        color: t.bad,
+        label: tr("معدل الحضور") + " (" + tr("مقارنة بالشهر الماضي") + ")",
+        value: diff + "%",
+        sub: tr("انخفاض"),
+      });
+    } else {
+      insights.push({
+        icon: "➖",
+        color: t.txM,
+        label: tr("معدل الحضور") + " (" + tr("مقارنة بالشهر الماضي") + ")",
+        value: (diff >= 0 ? "+" : "") + diff + "%",
+        sub: tr("ثابت"),
+      });
+    }
+  }
+  if (topPerformers[0]) {
+    insights.push({
+      icon: "🏆",
+      color: B.gold,
+      label: tr("أفضل موظف هذا الشهر"),
+      value: topPerformers[0].name.split(" ")[0],
+      sub: topPerformers[0].pct + "%",
+    });
+  }
+  if (bottomPerformers[0]) {
+    insights.push({
+      icon: "⚠️",
+      color: t.bad,
+      label: tr("أكثر موظف تأخراً"),
+      value: bottomPerformers[0].name.split(" ")[0],
+      sub: bottomPerformers[0].pct + "%",
+    });
+  }
+
+  // Action items (smart alerts)
+  var actionItems = [];
+  // Low performers
+  var lowPerformers = sortedByPct.filter(function(e){ return e.pct < 75; });
+  if (lowPerformers.length > 0) {
+    actionItems.push({
+      icon: "👥",
+      color: t.bad,
+      priority: "high",
+      title: tr("موظفون يحتاجون مقابلة"),
+      sub: lowPerformers.length + " · " + tr("معدلات الحضور منخفضة"),
+      count: lowPerformers.length,
+      onClick: function(){ setTab("employees"); },
+    });
+  }
+  // Pending leaves
+  if (pending > 0) {
+    actionItems.push({
+      icon: "🏖️",
+      color: B.blue,
+      priority: "medium",
+      title: tr("طلبات إجازة معلقة"),
+      sub: tr("في انتظار موافقتك"),
+      count: pending,
+      onClick: function(){ setTab("leaves_hub"); },
+    });
+  }
+  // Pending violations / appeals
+  if ((badgeCounts.appeals || 0) > 0) {
+    actionItems.push({
+      icon: "⚖️",
+      color: "#F97316",
+      priority: "medium",
+      title: tr("تظلمات معلقة"),
+      sub: tr("مُسجّلة تلقائياً"),
+      count: badgeCounts.appeals,
+      onClick: function(){ setTab("discipline_hub"); },
+    });
+  }
+
+  return (
+    <div>
+      {/* ─── Smart Greeting Header ─── */}
+      <div style={{
+        background: "linear-gradient(135deg, " + B.blue + "15, " + B.gold + "10)",
+        borderRadius: 14, padding: "16px 20px", marginBottom: 14,
+        border: "1px solid " + t.sep,
+        display: "flex", justifyContent: "space-between", alignItems: "center", gap: 14, flexWrap: "wrap"
+      }}>
+        <div>
+          <div style={{ fontSize: 18, fontWeight: 800, color: t.tx, marginBottom: 2 }}>{greet} 👋</div>
+          <div style={{ fontSize: 11, color: t.txM }}>{dateStr}</div>
+        </div>
+        <div style={{ display: "flex", gap: 10, fontSize: 11, flexWrap: "wrap" }}>
+          <div style={{ padding: "8px 12px", borderRadius: 8, background: t.card }}>
+            <span style={{ color: t.txM }}>{tr("الموظفون: ")}</span>
+            <strong style={{ color: B.blue }}>{safeEmps.length}</strong>
+          </div>
+          <div style={{ padding: "8px 12px", borderRadius: 8, background: t.card }}>
+            <span style={{ color: t.txM }}>{tr("الحضور اليوم: ")}</span>
+            <strong style={{ color: t.ok }}>{present}/{safeEmps.length}</strong>
+            <span style={{ color: t.txM, marginRight: 4 }}> ({safeEmps.length > 0 ? Math.round((present / safeEmps.length) * 100) : 0}%)</span>
+          </div>
+        </div>
+      </div>
+
+      {/* ─── v7.83 — Quick Actions (shortcuts للمدير) ─── */}
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(6, 1fr)", gap: 10, marginBottom: 14 }}>
+        {[
+          { id: "employees",     label: tr("الموظفين"),        icon: "👥", color: B.blue },
+          { id: "leaves_hub",    label: tr("الإجازات"),         icon: "🏖️", color: "#0891B2" },
+          { id: "admin_requests", label: tr("الطلبات"),         icon: "📨", color: "#8b5cf6" },
+          { id: "attendance_hub", label: tr("الحضور والتنظيم"), icon: "⏰", color: "#10b981" },
+          { id: "discipline_hub", label: tr("النظام التأديبي"), icon: "⚖️", color: t.bad },
+          { id: "reports",        label: tr("التقارير"),        icon: "📊", color: B.gold },
+        ].map(function(qa){
+          return <button key={qa.id} onClick={function(){ setTab(qa.id); }} style={{
+            padding: "14px 10px", borderRadius: 12,
+            background: t.card,
+            border: "1px solid " + t.sep,
+            cursor: "pointer",
+            display: "flex", flexDirection: "column", alignItems: "center", gap: 6,
+            fontFamily: "inherit",
+            transition: "all .15s",
+          }}
+          onMouseEnter={function(e){ e.currentTarget.style.borderColor = qa.color; }}
+          onMouseLeave={function(e){ e.currentTarget.style.borderColor = t.sep; }}>
+            <div style={{
+              width: 36, height: 36, borderRadius: 10,
+              background: qa.color + "20",
+              display: "flex", alignItems: "center", justifyContent: "center",
+              fontSize: 18
+            }}>{qa.icon}</div>
+            <div style={{ fontSize: 10, fontWeight: 700, color: t.tx, textAlign: "center" }}>{qa.label}</div>
+          </button>;
+        })}
+      </div>
+
+      {/* ─── Today Stats (4 cards) ─── */}
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(4,1fr)", gap: 12, marginBottom: 16 }}>
+        {[
+          { l: tr("حاضر"), v: present, i: "✅", c: t.ok, s: tr("من ") + safeEmps.length },
+          { l: tr("غائب"), v: absent, i: "🚫", c: t.bad },
+          { l: tr("متأخر"), v: late, i: "⏰", c: t.warn },
+          { l: tr("طلبات معلّقة"), v: pending, i: "📋", c: B.blue },
+        ].map(function(s, i){
+          return <div key={i} style={{ background: t.card, borderRadius: 14, padding: "16px", border: "1px solid " + t.sep }}>
+            <div style={{ display: "flex", justifyContent: "space-between" }}>
+              <div>
+                <div style={{ fontSize: 11, color: t.txM }}>{s.l}</div>
+                <div style={{ fontSize: 28, fontWeight: 800, color: s.c, marginTop: 4 }}>{s.v}</div>
+                {s.s && <div style={{ fontSize: 10, color: t.txM }}>{s.s}</div>}
+              </div>
+              <div style={{ width: 40, height: 40, borderRadius: 10, background: s.c + "12", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 20 }}>{s.i}</div>
+            </div>
+          </div>;
+        })}
+      </div>
+
+      {/* ─── Smart Insights (3 cards) ─── */}
+      {insights.length > 0 && (
+        <div style={{ marginBottom: 16 }}>
+          <div style={{ fontSize: 14, fontWeight: 800, color: t.tx, marginBottom: 10 }}>{tr("💡 رؤى ذكية")}</div>
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(" + insights.length + ",1fr)", gap: 12 }}>
+            {insights.map(function(ins, i){
+              return <div key={i} style={{
+                background: t.card, borderRadius: 14, padding: 16,
+                border: "1px solid " + t.sep,
+                borderRight: "3px solid " + ins.color,
+              }}>
+                <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                  <div style={{ fontSize: 28 }}>{ins.icon}</div>
+                  <div style={{ flex: 1 }}>
+                    <div style={{ fontSize: 10, color: t.txM, marginBottom: 4, lineHeight: 1.3 }}>{ins.label}</div>
+                    <div style={{ fontSize: 20, fontWeight: 800, color: ins.color, lineHeight: 1 }}>{ins.value}</div>
+                    <div style={{ fontSize: 10, color: t.txM, marginTop: 2 }}>{ins.sub}</div>
+                  </div>
+                </div>
+              </div>;
+            })}
+          </div>
+        </div>
+      )}
+
+      {/* ─── Action Items ─── */}
+      <div style={{ background: t.card, borderRadius: 14, padding: 16, border: "1px solid " + t.sep, marginBottom: 16 }}>
+        <div style={{ fontSize: 14, fontWeight: 800, color: t.tx, marginBottom: 12 }}>{tr("🎯 إجراءات مطلوبة")}</div>
+        {actionItems.length === 0 ? (
+          <div style={{ textAlign: "center", padding: 24, color: t.txM, fontSize: 12 }}>
+            <div style={{ fontSize: 28, marginBottom: 8 }}>✨</div>
+            <div style={{ fontWeight: 700, marginBottom: 4 }}>{tr("لا توجد إجراءات مطلوبة حالياً")}</div>
+            <div style={{ fontSize: 11 }}>{tr("كل شيء تحت السيطرة ✨")}</div>
+          </div>
+        ) : (
+          <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+            {actionItems.map(function(a, i){
+              return <div key={i} onClick={a.onClick} style={{
+                display: "flex", alignItems: "center", gap: 12,
+                padding: "12px 14px", borderRadius: 10,
+                background: a.color + "08",
+                border: "1px solid " + a.color + "30",
+                cursor: "pointer",
+                transition: "all .15s",
+              }}>
+                <div style={{
+                  width: 40, height: 40, borderRadius: 10,
+                  background: a.color + "15",
+                  display: "flex", alignItems: "center", justifyContent: "center",
+                  fontSize: 20,
+                }}>{a.icon}</div>
+                <div style={{ flex: 1 }}>
+                  <div style={{ fontSize: 13, fontWeight: 700, color: t.tx, marginBottom: 2 }}>{a.title}</div>
+                  <div style={{ fontSize: 11, color: t.txM }}>{a.sub}</div>
+                </div>
+                <div style={{
+                  padding: "4px 10px", borderRadius: 14,
+                  background: a.color,
+                  color: "#fff",
+                  fontSize: 12, fontWeight: 800,
+                  minWidth: 28, textAlign: "center",
+                }}>{a.count}</div>
+                <div style={{ fontSize: 16, color: a.color, fontWeight: 800 }}>›</div>
+              </div>;
+            })}
+          </div>
+        )}
+      </div>
+
+      {/* ─── Attendance Trend Chart ─── */}
+      {trendData && trendData.length > 0 && (
+        <div style={{ background: t.card, borderRadius: 14, padding: 16, border: "1px solid " + t.sep, marginBottom: 16 }}>
+          <div style={{ fontSize: 14, fontWeight: 800, color: t.tx, marginBottom: 14 }}>{tr("📉 اتجاه الحضور (4 أسابيع)")}</div>
+          <div style={{ display: "flex", alignItems: "flex-end", gap: 10, height: 120, padding: "0 8px" }}>
+            {trendData.map(function(w, i){
+              var c = w.rate >= 90 ? t.ok : w.rate >= 75 ? B.blue : w.rate >= 60 ? t.warn : t.bad;
+              var h = Math.max(w.rate * 0.9, 8);
+              return <div key={i} style={{ flex: 1, textAlign: "center" }}>
+                <div style={{ fontSize: 12, fontWeight: 800, color: c, marginBottom: 4 }}>{w.rate}%</div>
+                <div style={{ height: h, borderRadius: "8px 8px 0 0", background: c, minHeight: 8, transition: "height .3s" }} />
+                <div style={{ fontSize: 10, color: t.txM, marginTop: 6, fontWeight: 600 }}>{w.label}</div>
+              </div>;
+            })}
+          </div>
+        </div>
+      )}
+
+      {/* ─── Top / Bottom Performers ─── */}
+      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12, marginBottom: 16 }}>
+        <div style={{ background: t.card, borderRadius: 14, padding: 16, border: "1px solid " + t.sep }}>
+          <div style={{ fontSize: 13, fontWeight: 800, color: t.ok, marginBottom: 10 }}>{tr("🏆 الأكثر انضباطاً")}</div>
+          {topPerformers.length === 0 ? (
+            <div style={{ textAlign: "center", padding: 16, color: t.txM, fontSize: 11 }}>{tr("لا توجد بيانات كافية")}</div>
+          ) : topPerformers.map(function(e, i){
+            return <div key={i} style={{ display: "flex", alignItems: "center", gap: 8, padding: "6px 0", borderBottom: i < topPerformers.length - 1 ? "1px solid " + t.sep : "none" }}>
+              <span style={{ fontSize: 16 }}>{["🥇", "🥈", "🥉"][i]}</span>
+              <div style={{ flex: 1 }}>
+                <div style={{ fontSize: 12, fontWeight: 700, color: t.tx }}>{e.name}</div>
+              </div>
+              <span style={{ fontSize: 13, fontWeight: 800, color: t.ok }}>{e.pct}%</span>
+            </div>;
+          })}
+        </div>
+
+        <div style={{ background: t.card, borderRadius: 14, padding: 16, border: "1px solid " + t.sep }}>
+          <div style={{ fontSize: 13, fontWeight: 800, color: t.bad, marginBottom: 10 }}>{tr("⚠️ يحتاج متابعة")}</div>
+          {bottomPerformers.length === 0 ? (
+            <div style={{ textAlign: "center", padding: 16, color: t.txM, fontSize: 11 }}>{tr("لا توجد بيانات كافية")}</div>
+          ) : bottomPerformers.map(function(e, i){
+            return <div key={i} style={{ display: "flex", alignItems: "center", gap: 8, padding: "6px 0", borderBottom: i < bottomPerformers.length - 1 ? "1px solid " + t.sep : "none" }}>
+              <div style={{ width: 24, height: 24, borderRadius: "50%", background: t.badLt, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 10, fontWeight: 800, color: t.bad }}>{i + 1}</div>
+              <div style={{ flex: 1 }}>
+                <div style={{ fontSize: 12, fontWeight: 700, color: t.tx }}>{e.name}</div>
+              </div>
+              <span style={{ fontSize: 13, fontWeight: 800, color: t.bad }}>{e.pct}%</span>
+            </div>;
+          })}
+        </div>
+      </div>
+
+      {/* ─── Legal Quick Stats (4 clickable cards) ─── */}
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(4,1fr)", gap: 12 }}>
+        {[
+          { l: tr("شكاوى معلقة"), v: badgeCounts.complaints || 0, i: "📣", c: B.gold },
+          { l: tr("تحقيقات (بالرد)"), v: badgeCounts.investigations || 0, i: "🔍", c: B.blue },
+          { l: tr("مخالفات سارية"), v: badgeCounts.violations || 0, i: "⚖️", c: t.bad },
+          { l: tr("تظلمات معلقة"), v: badgeCounts.appeals || 0, i: "📢", c: "#F97316" },
+        ].map(function(s, i){
+          return <div key={i} onClick={function(){ setTab("discipline_hub"); }} style={{
+            background: t.card, borderRadius: 14, padding: 16,
+            border: "1px solid " + t.sep,
+            cursor: "pointer", transition: "all .15s",
+          }}>
+            <div style={{ display: "flex", justifyContent: "space-between" }}>
+              <div>
+                <div style={{ fontSize: 11, color: t.txM }}>{s.l}</div>
+                <div style={{ fontSize: 28, fontWeight: 800, color: s.c, marginTop: 4 }}>{s.v}</div>
+              </div>
+              <div style={{ width: 40, height: 40, borderRadius: 10, background: s.c + "12", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 20 }}>{s.i}</div>
+            </div>
+          </div>;
+        })}
+      </div>
+    </div>
+  );
+}
+
+/* ═════════════════════════════════════════════════════════════════
+ * v7.85 — AddEmployeeWizard — معالج إضافة موظف جديد (5 خطوات)
+ * ═════════════════════════════════════════════════════════════════
+ * الخطوات:
+ *  1. البيانات الشخصية (الهوية، الاسم، الجوال، الإيميل)
+ *  2. الوظيفة (المسمى، الفرع، القسم، تاريخ المباشرة)
+ *  3. الدور والصلاحيات (موظف/مدير، نوع الدوام)
+ *  4. المدير المباشر + الراتب الأساسي
+ *  5. مراجعة + حفظ
+ * ═════════════════════════════════════════════════════════════════ */
+function AddEmployeeWizard({ t, B, branches, existingEmps, onClose, onSaved }) {
+  var [step, setStep] = useState(1);
+  var [saving, setSaving] = useState(false);
+  var [error, setError] = useState(null);
+
+  // v7.86 — تحميل بيانات كوادر (المسميات + الهيكل + KPIs)
+  var [catalog, setCatalog] = useState(null);
+  var [catalogLoading, setCatalogLoading] = useState(true);
+  var [catalogError, setCatalogError] = useState(null);
+
+  useEffect(function(){
+    async function loadCatalog() {
+      setCatalogLoading(true);
+      try {
+        var r = await fetch("/api/data?action=kadwar-job-catalog");
+        var d = await r.json();
+        if (d.ok) {
+          setCatalog({
+            jobTitles: d.jobTitles || [],
+            orgChart: d.orgChart || [],
+            kpisByTitle: d.kpisByTitle || {},
+            stale: !!d.stale,
+            fromCache: !!d.fromCache,
+          });
+          if (d.stale) setCatalogError(tr("البيانات من الذاكرة المؤقتة — كوادر غير متصل حالياً"));
+        } else {
+          setCatalogError(d.error || tr("تعذر تحميل بيانات كوادر"));
+        }
+      } catch(e) {
+        setCatalogError(tr("تعذر الاتصال بكوادر: ") + e.message);
+      }
+      setCatalogLoading(false);
+    }
+    loadCatalog();
+  }, []);
+
+  // بيانات الموظف — تُملأ تدريجياً عبر الخطوات
+  var [form, setForm] = useState({
+    // Step 1 — Personal
+    id: "",            // رقم الهوية (primary key)
+    name: "",
+    nameEn: "",
+    phone: "",
+    email: "",
+    // Step 2 — Job (v7.86 — مرتبطة بكوادر)
+    jobTitleId: "",    // v7.86 — المعرّف من كوادر (primary)
+    jobTitle: "",      // الاسم المعروض (من كوادر تلقائياً)
+    branchId: "",
+    department: "",    // (v7.86 — يُملأ تلقائياً من كوادر عند اختيار المسمى)
+    joinDate: new Date().toISOString().slice(0, 10),
+    workType: "morning", // morning | split | flexible
+    // Step 3 — Role & access
+    role: "employee",   // employee | manager | hr | admin
+    // Step 4 — Manager & salary
+    managerId: "",
+    basicSalary: "",
+    // Meta
+    active: true,
+  });
+
+  function updateForm(key, value) {
+    setForm(function(prev){ return { ...prev, [key]: value }; });
+    setError(null);
+  }
+
+  // v7.86 — عند اختيار المسمى من كوادر: يُملأ الاسم والقسم تلقائياً
+  function selectJobTitle(titleId) {
+    if (!catalog || !titleId) {
+      setForm(function(prev){ return { ...prev, jobTitleId: "", jobTitle: "", department: "" }; });
+      return;
+    }
+    var title = catalog.jobTitles.find(function(jt){ return String(jt.id) === String(titleId); });
+    if (title) {
+      setForm(function(prev){
+        return {
+          ...prev,
+          jobTitleId: String(title.id),
+          jobTitle: title.name_ar || title.name || "",
+          department: title.department || prev.department,
+        };
+      });
+    }
+    setError(null);
+  }
+
+  // v7.86 — اختيار KPIs المرتبطة بالمسمى المختار
+  var kpisForSelected = (catalog && form.jobTitleId && catalog.kpisByTitle && catalog.kpisByTitle[form.jobTitleId])
+    ? catalog.kpisByTitle[form.jobTitleId]
+    : null;
+
+  // التحقق من صحة الخطوة
+  function validateStep(s) {
+    if (s === 1) {
+      if (!form.id || form.id.trim().length < 5) return tr("رقم الهوية مطلوب (5 أرقام على الأقل)");
+      if (existingEmps.find(function(e){ return String(e.id) === String(form.id); })) {
+        return tr("موظف برقم الهوية هذا موجود بالفعل");
+      }
+      if (!form.name || form.name.trim().length < 3) return tr("اسم الموظف مطلوب");
+      if (form.email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(form.email)) return tr("صيغة البريد الإلكتروني غير صحيحة");
+      if (form.phone && form.phone.replace(/\D/g, "").length < 9) return tr("رقم الجوال غير صحيح");
+    }
+    if (s === 2) {
+      if (!form.jobTitleId) return tr("يجب اختيار المسمى الوظيفي من قائمة كوادر");
+      if (!form.branchId) return tr("الفرع مطلوب");
+    }
+    return null;
+  }
+
+  function goNext() {
+    var err = validateStep(step);
+    if (err) { setError(err); return; }
+    setError(null);
+    setStep(Math.min(5, step + 1));
+  }
+
+  function goBack() {
+    setError(null);
+    setStep(Math.max(1, step - 1));
+  }
+
+  async function submit() {
+    // Final validation
+    for (var s = 1; s <= 4; s++) {
+      var err = validateStep(s);
+      if (err) { setError(err + " (" + tr("الخطوة") + " " + s + ")"); setStep(s); return; }
+    }
+    setSaving(true);
+    setError(null);
+    try {
+      var payload = { ...form };
+      if (payload.basicSalary) payload.basicSalary = parseFloat(payload.basicSalary) || 0;
+      payload.actorId = "hr"; // for audit
+
+      var r = await fetch("/api/data?action=employees", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      });
+      var d = await r.json();
+      if (!d.ok) {
+        setError(d.error || tr("فشل الحفظ"));
+        setSaving(false);
+        return;
+      }
+      setSaving(false);
+      onSaved();
+    } catch(e) {
+      setError(tr("فشل الاتصال: ") + e.message);
+      setSaving(false);
+    }
+  }
+
+  // UI styles
+  var inputStyle = {
+    width: "100%",
+    padding: "10px 14px",
+    borderRadius: 10,
+    border: "1px solid " + t.sep,
+    background: t.inp,
+    color: t.tx,
+    fontSize: 13,
+    fontFamily: "inherit",
+    outline: "none",
+    boxSizing: "border-box",
+  };
+  var labelStyle = {
+    display: "block",
+    fontSize: 11,
+    fontWeight: 700,
+    color: t.tx,
+    marginBottom: 6,
+  };
+
+  var stepTitles = [
+    { num: 1, label: tr("البيانات الشخصية"), icon: "👤" },
+    { num: 2, label: tr("الوظيفة والفرع"), icon: "💼" },
+    { num: 3, label: tr("الدور والصلاحيات"), icon: "🔐" },
+    { num: 4, label: tr("المدير والراتب"), icon: "💰" },
+    { num: 5, label: tr("مراجعة وحفظ"), icon: "✓" },
+  ];
+
+  return (
+    <div onClick={onClose} style={{
+      position: "fixed", inset: 0,
+      background: "rgba(0,0,0,0.72)",
+      zIndex: 1200,
+      display: "flex", alignItems: "center", justifyContent: "center",
+      padding: 16, fontFamily: "inherit"
+    }}>
+      <div onClick={function(e){ e.stopPropagation(); }} style={{
+        background: t.bg,
+        borderRadius: 18,
+        maxWidth: 560, width: "100%",
+        maxHeight: "90vh",
+        overflowY: "auto",
+        direction: isRTL() ? "rtl" : "ltr",
+      }}>
+        {/* Header */}
+        <div style={{
+          background: "linear-gradient(135deg, " + B.blue + ", " + B.blueDk + ")",
+          padding: "18px 20px",
+          color: "#fff",
+          display: "flex", justifyContent: "space-between", alignItems: "center",
+        }}>
+          <div>
+            <div style={{ fontSize: 16, fontWeight: 900 }}>➕ {tr("إضافة موظف جديد")}</div>
+            <div style={{ fontSize: 10, opacity: 0.85, marginTop: 2 }}>{tr("الخطوة")} {step} {tr("من")} 5</div>
+          </div>
+          <button onClick={onClose} style={{
+            background: "rgba(255,255,255,0.22)", border: "none",
+            borderRadius: 8, width: 32, height: 32,
+            color: "#fff", fontSize: 18, cursor: "pointer", fontFamily: "inherit"
+          }}>×</button>
+        </div>
+
+        {/* Steps progress */}
+        <div style={{ display: "flex", padding: "14px 20px", gap: 6, background: t.card, borderBottom: "1px solid " + t.sep }}>
+          {stepTitles.map(function(s, i){
+            var active = s.num === step;
+            var done = s.num < step;
+            return <div key={s.num} style={{
+              flex: 1,
+              display: "flex", flexDirection: "column", alignItems: "center", gap: 4,
+              opacity: active ? 1 : (done ? 0.8 : 0.4),
+            }}>
+              <div style={{
+                width: 28, height: 28, borderRadius: "50%",
+                background: done ? t.ok : (active ? B.blue : t.sep),
+                color: "#fff",
+                display: "flex", alignItems: "center", justifyContent: "center",
+                fontSize: 12, fontWeight: 800,
+              }}>{done ? "✓" : s.num}</div>
+              <div style={{ fontSize: 9, color: t.tx, fontWeight: active ? 800 : 600, textAlign: "center", lineHeight: 1.2 }}>
+                {s.label}
+              </div>
+            </div>;
+          })}
+        </div>
+
+        {/* Body */}
+        <div style={{ padding: "20px 22px" }}>
+
+          {/* ─── Step 1: Personal ─── */}
+          {step === 1 && <>
+            <div style={{ fontSize: 14, fontWeight: 800, color: t.tx, marginBottom: 14 }}>
+              👤 {tr("البيانات الشخصية")}
+            </div>
+
+            <div style={{ marginBottom: 12 }}>
+              <label style={labelStyle}>{tr("رقم الهوية")} <span style={{ color: t.bad }}>*</span></label>
+              <input type="text" value={form.id} onChange={function(e){ updateForm("id", e.target.value.replace(/\D/g, "")); }}
+                placeholder="1234567890" maxLength={10} style={inputStyle} />
+              <div style={{ fontSize: 9, color: t.txM, marginTop: 4 }}>{tr("رقم الهوية هو المعرّف الرئيسي للموظف في النظام")}</div>
+            </div>
+
+            <div style={{ marginBottom: 12 }}>
+              <label style={labelStyle}>{tr("الاسم الكامل")} <span style={{ color: t.bad }}>*</span></label>
+              <input type="text" value={form.name} onChange={function(e){ updateForm("name", e.target.value); }}
+                placeholder={tr("مثلاً: محمد عبدالله العتيبي")} style={inputStyle} />
+            </div>
+
+            <div style={{ marginBottom: 12 }}>
+              <label style={labelStyle}>{tr("الاسم بالإنجليزية")} ({tr("اختياري")})</label>
+              <input type="text" value={form.nameEn} onChange={function(e){ updateForm("nameEn", e.target.value); }}
+                placeholder="Mohammed Al-Otaibi" style={inputStyle} />
+            </div>
+
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10, marginBottom: 12 }}>
+              <div>
+                <label style={labelStyle}>{tr("رقم الجوال")}</label>
+                <input type="tel" value={form.phone} onChange={function(e){ updateForm("phone", e.target.value); }}
+                  placeholder="0501234567" style={inputStyle} />
+              </div>
+              <div>
+                <label style={labelStyle}>{tr("البريد الإلكتروني")}</label>
+                <input type="email" value={form.email} onChange={function(e){ updateForm("email", e.target.value); }}
+                  placeholder="m.alotaibi@hma.engineer" style={inputStyle} />
+              </div>
+            </div>
+          </>}
+
+          {/* ─── Step 2: Job (v7.86 — من كوادر) ─── */}
+          {step === 2 && <>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
+              <div style={{ fontSize: 14, fontWeight: 800, color: t.tx }}>
+                💼 {tr("الوظيفة والفرع")}
+              </div>
+              <div style={{
+                fontSize: 9, fontWeight: 700,
+                padding: "4px 10px", borderRadius: 12,
+                background: B.blue + "15", color: B.blue,
+                display: "flex", alignItems: "center", gap: 4,
+              }}>
+                🔗 {tr("من كوادر")}
+              </div>
+            </div>
+
+            {/* Catalog loading / error state */}
+            {catalogLoading && (
+              <div style={{ padding: "14px 16px", background: t.card, borderRadius: 10, border: "1px solid " + t.sep, fontSize: 12, color: t.txM, textAlign: "center", marginBottom: 12 }}>
+                ⏳ {tr("جاري تحميل المسميات من كوادر...")}
+              </div>
+            )}
+            {catalogError && !catalogLoading && (
+              <div style={{ padding: "10px 14px", background: t.warnLt, border: "1px solid " + t.warn + "40", borderRadius: 10, fontSize: 11, color: t.tx, marginBottom: 12, lineHeight: 1.6 }}>
+                ⚠️ {catalogError}
+              </div>
+            )}
+
+            {/* Job Title — dropdown من كوادر */}
+            <div style={{ marginBottom: 12 }}>
+              <label style={labelStyle}>
+                {tr("المسمى الوظيفي")} <span style={{ color: t.bad }}>*</span>
+                <span style={{ marginRight: 6, fontSize: 9, color: B.blue, fontWeight: 600 }}>({tr("معتمد من كوادر")})</span>
+              </label>
+              {catalog && catalog.jobTitles && catalog.jobTitles.length > 0 ? (
+                <select value={form.jobTitleId} onChange={function(e){ selectJobTitle(e.target.value); }} style={inputStyle}>
+                  <option value="">{tr("— اختر المسمى —")}</option>
+                  {catalog.jobTitles.map(function(jt){
+                    return <option key={jt.id} value={jt.id}>
+                      {jt.name_ar || jt.name}{jt.department ? " — " + jt.department : ""}
+                    </option>;
+                  })}
+                </select>
+              ) : (
+                <div style={{ padding: "10px 14px", background: t.badLt, border: "1px solid " + t.bad + "40", borderRadius: 10, fontSize: 11, color: t.tx, lineHeight: 1.6 }}>
+                  ❌ {tr("لا توجد مسميات متاحة من كوادر. يرجى إضافة المسميات في hma.engineer أولاً.")}
+                </div>
+              )}
+              <div style={{ fontSize: 9, color: t.txM, marginTop: 4, lineHeight: 1.5 }}>
+                ℹ️ {tr("المسميات الوظيفية تُدار من كوادر — للإضافة أو التعديل:")} <a href="https://hma.engineer" target="_blank" style={{ color: B.blue, fontWeight: 700 }}>hma.engineer</a>
+              </div>
+            </div>
+
+            {/* KPIs preview — مرتبطة بالمسمى المختار */}
+            {kpisForSelected && kpisForSelected.criteria && kpisForSelected.criteria.length > 0 && (
+              <div style={{ marginBottom: 12, padding: "12px 14px", background: B.gold + "10", border: "1px solid " + B.gold + "30", borderRadius: 10 }}>
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
+                  <div style={{ fontSize: 12, fontWeight: 800, color: t.tx }}>🎯 {tr("مؤشرات الأداء لهذا المسمى")} (KPIs)</div>
+                  <div style={{ fontSize: 9, color: t.txM }}>{tr("معتمدة من كوادر")}</div>
+                </div>
+                <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+                  {kpisForSelected.criteria.slice(0, 6).map(function(c, i){
+                    return <div key={i} style={{
+                      display: "flex", justifyContent: "space-between", alignItems: "center",
+                      padding: "6px 10px", background: t.card, borderRadius: 6,
+                      fontSize: 10, color: t.tx,
+                    }}>
+                      <span>• {c.name || c.title || c}</span>
+                      {c.weight && <span style={{ fontWeight: 700, color: B.gold }}>{c.weight}%</span>}
+                    </div>;
+                  })}
+                  {kpisForSelected.criteria.length > 6 && (
+                    <div style={{ fontSize: 9, color: t.txM, textAlign: "center", marginTop: 4 }}>
+                      + {kpisForSelected.criteria.length - 6} {tr("مؤشر آخر")}
+                    </div>
+                  )}
+                </div>
+              </div>
+            )}
+
+            {/* Branch */}
+            <div style={{ marginBottom: 12 }}>
+              <label style={labelStyle}>{tr("الفرع")} <span style={{ color: t.bad }}>*</span></label>
+              <select value={form.branchId} onChange={function(e){ updateForm("branchId", e.target.value); }} style={inputStyle}>
+                <option value="">{tr("— اختر الفرع —")}</option>
+                {(branches || []).map(function(b){
+                  return <option key={b.id} value={b.id}>{b.name}</option>;
+                })}
+              </select>
+            </div>
+
+            {/* Department — read-only إذا تم تحديده من كوادر */}
+            <div style={{ marginBottom: 12 }}>
+              <label style={labelStyle}>
+                {tr("القسم")}
+                {form.jobTitleId && form.department && (
+                  <span style={{ marginRight: 6, fontSize: 9, color: t.ok, fontWeight: 600 }}>({tr("تلقائي من المسمى")})</span>
+                )}
+              </label>
+              <input type="text" value={form.department}
+                onChange={function(e){ updateForm("department", e.target.value); }}
+                placeholder={tr("مثلاً: التصميم المعماري")}
+                readOnly={!!(form.jobTitleId && form.department)}
+                style={{
+                  ...inputStyle,
+                  background: (form.jobTitleId && form.department) ? t.okLt : t.inp,
+                  cursor: (form.jobTitleId && form.department) ? "default" : "text",
+                }} />
+            </div>
+
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10, marginBottom: 12 }}>
+              <div>
+                <label style={labelStyle}>{tr("تاريخ المباشرة")}</label>
+                <input type="date" value={form.joinDate} onChange={function(e){ updateForm("joinDate", e.target.value); }}
+                  style={inputStyle} />
+              </div>
+              <div>
+                <label style={labelStyle}>{tr("نوع الدوام")}</label>
+                <select value={form.workType} onChange={function(e){ updateForm("workType", e.target.value); }} style={inputStyle}>
+                  <option value="morning">{tr("صباحي")}</option>
+                  <option value="split">{tr("فترتين")}</option>
+                  <option value="flexible">{tr("مرن")}</option>
+                </select>
+              </div>
+            </div>
+          </>}
+
+          {/* ─── Step 3: Role ─── */}
+          {step === 3 && <>
+            <div style={{ fontSize: 14, fontWeight: 800, color: t.tx, marginBottom: 6 }}>
+              🔐 {tr("الدور والصلاحيات")}
+            </div>
+            <div style={{ fontSize: 11, color: t.txM, marginBottom: 14 }}>
+              {tr("اختر دور الموظف في النظام — يحدد الصلاحيات")}
+            </div>
+
+            <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+              {[
+                { id: "employee", icon: "👤", label: tr("موظف عادي"), desc: tr("يسجل حضوره، يطلب إجازات، يعدّل بياناته") },
+                { id: "manager",  icon: "👔", label: tr("مدير قسم"),  desc: tr("يعتمد طلبات موظفيه + صلاحيات موظف عادي") },
+                { id: "hr",       icon: "🏢", label: tr("HR"),         desc: tr("إدارة كاملة للموظفين، الرواتب، التقارير") },
+                { id: "admin",    icon: "👑", label: tr("مدير النظام"), desc: tr("كل الصلاحيات — بما فيها الإعدادات المتقدمة") },
+              ].map(function(r){
+                var active = form.role === r.id;
+                return <div key={r.id} onClick={function(){ updateForm("role", r.id); }} style={{
+                  padding: "12px 14px",
+                  borderRadius: 10,
+                  background: active ? B.blue + "15" : t.card,
+                  border: "2px solid " + (active ? B.blue : t.sep),
+                  cursor: "pointer",
+                  display: "flex", alignItems: "center", gap: 12,
+                  transition: "all .15s",
+                }}>
+                  <div style={{
+                    width: 38, height: 38, borderRadius: 10,
+                    background: active ? B.blue + "25" : t.sep,
+                    display: "flex", alignItems: "center", justifyContent: "center",
+                    fontSize: 20,
+                  }}>{r.icon}</div>
+                  <div style={{ flex: 1 }}>
+                    <div style={{ fontSize: 13, fontWeight: 800, color: t.tx, marginBottom: 2 }}>{r.label}</div>
+                    <div style={{ fontSize: 10, color: t.txM }}>{r.desc}</div>
+                  </div>
+                  {active && <div style={{ fontSize: 20, color: B.blue, fontWeight: 900 }}>✓</div>}
+                </div>;
+              })}
+            </div>
+          </>}
+
+          {/* ─── Step 4: Manager + Salary (v7.86 — مع الهيكل من كوادر) ─── */}
+          {step === 4 && <>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 14 }}>
+              <div style={{ fontSize: 14, fontWeight: 800, color: t.tx }}>
+                💰 {tr("المدير المباشر والراتب")}
+              </div>
+              {catalog && catalog.orgChart && catalog.orgChart.length > 0 && (
+                <div style={{
+                  fontSize: 9, fontWeight: 700,
+                  padding: "4px 10px", borderRadius: 12,
+                  background: B.blue + "15", color: B.blue,
+                  display: "flex", alignItems: "center", gap: 4,
+                }}>
+                  🔗 {tr("الهيكل من كوادر")}
+                </div>
+              )}
+            </div>
+
+            {/* v7.86 — اقتراح المدير من الهيكل التنظيمي */}
+            {(function(){
+              if (!catalog || !catalog.orgChart || catalog.orgChart.length === 0 || !form.jobTitleId) return null;
+              // ابحث عن الموقع الأب للمسمى المختار
+              var mySlot = catalog.orgChart.find(function(p){ return String(p.positionId) === String(form.jobTitleId) || String(p.jobTitleId) === String(form.jobTitleId); });
+              if (!mySlot || !mySlot.parentId) return null;
+              // اعثر على موظف يشغل الـ parent position
+              var suggestedMgr = existingEmps.find(function(e){ return String(e.jobTitleId) === String(mySlot.parentId); });
+              if (!suggestedMgr) return null;
+              return <div style={{ padding: "10px 14px", background: B.gold + "10", border: "1px solid " + B.gold + "40", borderRadius: 10, marginBottom: 12, display: "flex", justifyContent: "space-between", alignItems: "center", gap: 10 }}>
+                <div style={{ fontSize: 11, color: t.tx, lineHeight: 1.6 }}>
+                  💡 <b>{tr("اقتراح من الهيكل التنظيمي:")}</b> {suggestedMgr.name}
+                </div>
+                <button onClick={function(){ updateForm("managerId", suggestedMgr.id); }} style={{
+                  padding: "6px 12px", borderRadius: 8,
+                  background: B.gold, color: "#fff",
+                  border: "none", fontSize: 10, fontWeight: 700,
+                  cursor: "pointer", fontFamily: "inherit",
+                }}>{tr("استخدم هذا")}</button>
+              </div>;
+            })()}
+
+            <div style={{ marginBottom: 12 }}>
+              <label style={labelStyle}>{tr("المدير المباشر")} ({tr("اختياري")})</label>
+              <select value={form.managerId} onChange={function(e){ updateForm("managerId", e.target.value); }} style={inputStyle}>
+                <option value="">{tr("بدون مدير مباشر")}</option>
+                {(existingEmps || []).filter(function(e){ return e.role === "manager" || e.role === "admin" || e.role === "hr"; }).map(function(e){
+                  return <option key={e.id} value={e.id}>{e.name} — {e.jobTitle || ""}</option>;
+                })}
+              </select>
+            </div>
+
+            <div style={{ marginBottom: 12 }}>
+              <label style={labelStyle}>{tr("الراتب الأساسي")} ({tr("ريال / شهر")})</label>
+              <input type="number" value={form.basicSalary} onChange={function(e){ updateForm("basicSalary", e.target.value); }}
+                placeholder="5000" min="0" style={inputStyle} />
+              <div style={{ fontSize: 9, color: t.txM, marginTop: 4 }}>
+                {tr("يمكن تعديله لاحقاً من شاشة الموظف")}
+              </div>
+            </div>
+
+            <div style={{ padding: "12px 14px", background: B.blue + "10", borderRadius: 10, border: "1px solid " + B.blue + "30", fontSize: 11, color: t.tx, lineHeight: 1.7, marginTop: 16 }}>
+              ℹ️ {tr("الموظف سيُضاف مباشرة للنظام ويستطيع تسجيل الحضور برقم هويته")}
+            </div>
+          </>}
+
+          {/* ─── Step 5: Review ─── */}
+          {step === 5 && <>
+            <div style={{ fontSize: 14, fontWeight: 800, color: t.tx, marginBottom: 14 }}>
+              ✓ {tr("مراجعة البيانات قبل الحفظ")}
+            </div>
+
+            <div style={{ background: t.card, borderRadius: 12, padding: 16, border: "1px solid " + t.sep }}>
+              {[
+                { label: tr("رقم الهوية"), value: form.id },
+                { label: tr("الاسم الكامل"), value: form.name },
+                { label: tr("الاسم بالإنجليزية"), value: form.nameEn || "—" },
+                { label: tr("رقم الجوال"), value: form.phone || "—" },
+                { label: tr("البريد الإلكتروني"), value: form.email || "—" },
+                { label: tr("المسمى الوظيفي"), value: form.jobTitle },
+                { label: tr("الفرع"), value: (branches.find(function(b){ return b.id === form.branchId; }) || {}).name || "—" },
+                { label: tr("القسم"), value: form.department || "—" },
+                { label: tr("تاريخ المباشرة"), value: form.joinDate },
+                { label: tr("نوع الدوام"), value: { morning: tr("صباحي"), split: tr("فترتين"), flexible: tr("مرن") }[form.workType] },
+                { label: tr("الدور"), value: { employee: tr("موظف عادي"), manager: tr("مدير قسم"), hr: "HR", admin: tr("مدير النظام") }[form.role] },
+                { label: tr("المدير المباشر"), value: (existingEmps.find(function(e){ return e.id === form.managerId; }) || {}).name || tr("بدون") },
+                { label: tr("الراتب الأساسي"), value: form.basicSalary ? form.basicSalary + " " + tr("ريال") : "—" },
+              ].map(function(row, i){
+                return <div key={i} style={{
+                  display: "flex", justifyContent: "space-between",
+                  padding: "8px 0",
+                  borderBottom: i < 12 ? "1px solid " + t.sep : "none",
+                }}>
+                  <span style={{ fontSize: 11, color: t.txM }}>{row.label}</span>
+                  <span style={{ fontSize: 12, fontWeight: 700, color: t.tx }}>{row.value}</span>
+                </div>;
+              })}
+            </div>
+
+            <div style={{ padding: "12px 14px", background: t.okLt, borderRadius: 10, border: "1px solid " + t.ok + "40", fontSize: 11, color: t.tx, lineHeight: 1.7, marginTop: 12 }}>
+              ✨ {tr("عند الضغط على حفظ، سيُضاف الموظف للنظام فوراً ويتمكن من تسجيل الدخول")}
+            </div>
+          </>}
+
+          {/* Error message */}
+          {error && (
+            <div style={{ marginTop: 14, padding: "10px 14px", background: t.badLt, border: "1px solid " + t.bad + "40", borderRadius: 10, fontSize: 12, color: t.bad, fontWeight: 700 }}>
+              ⚠️ {error}
+            </div>
+          )}
+        </div>
+
+        {/* Footer */}
+        <div style={{
+          padding: "14px 20px",
+          borderTop: "1px solid " + t.sep,
+          background: t.card,
+          display: "flex", gap: 10, justifyContent: "space-between",
+        }}>
+          <button onClick={step === 1 ? onClose : goBack} disabled={saving} style={{
+            padding: "10px 18px", borderRadius: 10,
+            background: "transparent", color: t.tx,
+            border: "1px solid " + t.sep,
+            fontSize: 12, fontWeight: 700,
+            cursor: saving ? "default" : "pointer",
+            fontFamily: "inherit",
+          }}>
+            {step === 1 ? tr("إلغاء") : ("← " + tr("رجوع"))}
+          </button>
+
+          {step < 5 ? (
+            <button onClick={goNext} style={{
+              padding: "10px 22px", borderRadius: 10,
+              background: B.blue, color: "#fff",
+              border: "none",
+              fontSize: 13, fontWeight: 800,
+              cursor: "pointer", fontFamily: "inherit",
+            }}>
+              {tr("التالي")} →
+            </button>
+          ) : (
+            <button onClick={submit} disabled={saving} style={{
+              padding: "10px 22px", borderRadius: 10,
+              background: saving ? t.sep : "linear-gradient(135deg, " + t.ok + ", " + t.ok + "cc)",
+              color: "#fff", border: "none",
+              fontSize: 13, fontWeight: 900,
+              cursor: saving ? "wait" : "pointer",
+              fontFamily: "inherit",
+            }}>
+              {saving ? ("⏳ " + tr("جاري الحفظ...")) : ("💾 " + tr("حفظ الموظف"))}
+            </button>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/* ═════════════════════════════════════════════════════════════════
+ * v7.88 — EmployeeDetailPage — صفحة ملف الموظف الشاملة (لـ HR/Admin)
+ * ═════════════════════════════════════════════════════════════════
+ * Sections:
+ *   - Hero header (avatar, name, status, badges)
+ *   - Performance card (4 metrics)
+ *   - Smart tabs: Overview, Attendance, Leaves, Salary, Discipline, Activity
+ *   - KPIs from Kadwar (auto-loaded based on jobTitle)
+ *   - Quick Actions sidebar
+ * ═════════════════════════════════════════════════════════════════ */
+function EmployeeDetailPage({ t, B, emp, allEmps, leaves, branches, isMobile, onBack, onNavigate }) {
+  var [activeTab, setActiveTab] = useState("overview");
+  var [monthlyStats, setMonthlyStats] = useState(null);
+  var [empAudit, setEmpAudit] = useState([]);
+  var [empViolations, setEmpViolations] = useState([]);
+  var [empSlips, setEmpSlips] = useState([]);
+  var [kpiData, setKpiData] = useState(null);
+  var [loading, setLoading] = useState(true);
+
+  // Load all data for this employee
+  useEffect(function(){
+    async function loadAll() {
+      setLoading(true);
+      try {
+        // Monthly attendance stats
+        var now = new Date();
+        var thisMonth = now.toISOString().slice(0, 7);
+        var attR = await fetch("/api/data?action=attendance&empId=" + encodeURIComponent(emp.id));
+        var allAtt = await attR.json();
+        if (!Array.isArray(allAtt)) allAtt = [];
+        var monthAtt = allAtt.filter(function(a){ return a.date && a.date.startsWith(thisMonth); });
+        var checkins = monthAtt.filter(function(a){ return a.type === "checkin"; });
+        var lateCount = checkins.filter(function(a){ return a.late; }).length;
+        var uniqueDays = new Set(checkins.map(function(a){ return a.date; })).size;
+        // Calculate work days in month
+        var daysInMonth = new Date(now.getFullYear(), now.getMonth() + 1, 0).getDate();
+        var workDays = 0;
+        for (var d = 1; d <= daysInMonth; d++) {
+          var dt = new Date(now.getFullYear(), now.getMonth(), d);
+          if (dt.getDay() !== 5 && dt.getDay() !== 6) workDays++; // Sun-Thu = work days
+        }
+        setMonthlyStats({
+          present: uniqueDays,
+          absent: Math.max(0, workDays - uniqueDays),
+          late: lateCount,
+          workDays: workDays,
+          pct: workDays > 0 ? Math.round((uniqueDays / workDays) * 100) : 0,
+        });
+
+        // Audit log for this employee
+        var auditR = await fetch("/api/data?action=audit-log&target=" + encodeURIComponent(emp.id) + "&limit=50");
+        var auditD = await auditR.json();
+        if (auditD.ok) setEmpAudit(auditD.entries || []);
+
+        // Violations
+        var vR = await fetch("/api/data?action=violations&empId=" + encodeURIComponent(emp.id));
+        var vD = await vR.json();
+        setEmpViolations(Array.isArray(vD) ? vD : []);
+
+        // Salary slips
+        try {
+          var slipR = await fetch("/api/data?action=payroll-slips&empId=" + encodeURIComponent(emp.id));
+          var slipD = await slipR.json();
+          if (slipD && Array.isArray(slipD.slips)) setEmpSlips(slipD.slips);
+        } catch(e) {}
+
+        // KPIs from Kadwar based on jobTitleId
+        if (emp.jobTitleId || emp.jobTitle) {
+          try {
+            var kpiR = await fetch("/api/data?action=kadwar-job-catalog");
+            var kpiD = await kpiR.json();
+            if (kpiD.ok && kpiD.kpisByTitle) {
+              var titleKey = emp.jobTitleId || emp.jobTitle;
+              if (kpiD.kpisByTitle[titleKey]) {
+                setKpiData(kpiD.kpisByTitle[titleKey]);
+              }
+            }
+          } catch(e) {}
+        }
+      } catch(e) { console.error("Load employee profile error:", e); }
+      setLoading(false);
+    }
+    loadAll();
+  }, [emp.id]);
+
+  // Filter employee-specific data
+  var myLeaves = (leaves || []).filter(function(l){ return String(l.empId) === String(emp.id); });
+  var pendingLeaves = myLeaves.filter(function(l){ return l.status === "pending"; });
+  var approvedLeaves = myLeaves.filter(function(l){ return l.status === "approved"; });
+
+  // Manager info
+  var manager = emp.managerId ? (allEmps || []).find(function(e){ return String(e.id) === String(emp.managerId); }) : null;
+  var myReports = (allEmps || []).filter(function(e){ return String(e.managerId) === String(emp.id); });
+
+  // Status calculation
+  var perfColor = (emp.pct || 0) >= 85 ? t.ok : (emp.pct || 0) >= 70 ? t.warn : t.bad;
+  var perfLabel = (emp.pct || 0) >= 85 ? tr("ممتاز") : (emp.pct || 0) >= 70 ? tr("جيد") : tr("يحتاج متابعة");
+
+  // Format timestamp
+  function formatTs(ts) {
+    if (!ts) return "—";
+    try {
+      var d = new Date(ts);
+      var now = new Date();
+      var diffMs = now - d;
+      var diffMin = Math.floor(diffMs / 60000);
+      var diffHr = Math.floor(diffMin / 60);
+      var diffDay = Math.floor(diffHr / 24);
+      if (diffMin < 1) return tr("الآن");
+      if (diffMin < 60) return diffMin + " " + tr("د");
+      if (diffHr < 24) return diffHr + " " + tr("س");
+      if (diffDay < 7) return diffDay + " " + tr("يوم");
+      return d.toLocaleDateString(getLang() === "ar" ? "ar-SA" : "en-US", { month: "short", day: "numeric" });
+    } catch(e) { return ts.slice(0, 10); }
+  }
+
+  // Tabs config
+  var tabs = [
+    { id: "overview",    icon: "📋", label: tr("نظرة عامة") },
+    { id: "attendance",  icon: "⏰", label: tr("الحضور") },
+    { id: "leaves",      icon: "🏖️", label: tr("الإجازات"), badge: pendingLeaves.length > 0 ? pendingLeaves.length : null },
+    { id: "salary",      icon: "💰", label: tr("الراتب") },
+    { id: "discipline",  icon: "⚖️", label: tr("النظام التأديبي"), badge: empViolations.filter(function(v){ return v.status === "open"; }).length || null },
+    { id: "activity",    icon: "📜", label: tr("سجل النشاط") },
+  ];
+
+  return (
+    <div>
+      {/* Back button (desktop) */}
+      {!isMobile && (
+        <button onClick={onBack} style={{
+          background: "none", border: "none",
+          fontSize: 13, color: B.blue, fontWeight: 700,
+          cursor: "pointer", marginBottom: 14, fontFamily: "inherit",
+        }}>← {tr("رجوع للقائمة")}</button>
+      )}
+
+      {/* ─── Hero Header ─── */}
+      <div style={{
+        background: "linear-gradient(135deg, " + B.blue + ", " + B.blueDk + ")",
+        borderRadius: 14, padding: "20px 24px",
+        color: "#fff",
+        marginBottom: 14,
+        display: "flex", alignItems: "center", gap: 18, flexWrap: "wrap",
+      }}>
+        {/* Avatar */}
+        <div style={{
+          width: 80, height: 80, borderRadius: "50%",
+          background: "rgba(255,255,255,0.2)",
+          border: "3px solid rgba(255,255,255,0.4)",
+          display: "flex", alignItems: "center", justifyContent: "center",
+          fontSize: 42, fontWeight: 900,
+          flexShrink: 0,
+        }}>
+          {emp.name ? emp.name.charAt(0) : "?"}
+        </div>
+
+        {/* Info */}
+        <div style={{ flex: 1, minWidth: 200 }}>
+          <div style={{ fontSize: 22, fontWeight: 900, marginBottom: 4 }}>{emp.name}</div>
+          <div style={{ fontSize: 13, opacity: 0.9, marginBottom: 6 }}>
+            {emp.jobTitle || emp.role} {emp.department ? (" · " + emp.department) : ""}
+          </div>
+          <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+            <span style={{ padding: "3px 10px", borderRadius: 12, background: "rgba(255,255,255,0.2)", fontSize: 10, fontWeight: 700 }}>
+              🆔 {emp.id}
+            </span>
+            {emp.branchName && (
+              <span style={{ padding: "3px 10px", borderRadius: 12, background: "rgba(255,255,255,0.2)", fontSize: 10, fontWeight: 700 }}>
+                🏢 {emp.branchName}
+              </span>
+            )}
+            {emp.hasAccount && (
+              <span style={{ padding: "3px 10px", borderRadius: 12, background: "rgba(16,185,129,0.5)", fontSize: 10, fontWeight: 700 }}>
+                ✓ {tr("حساب نشط")}
+              </span>
+            )}
+            {!emp.hasAccount && (
+              <span style={{ padding: "3px 10px", borderRadius: 12, background: "rgba(245,158,11,0.5)", fontSize: 10, fontWeight: 700 }}>
+                ⚠ {tr("بدون حساب")}
+              </span>
+            )}
+          </div>
+        </div>
+
+        {/* Performance big number */}
+        <div style={{ textAlign: "center", flexShrink: 0 }}>
+          <div style={{ fontSize: 44, fontWeight: 900, lineHeight: 1 }}>{emp.pct || 0}%</div>
+          <div style={{ fontSize: 11, opacity: 0.85, marginTop: 4 }}>{perfLabel}</div>
+        </div>
+      </div>
+
+      {/* ─── Performance Cards (4 metrics) ─── */}
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 10, marginBottom: 14 }}>
+        {[
+          { l: tr("الالتزام"), v: (emp.pct || 0) + "%", c: perfColor, i: "📊" },
+          { l: tr("السلسلة"), v: "🔥" + (emp.streak || 0), c: "#FF6B35", i: "" },
+          { l: tr("النقاط"), v: emp.points || 0, c: B.gold, i: "⭐" },
+          { l: tr("الشهر الحالي"), v: monthlyStats ? monthlyStats.pct + "%" : "—", c: B.blue, i: "📅" },
+        ].map(function(x, i){
+          return <div key={i} style={{
+            background: t.card, borderRadius: 12,
+            padding: "14px 12px",
+            border: "1px solid " + t.sep,
+            textAlign: "center",
+          }}>
+            <div style={{ fontSize: 22, fontWeight: 900, color: x.c, marginBottom: 4 }}>
+              {x.i && <span style={{ fontSize: 14, marginLeft: 3 }}>{x.i}</span>}
+              {x.v}
+            </div>
+            <div style={{ fontSize: 10, color: t.txM, fontWeight: 600 }}>{x.l}</div>
+          </div>;
+        })}
+      </div>
+
+      {/* ─── Tabs ─── */}
+      <div style={{
+        display: "flex", gap: 4, marginBottom: 14,
+        overflowX: "auto", paddingBottom: 4,
+        borderBottom: "1px solid " + t.sep,
+      }}>
+        {tabs.map(function(tb){
+          var active = activeTab === tb.id;
+          return <button key={tb.id} onClick={function(){ setActiveTab(tb.id); }} style={{
+            padding: "10px 16px",
+            background: active ? B.blue + "15" : "transparent",
+            color: active ? B.blue : t.tx,
+            border: "none",
+            borderBottom: "3px solid " + (active ? B.blue : "transparent"),
+            fontSize: 12, fontWeight: active ? 800 : 600,
+            cursor: "pointer", fontFamily: "inherit",
+            display: "flex", alignItems: "center", gap: 6,
+            whiteSpace: "nowrap", flexShrink: 0,
+            position: "relative",
+          }}>
+            <span>{tb.icon}</span>
+            <span>{tb.label}</span>
+            {tb.badge && (
+              <span style={{
+                padding: "1px 7px", borderRadius: 10,
+                background: t.bad, color: "#fff",
+                fontSize: 9, fontWeight: 800,
+              }}>{tb.badge}</span>
+            )}
+          </button>;
+        })}
+      </div>
+
+      {/* ─── Tab: Overview ─── */}
+      {activeTab === "overview" && (
+        <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr" : "2fr 1fr", gap: 14 }}>
+          {/* Left column */}
+          <div>
+            {/* Contact */}
+            <div style={{ background: t.card, borderRadius: 14, padding: 16, border: "1px solid " + t.sep, marginBottom: 12 }}>
+              <div style={{ fontSize: 13, fontWeight: 800, color: t.tx, marginBottom: 12 }}>📇 {tr("بيانات التواصل")}</div>
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10, fontSize: 12 }}>
+                <div>
+                  <div style={{ fontSize: 10, color: t.txM, marginBottom: 3 }}>{tr("البريد الإلكتروني")}</div>
+                  <div style={{ color: t.tx, fontWeight: 600 }}>{emp.email || "—"}</div>
+                </div>
+                <div>
+                  <div style={{ fontSize: 10, color: t.txM, marginBottom: 3 }}>{tr("رقم الجوال")}</div>
+                  <div style={{ color: t.tx, fontWeight: 600 }}>{emp.phone || "—"}</div>
+                </div>
+                <div>
+                  <div style={{ fontSize: 10, color: t.txM, marginBottom: 3 }}>{tr("تاريخ المباشرة")}</div>
+                  <div style={{ color: t.tx, fontWeight: 600 }}>{emp.joinDate || "—"}</div>
+                </div>
+                <div>
+                  <div style={{ fontSize: 10, color: t.txM, marginBottom: 3 }}>{tr("نوع الدوام")}</div>
+                  <div style={{ color: t.tx, fontWeight: 600 }}>
+                    {{ morning: tr("صباحي"), split: tr("فترتين"), flexible: tr("مرن") }[emp.workType] || "—"}
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            {/* KPIs from Kadwar */}
+            {kpiData && kpiData.criteria && kpiData.criteria.length > 0 && (
+              <div style={{ background: t.card, borderRadius: 14, padding: 16, border: "1px solid " + B.gold + "40", borderRight: "4px solid " + B.gold, marginBottom: 12 }}>
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>
+                  <div style={{ fontSize: 13, fontWeight: 800, color: t.tx }}>🎯 {tr("مؤشرات الأداء (KPIs)")}</div>
+                  <div style={{ fontSize: 9, color: t.txM, padding: "3px 10px", background: B.gold + "15", borderRadius: 12, fontWeight: 700 }}>
+                    {tr("من كوادر")}
+                  </div>
+                </div>
+                <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+                  {kpiData.criteria.map(function(c, i){
+                    return <div key={i} style={{
+                      display: "flex", justifyContent: "space-between", alignItems: "center",
+                      padding: "8px 12px", background: t.bg, borderRadius: 8,
+                    }}>
+                      <span style={{ fontSize: 11, color: t.tx, fontWeight: 600 }}>• {c.name || c.title || c}</span>
+                      {c.weight && <span style={{ fontSize: 11, fontWeight: 800, color: B.gold }}>{c.weight}%</span>}
+                    </div>;
+                  })}
+                </div>
+              </div>
+            )}
+
+            {/* Hierarchy */}
+            <div style={{ background: t.card, borderRadius: 14, padding: 16, border: "1px solid " + t.sep, marginBottom: 12 }}>
+              <div style={{ fontSize: 13, fontWeight: 800, color: t.tx, marginBottom: 12 }}>🏢 {tr("الموقع في الهيكل التنظيمي")}</div>
+
+              {/* Manager */}
+              {manager && (
+                <div style={{
+                  padding: "10px 14px", borderRadius: 10,
+                  background: B.blue + "10", border: "1px solid " + B.blue + "30",
+                  display: "flex", alignItems: "center", gap: 10,
+                  marginBottom: 8,
+                }}>
+                  <div style={{ fontSize: 18 }}>👆</div>
+                  <div style={{ flex: 1 }}>
+                    <div style={{ fontSize: 10, color: t.txM }}>{tr("المدير المباشر")}</div>
+                    <div style={{ fontSize: 13, fontWeight: 700, color: t.tx }}>{manager.name}</div>
+                    <div style={{ fontSize: 10, color: t.txM }}>{manager.jobTitle || "—"}</div>
+                  </div>
+                </div>
+              )}
+
+              {/* Self */}
+              <div style={{
+                padding: "12px 14px", borderRadius: 10,
+                background: B.gold + "15", border: "2px solid " + B.gold,
+                marginBottom: myReports.length > 0 ? 8 : 0,
+                display: "flex", alignItems: "center", gap: 10,
+              }}>
+                <div style={{ fontSize: 20 }}>👤</div>
+                <div style={{ flex: 1 }}>
+                  <div style={{ fontSize: 10, color: t.txM }}>{tr("الموظف")}</div>
+                  <div style={{ fontSize: 13, fontWeight: 800, color: t.tx }}>{emp.name}</div>
+                  <div style={{ fontSize: 10, color: t.txM }}>{emp.jobTitle || "—"}</div>
+                </div>
+              </div>
+
+              {/* Reports */}
+              {myReports.length > 0 && (
+                <div>
+                  <div style={{ fontSize: 10, color: t.txM, marginBottom: 6, marginTop: 8 }}>👇 {tr("التابعون")} ({myReports.length})</div>
+                  <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+                    {myReports.slice(0, 5).map(function(r){
+                      return <div key={r.id} onClick={function(){ onNavigate && onNavigate("employees"); }} style={{
+                        padding: "8px 12px", borderRadius: 8,
+                        background: t.bg,
+                        fontSize: 11, color: t.tx,
+                        cursor: "pointer",
+                      }}>
+                        <span style={{ fontWeight: 600 }}>{r.name}</span>
+                        <span style={{ fontSize: 9, color: t.txM, marginRight: 6 }}>— {r.jobTitle || "—"}</span>
+                      </div>;
+                    })}
+                    {myReports.length > 5 && (
+                      <div style={{ fontSize: 10, color: t.txM, textAlign: "center", padding: 4 }}>
+                        + {myReports.length - 5} {tr("آخرين")}
+                      </div>
+                    )}
+                  </div>
+                </div>
+              )}
+            </div>
+          </div>
+
+          {/* Right column: Quick Actions */}
+          <div>
+            <div style={{ background: t.card, borderRadius: 14, padding: 16, border: "1px solid " + t.sep }}>
+              <div style={{ fontSize: 13, fontWeight: 800, color: t.tx, marginBottom: 12 }}>⚡ {tr("إجراءات سريعة")}</div>
+              <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+                <button onClick={function(){ onNavigate && onNavigate("letters"); }} style={{
+                  padding: "10px 14px", borderRadius: 10,
+                  background: B.blue + "15", color: B.blue,
+                  border: "1px solid " + B.blue + "30",
+                  fontSize: 12, fontWeight: 700,
+                  cursor: "pointer", fontFamily: "inherit",
+                  textAlign: isRTL() ? "right" : "left",
+                }}>📄 {tr("إصدار إفادة رسمية")}</button>
+
+                <button onClick={function(){ onNavigate && onNavigate("discipline_hub"); }} style={{
+                  padding: "10px 14px", borderRadius: 10,
+                  background: t.warn + "15", color: t.warn,
+                  border: "1px solid " + t.warn + "30",
+                  fontSize: 12, fontWeight: 700,
+                  cursor: "pointer", fontFamily: "inherit",
+                  textAlign: isRTL() ? "right" : "left",
+                }}>⚠️ {tr("تسجيل مخالفة")}</button>
+
+                <button onClick={function(){ onNavigate && onNavigate("leaves_hub"); }} style={{
+                  padding: "10px 14px", borderRadius: 10,
+                  background: "#0891B215", color: "#0891B2",
+                  border: "1px solid #0891B230",
+                  fontSize: 12, fontWeight: 700,
+                  cursor: "pointer", fontFamily: "inherit",
+                  textAlign: isRTL() ? "right" : "left",
+                }}>🏖️ {tr("إدارة إجازاته")}</button>
+
+                <button onClick={function(){ onNavigate && onNavigate("payroll"); }} style={{
+                  padding: "10px 14px", borderRadius: 10,
+                  background: B.gold + "15", color: B.gold,
+                  border: "1px solid " + B.gold + "30",
+                  fontSize: 12, fontWeight: 700,
+                  cursor: "pointer", fontFamily: "inherit",
+                  textAlign: isRTL() ? "right" : "left",
+                }}>💰 {tr("إدارة راتبه")}</button>
+              </div>
+
+              <div style={{ marginTop: 14, padding: "10px 12px", background: B.blue + "08", border: "1px dashed " + B.blue + "40", borderRadius: 10, fontSize: 10, color: t.txM, textAlign: "center", lineHeight: 1.6 }}>
+                🔗 {tr("لتعديل الاسم/المسمى/الفرع — استخدم")} <a href="https://hma.engineer" target="_blank" style={{ color: B.blue, fontWeight: 800 }}>{tr("كوادر")}</a>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ─── Tab: Attendance ─── */}
+      {activeTab === "attendance" && monthlyStats && (
+        <div style={{ background: t.card, borderRadius: 14, padding: 16, border: "1px solid " + t.sep }}>
+          <div style={{ fontSize: 13, fontWeight: 800, color: t.tx, marginBottom: 14 }}>📊 {tr("إحصائيات الشهر الحالي")}</div>
+
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 12, marginBottom: 14 }}>
+            {[
+              { l: tr("أيام الحضور"),  v: monthlyStats.present, c: t.ok, max: monthlyStats.workDays },
+              { l: tr("أيام الغياب"),  v: monthlyStats.absent,  c: t.bad, max: monthlyStats.workDays },
+              { l: tr("أيام التأخر"), v: monthlyStats.late,    c: t.warn, max: monthlyStats.workDays },
+              { l: tr("أيام العمل"),  v: monthlyStats.workDays, c: B.blue },
+            ].map(function(s, i){
+              return <div key={i} style={{
+                padding: 14, background: t.bg, borderRadius: 10,
+                border: "1px solid " + t.sep,
+                textAlign: "center",
+              }}>
+                <div style={{ fontSize: 28, fontWeight: 900, color: s.c }}>{s.v}</div>
+                <div style={{ fontSize: 10, color: t.txM, marginTop: 4 }}>{s.l}</div>
+                {s.max !== undefined && (
+                  <div style={{ fontSize: 9, color: t.txM, marginTop: 2 }}>{tr("من")} {s.max}</div>
+                )}
+              </div>;
+            })}
+          </div>
+
+          {/* Attendance rate bar */}
+          <div style={{ padding: "12px 16px", background: t.bg, borderRadius: 10 }}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
+              <span style={{ fontSize: 11, fontWeight: 700, color: t.tx }}>{tr("معدل الحضور هذا الشهر")}</span>
+              <span style={{ fontSize: 16, fontWeight: 900, color: perfColor }}>{monthlyStats.pct}%</span>
+            </div>
+            <div style={{ height: 8, background: t.sep, borderRadius: 4, overflow: "hidden" }}>
+              <div style={{
+                height: "100%",
+                width: monthlyStats.pct + "%",
+                background: perfColor,
+                transition: "width .5s",
+              }} />
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ─── Tab: Leaves ─── */}
+      {activeTab === "leaves" && (
+        <div style={{ background: t.card, borderRadius: 14, padding: 16, border: "1px solid " + t.sep }}>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 14 }}>
+            <div style={{ fontSize: 13, fontWeight: 800, color: t.tx }}>🏖️ {tr("سجل الإجازات")}</div>
+            <button onClick={function(){ onNavigate && onNavigate("leaves_hub"); }} style={{
+              padding: "6px 12px", borderRadius: 8,
+              background: B.blue, color: "#fff",
+              border: "none", fontSize: 10, fontWeight: 700,
+              cursor: "pointer",
+            }}>{tr("إدارة الإجازات")} →</button>
+          </div>
+
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 10, marginBottom: 14 }}>
+            <div style={{ padding: 12, background: t.warnLt, borderRadius: 10, textAlign: "center" }}>
+              <div style={{ fontSize: 24, fontWeight: 900, color: t.warn }}>{pendingLeaves.length}</div>
+              <div style={{ fontSize: 10, color: t.txM }}>{tr("قيد المراجعة")}</div>
+            </div>
+            <div style={{ padding: 12, background: t.okLt, borderRadius: 10, textAlign: "center" }}>
+              <div style={{ fontSize: 24, fontWeight: 900, color: t.ok }}>{approvedLeaves.length}</div>
+              <div style={{ fontSize: 10, color: t.txM }}>{tr("معتمدة")}</div>
+            </div>
+            <div style={{ padding: 12, background: B.blue + "15", borderRadius: 10, textAlign: "center" }}>
+              <div style={{ fontSize: 24, fontWeight: 900, color: B.blue }}>{myLeaves.length}</div>
+              <div style={{ fontSize: 10, color: t.txM }}>{tr("الإجمالي")}</div>
+            </div>
+          </div>
+
+          {myLeaves.length === 0 ? (
+            <div style={{ padding: 30, textAlign: "center", color: t.txM, fontSize: 12 }}>{tr("لا توجد إجازات مسجلة")}</div>
+          ) : (
+            <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+              {myLeaves.slice(0, 10).map(function(l, i){
+                var sColor = l.status === "approved" ? t.ok : l.status === "rejected" ? t.bad : t.warn;
+                var sIcon = l.status === "approved" ? "✓" : l.status === "rejected" ? "✗" : "⏳";
+                return <div key={l.id || i} style={{
+                  padding: "10px 14px", background: t.bg, borderRadius: 10,
+                  display: "flex", alignItems: "center", gap: 12,
+                  borderRight: "3px solid " + sColor,
+                }}>
+                  <div style={{ fontSize: 18, color: sColor }}>{sIcon}</div>
+                  <div style={{ flex: 1 }}>
+                    <div style={{ fontSize: 12, fontWeight: 700, color: t.tx }}>
+                      {{ annual: tr("سنوية"), sick: tr("مرضية"), emergency: tr("طارئة"), personal: tr("شخصية"), unpaid: tr("بدون راتب") }[l.type] || l.type}
+                      <span style={{ fontSize: 10, color: t.txM, fontWeight: 500, marginRight: 6 }}>· {l.days || 1} {tr("يوم")}</span>
+                    </div>
+                    <div style={{ fontSize: 10, color: t.txM, marginTop: 2 }}>
+                      {l.from} {tr("إلى")} {l.to}
+                    </div>
+                  </div>
+                </div>;
+              })}
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* ─── Tab: Salary ─── */}
+      {activeTab === "salary" && (
+        <div style={{ background: t.card, borderRadius: 14, padding: 16, border: "1px solid " + t.sep }}>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 14 }}>
+            <div style={{ fontSize: 13, fontWeight: 800, color: t.tx }}>💰 {tr("الرواتب")}</div>
+            <button onClick={function(){ onNavigate && onNavigate("payroll"); }} style={{
+              padding: "6px 12px", borderRadius: 8,
+              background: B.gold, color: "#fff",
+              border: "none", fontSize: 10, fontWeight: 700,
+              cursor: "pointer",
+            }}>{tr("إدارة الرواتب")} →</button>
+          </div>
+
+          <div style={{ padding: 16, background: B.gold + "10", borderRadius: 10, border: "1px solid " + B.gold + "30", marginBottom: 14, display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+            <div>
+              <div style={{ fontSize: 10, color: t.txM }}>{tr("الراتب الأساسي")}</div>
+              <div style={{ fontSize: 20, fontWeight: 900, color: B.gold }}>
+                {emp.basicSalary ? (emp.basicSalary + " " + tr("ريال")) : "—"}
+              </div>
+            </div>
+            <div style={{ fontSize: 30 }}>💵</div>
+          </div>
+
+          {empSlips.length > 0 ? (
+            <div>
+              <div style={{ fontSize: 12, fontWeight: 700, color: t.tx, marginBottom: 10 }}>{tr("آخر القسائم")}</div>
+              <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+                {empSlips.slice(0, 6).map(function(s, i){
+                  return <div key={i} style={{
+                    padding: "10px 14px", background: t.bg, borderRadius: 10,
+                    display: "flex", justifyContent: "space-between", alignItems: "center",
+                  }}>
+                    <div>
+                      <div style={{ fontSize: 11, fontWeight: 700, color: t.tx }}>{s.period || s.month}</div>
+                      <div style={{ fontSize: 9, color: t.txM }}>{tr("صافي الراتب")}</div>
+                    </div>
+                    <div style={{ fontSize: 14, fontWeight: 800, color: t.ok }}>
+                      {s.netSalary || s.net || 0} {tr("ريال")}
+                    </div>
+                  </div>;
+                })}
+              </div>
+            </div>
+          ) : (
+            <div style={{ padding: 30, textAlign: "center", color: t.txM, fontSize: 12 }}>{tr("لا توجد قسائم مسجلة")}</div>
+          )}
+        </div>
+      )}
+
+      {/* ─── Tab: Discipline ─── */}
+      {activeTab === "discipline" && (
+        <div style={{ background: t.card, borderRadius: 14, padding: 16, border: "1px solid " + t.sep }}>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 14 }}>
+            <div style={{ fontSize: 13, fontWeight: 800, color: t.tx }}>⚖️ {tr("المخالفات والإنذارات")}</div>
+            <button onClick={function(){ onNavigate && onNavigate("discipline_hub"); }} style={{
+              padding: "6px 12px", borderRadius: 8,
+              background: t.bad, color: "#fff",
+              border: "none", fontSize: 10, fontWeight: 700,
+              cursor: "pointer",
+            }}>{tr("إدارة النظام التأديبي")} →</button>
+          </div>
+
+          {empViolations.length === 0 ? (
+            <div style={{ padding: 30, textAlign: "center" }}>
+              <div style={{ fontSize: 36, marginBottom: 6 }}>✨</div>
+              <div style={{ fontSize: 12, fontWeight: 700, color: t.ok }}>{tr("سجل نظيف — لا مخالفات")}</div>
+            </div>
+          ) : (
+            <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+              {empViolations.map(function(v, i){
+                var vColor = v.status === "closed" ? t.txM : t.bad;
+                return <div key={v.id || i} style={{
+                  padding: "10px 14px", background: t.bg, borderRadius: 10,
+                  borderRight: "3px solid " + vColor,
+                }}>
+                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 4 }}>
+                    <div style={{ fontSize: 12, fontWeight: 700, color: t.tx }}>{v.type || tr("مخالفة")}</div>
+                    <span style={{ padding: "2px 8px", fontSize: 9, fontWeight: 700, background: vColor + "20", color: vColor, borderRadius: 5 }}>
+                      {v.status === "closed" ? tr("مغلقة") : tr("مفتوحة")}
+                    </span>
+                  </div>
+                  <div style={{ fontSize: 10, color: t.txM, lineHeight: 1.6 }}>{v.details || "—"}</div>
+                  <div style={{ fontSize: 9, color: t.txM, marginTop: 4 }}>{formatTs(v.ts)}</div>
+                </div>;
+              })}
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* ─── Tab: Activity Log ─── */}
+      {activeTab === "activity" && (
+        <div style={{ background: t.card, borderRadius: 14, padding: 16, border: "1px solid " + t.sep }}>
+          <div style={{ fontSize: 13, fontWeight: 800, color: t.tx, marginBottom: 14 }}>📜 {tr("سجل العمليات على هذا الموظف")}</div>
+
+          {loading ? (
+            <div style={{ padding: 30, textAlign: "center", color: t.txM, fontSize: 12 }}>{tr("جاري التحميل...")}</div>
+          ) : empAudit.length === 0 ? (
+            <div style={{ padding: 30, textAlign: "center", color: t.txM, fontSize: 12 }}>{tr("لا توجد عمليات مسجلة")}</div>
+          ) : (
+            <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+              {empAudit.slice(0, 20).map(function(e, i){
+                var actorEmp = (allEmps || []).find(function(x){ return String(x.id) === String(e.userId); });
+                var actorName = actorEmp ? actorEmp.name : (e.userId === "system" ? tr("النظام") : e.userId);
+                return <div key={e.id || i} style={{
+                  padding: "10px 14px", background: t.bg, borderRadius: 8,
+                  display: "flex", alignItems: "center", gap: 10,
+                }}>
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div style={{ fontSize: 12, fontWeight: 700, color: t.tx }}>{e.action}</div>
+                    <div style={{ fontSize: 10, color: t.txM, marginTop: 2 }}>👤 {actorName}</div>
+                  </div>
+                  <div style={{ fontSize: 9, color: t.txM, flexShrink: 0 }}>{formatTs(e.ts)}</div>
+                </div>;
+              })}
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+/* ═════════════════════════════════════════════════════════════════
+ * v7.87 — PushBroadcastPanel — إرسال إشعارات للموظفين
+ * ═════════════════════════════════════════════════════════════════ */
+function PushBroadcastPanel({ t, B, emps }) {
+  var [overview, setOverview] = useState(null);
+  var [loading, setLoading] = useState(true);
+  var [activeTab, setActiveTab] = useState("send"); // send | overview
+
+  // Send form
+  var [title, setTitle] = useState("");
+  var [body, setBody] = useState("");
+  var [target, setTarget] = useState("all"); // all | selected | branch
+  var [selectedIds, setSelectedIds] = useState([]);
+  var [selectedBranch, setSelectedBranch] = useState("");
+  var [branches, setBranches] = useState([]);
+  var [sending, setSending] = useState(false);
+  var [result, setResult] = useState(null);
+
+  async function loadOverview() {
+    setLoading(true);
+    try {
+      var r = await fetch("/api/data?action=push-overview");
+      var d = await r.json();
+      if (d.ok) setOverview(d);
+      var br = await fetch("/api/data?action=branches");
+      var bd = await br.json();
+      setBranches(Array.isArray(bd) ? bd : []);
+    } catch(e) { console.error(e); }
+    setLoading(false);
+  }
+
+  useEffect(function(){ loadOverview(); }, []);
+
+  function toggleEmp(id) {
+    setSelectedIds(function(prev){
+      var idx = prev.indexOf(id);
+      if (idx >= 0) return prev.filter(function(x){ return x !== id; });
+      return prev.concat([id]);
+    });
+  }
+
+  async function send() {
+    if (!title.trim()) { setResult({ ok: false, msg: tr("العنوان مطلوب") }); return; }
+    if (!body.trim()) { setResult({ ok: false, msg: tr("نص الإشعار مطلوب") }); return; }
+
+    var empIds = null;
+    if (target === "selected") {
+      if (selectedIds.length === 0) { setResult({ ok: false, msg: tr("اختر موظفاً واحداً على الأقل") }); return; }
+      empIds = selectedIds;
+    } else if (target === "branch" && selectedBranch) {
+      empIds = (overview ? overview.subscribedEmps : []).filter(function(e){ return e.branchId === selectedBranch; }).map(function(e){ return e.id; });
+    } else if (target === "all") {
+      empIds = (overview ? overview.subscribedEmps : []).map(function(e){ return e.id; });
+    }
+
+    if (!empIds || empIds.length === 0) {
+      setResult({ ok: false, msg: tr("لا يوجد موظفون مشتركون في الفئة المختارة") });
+      return;
+    }
+
+    setSending(true);
+    setResult(null);
+    try {
+      var r = await fetch("/api/data?action=push-broadcast", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ empIds: empIds, title: title, body: body, actorId: "admin" }),
+      });
+      var d = await r.json();
+      if (d.ok) {
+        setResult({
+          ok: true,
+          msg: tr("✓ تم الإرسال") + " — " + tr("نجح: ") + d.sent + " · " + tr("فشل: ") + d.failed,
+        });
+        setTitle(""); setBody(""); setSelectedIds([]);
+      } else {
+        setResult({ ok: false, msg: d.error || tr("فشل الإرسال") });
+      }
+    } catch(e) {
+      setResult({ ok: false, msg: tr("فشل الاتصال: ") + e.message });
+    }
+    setSending(false);
+  }
+
+  if (loading) {
+    return <div style={{ padding: 40, textAlign: "center", color: t.txM }}>{tr("جاري التحميل...")}</div>;
+  }
+
+  return (
+    <div>
+      {/* VAPID warning */}
+      {overview && !overview.vapidConfigured && (
+        <div style={{ padding: "12px 14px", background: t.warnLt, border: "1px solid " + t.warn + "40", borderRadius: 10, fontSize: 11, color: t.tx, lineHeight: 1.7, marginBottom: 14 }}>
+          ⚠️ <b>{tr("VAPID keys غير مُهيّأة:")}</b> {tr("يجب إضافة VAPID_PUBLIC_KEY و VAPID_PRIVATE_KEY في Vercel env.")}
+        </div>
+      )}
+
+      {/* Overview Card */}
+      <div style={{ background: t.card, borderRadius: 14, padding: 16, border: "1px solid " + t.sep, marginBottom: 14 }}>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>
+          <div style={{ fontSize: 14, fontWeight: 800, color: t.tx }}>🔔 {tr("إشعارات Push")}</div>
+          <button onClick={loadOverview} style={{
+            padding: "6px 12px", borderRadius: 8,
+            background: B.blue, color: "#fff",
+            border: "none", fontSize: 10, fontWeight: 700,
+            cursor: "pointer",
+          }}>🔄 {tr("تحديث")}</button>
+        </div>
+
+        {overview && (
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 10 }}>
+            <div style={{ padding: 14, background: t.ok + "10", borderRadius: 10, border: "1px solid " + t.ok + "30", textAlign: "center" }}>
+              <div style={{ fontSize: 24, fontWeight: 900, color: t.ok }}>{overview.subscribed}</div>
+              <div style={{ fontSize: 10, color: t.txM, marginTop: 4 }}>{tr("مفعّل")}</div>
+            </div>
+            <div style={{ padding: 14, background: t.warn + "10", borderRadius: 10, border: "1px solid " + t.warn + "30", textAlign: "center" }}>
+              <div style={{ fontSize: 24, fontWeight: 900, color: t.warn }}>{overview.unsubscribed}</div>
+              <div style={{ fontSize: 10, color: t.txM, marginTop: 4 }}>{tr("غير مفعّل")}</div>
+            </div>
+            <div style={{ padding: 14, background: B.blue + "10", borderRadius: 10, border: "1px solid " + B.blue + "30", textAlign: "center" }}>
+              <div style={{ fontSize: 24, fontWeight: 900, color: B.blue }}>{overview.pct}%</div>
+              <div style={{ fontSize: 10, color: t.txM, marginTop: 4 }}>{tr("نسبة التفعيل")}</div>
+            </div>
+          </div>
+        )}
+      </div>
+
+      {/* Tabs */}
+      <div style={{ display: "flex", gap: 6, marginBottom: 14 }}>
+        {[
+          { id: "send",     icon: "📤", label: tr("إرسال إشعار") },
+          { id: "overview", icon: "👥", label: tr("قائمة الموظفين") },
+        ].map(function(tb){
+          var active = activeTab === tb.id;
+          return <button key={tb.id} onClick={function(){ setActiveTab(tb.id); }} style={{
+            flex: 1, padding: "10px 12px", borderRadius: 10,
+            background: active ? B.blue : t.card,
+            color: active ? "#fff" : t.tx,
+            border: "1px solid " + (active ? B.blue : t.sep),
+            fontSize: 12, fontWeight: 700,
+            cursor: "pointer", fontFamily: "inherit",
+            display: "flex", alignItems: "center", justifyContent: "center", gap: 6,
+          }}>
+            <span>{tb.icon}</span>
+            <span>{tb.label}</span>
+          </button>;
+        })}
+      </div>
+
+      {/* Tab: Send */}
+      {activeTab === "send" && (
+        <div style={{ background: t.card, borderRadius: 14, padding: 16, border: "1px solid " + t.sep }}>
+          <div style={{ fontSize: 13, fontWeight: 800, color: t.tx, marginBottom: 12 }}>📝 {tr("إنشاء إشعار جديد")}</div>
+
+          <div style={{ marginBottom: 10 }}>
+            <label style={{ fontSize: 11, fontWeight: 700, color: t.tx, display: "block", marginBottom: 6 }}>{tr("العنوان")} *</label>
+            <input type="text" value={title} onChange={function(e){ setTitle(e.target.value); }}
+              placeholder={tr("مثلاً: اجتماع عاجل اليوم")} maxLength={60}
+              style={{ width: "100%", padding: "10px 14px", borderRadius: 10, border: "1px solid " + t.sep, background: t.inp, color: t.tx, fontSize: 13, fontFamily: "inherit", boxSizing: "border-box" }} />
+            <div style={{ fontSize: 9, color: t.txM, marginTop: 3 }}>{title.length}/60</div>
+          </div>
+
+          <div style={{ marginBottom: 12 }}>
+            <label style={{ fontSize: 11, fontWeight: 700, color: t.tx, display: "block", marginBottom: 6 }}>{tr("نص الإشعار")} *</label>
+            <textarea value={body} onChange={function(e){ setBody(e.target.value); }}
+              placeholder={tr("اكتب نص الإشعار هنا...")} rows={3} maxLength={200}
+              style={{ width: "100%", padding: "10px 14px", borderRadius: 10, border: "1px solid " + t.sep, background: t.inp, color: t.tx, fontSize: 13, fontFamily: "inherit", boxSizing: "border-box", resize: "vertical" }} />
+            <div style={{ fontSize: 9, color: t.txM, marginTop: 3 }}>{body.length}/200</div>
+          </div>
+
+          {/* Target audience */}
+          <div style={{ marginBottom: 12 }}>
+            <label style={{ fontSize: 11, fontWeight: 700, color: t.tx, display: "block", marginBottom: 8 }}>{tr("الفئة المستهدفة")}</label>
+            <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+              {[
+                { id: "all", icon: "📣", label: tr("كل الموظفين المفعّلين"), count: overview ? overview.subscribed : 0 },
+                { id: "branch", icon: "🏢", label: tr("فرع محدد") },
+                { id: "selected", icon: "👤", label: tr("موظفون محددون") },
+              ].map(function(opt){
+                var active = target === opt.id;
+                return <div key={opt.id} onClick={function(){ setTarget(opt.id); }} style={{
+                  padding: "10px 14px", borderRadius: 10,
+                  background: active ? B.blue + "10" : t.card,
+                  border: "2px solid " + (active ? B.blue : t.sep),
+                  cursor: "pointer",
+                  display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10,
+                }}>
+                  <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                    <span style={{ fontSize: 18 }}>{opt.icon}</span>
+                    <span style={{ fontSize: 12, fontWeight: 700, color: t.tx }}>{opt.label}</span>
+                  </div>
+                  {opt.count !== undefined && (
+                    <span style={{ padding: "3px 10px", borderRadius: 12, background: active ? B.blue : t.sep, color: "#fff", fontSize: 10, fontWeight: 700 }}>{opt.count}</span>
+                  )}
+                </div>;
+              })}
+            </div>
+          </div>
+
+          {target === "branch" && (
+            <div style={{ marginBottom: 12 }}>
+              <select value={selectedBranch} onChange={function(e){ setSelectedBranch(e.target.value); }}
+                style={{ width: "100%", padding: "10px 14px", borderRadius: 10, border: "1px solid " + t.sep, background: t.inp, color: t.tx, fontSize: 13, fontFamily: "inherit", boxSizing: "border-box" }}>
+                <option value="">{tr("— اختر الفرع —")}</option>
+                {branches.map(function(br){
+                  return <option key={br.id} value={br.id}>{br.name}</option>;
+                })}
+              </select>
+            </div>
+          )}
+
+          {target === "selected" && overview && (
+            <div style={{ marginBottom: 12, maxHeight: 240, overflowY: "auto", border: "1px solid " + t.sep, borderRadius: 10, padding: 8 }}>
+              {overview.subscribedEmps.map(function(e){
+                var checked = selectedIds.indexOf(e.id) >= 0;
+                return <div key={e.id} onClick={function(){ toggleEmp(e.id); }} style={{
+                  padding: "8px 10px", borderRadius: 8,
+                  background: checked ? B.blue + "12" : "transparent",
+                  cursor: "pointer", display: "flex", alignItems: "center", gap: 10,
+                  marginBottom: 2,
+                }}>
+                  <div style={{
+                    width: 20, height: 20, borderRadius: 4,
+                    border: "2px solid " + (checked ? B.blue : t.sep),
+                    background: checked ? B.blue : "transparent",
+                    display: "flex", alignItems: "center", justifyContent: "center",
+                    color: "#fff", fontSize: 14, fontWeight: 900,
+                  }}>{checked ? "✓" : ""}</div>
+                  <div style={{ flex: 1 }}>
+                    <div style={{ fontSize: 12, fontWeight: 700, color: t.tx }}>{e.name}</div>
+                    <div style={{ fontSize: 9, color: t.txM }}>{e.jobTitle || "—"}</div>
+                  </div>
+                </div>;
+              })}
+              {overview.subscribedEmps.length === 0 && (
+                <div style={{ padding: 20, textAlign: "center", color: t.txM, fontSize: 11 }}>
+                  {tr("لا يوجد موظفون مفعّلون للإشعارات")}
+                </div>
+              )}
+            </div>
+          )}
+
+          {result && (
+            <div style={{ padding: "10px 12px", borderRadius: 10, fontSize: 11, fontWeight: 700, textAlign: "center", marginBottom: 10,
+              background: result.ok ? t.ok + "15" : t.bad + "15",
+              color: result.ok ? t.ok : t.bad,
+              border: "1px solid " + (result.ok ? t.ok + "40" : t.bad + "40"),
+            }}>{result.msg}</div>
+          )}
+
+          <button onClick={send} disabled={sending} style={{
+            width: "100%", padding: 13, borderRadius: 10,
+            background: sending ? t.sep : "linear-gradient(135deg, " + B.blue + ", " + B.blueDk + ")",
+            color: "#fff", border: "none",
+            fontSize: 13, fontWeight: 900,
+            cursor: sending ? "wait" : "pointer", fontFamily: "inherit",
+          }}>
+            {sending ? ("⏳ " + tr("جاري الإرسال...")) : ("📤 " + tr("إرسال الإشعار"))}
+          </button>
+        </div>
+      )}
+
+      {/* Tab: Overview */}
+      {activeTab === "overview" && overview && (
+        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
+          {/* Subscribed */}
+          <div style={{ background: t.card, borderRadius: 14, padding: 14, border: "1px solid " + t.sep }}>
+            <div style={{ fontSize: 12, fontWeight: 800, color: t.ok, marginBottom: 10 }}>
+              ✓ {tr("مفعّل")} ({overview.subscribed})
+            </div>
+            <div style={{ maxHeight: 400, overflowY: "auto" }}>
+              {overview.subscribedEmps.length === 0 ? (
+                <div style={{ padding: 16, textAlign: "center", color: t.txM, fontSize: 11 }}>{tr("لا يوجد")}</div>
+              ) : overview.subscribedEmps.map(function(e, i){
+                return <div key={e.id} style={{
+                  padding: "8px 10px", borderRadius: 8,
+                  borderBottom: i < overview.subscribedEmps.length - 1 ? "1px solid " + t.sep : "none",
+                  fontSize: 11, color: t.tx,
+                }}>
+                  <div style={{ fontWeight: 700 }}>{e.name}</div>
+                  <div style={{ fontSize: 9, color: t.txM, marginTop: 2 }}>{e.jobTitle || "—"}</div>
+                </div>;
+              })}
+            </div>
+          </div>
+
+          {/* Not Subscribed */}
+          <div style={{ background: t.card, borderRadius: 14, padding: 14, border: "1px solid " + t.sep }}>
+            <div style={{ fontSize: 12, fontWeight: 800, color: t.warn, marginBottom: 10 }}>
+              ⚠️ {tr("غير مفعّل")} ({overview.unsubscribed})
+            </div>
+            <div style={{ maxHeight: 400, overflowY: "auto" }}>
+              {overview.unsubscribedEmps.length === 0 ? (
+                <div style={{ padding: 16, textAlign: "center", color: t.txM, fontSize: 11 }}>{tr("الكل مفعّل! 🎉")}</div>
+              ) : overview.unsubscribedEmps.map(function(e, i){
+                return <div key={e.id} style={{
+                  padding: "8px 10px", borderRadius: 8,
+                  borderBottom: i < overview.unsubscribedEmps.length - 1 ? "1px solid " + t.sep : "none",
+                  fontSize: 11, color: t.tx,
+                }}>
+                  <div style={{ fontWeight: 700 }}>{e.name}</div>
+                  <div style={{ fontSize: 9, color: t.txM, marginTop: 2 }}>{e.jobTitle || "—"}</div>
+                </div>;
+              })}
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+/* ═════════════════════════════════════════════════════════════════
+ * v7.84 — AuditLogPanel — عرض سجل العمليات الكامل
+ * ═════════════════════════════════════════════════════════════════ */
+function AuditLogPanel({ t, B, emps }) {
+  var [entries, setEntries] = useState([]);
+  var [stats, setStats] = useState({});
+  var [total, setTotal] = useState(0);
+  var [loading, setLoading] = useState(true);
+  var [filterCat, setFilterCat] = useState("all");
+  var [filterFrom, setFilterFrom] = useState("");
+  var [filterTo, setFilterTo] = useState("");
+  var [search, setSearch] = useState("");
+  var [limit, setLimit] = useState(200);
+
+  // Categories with icons and colors
+  var categories = [
+    { id: "all",        label: tr("الكل"),         icon: "📋", color: B.blue },
+    { id: "leaves",     label: tr("الإجازات"),     icon: "🏖️", color: "#0891B2" },
+    { id: "payroll",    label: tr("الرواتب"),      icon: "💰", color: B.gold },
+    { id: "salary",     label: tr("تعديل الرواتب"), icon: "📈", color: "#7C3AED" },
+    { id: "violations", label: tr("المخالفات"),    icon: "⚖️", color: t.bad },
+    { id: "employees",  label: tr("الموظفين"),     icon: "👥", color: B.blue },
+    { id: "admin",      label: tr("الطلبات"),      icon: "📨", color: "#8b5cf6" },
+    { id: "tawasul",    label: tr("تواصل"),        icon: "🤝", color: "#F59E0B" },
+  ];
+
+  // Action labels translation
+  var actionLabels = {
+    "leave_approved":      tr("اعتماد إجازة"),
+    "leave_rejected":      tr("رفض إجازة"),
+    "leave_pending":       tr("إجازة قيد المراجعة"),
+    "violation_created":   tr("إنشاء مخالفة"),
+    "violation_updated":   tr("تحديث مخالفة"),
+    "hr_request_approved": tr("اعتماد طلب HR"),
+    "hr_request_rejected": tr("رفض طلب HR"),
+    "hr_request_ready":    tr("طلب HR جاهز"),
+    "hr_request_delivered":tr("تسليم طلب HR"),
+    "edit_approve":        tr("اعتماد تعديل بيانات"),
+    "edit_reject":         tr("رفض تعديل بيانات"),
+    "edit_request":        tr("طلب تعديل بيانات"),
+    "emp_unlock":          tr("فك قفل موظف"),
+    "salary_change_request": tr("طلب تعديل راتب"),
+    "salary_change_approve": tr("اعتماد تعديل راتب"),
+    "salary_change_reject":  tr("رفض تعديل راتب"),
+    "approve_termination":   tr("اعتماد إنهاء خدمة"),
+    "cancel_termination":    tr("إلغاء إنهاء خدمة"),
+    "create_run":          tr("إنشاء كشف راتب"),
+    "calculate_run":       tr("حساب الرواتب"),
+    "approve_run":         tr("اعتماد كشف الرواتب"),
+    "edit_slip":           tr("تعديل قسيمة راتب"),
+    "generate_bank_file":  tr("توليد ملف البنك"),
+    "mark_sent":           tr("تمييز كمُرسَل"),
+    "list_runs":           tr("عرض كشوف الرواتب"),
+    "view_run_detail":     tr("عرض تفاصيل كشف"),
+  };
+
+  async function load() {
+    setLoading(true);
+    try {
+      var params = new URLSearchParams();
+      if (filterCat !== "all") params.set("category", filterCat);
+      if (filterFrom) params.set("from", filterFrom);
+      if (filterTo) params.set("to", filterTo);
+      params.set("limit", String(limit));
+
+      var r = await fetch("/api/data?action=audit-log&" + params.toString());
+      var d = await r.json();
+      if (d.ok) {
+        setEntries(d.entries || []);
+        setStats(d.stats || {});
+        setTotal(d.total || 0);
+      }
+    } catch(e) { console.error("Audit load error:", e); }
+    setLoading(false);
+  }
+
+  useEffect(function(){ load(); }, [filterCat, filterFrom, filterTo, limit]);
+
+  // Name lookup
+  function getName(userId) {
+    if (!userId || userId === 'system') return tr("النظام");
+    var emp = (emps || []).find(function(e){ return String(e.id) === String(userId); });
+    return emp ? emp.name : userId;
+  }
+  function getTargetName(target) {
+    if (!target) return "—";
+    var emp = (emps || []).find(function(e){ return String(e.id) === String(target); });
+    return emp ? emp.name : String(target);
+  }
+
+  // Format timestamp
+  function formatTs(ts) {
+    if (!ts) return "—";
+    try {
+      var d = new Date(ts);
+      var now = new Date();
+      var diffMs = now - d;
+      var diffMin = Math.floor(diffMs / 60000);
+      var diffHr = Math.floor(diffMin / 60);
+      var diffDay = Math.floor(diffHr / 24);
+      if (diffMin < 1) return tr("الآن");
+      if (diffMin < 60) return diffMin + " " + tr("د");
+      if (diffHr < 24) return diffHr + " " + tr("س");
+      if (diffDay < 7) return diffDay + " " + tr("يوم");
+      return d.toLocaleDateString(getLang() === "ar" ? "ar-SA" : "en-US", { year: "numeric", month: "short", day: "numeric" });
+    } catch(e) { return ts.slice(0, 10); }
+  }
+
+  // Filter by search (client-side)
+  var filtered = entries;
+  if (search.trim()) {
+    var q = search.toLowerCase().trim();
+    filtered = entries.filter(function(e){
+      var userName = (getName(e.userId) || "").toLowerCase();
+      var targetName = (getTargetName(e.target) || "").toLowerCase();
+      var action = (actionLabels[e.action] || e.action || "").toLowerCase();
+      return userName.indexOf(q) >= 0 || targetName.indexOf(q) >= 0 || action.indexOf(q) >= 0;
+    });
+  }
+
+  // CSV Export
+  function exportCSV() {
+    var BOM = "\uFEFF";
+    var rows = [[tr("التاريخ"), tr("المُنفّذ"), tr("العملية"), tr("الموظف"), tr("التصنيف"), tr("التفاصيل")].join(",")];
+    filtered.forEach(function(e){
+      rows.push([
+        '"' + (e.ts || "") + '"',
+        '"' + getName(e.userId).replace(/"/g, '""') + '"',
+        '"' + (actionLabels[e.action] || e.action).replace(/"/g, '""') + '"',
+        '"' + getTargetName(e.target).replace(/"/g, '""') + '"',
+        '"' + (e.category || "general") + '"',
+        '"' + JSON.stringify(e.details || {}).replace(/"/g, '""') + '"',
+      ].join(","));
+    });
+    var blob = new Blob([BOM + rows.join("\n")], { type: "text/csv;charset=utf-8;" });
+    var url = URL.createObjectURL(blob);
+    var a = document.createElement("a");
+    a.href = url;
+    a.download = "audit_log_" + new Date().toISOString().slice(0, 10) + ".csv";
+    a.click();
+    URL.revokeObjectURL(url);
+  }
+
+  return (
+    <div>
+      {/* Header + Stats */}
+      <div style={{ background: t.card, borderRadius: 14, padding: 16, border: "1px solid " + t.sep, marginBottom: 14 }}>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12, flexWrap: "wrap", gap: 10 }}>
+          <div>
+            <div style={{ fontSize: 16, fontWeight: 800, color: t.tx }}>📜 {tr("سجل العمليات")}</div>
+            <div style={{ fontSize: 11, color: t.txM, marginTop: 2 }}>{tr("جميع العمليات الإدارية في النظام")} · {total} {tr("عملية")}</div>
+          </div>
+          <div style={{ display: "flex", gap: 8 }}>
+            <button onClick={load} style={{ padding: "8px 14px", borderRadius: 8, background: B.blue, color: "#fff", fontSize: 11, fontWeight: 700, border: "none", cursor: "pointer" }}>🔄 {tr("تحديث")}</button>
+            <button onClick={exportCSV} disabled={filtered.length === 0} style={{ padding: "8px 14px", borderRadius: 8, background: filtered.length === 0 ? t.cardBrd : t.ok, color: "#fff", fontSize: 11, fontWeight: 700, border: "none", cursor: filtered.length === 0 ? "default" : "pointer" }}>📥 {tr("تصدير CSV")}</button>
+          </div>
+        </div>
+
+        {/* Category Tabs */}
+        <div style={{ display: "flex", flexWrap: "wrap", gap: 6, marginBottom: 12 }}>
+          {categories.map(function(c){
+            var active = filterCat === c.id;
+            var count = c.id === "all" ? total : (stats[c.id] || 0);
+            return <button key={c.id} onClick={function(){ setFilterCat(c.id); }} style={{
+              padding: "8px 12px", borderRadius: 20,
+              background: active ? c.color : t.card,
+              color: active ? "#fff" : t.tx,
+              border: "1px solid " + (active ? c.color : t.sep),
+              fontSize: 11, fontWeight: 700,
+              cursor: "pointer",
+              display: "flex", alignItems: "center", gap: 6,
+            }}>
+              <span>{c.icon}</span>
+              <span>{c.label}</span>
+              {count > 0 && <span style={{ padding: "1px 7px", borderRadius: 10, background: active ? "rgba(255,255,255,0.25)" : t.sep, fontSize: 10 }}>{count}</span>}
+            </button>;
+          })}
+        </div>
+
+        {/* Search + Date range */}
+        <div style={{ display: "grid", gridTemplateColumns: "2fr 1fr 1fr 1fr", gap: 8 }}>
+          <input
+            type="text"
+            value={search}
+            onChange={function(e){ setSearch(e.target.value); }}
+            placeholder={tr("بحث بالاسم أو العملية...")}
+            style={{ padding: "8px 12px", borderRadius: 8, border: "1px solid " + t.sep, background: t.inp, color: t.tx, fontSize: 11, fontFamily: "inherit" }}
+          />
+          <input
+            type="date"
+            value={filterFrom}
+            onChange={function(e){ setFilterFrom(e.target.value); }}
+            placeholder={tr("من")}
+            style={{ padding: "8px 12px", borderRadius: 8, border: "1px solid " + t.sep, background: t.inp, color: t.tx, fontSize: 11, fontFamily: "inherit" }}
+          />
+          <input
+            type="date"
+            value={filterTo}
+            onChange={function(e){ setFilterTo(e.target.value); }}
+            placeholder={tr("إلى")}
+            style={{ padding: "8px 12px", borderRadius: 8, border: "1px solid " + t.sep, background: t.inp, color: t.tx, fontSize: 11, fontFamily: "inherit" }}
+          />
+          <select
+            value={String(limit)}
+            onChange={function(e){ setLimit(parseInt(e.target.value)); }}
+            style={{ padding: "8px 12px", borderRadius: 8, border: "1px solid " + t.sep, background: t.inp, color: t.tx, fontSize: 11, fontFamily: "inherit" }}
+          >
+            <option value="100">100 {tr("سجل")}</option>
+            <option value="200">200 {tr("سجل")}</option>
+            <option value="500">500 {tr("سجل")}</option>
+            <option value="1000">1000 {tr("سجل")}</option>
+          </select>
+        </div>
+      </div>
+
+      {/* Entries List */}
+      {loading ? (
+        <div style={{ textAlign: "center", padding: 40, color: t.txM }}>{tr("جاري التحميل...")}</div>
+      ) : filtered.length === 0 ? (
+        <div style={{ textAlign: "center", padding: 40, background: t.card, borderRadius: 14, border: "1px solid " + t.sep, color: t.txM }}>
+          <div style={{ fontSize: 32, marginBottom: 8 }}>📭</div>
+          <div style={{ fontSize: 13, fontWeight: 700 }}>{tr("لا توجد عمليات")}</div>
+          <div style={{ fontSize: 11, marginTop: 4 }}>{tr("لم يتم تسجيل أي عملية بالفلاتر الحالية")}</div>
+        </div>
+      ) : (
+        <div style={{ background: t.card, borderRadius: 14, border: "1px solid " + t.sep, overflow: "hidden" }}>
+          {filtered.map(function(e, i){
+            var cat = categories.find(function(c){ return c.id === e.category; }) || { icon: "📋", color: t.txM };
+            var actionLabel = actionLabels[e.action] || e.action;
+            return <div key={e.id || i} style={{
+              padding: "12px 16px",
+              borderBottom: i < filtered.length - 1 ? "1px solid " + t.sep : "none",
+              display: "flex", alignItems: "center", gap: 12,
+              transition: "background .15s",
+            }}>
+              {/* Icon */}
+              <div style={{
+                width: 40, height: 40, borderRadius: 10,
+                background: cat.color + "15",
+                display: "flex", alignItems: "center", justifyContent: "center",
+                fontSize: 18, flexShrink: 0
+              }}>{cat.icon}</div>
+
+              {/* Content */}
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 3, flexWrap: "wrap" }}>
+                  <span style={{ fontSize: 13, fontWeight: 800, color: t.tx }}>{actionLabel}</span>
+                  {e.target && <>
+                    <span style={{ fontSize: 11, color: t.txM }}>→</span>
+                    <span style={{ fontSize: 12, fontWeight: 600, color: B.blue }}>{getTargetName(e.target)}</span>
+                  </>}
+                </div>
+                <div style={{ fontSize: 10, color: t.txM, display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+                  <span>👤 {getName(e.userId)}</span>
+                  <span>·</span>
+                  <span>⏱ {formatTs(e.ts)}</span>
+                  {e.details && Object.keys(e.details).length > 0 && (
+                    <>
+                      <span>·</span>
+                      <span title={JSON.stringify(e.details)} style={{ cursor: "help", color: B.blue }}>
+                        📄 {tr("تفاصيل")}
+                      </span>
+                    </>
+                  )}
+                </div>
+              </div>
+
+              {/* Category badge */}
+              <div style={{
+                padding: "3px 10px", borderRadius: 10,
+                background: cat.color + "20",
+                color: cat.color,
+                fontSize: 10, fontWeight: 700,
+                flexShrink: 0,
+              }}>{categories.find(function(c){ return c.id === e.category; })?.label || e.category}</div>
+            </div>;
+          })}
+        </div>
+      )}
+
+      {/* Footer note */}
+      <div style={{ marginTop: 12, padding: "10px 14px", borderRadius: 10, background: B.blue + "08", border: "1px solid " + B.blue + "20", fontSize: 10, color: t.txM, lineHeight: 1.6 }}>
+        ℹ️ {tr("يحتفظ النظام بآخر 10,000 عملية. العمليات الأقدم تُحذف تلقائياً.")}
+      </div>
     </div>
   );
 }
@@ -846,6 +3102,12 @@ export default function AdminApp() {
   });
   const [role, setRole] = useState("manager");
   const [tab, _setTabRaw] = useState("dashboard");
+  // v7.82 — language state for AdminApp (mirrors MobileApp pattern)
+  const [lang, setLangState] = useState(function(){ return getLang(); });
+  useEffect(function(){
+    var unsub = subscribeLangChange(function(newLang){ setLangState(newLang); });
+    return unsub;
+  }, []);
   const isMobile = useIsMobile(); // v7.24 — mobile detection
 
   // v7.25 — Navigation stack for smart back button (mobile)
@@ -907,6 +3169,7 @@ export default function AdminApp() {
   const [hrQuestions, setHrQuestions] = useState([]);
   const [newQ, setNewQ] = useState({ type: "ذكر", q: "", correct: "", wrong1: "", wrong2: "" });
   const [selEmp, setSelEmp] = useState(null);
+  const [showAddWizard, setShowAddWizard] = useState(false); // v7.85 — wizard state
   const [events, setEvents] = useState(EVENTS);
   const eventsLoaded = useRef(false);
 
@@ -1280,75 +3543,31 @@ export default function AdminApp() {
         <MobileTopBar tab={tab} sideItems={sideItems} onBack={goBack} selEmp={selEmp} />
       )}
 
-      {/* ═══ DASHBOARD ═══ */}
-      {tab === "dashboard" && <>
-        {/* Smart welcome header */}
-        {(function(){
-          var hr = new Date().getHours();
-          var greet = hr < 12 ? "☀️ صباح الخير" : hr < 18 ? "🌤️ نهارك سعيد" : "🌙 مساء الخير";
-          var dateStr = new Date().toLocaleDateString("ar-SA", { weekday: "long", year: "numeric", month: "long", day: "numeric" });
-          return (
-            <div style={{ background: "linear-gradient(135deg, " + B.blue + "15, " + B.gold + "10)", borderRadius: 14, padding: "16px 20px", marginBottom: 14, border: "1px solid " + t.sep, display: "flex", justifyContent: "space-between", alignItems: "center", gap: 14, flexWrap: "wrap" }}>
-              <div>
-                <div style={{ fontSize: 18, fontWeight: 800, color: t.tx, marginBottom: 2 }}>{greet} 👋</div>
-                <div style={{ fontSize: 11, color: t.txM }}>{dateStr}</div>
-              </div>
-              <div style={{ display: "flex", gap: 10, fontSize: 11 }}>
-                <div style={{ padding: "8px 12px", borderRadius: 8, background: t.card }}>
-                  <span style={{ color: t.txM }}>الموظفون: </span>
-                  <strong style={{ color: B.blue }}>{safeEmps.length}</strong>
-                </div>
-                <div style={{ padding: "8px 12px", borderRadius: 8, background: t.card }}>
-                  <span style={{ color: t.txM }}>الحضور اليوم: </span>
-                  <strong style={{ color: t.ok }}>{present}/{safeEmps.length}</strong>
-                  <span style={{ color: t.txM, marginRight: 4 }}>({safeEmps.length > 0 ? Math.round((present / safeEmps.length) * 100) : 0}%)</span>
-                </div>
-              </div>
-            </div>
-          );
-        })()}
-
-        {/* Quick Actions */}
-        <div style={{ display: "grid", gridTemplateColumns: "repeat(6, 1fr)", gap: 10, marginBottom: 14 }}>
-          {[
-            { id: "announcements", label: "تعميم جديد", icon: "📢", color: "#8b5cf6" },
-            { id: "benefits", label: "كوبون جديد", icon: "🏅", color: B.gold },
-            { id: "employees", label: "الموظفين", icon: "👥", color: B.blue },
-            { id: "test_panel", label: "اختبار", icon: "🧪", color: "#ef4444" },
-            { id: "storage", label: "التخزين", icon: "💾", color: "#10b981" },
-            { id: "reports", label: "تقارير", icon: "📊", color: "#f59e0b" },
-          ].map(function(qa) {
-            return <button key={qa.id} onClick={function(){ setTab(qa.id); }} style={{ padding: "14px 10px", borderRadius: 12, background: t.card, border: "1px solid " + t.sep, cursor: "pointer", display: "flex", flexDirection: "column", alignItems: "center", gap: 6, fontFamily: "inherit" }}>
-              <div style={{ width: 36, height: 36, borderRadius: 10, background: qa.color + "20", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 18 }}>{qa.icon}</div>
-              <div style={{ fontSize: 10, fontWeight: 700, color: t.tx }}>{qa.label}</div>
-            </button>;
-          })}
-        </div>
-
-        <div style={{ display: "grid", gridTemplateColumns: "repeat(4,1fr)", gap: 12, marginBottom: 16 }}>
-          {[{ l: "حاضر", v: present, i: "✅", c: t.ok, s: `من ${safeEmps.length}` }, { l: "غائب", v: absent, i: "🚫", c: t.bad }, { l: "متأخر", v: late, i: "⏰", c: t.warn }, { l: "طلبات معلّقة", v: pending, i: "📋", c: B.blue }].map((s, i) => <div key={i} style={{ background: t.card, borderRadius: 14, padding: "16px", border: "1px solid " + t.sep }}><div style={{ display: "flex", justifyContent: "space-between" }}><div><div style={{ fontSize: 11, color: t.txM }}>{s.l}</div><div style={{ fontSize: 28, fontWeight: 800, color: s.c, marginTop: 4 }}>{s.v}</div>{s.s && <div style={{ fontSize: 10, color: t.txM }}>{s.s}</div>}</div><div style={{ width: 40, height: 40, borderRadius: 10, background: `${s.c}12`, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 20 }}>{s.i}</div></div></div>)}
-        </div>
-        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
-          <div style={{ background: t.card, borderRadius: 14, padding: "16px", border: "1px solid " + t.sep }}><div style={{ fontSize: 14, fontWeight: 700, marginBottom: 12 }}>⚡ يحتاج إجراء</div>{ALERTS.length === 0 ? <div style={{ textAlign: "center", padding: 20, color: t.txM, fontSize: 11 }}>✓ لا توجد تنبيهات حالية</div> : ALERTS.map((a, i) => <div key={i} style={{ padding: "8px 10px", borderRadius: 10, marginBottom: 6, background: a.type === "danger" ? t.badLt : a.type === "warn" ? t.warnLt : t.okLt, display: "flex", alignItems: "center", gap: 8 }}><span style={{ fontSize: 14 }}>{a.type === "danger" ? "🚨" : a.type === "warn" ? "⚠️" : "🏆"}</span><span style={{ flex: 1, fontSize: 11, fontWeight: 600 }}>{a.text}</span><span style={{ fontSize: 9, color: t.txM }}>{a.time}</span></div>)}</div>
-          <div style={{ background: t.card, borderRadius: 14, padding: "16px", border: "1px solid " + t.sep }}><div style={{ fontSize: 14, fontWeight: 700, marginBottom: 12 }}>📊 أداء الفروع</div>{BRANCHES.map((b, i) => { const pc = b.pct >= 90 ? t.ok : b.pct >= 75 ? t.warn : t.bad; return <div key={i} style={{ marginBottom: 12 }}><div style={{ display: "flex", justifyContent: "space-between", fontSize: 12, marginBottom: 4 }}><span style={{ fontWeight: 600 }}>{b.name}</span><span style={{ fontWeight: 800, color: pc }}>{b.pct}%</span></div><div style={{ height: 6, borderRadius: 3, background: "#F1F5F9", overflow: "hidden" }}><div style={{ height: "100%", width: `${b.pct}%`, borderRadius: 3, background: pc }} /></div></div>; })}<div style={{ marginTop: 16, fontSize: 13, fontWeight: 700, marginBottom: 8 }}>📈 الأسبوع</div><div style={{ display: "flex", alignItems: "flex-end", gap: 8, height: 80 }}>{WEEKLY.map((d, i) => { const pc = d.p >= 90 ? t.ok : d.p >= 80 ? B.blue : t.warn; return <div key={i} style={{ flex: 1, textAlign: "center" }}><div style={{ fontSize: 9, fontWeight: 700, color: pc }}>{d.p}%</div><div style={{ height: d.p * .7, borderRadius: 4, background: pc, minHeight: 6 }} /><div style={{ fontSize: 8, color: t.txM, marginTop: 3 }}>{d.d}</div></div>; })}</div></div>
-        </div>
-        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12, marginTop: 12 }}>
-          <div style={{ background: t.card, borderRadius: 14, padding: "16px", border: "1px solid " + t.sep }}><div style={{ fontSize: 13, fontWeight: 700, color: t.ok, marginBottom: 10 }}>🏆 الأكثر انضباطاً</div>{[...safeEmps].sort((a, b) => b.pct - a.pct).slice(0, 3).map((e, i) => <div key={i} style={{ display: "flex", alignItems: "center", gap: 8, padding: "6px 0", borderBottom: i < 2 ? "1px solid " + t.sep : "none" }}><span style={{ fontSize: 16 }}>{["🥇", "🥈", "🥉"][i]}</span><div style={{ flex: 1 }}><div style={{ fontSize: 12, fontWeight: 700 }}>{e.name}</div></div><span style={{ fontSize: 13, fontWeight: 800, color: t.ok }}>{e.pct}%</span></div>)}</div>
-          <div style={{ background: t.card, borderRadius: 14, padding: "16px", border: "1px solid " + t.sep }}><div style={{ fontSize: 13, fontWeight: 700, color: t.bad, marginBottom: 10 }}>⚠️ يحتاج متابعة</div>{[...safeEmps].sort((a, b) => a.pct - b.pct).slice(0, 3).map((e, i) => <div key={i} style={{ display: "flex", alignItems: "center", gap: 8, padding: "6px 0", borderBottom: i < 2 ? "1px solid " + t.sep : "none" }}><div style={{ width: 24, height: 24, borderRadius: "50%", background: t.badLt, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 10, fontWeight: 800, color: t.bad }}>{i + 1}</div><div style={{ flex: 1 }}><div style={{ fontSize: 12, fontWeight: 700 }}>{e.name}</div></div><span style={{ fontSize: 13, fontWeight: 800, color: t.bad }}>{e.pct}%</span></div>)}</div>
-        </div>
-        {/* HR Legal Stats */}
-        <div style={{ display: "grid", gridTemplateColumns: "repeat(4,1fr)", gap: 12, marginTop: 12 }}>
-          {[
-            { l: "شكاوى معلقة", v: badgeCounts.complaints, i: "📣", c: B.gold },
-            { l: "تحقيقات (بالرد)", v: badgeCounts.investigations, i: "🔍", c: B.blue },
-            { l: "مخالفات سارية", v: badgeCounts.violations, i: "⚖️", c: t.bad },
-            { l: "تظلمات معلقة", v: badgeCounts.appeals, i: "📢", c: "#F97316" },
-          ].map(function(s, i) { return <div key={i} onClick={function(){ setTab("discipline_hub"); }} style={{ background: t.card, borderRadius: 14, padding: 16, border: "1px solid " + t.sep, cursor: "pointer" }}><div style={{ display: "flex", justifyContent: "space-between" }}><div><div style={{ fontSize: 11, color: t.txM }}>{s.l}</div><div style={{ fontSize: 28, fontWeight: 800, color: s.c, marginTop: 4 }}>{s.v}</div></div><div style={{ width: 40, height: 40, borderRadius: 10, background: s.c + "12", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 20 }}>{s.i}</div></div></div>; })}
-        </div>
-      </>}
+      {/* ═══ DASHBOARD v7.82 — Smart Dashboard with AR/EN ═══ */}
+      {tab === "dashboard" && <SmartDashboard
+        t={t} B={B}
+        safeEmps={safeEmps}
+        leaves={leaves}
+        present={present} absent={absent} late={late} pending={pending}
+        badgeCounts={badgeCounts}
+        branches={branches}
+        setTab={setTab}
+      />}
 
       {/* ═══ EMPLOYEES ═══ */}
       {tab === "employees" && !selEmp && <>
+        {/* v7.85 — Add Employee Wizard modal */}
+        {showAddWizard && <AddEmployeeWizard
+          t={t} B={B}
+          branches={branches}
+          existingEmps={emps}
+          onClose={function(){ setShowAddWizard(false); }}
+          onSaved={async function(){
+            setShowAddWizard(false);
+            var list = await api('employees');
+            if (Array.isArray(list)) setEmps(list);
+          }}
+        />}
         {/* Kadwar source banner — compact on mobile */}
         <div style={{ background: B.blue + "12", border: "1px solid " + B.blue + "40", borderRadius: 10, padding: isMobile ? "8px 10px" : "10px 14px", marginBottom: 12, display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
           <div style={{ fontSize: isMobile ? 10 : 11, color: t.tx, lineHeight: 1.5, flex: 1, minWidth: 0 }}>
@@ -1358,7 +3577,20 @@ export default function AdminApp() {
               <span><span style={{ fontWeight: 800, color: B.blue }}>🔗 المصدر: كوادر</span> — الموظفون يُدارون في <a href="https://hma.engineer" target="_blank" style={{ color: B.blue, fontWeight: 700 }}>hma.engineer</a>. لإضافة/حذف/تعديل، استخدم كوادر.</span>
             )}
           </div>
-          <KadwarSyncButton t={t} B={B} />
+          <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+            <button onClick={function(){ setShowAddWizard(true); }} style={{
+              padding: "8px 14px", borderRadius: 8,
+              background: "linear-gradient(135deg, " + t.ok + ", " + t.ok + "cc)",
+              color: "#fff", fontSize: 11, fontWeight: 800,
+              border: "none", cursor: "pointer",
+              display: "flex", alignItems: "center", gap: 6,
+              fontFamily: "inherit",
+            }}>
+              <span>➕</span>
+              <span>{tr("إضافة موظف")}</span>
+            </button>
+            <KadwarSyncButton t={t} B={B} />
+          </div>
         </div>
         <div style={{ display: "flex", gap: 8, marginBottom: 14, flexWrap: "wrap" }}>
           <input value={search} onChange={e => setSearch(e.target.value)} placeholder="🔍 بحث..." style={{ flex: 1, minWidth: isMobile ? 120 : 200, padding: "10px 14px", borderRadius: 10, border: "1px solid " + t.sep, fontSize: 13, outline: "none", background: t.card, color: t.tx }} />
@@ -1435,71 +3667,18 @@ export default function AdminApp() {
         </div>
         )}
       </>}
-      {tab === "employees" && selEmp && <>
-        {/* v7.29 — hide old "رجوع للقائمة" button on mobile (MobileTopBar handles back) */}
-        {!isMobile && <button onClick={() => setSelEmp(null)} style={{ background: "none", border: "none", fontSize: 13, color: B.blue, fontWeight: 700, cursor: "pointer", marginBottom: 14 }}>→ رجوع للقائمة</button>}
-        <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr" : "1fr 2fr", gap: 16 }}>
-          <div style={{ background: t.card, borderRadius: 14, padding: "20px", border: "1px solid " + t.sep, textAlign: "center" }}>
-            <div style={{ width: 64, height: 64, borderRadius: "50%", background: `${((selEmp.status||"—") === "حاضر" ? t.ok : (selEmp.status||"—") === "متأخر" ? t.warn : t.bad)}12`, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 32, margin: "0 auto 10px", border: `3px solid ${(selEmp.status||"—") === "حاضر" ? t.ok : (selEmp.status||"—") === "متأخر" ? t.warn : t.bad}` }}>👤</div>
-            <div style={{ fontSize: 16, fontWeight: 800 }}>{selEmp.name}</div>
-            <div style={{ fontSize: 11, color: t.txM }}>{selEmp.role}</div>
-            <div style={{ fontSize: 9, color: t.txM, marginTop: 2 }}>🆔 {selEmp.idNumber || selEmp.id}</div>
-            {/* Account status from kadwar */}
-            <div style={{ marginTop: 10, display: "flex", justifyContent: "center", gap: 4, flexWrap: "wrap" }}>
-              {selEmp.isAdmin && <span style={{ padding: "2px 8px", fontSize: 9, fontWeight: 700, background: B.red + "20", color: B.red, borderRadius: 5 }}>مدير عام</span>}
-              {selEmp.isManager && !selEmp.isAdmin && <span style={{ padding: "2px 8px", fontSize: 9, fontWeight: 700, background: B.blue + "20", color: B.blue, borderRadius: 5 }}>مدير</span>}
-              {selEmp.hasAccount && <span style={{ padding: "2px 8px", fontSize: 9, fontWeight: 700, background: "#10b98120", color: "#10b981", borderRadius: 5 }}>✓ حساب نشط</span>}
-              {!selEmp.hasAccount && <span style={{ padding: "2px 8px", fontSize: 9, fontWeight: 700, background: t.warnLt, color: t.warn, borderRadius: 5 }}>⚠ بدون حساب</span>}
-            </div>
-            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 6, marginTop: 14 }}>{[{ l: "التزام", v: `${((selEmp.pct)||0)}%`, c: ((selEmp.pct)||0) >= 85 ? t.ok : t.warn }, { l: "السلسلة", v: `🔥${(selEmp.streak||0)}`, c: "#FF6B35" }, { l: "النقاط", v: (selEmp.points||0), c: B.gold }].map((x, i) => <div key={i} style={{ background: t.bg, borderRadius: 8, padding: "8px 4px" }}><div style={{ fontSize: 14, fontWeight: 800, color: x.c }}>{x.v}</div><div style={{ fontSize: 8, color: t.txM, marginTop: 2 }}>{x.l}</div></div>)}</div>
-          </div>
-          <div style={{ display: "flex", flexDirection: "column" }}>
-            <HierarchyCard emp={selEmp} emps={safeEmps} t={t} B={B} />
-            {/* Contact info */}
-            <div style={{ background: t.card, borderRadius: 14, padding: "16px", border: "1px solid " + t.sep, marginBottom: 12 }}>
-              <div style={{ fontSize: 13, fontWeight: 700, marginBottom: 10 }}>📇 بيانات التواصل</div>
-              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8, fontSize: 11 }}>
-                <div><span style={{ color: t.txM }}>الإيميل:</span> <span style={{ fontWeight: 600 }}>{selEmp.email || "—"}</span></div>
-                <div><span style={{ color: t.txM }}>الجوال:</span> <span style={{ fontWeight: 600 }}>{selEmp.phone || "—"}</span></div>
-                <div><span style={{ color: t.txM }}>القسم:</span> <span style={{ fontWeight: 600 }}>{selEmp.department || "—"}</span></div>
-                <div><span style={{ color: t.txM }}>الفرع:</span> <span style={{ fontWeight: 600 }}>{selEmp.branchName || selEmp.branch || "—"}</span></div>
-              </div>
-            </div>
-            {/* Today checks */}
-            <div style={{ background: t.card, borderRadius: 14, padding: "16px", border: "1px solid " + t.sep, marginBottom: 12 }}>
-              <div style={{ fontSize: 13, fontWeight: 700, marginBottom: 10 }}>بصمات اليوم</div>
-              <div style={{ display: "flex", gap: 10 }}>{["☀️ حضور", "☕ استراحة", "🔄 عودة", "🌙 انصراف"].map((l, i) => <div key={i} style={{ flex: 1, textAlign: "center", padding: "10px 6px", borderRadius: 10, background: ((selEmp.checks||[0,0,0,0])[i]) ? t.okLt : t.badLt }}><div style={{ fontSize: 18 }}>{((selEmp.checks||[0,0,0,0])[i]) ? "✅" : "❌"}</div><div style={{ fontSize: 9, color: t.tx2, marginTop: 3 }}>{l}</div></div>)}</div>
-            </div>
-            {/* Actions */}
-            <div style={{ background: t.card, borderRadius: 14, padding: "16px", border: "1px solid " + t.sep }}>
-              <div style={{ fontSize: 13, fontWeight: 700, marginBottom: 10 }}>إجراءات</div>
-              <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
-                <button style={actBtn}>📊 تقرير</button>
-                <button style={{ ...actBtn, background: t.warnLt, color: t.warn }}>⚠️ إنذار</button>
-                <button style={{ ...actBtn, background: t.okLt, color: t.ok }}>📤 تصدير لكوادر</button>
-              </div>
-
-              {/* v6.94 — نُقلت الإفادات والمستندات القانونية لتبويباتها المختصة (إزالة التكرار) */}
-              <div style={{ marginTop: 14, paddingTop: 12, borderTop: "1px solid " + t.sep }}>
-                <div style={{ padding: "10px 12px", borderRadius: 10, background: "rgba(43,94,167,0.06)", border: "1px dashed rgba(43,94,167,0.25)", fontSize: 11, color: t.tx2, lineHeight: 1.7 }}>
-                  <div style={{ fontWeight: 800, color: t.tx, marginBottom: 6 }}>📄 الإفادات والمستندات الرسمية</div>
-                  · إفادات (عمل / راتب / إجازة / تعهد) → <strong style={{ color: B.blue }}>تبويب «الإفادات» 📄</strong> (يمين القائمة)<br/>
-                  · إنذار رسمي → <strong style={{ color: B.red }}>تبويب «النظام التأديبي ⚖️» → المخالفات</strong><br/>
-                  · محضر تحقيق → <strong style={{ color: "#D97706" }}>تبويب «النظام التأديبي ⚖️» → التحقيقات</strong>
-                </div>
-              </div>
-
-              <div style={{ marginTop: 10, padding: "8px", borderRadius: 8, background: B.blue + "10", border: "1px dashed " + B.blue + "40", fontSize: 10, color: B.blue, textAlign: "center" }}>
-                🔗 لتعديل الاسم/المسمى/الفرع/كلمة المرور — استخدم <a href="https://hma.engineer" target="_blank" style={{ color: B.blue, fontWeight: 800 }}>كوادر</a>
-              </div>
-              <div style={{ marginTop: 8, padding: "10px", borderRadius: 8, background: B.blueLt, fontSize: 11, fontWeight: 600, color: B.blue }}>النسبة المُصدّرة لكوادر: <strong>{((selEmp.pct)||0)}%</strong></div>
-            </div>
-
-            {/* v6.83 — ملف الموظف الكامل */}
-            <EmployeeFullProfileCard emp={selEmp} t={t} B={B} />
-          </div>
-        </div>
-      </>}
+      {/* ═══ EMPLOYEE DETAIL v7.88 — صفحة شاملة ذكية ═══ */}
+      {tab === "employees" && selEmp && <EmployeeDetailPage
+        t={t} B={B}
+        emp={selEmp}
+        allEmps={safeEmps}
+        leaves={leaves}
+        allAtt={allAtt}
+        branches={branches}
+        isMobile={isMobile}
+        onBack={function(){ setSelEmp(null); }}
+        onNavigate={setTab}
+      />}
 
       {/* v7.76 — dead tab "leaves" حُذف، استُبدل بـ LeavesHub (sub: legacy) */}
 
@@ -13682,23 +15861,27 @@ function SettingsHub({ t, B, emps, onLogout, onOpenOldSettings }) {
   return <div>
     <SubTabBar t={t} B={B} active={sub} onChange={setSub}
       tabs={[
-        { id: "work",          icon: "⏰", label: "أنواع الدوام" },
-        { id: "benefits",      icon: "🏅", label: "الامتيازات" },
-        { id: "system",        icon: "🛠️", label: "إعدادات النظام" },
-        { id: "emp_edits",     icon: "✏️", label: "تعديلات موظفين" },
-        { id: "attach_queue",  icon: "📎", label: "مرفقات معلّقة" },
-        { id: "attachments",   icon: "🗂", label: "أنواع المرفقات" },
-        { id: "faces",         icon: "📸", label: "بصمات الوجه" },
-        { id: "cleanup",       icon: "🧹", label: "تنظيف البيانات" },
-        { id: "advanced",      icon: "📨", label: "إعدادات متقدمة" },
-        { id: "storage",       icon: "💾", label: "التخزين والنسخ" },
-        { id: "check",         icon: "🔍", label: "فحص + اختبار" },
-        { id: "admin",         icon: "🔐", label: "حساب المدير" },
+        { id: "work",          icon: "⏰", label: tr("أنواع الدوام") },
+        { id: "benefits",      icon: "🏅", label: tr("الامتيازات") },
+        { id: "system",        icon: "🛠️", label: tr("إعدادات النظام") },
+        { id: "emp_edits",     icon: "✏️", label: tr("تعديلات موظفين") },
+        { id: "push",          icon: "🔔", label: tr("إشعارات الجوال") },
+        { id: "audit",         icon: "📜", label: tr("سجل العمليات") },
+        { id: "attach_queue",  icon: "📎", label: tr("مرفقات معلّقة") },
+        { id: "attachments",   icon: "🗂", label: tr("أنواع المرفقات") },
+        { id: "faces",         icon: "📸", label: tr("بصمات الوجه") },
+        { id: "cleanup",       icon: "🧹", label: tr("تنظيف البيانات") },
+        { id: "advanced",      icon: "📨", label: tr("إعدادات متقدمة") },
+        { id: "storage",       icon: "💾", label: tr("التخزين والنسخ") },
+        { id: "check",         icon: "🔍", label: tr("فحص + اختبار") },
+        { id: "admin",         icon: "🔐", label: tr("حساب المدير") },
       ]} />
     {sub === "work" && <WorkTypesPanel t={t} B={B} emps={emps} />}
     {sub === "benefits" && <BenefitsPanel t={t} B={B} />}
     {sub === "system" && <SystemSettingsPanel t={t} B={B} />}
     {sub === "emp_edits" && <EmployeeEditsPanel t={t} B={B} actorName="HR" />}
+    {sub === "push" && <PushBroadcastPanel t={t} B={B} emps={emps} />}
+    {sub === "audit" && <AuditLogPanel t={t} B={B} emps={emps} />}
     {/* v7.10 — Pending attachments central queue */}
     {sub === "attach_queue" && <PendingAttachmentsQueue t={t} B={B} />}
     {/* v6.98 — مكوّنات يتيمة من tab "settings" القديم تم نقلها هنا */}

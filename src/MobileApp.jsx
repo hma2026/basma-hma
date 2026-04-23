@@ -12,7 +12,7 @@ import { t as tr, setLang, getLang, getDir, isRTL, subscribeLangChange } from ".
 
 /* ═══════════ APP CONFIG (إعدادات التطبيق) ═══════════ */
 const APP_CONFIG = {
-  VER: "7.81",
+  VER: "7.88",
   NAME: "بصمة HMA",
   FULL_NAME: "نظام الحضور والانصراف الذكي",
   COMPANY: "هاني محمد عسيري للاستشارات الهندسية",
@@ -4924,7 +4924,12 @@ function ProfilePage({ user, branch, workType, onLogout, onTicket, myTickets, da
               title={tr("الإعدادات")}
               subtitle={tr("المظهر · التذكيرات · بصمة الوجه · ربط الديسكتوب")}
             >
-              <BiometricSettingsCard user={user} />
+              {/* v7.87 — Push notifications control */}
+              <PushNotificationsCard user={user} />
+
+              <div style={{ marginTop: SPACING.md }}>
+                <BiometricSettingsCard user={user} />
+              </div>
 
               <div style={{ marginTop: SPACING.md, padding: SPACING.md, borderRadius: RADIUS.md, background: "rgba(255,255,255,0.03)", border: "1px solid " + COLORS.metallicBorder }}>
                 <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: SPACING.sm + "px 0", borderBottom: "1px solid " + COLORS.cardRowBorder }}>
@@ -6199,28 +6204,151 @@ function TawasulCreateModal({ user, allEmps, categories, projects, onClose, onSa
 }
 
 /* ═══════════ SIMPLE CONFIRM MODAL (للاستلام وغيره) ═══════════ */
-function SimpleConfirmModal({ title, message, icon, confirmLabel, confirmColor, onConfirm, onClose }) {
+/* ═════════════════════════════════════════════════════════════
+ * v7.83 — UnifiedConfirmModal — modal تأكيد موحّد
+ * يحلّ محل 3 modals متكررة (ConfirmModal + SimpleConfirmModal + HMAConfirmModal)
+ * Props:
+ *   title, message, icon — محتوى
+ *   confirmLabel, confirmColor — زر الموافقة
+ *   requireText — إذا موجود، يطلب كتابة نص للتأكيد (مثل "HMA")
+ *   warningText — ملاحظة تحذيرية (اختياري)
+ *   subtitle — وصف فرعي (اختياري)
+ *   onConfirm, onClose — handlers
+ * ═════════════════════════════════════════════════════════════ */
+function UnifiedConfirmModal({
+  title, message, icon, subtitle,
+  confirmLabel, confirmColor, cancelLabel,
+  requireText, warningText,
+  onConfirm, onClose
+}) {
+  var [text, setText] = useState("");
   var [busy, setBusy] = useState(false);
   var mainColor = confirmColor || "#0f766e";
+  var needsText = !!requireText;
+  var textOk = !needsText || text.trim().toUpperCase() === requireText.toUpperCase();
 
   async function handle() {
+    if (needsText && !textOk) {
+      alert("⚠️ " + tr("اكتب") + " " + requireText + " " + tr("للتأكيد"));
+      return;
+    }
     setBusy(true);
-    try { await onConfirm(); } catch(e) { setBusy(false); alert("فشل: " + (e.message||"خطأ")); return; }
+    try { await onConfirm(); }
+    catch(e) {
+      setBusy(false);
+      alert(tr("فشل: ") + (e.message || tr("حدث خطأ")));
+      return;
+    }
     setBusy(false);
   }
 
+  var maxWidth = needsText ? 420 : 380;
+
   return (
-    <div onClick={onClose} style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.72)", zIndex: 1150, display: "flex", alignItems: "center", justifyContent: "center", padding: 16, fontFamily: "'Tajawal',sans-serif" }}>
-      <div onClick={function(e){ e.stopPropagation(); }} style={{ background: C.bg, borderRadius: 18, maxWidth: 380, width: "100%", direction: "rtl", color: C.text, overflow: "hidden" }}>
-        <div style={{ background: "linear-gradient(135deg, " + mainColor + ", " + mainColor + "cc)", padding: "20px 18px", color: "#fff", textAlign: "center" }}>
+    <div onClick={onClose} style={{
+      position: "fixed", inset: 0,
+      background: "rgba(0,0,0,0.72)",
+      zIndex: 1150,
+      display: "flex", alignItems: "center", justifyContent: "center",
+      padding: 16, fontFamily: "'Tajawal',sans-serif"
+    }}>
+      <div onClick={function(e){ e.stopPropagation(); }} style={{
+        background: C.bg, borderRadius: 18,
+        maxWidth: maxWidth, width: "100%",
+        direction: isRTL() ? "rtl" : "ltr",
+        color: C.text, overflow: "hidden"
+      }}>
+        {/* Header */}
+        <div style={{
+          background: "linear-gradient(135deg, " + mainColor + ", " + mainColor + "cc)",
+          padding: "20px 18px", color: "#fff", textAlign: "center", position: "relative"
+        }}>
+          {needsText && (
+            <button onClick={onClose} style={{
+              position: "absolute", top: 12,
+              [isRTL() ? "left" : "right"]: 12,
+              background: "rgba(255,255,255,0.22)", border: "none",
+              borderRadius: 8, width: 30, height: 30,
+              fontSize: 18, color: "#fff", cursor: "pointer", fontFamily: "inherit"
+            }}>×</button>
+          )}
           <div style={{ fontSize: 42, marginBottom: 6 }}>{icon || "❓"}</div>
-          <div style={{ fontSize: 18, fontWeight: 900, fontFamily: "'Cairo',sans-serif" }}>{title}</div>
+          <div style={{ fontSize: 18, fontWeight: 900, fontFamily: "'Cairo',sans-serif", marginBottom: 4 }}>{title}</div>
+          {subtitle && <div style={{ fontSize: 12, opacity: 0.9 }}>{subtitle}</div>}
         </div>
-        <div style={{ padding: "20px 18px", fontSize: 14, color: C.text, lineHeight: 1.7, textAlign: "center" }}>{message}</div>
+
+        {/* Body */}
+        <div style={{ padding: "20px 18px" }}>
+          {warningText && (
+            <div style={{
+              padding: "12px 14px",
+              background: mainColor + "12",
+              border: "1px solid " + mainColor + "40",
+              borderRadius: 10,
+              fontSize: 12, color: C.text, lineHeight: 1.7, marginBottom: 14
+            }}>
+              ⚠️ {warningText}
+            </div>
+          )}
+
+          {message && (
+            <div style={{ fontSize: 14, color: C.text, lineHeight: 1.7, textAlign: "center", marginBottom: needsText ? 16 : 0 }}>
+              {message}
+            </div>
+          )}
+
+          {needsText && (
+            <>
+              <div style={{ fontSize: 13, fontWeight: 800, color: C.text, marginBottom: 10, textAlign: "center" }}>
+                {tr("اكتب")} <span style={{ color: mainColor, fontFamily: "monospace", letterSpacing: 2 }}>{requireText}</span> {tr("للتأكيد")}
+              </div>
+              <input
+                type="text"
+                value={text}
+                onChange={function(e){ setText(e.target.value); }}
+                placeholder={requireText}
+                autoFocus
+                style={{
+                  width: "100%",
+                  padding: "16px 14px",
+                  borderRadius: 12,
+                  border: "2px solid " + (textOk ? "#10b981" : C.cardBorder),
+                  background: textOk ? "rgba(16,185,129,0.08)" : C.card,
+                  color: C.text,
+                  fontSize: 22, fontWeight: 900,
+                  textAlign: "center", letterSpacing: 4,
+                  fontFamily: "monospace",
+                  outline: "none", boxSizing: "border-box",
+                  textTransform: "uppercase",
+                }}
+              />
+              <div style={{ fontSize: 10, color: C.sub, textAlign: "center", marginTop: 6 }}>
+                {textOk ? ("✓ " + tr("جاهز للتأكيد")) : tr("غير حساس لحالة الأحرف")}
+              </div>
+            </>
+          )}
+        </div>
+
+        {/* Actions */}
         <div style={{ padding: "0 18px 16px", display: "flex", gap: 10 }}>
-          <button onClick={onClose} disabled={busy} style={{ flex: 1, padding: 13, borderRadius: 12, background: C.card, color: C.text, border: "1px solid " + C.cardBorder, fontSize: 13, fontWeight: 700, cursor: busy ? "default" : "pointer", fontFamily: "inherit" }}>إلغاء</button>
-          <button onClick={handle} disabled={busy} style={{ flex: 2, padding: 13, borderRadius: 12, background: busy ? C.cardBorder : mainColor, color: "#fff", border: "none", fontSize: 14, fontWeight: 900, cursor: busy ? "default" : "pointer", fontFamily: "'Cairo',sans-serif" }}>
-            {busy ? "⏳ ..." : (confirmLabel || "موافق")}
+          <button onClick={onClose} disabled={busy} style={{
+            flex: 1, padding: 13, borderRadius: 12,
+            background: C.card, color: C.text,
+            border: "1px solid " + C.cardBorder,
+            fontSize: 13, fontWeight: 700,
+            cursor: busy ? "default" : "pointer",
+            fontFamily: "inherit"
+          }}>{cancelLabel || tr("إلغاء")}</button>
+          <button onClick={handle} disabled={busy || (needsText && !textOk)} style={{
+            flex: 2, padding: 13, borderRadius: 12,
+            background: (busy || (needsText && !textOk)) ? C.cardBorder : mainColor,
+            color: "#fff", border: "none",
+            fontSize: 14, fontWeight: 900,
+            cursor: (busy || (needsText && !textOk)) ? "default" : "pointer",
+            fontFamily: "'Cairo',sans-serif",
+            boxShadow: (busy || (needsText && !textOk)) ? "none" : ("0 4px 12px " + mainColor + "66")
+          }}>
+            {busy ? "⏳ ..." : (confirmLabel || tr("تأكيد"))}
           </button>
         </div>
       </div>
@@ -6228,74 +6356,14 @@ function SimpleConfirmModal({ title, message, icon, confirmLabel, confirmColor, 
   );
 }
 
-/* ═══════════ HMA CONFIRM MODAL (كتابة HMA للتأكيد — للتسليم/التصعيد) ═══════════ */
-function HMAConfirmModal({ title, subtitle, icon, confirmLabel, confirmColor, warningText, onConfirm, onClose }) {
-  var [text, setText] = useState("");
-  var [busy, setBusy] = useState(false);
-  var mainColor = confirmColor || "#b8960c";
-  var ok = text.trim().toUpperCase() === "HMA";
+/* v7.83 — SimpleConfirmModal alias (backward compatibility) */
+function SimpleConfirmModal(props) {
+  return <UnifiedConfirmModal {...props} />;
+}
 
-  async function handle() {
-    if (!ok) { alert("⚠️ اكتب HMA للتأكيد"); return; }
-    setBusy(true);
-    try { await onConfirm(); } catch(e) { setBusy(false); alert("فشل: " + (e.message||"خطأ")); return; }
-    setBusy(false);
-  }
-
-  return (
-    <div onClick={onClose} style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.78)", zIndex: 1200, display: "flex", alignItems: "center", justifyContent: "center", padding: 16, fontFamily: "'Tajawal',sans-serif" }}>
-      <div onClick={function(e){ e.stopPropagation(); }} style={{ background: C.bg, borderRadius: 18, maxWidth: 420, width: "100%", direction: "rtl", color: C.text, overflow: "hidden" }}>
-        <div style={{ background: "linear-gradient(135deg, " + mainColor + ", " + mainColor + "cc)", padding: "22px 18px", color: "#fff", textAlign: "center", position: "relative" }}>
-          <button onClick={onClose} style={{ position: "absolute", top: 12, left: 12, background: "rgba(255,255,255,0.22)", border: "none", borderRadius: 8, width: 30, height: 30, fontSize: 18, color: "#fff", cursor: "pointer", fontFamily: "inherit" }}>×</button>
-          <div style={{ fontSize: 42, marginBottom: 6 }}>{icon || "🔒"}</div>
-          <div style={{ fontSize: 18, fontWeight: 900, fontFamily: "'Cairo',sans-serif", marginBottom: 4 }}>{title}</div>
-          {subtitle && <div style={{ fontSize: 12, opacity: 0.9 }}>{subtitle}</div>}
-        </div>
-        <div style={{ padding: "18px" }}>
-          {warningText && (
-            <div style={{ padding: "12px 14px", background: mainColor + "12", border: "1px solid " + mainColor + "40", borderRadius: 10, fontSize: 12, color: C.text, lineHeight: 1.7, marginBottom: 14 }}>
-              ⚠️ {warningText}
-            </div>
-          )}
-          <div style={{ fontSize: 13, fontWeight: 800, color: C.text, marginBottom: 10, textAlign: "center" }}>
-            اكتب <span style={{ color: mainColor, fontFamily: "monospace", letterSpacing: 2 }}>HMA</span> للتأكيد
-          </div>
-          <input
-            type="text"
-            value={text}
-            onChange={function(e){ setText(e.target.value); }}
-            placeholder="HMA"
-            autoFocus
-            style={{
-              width: "100%",
-              padding: "16px 14px",
-              borderRadius: 12,
-              border: "2px solid " + (ok ? "#10b981" : C.cardBorder),
-              background: ok ? "rgba(16,185,129,0.08)" : C.card,
-              color: C.text,
-              fontSize: 22,
-              fontWeight: 900,
-              textAlign: "center",
-              letterSpacing: 4,
-              fontFamily: "monospace",
-              outline: "none",
-              boxSizing: "border-box",
-              textTransform: "uppercase",
-            }}
-          />
-          <div style={{ fontSize: 10, color: C.sub, textAlign: "center", marginTop: 6 }}>
-            {ok ? "✓ جاهز للتأكيد" : "غير حساس لحالة الأحرف (hma أو HMA)"}
-          </div>
-        </div>
-        <div style={{ padding: "0 18px 16px", display: "flex", gap: 10 }}>
-          <button onClick={onClose} disabled={busy} style={{ flex: 1, padding: 13, borderRadius: 12, background: C.card, color: C.text, border: "1px solid " + C.cardBorder, fontSize: 13, fontWeight: 700, cursor: busy ? "default" : "pointer", fontFamily: "inherit" }}>إلغاء</button>
-          <button onClick={handle} disabled={busy || !ok} style={{ flex: 2, padding: 13, borderRadius: 12, background: (busy || !ok) ? C.cardBorder : mainColor, color: "#fff", border: "none", fontSize: 14, fontWeight: 900, cursor: (busy || !ok) ? "default" : "pointer", fontFamily: "'Cairo',sans-serif", boxShadow: (busy || !ok) ? "none" : "0 4px 12px " + mainColor + "66" }}>
-            {busy ? "⏳ ..." : (confirmLabel || "تأكيد")}
-          </button>
-        </div>
-      </div>
-    </div>
-  );
+/* v7.83 — HMAConfirmModal alias (backward compatibility) */
+function HMAConfirmModal(props) {
+  return <UnifiedConfirmModal {...props} requireText="HMA" />;
 }
 
 /* ═══════════ TAWASUL REASON MODAL (reject/return/escalate) ═══════════ */
@@ -16232,6 +16300,274 @@ function AchievementsCard({ user, part, stats, loading }) {
 }
 
 /* ═══ BIOMETRIC SETTINGS — تفعيل/إدارة البصمة (v6.61) ═══ */
+/* ═════════════════════════════════════════════════════════════════
+ * v7.87 — PushNotificationsCard — تحكم الموظف بإشعارات الجوال
+ * ═════════════════════════════════════════════════════════════════ */
+function PushNotificationsCard({ user }) {
+  var [permission, setPermission] = useState("default"); // default | granted | denied
+  var [subscribed, setSubscribed] = useState(false);
+  var [loading, setLoading] = useState(true);
+  var [busy, setBusy] = useState(false);
+  var [msg, setMsg] = useState(null);
+  var [supported, setSupported] = useState(true);
+
+  // Check support + current status
+  useEffect(function(){
+    async function check() {
+      // Check browser support
+      if (typeof window === "undefined" || !("Notification" in window) || !("serviceWorker" in navigator) || !("PushManager" in window)) {
+        setSupported(false);
+        setLoading(false);
+        return;
+      }
+      setPermission(Notification.permission);
+
+      // Check server status
+      try {
+        var r = await fetch("/api/data?action=push-status&empId=" + encodeURIComponent(user.id));
+        var d = await r.json();
+        setSubscribed(!!d.subscribed);
+      } catch(e) {}
+      setLoading(false);
+    }
+    check();
+  }, [user.id]);
+
+  async function enable() {
+    setBusy(true);
+    setMsg(null);
+    try {
+      // Request permission
+      var perm = await Notification.requestPermission();
+      setPermission(perm);
+      if (perm !== "granted") {
+        setMsg({ type: "error", text: tr("يجب السماح بالإشعارات من إعدادات المتصفح") });
+        setBusy(false);
+        return;
+      }
+
+      // Get VAPID key
+      var keyR = await fetch("/api/data?action=vapid-public-key");
+      var keyD = await keyR.json();
+      if (!keyD.publicKey) {
+        setMsg({ type: "error", text: tr("الإشعارات غير مُهيّأة على الخادم") });
+        setBusy(false);
+        return;
+      }
+
+      function urlBase64ToUint8Array(base64String) {
+        var padding = '='.repeat((4 - base64String.length % 4) % 4);
+        var base64 = (base64String + padding).replace(/-/g, '+').replace(/_/g, '/');
+        var raw = window.atob(base64);
+        var arr = new Uint8Array(raw.length);
+        for (var i = 0; i < raw.length; i++) arr[i] = raw.charCodeAt(i);
+        return arr;
+      }
+
+      // Subscribe
+      var reg = await navigator.serviceWorker.ready;
+      var existingSub = await reg.pushManager.getSubscription();
+      var subscription = existingSub;
+      if (!existingSub) {
+        subscription = await reg.pushManager.subscribe({
+          userVisibleOnly: true,
+          applicationServerKey: urlBase64ToUint8Array(keyD.publicKey),
+        });
+      }
+
+      // Send to server
+      await fetch("/api/data?action=subscribe-push", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ empId: user.id, subscription: subscription }),
+      });
+
+      setSubscribed(true);
+      setMsg({ type: "success", text: tr("✓ تم تفعيل الإشعارات — ستصلك التنبيهات على جوالك") });
+    } catch(e) {
+      setMsg({ type: "error", text: tr("فشل التفعيل: ") + e.message });
+    }
+    setBusy(false);
+  }
+
+  async function disable() {
+    setBusy(true);
+    setMsg(null);
+    try {
+      // Unsubscribe locally
+      var reg = await navigator.serviceWorker.ready;
+      var sub = await reg.pushManager.getSubscription();
+      if (sub) await sub.unsubscribe();
+
+      // Remove from server
+      await fetch("/api/data?action=unsubscribe-push", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ empId: user.id }),
+      });
+
+      setSubscribed(false);
+      setMsg({ type: "success", text: tr("✓ تم إيقاف الإشعارات") });
+    } catch(e) {
+      setMsg({ type: "error", text: tr("فشل الإيقاف: ") + e.message });
+    }
+    setBusy(false);
+  }
+
+  async function testNotification() {
+    setBusy(true);
+    setMsg(null);
+    try {
+      var r = await fetch("/api/data?action=test-notify", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          empId: user.id,
+          title: tr("🔔 إشعار تجريبي"),
+          message: tr("هذا إشعار اختباري للتأكد من عمل الإشعارات"),
+          type: "test",
+        }),
+      });
+      var d = await r.json();
+      if (d.ok && d.push && d.push.sent) {
+        setMsg({ type: "success", text: tr("✓ تم إرسال إشعار تجريبي — تحقق من جوالك") });
+      } else {
+        setMsg({ type: "warn", text: tr("الإشعار محفوظ لكن لم يصل كـ push: ") + (d.push ? d.push.reason : "?") });
+      }
+    } catch(e) {
+      setMsg({ type: "error", text: tr("فشل الاختبار: ") + e.message });
+    }
+    setBusy(false);
+  }
+
+  // Not supported
+  if (!supported) {
+    return (
+      <Card>
+        <SectionHeader emoji="🔔" title={tr("إشعارات الجوال")} />
+        <div style={{ padding: 14, background: COLORS.warningBg, borderRadius: 10, border: "1px solid rgba(251,191,36,0.3)", fontSize: 12, color: COLORS.warningText, lineHeight: 1.7 }}>
+          ⚠️ {tr("متصفحك لا يدعم الإشعارات")}
+        </div>
+      </Card>
+    );
+  }
+
+  if (loading) {
+    return (
+      <Card>
+        <SectionHeader emoji="🔔" title={tr("إشعارات الجوال")} />
+        <div style={{ padding: 14, textAlign: "center", color: COLORS.textMuted, fontSize: 11 }}>
+          {tr("جاري التحقق...")}
+        </div>
+      </Card>
+    );
+  }
+
+  // Status badge
+  var statusInfo = (function(){
+    if (permission === "denied") return { color: "#EF4444", icon: "🚫", label: tr("محظور من المتصفح") };
+    if (subscribed && permission === "granted") return { color: "#10B981", icon: "✓", label: tr("مفعّل") };
+    return { color: "#F59E0B", icon: "⚠", label: tr("غير مفعّل") };
+  })();
+
+  return (
+    <Card>
+      <SectionHeader emoji="🔔" title={tr("إشعارات الجوال")} />
+
+      {/* Status indicator */}
+      <div style={{
+        display: "flex", justifyContent: "space-between", alignItems: "center",
+        padding: "10px 14px", borderRadius: 10,
+        background: statusInfo.color + "15",
+        border: "1px solid " + statusInfo.color + "40",
+        marginBottom: SPACING.md,
+      }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+          <div style={{
+            width: 36, height: 36, borderRadius: "50%",
+            background: statusInfo.color,
+            color: "#fff",
+            display: "flex", alignItems: "center", justifyContent: "center",
+            fontSize: 16, fontWeight: 900,
+          }}>{statusInfo.icon}</div>
+          <div>
+            <div style={{ fontSize: 13, fontWeight: 800, color: COLORS.textPrimary }}>{tr("الحالة: ")} {statusInfo.label}</div>
+            <div style={{ fontSize: 10, color: COLORS.textMuted, marginTop: 2 }}>
+              {subscribed && permission === "granted"
+                ? tr("ستصلك الإشعارات فوراً حتى لو كان التطبيق مغلقاً")
+                : permission === "denied"
+                  ? tr("فعّل الإذن من إعدادات المتصفح ثم أعد المحاولة")
+                  : tr("اضغط تفعيل لاستلام الإشعارات")}
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {/* Actions */}
+      {permission === "denied" ? (
+        <div style={{ padding: "10px 14px", background: COLORS.infoBg, borderRadius: 10, fontSize: 11, color: COLORS.infoText, lineHeight: 1.7 }}>
+          ℹ️ {tr("لتفعيل الإشعارات: افتح إعدادات المتصفح → الموقع هذا → الإشعارات → السماح")}
+        </div>
+      ) : subscribed ? (
+        <div style={{ display: "flex", gap: 8 }}>
+          <button onClick={testNotification} disabled={busy} style={{
+            flex: 1, padding: 12, borderRadius: 10,
+            background: COLORS.bgSecondary,
+            color: COLORS.textPrimary,
+            border: "1px solid " + COLORS.cardBorder,
+            fontSize: 12, fontWeight: 700,
+            cursor: busy ? "default" : "pointer",
+            fontFamily: TYPOGRAPHY.fontTajawal,
+          }}>
+            🧪 {tr("إشعار تجريبي")}
+          </button>
+          <button onClick={disable} disabled={busy} style={{
+            flex: 1, padding: 12, borderRadius: 10,
+            background: "#EF4444",
+            color: "#fff",
+            border: "none",
+            fontSize: 12, fontWeight: 800,
+            cursor: busy ? "default" : "pointer",
+            fontFamily: TYPOGRAPHY.fontTajawal,
+          }}>
+            {busy ? "⏳" : ("🔕 " + tr("إيقاف"))}
+          </button>
+        </div>
+      ) : (
+        <button onClick={enable} disabled={busy} style={{
+          width: "100%", padding: 13, borderRadius: 10,
+          background: "linear-gradient(135deg, #10B981, #059669)",
+          color: "#fff",
+          border: "none",
+          fontSize: 13, fontWeight: 900,
+          cursor: busy ? "wait" : "pointer",
+          fontFamily: TYPOGRAPHY.fontTajawal,
+          boxShadow: "0 4px 12px rgba(16,185,129,0.3)",
+        }}>
+          {busy ? ("⏳ " + tr("جاري التفعيل...")) : ("🔔 " + tr("تفعيل الإشعارات"))}
+        </button>
+      )}
+
+      {msg && (
+        <div style={{
+          marginTop: 10,
+          padding: "10px 12px", borderRadius: 10, fontSize: 11, fontWeight: 700, textAlign: "center",
+          background: msg.type === "error" ? "rgba(239,68,68,0.15)" : msg.type === "warn" ? "rgba(245,158,11,0.15)" : "rgba(16,185,129,0.15)",
+          color: msg.type === "error" ? "#FCA5A5" : msg.type === "warn" ? "#FCD34D" : "#6EE7B7",
+          border: "1px solid " + (msg.type === "error" ? "rgba(239,68,68,0.35)" : msg.type === "warn" ? "rgba(245,158,11,0.35)" : "rgba(16,185,129,0.35)"),
+        }}>
+          {msg.text}
+        </div>
+      )}
+
+      {/* Info footer */}
+      <div style={{ marginTop: 10, padding: "8px 12px", background: COLORS.infoBg, borderRadius: 8, fontSize: 10, color: COLORS.infoText, lineHeight: 1.6 }}>
+        ℹ️ {tr("الإشعارات تشمل: طلبات إجازة · إعلانات · مهام جديدة · قرارات HR")}
+      </div>
+    </Card>
+  );
+}
+
 function BiometricSettingsCard({ user }) {
   var [supported, setSupported] = useState(null);
   var [devices, setDevices] = useState([]);

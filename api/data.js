@@ -190,20 +190,34 @@ async function canAccessPayroll(userId, action) {
   return { allowed: false, reason: 'unknown_action' };
 }
 
-// تسجيل عملية في audit log
-async function auditLog(userId, action, target, details) {
+// v7.84 — نظام Audit Log شامل وموحّد
+// Categories: payroll, leaves, violations, employees, settings, salary, admin, tawasul
+// Usage: auditLog(userId, action, target, details, category)
+async function auditLog(userId, action, target, details, category) {
   try {
-    const log = await dbGet('payroll-audit-log') || [];
-    log.push({
+    // v7.84 — استخدام مفتاح موحّد "audit-log" بدل "payroll-audit-log" القديم
+    // + الاحتفاظ بالقديم للقراءة (legacy)
+    const log = await dbGet('audit-log') || [];
+    const entry = {
       id: 'AUDIT' + Date.now() + Math.random().toString(36).slice(2, 6),
       userId: String(userId || 'system'),
       action,
       target: target || null,
       details: details || null,
+      category: category || 'general', // v7.84 — تصنيف العملية
       ts: new Date().toISOString(),
-    });
-    if (log.length > 5000) log.splice(0, log.length - 5000);
-    await dbSet('payroll-audit-log', log);
+    };
+    log.push(entry);
+    if (log.length > 10000) log.splice(0, log.length - 10000); // v7.84 — حد أعلى 10K بدل 5K
+    await dbSet('audit-log', log);
+
+    // v7.84 — للحفاظ على التوافق، نسخ عمليات الرواتب للسجل القديم أيضاً
+    if (category === 'payroll' || category === 'salary') {
+      const legacyLog = await dbGet('payroll-audit-log') || [];
+      legacyLog.push(entry);
+      if (legacyLog.length > 5000) legacyLog.splice(0, legacyLog.length - 5000);
+      await dbSet('payroll-audit-log', legacyLog);
+    }
   } catch (e) {
     console.error('[Audit] failed:', e.message);
   }
@@ -1004,16 +1018,52 @@ export default async function handler(req, res) {
         if (req.method === 'GET') return res.json(await dbGet('employees') || []);
         if (req.method === 'PUT') {
           const emps = await dbGet('employees') || [];
-          const { id, ...up } = req.body;
+          const { id, actorId, ...up } = req.body;
           const i = emps.findIndex(e => e.id === id);
-          if (i >= 0) { emps[i] = { ...emps[i], ...up }; await dbSet('employees', emps); }
+          if (i >= 0) {
+            var prev = { ...emps[i] };
+            emps[i] = { ...emps[i], ...up };
+            await dbSet('employees', emps);
+            // v7.85 — audit
+            await auditLog(actorId || 'hr', 'emp_update', id, { changes: up }, 'employees');
+          }
           return res.json({ ok: true });
         }
         if (req.method === 'POST') {
           const emps = await dbGet('employees') || [];
-          emps.push(req.body);
+          var newEmp = req.body;
+          var actorId = newEmp.actorId;
+          delete newEmp.actorId;
+
+          // v7.85 — Validation للحقول المطلوبة
+          if (!newEmp.id) {
+            return res.status(400).json({ error: 'رقم الهوية مطلوب (id)' });
+          }
+          if (!newEmp.name || newEmp.name.trim().length < 3) {
+            return res.status(400).json({ error: 'اسم الموظف مطلوب (3 أحرف على الأقل)' });
+          }
+          // Check uniqueness
+          if (emps.find(function(e){ return String(e.id) === String(newEmp.id); })) {
+            return res.status(400).json({ error: 'موظف برقم الهوية هذا موجود بالفعل' });
+          }
+          // Defaults
+          newEmp.createdAt = new Date().toISOString();
+          newEmp.active = newEmp.active !== false;
+          newEmp.role = newEmp.role || 'employee';
+          if (!newEmp.joinDate) newEmp.joinDate = new Date().toISOString().slice(0, 10);
+
+          emps.push(newEmp);
           await dbSet('employees', emps);
-          return res.json({ ok: true });
+
+          // v7.85 — Audit log
+          await auditLog(actorId || 'hr', 'emp_create', newEmp.id, {
+            name: newEmp.name,
+            branchId: newEmp.branchId,
+            jobTitle: newEmp.jobTitle,
+            joinDate: newEmp.joinDate,
+          }, 'employees');
+
+          return res.json({ ok: true, employee: newEmp });
         }
         break;
       }
@@ -1155,7 +1205,7 @@ export default async function handler(req, res) {
         emps[ei].localUnlockedAt = new Date().toISOString();
         emps[ei].localUnlockedBy = actor || 'hr';
         await dbSet('employees', emps);
-        await auditLog(actor || 'hr', 'emp_unlock', empId, {});
+        await auditLog(actor || 'hr', 'emp_unlock', empId, {}, 'employees');
         return res.json({ ok: true });
       }
 
@@ -1222,7 +1272,7 @@ export default async function handler(req, res) {
         };
         list.push(item);
         await dbSet('salary-change-requests', list);
-        await auditLog(proposedBy || 'hr', 'salary_change_request', item.id, { empId, field, newValue });
+        await auditLog(proposedBy || 'hr', 'salary_change_request', item.id, { empId, field, newValue }, 'salary');
         return res.json({ ok: true, request: item });
       }
 
@@ -1287,7 +1337,7 @@ export default async function handler(req, res) {
         emps[ei].localLockedBy = actor || 'gm';
         emps[ei].localLockReason = 'تعديل راتب/بدل معتمد';
         await dbSet('employees', emps);
-        await auditLog(actor || 'gm', 'salary_change_approve', id, { empId: list[i].empId, field, newValue: newVal });
+        await auditLog(actor || 'gm', 'salary_change_approve', id, { empId: list[i].empId, field, newValue: newVal }, 'salary');
         return res.json({ ok: true, request: list[i] });
       }
 
@@ -1305,7 +1355,7 @@ export default async function handler(req, res) {
         list[i].rejectedAt = new Date().toISOString();
         list[i].rejectionReason = rejectionReason || '';
         await dbSet('salary-change-requests', list);
-        await auditLog(actor || 'gm', 'salary_change_reject', id, { empId: list[i].empId, reason: rejectionReason });
+        await auditLog(actor || 'gm', 'salary_change_reject', id, { empId: list[i].empId, reason: rejectionReason }, 'salary');
         return res.json({ ok: true });
       }
 
@@ -1470,6 +1520,88 @@ export default async function handler(req, res) {
             return res.json({ ok: true, fromCache: false, ...toCache });
           } catch (e) {
             if (cached) return res.json({ ok: true, fromCache: true, stale: true, error: e.message, ...cached });
+            return res.status(502).json({ error: 'تعذر الاتصال بكوادر: ' + e.message });
+          }
+        }
+        break;
+      }
+
+      /* ═══════════════════════════════════════════════════════════════
+       * v7.86 — Kadwar Job Catalog (المسميات + الهيكل + KPIs من كوادر)
+       * ═══════════════════════════════════════════════════════════════
+       * GET /api/data?action=kadwar-job-catalog[&refresh=1]
+       * يُعيد:
+       *   {
+       *     jobTitles: [{ id, name_ar, name_en, department, level }, ...],
+       *     orgChart: [{ positionId, name, parentId, ... }, ...],
+       *     kpisByTitle: { "title_id": { criteria: [...], weight: N }, ... }
+       *   }
+       * Cache: ساعة واحدة (TTL)
+       * إذا كوادر offline → يُرجع cached + stale flag
+       */
+      case 'kadwar-job-catalog': {
+        if (req.method === 'GET') {
+          const forceRefresh = req.query.refresh === '1';
+          const cached = await dbGet('kadwar-job-catalog-cache');
+          const cacheAge = cached && cached._fetchedAt ? (Date.now() - new Date(cached._fetchedAt).getTime()) : Infinity;
+          const CACHE_TTL = 60 * 60 * 1000; // ساعة واحدة
+
+          if (!forceRefresh && cached && cacheAge < CACHE_TTL) {
+            return res.json({ ok: true, fromCache: true, cacheAgeMs: cacheAge, ...cached });
+          }
+
+          // Try fetching from Kadwar
+          try {
+            // جلب 3 مصادر بالتوازي من كوادر
+            const [titlesRes, orgRes, kpisRes] = await Promise.all([
+              fetch('https://hma.engineer/api/basma-sync?action=job-titles', { method: 'GET' }).catch(function(){ return null; }),
+              fetch('https://hma.engineer/api/basma-sync?action=org-chart', { method: 'GET' }).catch(function(){ return null; }),
+              fetch('https://hma.engineer/api/basma-sync?action=eval-criteria', { method: 'GET' }).catch(function(){ return null; }),
+            ]);
+
+            var jobTitles = [];
+            var orgChart = [];
+            var kpisByTitle = {};
+
+            if (titlesRes && titlesRes.ok) {
+              var td = await titlesRes.json();
+              jobTitles = Array.isArray(td.jobTitles) ? td.jobTitles : (Array.isArray(td) ? td : []);
+            }
+            if (orgRes && orgRes.ok) {
+              var od = await orgRes.json();
+              orgChart = Array.isArray(od.positions) ? od.positions : (Array.isArray(od) ? od : []);
+            }
+            if (kpisRes && kpisRes.ok) {
+              var kd = await kpisRes.json();
+              kpisByTitle = (kd && kd.criteria_by_position) ? kd.criteria_by_position : {};
+            }
+
+            // If nothing loaded and we have cache — return cache
+            if (jobTitles.length === 0 && orgChart.length === 0 && Object.keys(kpisByTitle).length === 0) {
+              if (cached) {
+                return res.json({ ok: true, fromCache: true, stale: true, error: 'kadwar returned empty', ...cached });
+              }
+              return res.json({
+                ok: true,
+                jobTitles: [],
+                orgChart: [],
+                kpisByTitle: {},
+                note: 'كوادر لم تُرجع بيانات — سيتم استخدام قائمة محلية',
+              });
+            }
+
+            var toCache = {
+              jobTitles: jobTitles,
+              orgChart: orgChart,
+              kpisByTitle: kpisByTitle,
+              _fetchedAt: new Date().toISOString(),
+            };
+            await dbSet('kadwar-job-catalog-cache', toCache);
+            return res.json({ ok: true, fromCache: false, ...toCache });
+          } catch (e) {
+            if (cached) {
+              return res.json({ ok: true, fromCache: true, stale: true, error: e.message, ...cached });
+            }
             return res.status(502).json({ error: 'تعذر الاتصال بكوادر: ' + e.message });
           }
         }
@@ -3123,7 +3255,7 @@ export default async function handler(req, res) {
           const actor = req.query.actor;
           const access = await canAccessPayroll(actor, 'view_all');
           if (!access.allowed) return res.status(403).json({ error: 'insufficient permission', reason: access.reason });
-          await auditLog(actor, 'list_runs', null, null);
+          await auditLog(actor, 'list_runs', null, null, 'payroll');
           const runs = await dbGet('payroll-runs') || [];
           runs.sort((a, b) => String(b.period || '').localeCompare(String(a.period || '')));
           return res.json({ ok: true, runs });
@@ -3160,7 +3292,7 @@ export default async function handler(req, res) {
           };
           runs.push(newRun);
           await dbSet('payroll-runs', runs);
-          await auditLog(actor, 'create_run', newRun.id, { period });
+          await auditLog(actor, 'create_run', newRun.id, { period }, 'payroll');
           return res.json({ ok: true, run: newRun });
         }
         break;
@@ -3183,7 +3315,7 @@ export default async function handler(req, res) {
           iban: s.iban ? decryptPayrollField(s.iban) : '',  // فك التشفير عند العرض
         }));
 
-        await auditLog(actor, 'view_run_detail', runId, null);
+        await auditLog(actor, 'view_run_detail', runId, null, 'payroll');
         return res.json({ ok: true, run, slips: runSlips });
       }
 
@@ -3328,7 +3460,7 @@ export default async function handler(req, res) {
         runs[runIdx] = run;
         await dbSet('payroll-runs', runs);
 
-        await auditLog(actor, 'calculate_run', runId, { slipsCount: newSlips.length, totalNet, finesApplied: run.totalFinesApplied });
+        await auditLog(actor, 'calculate_run', runId, { slipsCount: newSlips.length, totalNet, finesApplied: run.totalFinesApplied }, 'payroll');
         return res.json({ ok: true, run, slipsCount: newSlips.length, totalNet, finesApplied: run.totalFinesApplied });
       }
 
@@ -3389,7 +3521,7 @@ export default async function handler(req, res) {
           await dbSet('payroll-runs', runs);
         }
 
-        await auditLog(actor, 'edit_slip', slipId, { additions, deductions, netSalary: slip.netSalary });
+        await auditLog(actor, 'edit_slip', slipId, { additions, deductions, netSalary: slip.netSalary }, 'payroll');
         return res.json({ ok: true, slip: { ...slip, iban: slip.iban ? decryptPayrollField(slip.iban) : '' } });
       }
 
@@ -3532,7 +3664,7 @@ export default async function handler(req, res) {
           }).catch(function(){ /* logged */ });
         })).catch(function(){ /* ignore — all errors logged individually */ });
 
-        await auditLog(actor, 'approve_run', runId, { totalNet: run.totalNetAmount, slipsCount: approvedSlips.length });
+        await auditLog(actor, 'approve_run', runId, { totalNet: run.totalNetAmount, slipsCount: approvedSlips.length }, 'payroll');
         return res.json({ ok: true, run, slipsPushed: approvedSlips.length });
       }
 
@@ -3579,7 +3711,7 @@ export default async function handler(req, res) {
           await dbSet('payroll-runs', runs);
         }
 
-        await auditLog(actor, 'generate_bank_file', runId, { lineCount: lines.length - 1, total });
+        await auditLog(actor, 'generate_bank_file', runId, { lineCount: lines.length - 1, total }, 'payroll');
 
         // Return as text
         res.setHeader('Content-Type', 'text/csv; charset=utf-8');
@@ -3633,7 +3765,7 @@ export default async function handler(req, res) {
         });
         await dbSet('notifications', notifs);
 
-        await auditLog(actor, 'mark_sent', runId, null);
+        await auditLog(actor, 'mark_sent', runId, null, 'payroll');
         return res.json({ ok: true, run });
       }
 
@@ -3994,6 +4126,19 @@ export default async function handler(req, res) {
 
           await dbSet('leaves', ls);
 
+          // v7.84 — تسجيل العملية في Audit Log
+          var actorId = (req.body && req.body.actorId) || 'hr';
+          await auditLog(actorId, 'leave_' + status, leave.empId, {
+            leaveId: leave.id,
+            type: leave.type,
+            days: leave.days,
+            from: leave.from,
+            to: leave.to,
+            prevStatus: prevStatus,
+            newStatus: status,
+            rejectReason: rejectReason || null,
+          }, 'leaves');
+
           // Notify employee
           (async function(){
             try {
@@ -4076,12 +4221,34 @@ export default async function handler(req, res) {
           if (empId) vs = vs.filter(v => v.empId === empId);
           return res.json(vs);
         }
-        if (req.method === 'POST') { const vs = await dbGet('violations') || []; vs.push({ id: 'V' + Date.now(), status: 'open', ...req.body, ts: new Date().toISOString() }); await dbSet('violations', vs); return res.json({ ok: true }); }
+        if (req.method === 'POST') {
+          const vs = await dbGet('violations') || [];
+          const newV = { id: 'V' + Date.now(), status: 'open', ...req.body, ts: new Date().toISOString() };
+          vs.push(newV);
+          await dbSet('violations', vs);
+          // v7.84 — Audit
+          await auditLog(req.body.actorId || 'system', 'violation_created', req.body.empId, {
+            violationId: newV.id,
+            type: req.body.type,
+            details: req.body.details,
+          }, 'violations');
+          return res.json({ ok: true });
+        }
         if (req.method === 'PUT') {
           const vs = await dbGet('violations') || [];
-          const { id, ...up } = req.body;
+          const { id, actorId, ...up } = req.body;
           const i = vs.findIndex(v => v.id === id);
-          if (i >= 0) { vs[i] = { ...vs[i], ...up, updatedAt: new Date().toISOString() }; await dbSet('violations', vs); }
+          if (i >= 0) {
+            var prev = { ...vs[i] };
+            vs[i] = { ...vs[i], ...up, updatedAt: new Date().toISOString() };
+            await dbSet('violations', vs);
+            // v7.84 — Audit
+            await auditLog(actorId || 'hr', 'violation_updated', vs[i].empId, {
+              violationId: id,
+              changes: up,
+              prevStatus: prev.status,
+            }, 'violations');
+          }
           return res.json({ ok: true });
         }
         break;
@@ -4600,7 +4767,7 @@ export default async function handler(req, res) {
           status: 'approved',
           created_at: ts[i].createdAt,
         }).catch(function(){ /* logged */ });
-        await auditLog(actor || 'admin', 'approve_termination', id, { empId: ts[i].empId, reason: ts[i].reason });
+        await auditLog(actor || 'admin', 'approve_termination', id, { empId: ts[i].empId, reason: ts[i].reason }, 'employees');
         return res.json({ ok: true, termination: ts[i] });
       }
 
@@ -4622,7 +4789,7 @@ export default async function handler(req, res) {
         const emps = await dbGet('employees') || [];
         const ei = emps.findIndex(e => e.id === ts[i].empId);
         if (ei >= 0) { emps[ei].terminated = false; delete emps[ei].terminatedAt; await dbSet('employees', emps); }
-        await auditLog(actor || 'admin', 'cancel_termination', id, { empId: ts[i].empId, reason: reason });
+        await auditLog(actor || 'admin', 'cancel_termination', id, { empId: ts[i].empId, reason: reason }, 'employees');
         return res.json({ ok: true, termination: ts[i] });
       }
 
@@ -4691,7 +4858,7 @@ export default async function handler(req, res) {
           });
           await dbSet('notifications', notifs);
         } catch(e) {}
-        await auditLog(requestedBy || 'employee', 'edit_request', newReq.id, { empId, fieldKey, newValue });
+        await auditLog(requestedBy || 'employee', 'edit_request', newReq.id, { empId, fieldKey, newValue }, 'employees');
         return res.json({ ok: true, request: newReq });
       }
 
@@ -4735,7 +4902,7 @@ export default async function handler(req, res) {
           });
           await dbSet('notifications', notifs);
         } catch(e) {}
-        await auditLog(actor || 'hr', 'edit_approve', id, { empId: list[i].empId, fieldKey: list[i].fieldKey });
+        await auditLog(actor || 'hr', 'edit_approve', id, { empId: list[i].empId, fieldKey: list[i].fieldKey, newValue: list[i].newValue, prevValue: prevValue }, 'employees');
         return res.json({ ok: true, request: list[i], employee: emps[ei] });
       }
 
@@ -4769,7 +4936,7 @@ export default async function handler(req, res) {
           });
           await dbSet('notifications', notifs);
         } catch(e) {}
-        await auditLog(actor || 'hr', 'edit_reject', id, { empId: list[i].empId, fieldKey: list[i].fieldKey, reason: rejectReason });
+        await auditLog(actor || 'hr', 'edit_reject', id, { empId: list[i].empId, fieldKey: list[i].fieldKey, reason: rejectReason }, 'employees');
         return res.json({ ok: true, request: list[i] });
       }
 
@@ -5345,6 +5512,19 @@ export default async function handler(req, res) {
           allR[idx].decidedByName = b.decidedByName || null;
           allR[idx].decidedAt = new Date().toISOString();
           await dbSet('hr-requests', allR);
+
+          // v7.84 — تسجيل العملية في Audit Log
+          if (b.status) {
+            await auditLog(b.decidedBy || 'hr', 'hr_request_' + b.status, allR[idx].empId, {
+              requestId: allR[idx].id,
+              type: allR[idx].type,
+              typeLabel: allR[idx].typeLabel,
+              status: b.status,
+              rejectReason: b.rejectReason || null,
+              deliveryNote: b.deliveryNote || null,
+            }, 'admin');
+          }
+
           // Create notification for employee
           try {
             var notifs = (await dbGet('notifications')) || [];
@@ -5364,6 +5544,76 @@ export default async function handler(req, res) {
             await dbSet('notifications', notifs);
           } catch(e) { /* notification failure doesn't break the flow */ }
           return res.json({ ok: true, request: allR[idx] });
+        }
+        break;
+      }
+
+      /* ═══════════════════════════════════════════════════════════════
+       * v7.84 — Audit Log endpoint (عرض سجل العمليات الكامل)
+       * ═══════════════════════════════════════════════════════════════
+       * GET /api/data?action=audit-log
+       *   ?category=leaves|payroll|violations|employees|settings|salary|admin|tawasul
+       *   ?userId=XXX (filter by actor)
+       *   ?target=XXX (filter by target)
+       *   ?from=YYYY-MM-DD&to=YYYY-MM-DD
+       *   ?limit=200 (default: 200, max: 1000)
+       * DELETE /api/data?action=audit-log (clear all — admin only)
+       */
+      case 'audit-log': {
+        if (req.method === 'GET') {
+          var log = await dbGet('audit-log') || [];
+          if (!Array.isArray(log)) log = [];
+
+          // Also merge legacy payroll log entries if new log is empty
+          if (log.length === 0) {
+            var legacy = await dbGet('payroll-audit-log') || [];
+            log = legacy.map(function(e){ return Object.assign({}, e, { category: e.category || 'payroll' }); });
+          }
+
+          // Apply filters
+          var cat = req.query.category;
+          var userId = req.query.userId;
+          var target = req.query.target;
+          var from = req.query.from;
+          var to = req.query.to;
+          var limit = Math.min(parseInt(req.query.limit || '200'), 1000);
+
+          var filtered = log.filter(function(e){
+            if (cat && e.category !== cat) return false;
+            if (userId && String(e.userId) !== String(userId)) return false;
+            if (target && String(e.target) !== String(target)) return false;
+            if (from && e.ts < from) return false;
+            if (to && e.ts > (to + 'T23:59:59')) return false;
+            return true;
+          });
+
+          // Sort newest first
+          filtered.sort(function(a, b){ return (b.ts || '').localeCompare(a.ts || ''); });
+
+          // Pagination
+          var total = filtered.length;
+          var slice = filtered.slice(0, limit);
+
+          // Stats
+          var stats = {};
+          filtered.forEach(function(e){
+            var c = e.category || 'general';
+            stats[c] = (stats[c] || 0) + 1;
+          });
+
+          return res.json({
+            ok: true,
+            entries: slice,
+            total: total,
+            returned: slice.length,
+            stats: stats,
+          });
+        }
+
+        if (req.method === 'DELETE') {
+          // حذف السجل بالكامل — للطوارئ فقط
+          await dbSet('audit-log', []);
+          return res.json({ ok: true, cleared: true });
         }
         break;
       }
@@ -5760,6 +6010,125 @@ export default async function handler(req, res) {
         delete subs[empId];
         await dbSet('push_subscriptions', subs);
         return res.json({ ok: true });
+      }
+
+      /* ═══ v7.87 — PUSH STATUS (هل الموظف مشترك؟) ═══ */
+      case 'push-status': {
+        if (req.method !== 'GET') return res.status(405).json({ error: 'GET required' });
+        var empIdQ = req.query.empId;
+        if (!empIdQ) return res.status(400).json({ error: 'empId مطلوب' });
+        var subsP = (await dbGet('push_subscriptions')) || {};
+        var mySub = subsP[empIdQ];
+        return res.json({
+          ok: true,
+          subscribed: !!mySub,
+          subscribedAt: mySub ? mySub.ts : null,
+          vapidConfigured: !!(process.env.VAPID_PUBLIC_KEY && process.env.VAPID_PRIVATE_KEY),
+        });
+      }
+
+      /* ═══ v7.87 — PUSH OVERVIEW (للمدير: من مشترك ومن لا) ═══ */
+      case 'push-overview': {
+        if (req.method !== 'GET') return res.status(405).json({ error: 'GET required' });
+        var subsO = (await dbGet('push_subscriptions')) || {};
+        var empsO = (await dbGet('employees')) || [];
+        var activeEmps = empsO.filter(function(e){ return e.active !== false; });
+        var subscribedIds = Object.keys(subsO);
+        var subscribedSet = new Set(subscribedIds);
+        var subscribedEmps = activeEmps.filter(function(e){ return subscribedSet.has(String(e.id)); }).map(function(e){
+          return {
+            id: e.id, name: e.name,
+            branchId: e.branchId, jobTitle: e.jobTitle,
+            subscribedAt: subsO[e.id] ? subsO[e.id].ts : null,
+          };
+        });
+        var unsubscribedEmps = activeEmps.filter(function(e){ return !subscribedSet.has(String(e.id)); }).map(function(e){
+          return { id: e.id, name: e.name, branchId: e.branchId, jobTitle: e.jobTitle };
+        });
+        return res.json({
+          ok: true,
+          total: activeEmps.length,
+          subscribed: subscribedEmps.length,
+          unsubscribed: unsubscribedEmps.length,
+          pct: activeEmps.length ? Math.round((subscribedEmps.length / activeEmps.length) * 100) : 0,
+          subscribedEmps: subscribedEmps,
+          unsubscribedEmps: unsubscribedEmps,
+          vapidConfigured: !!(process.env.VAPID_PUBLIC_KEY && process.env.VAPID_PRIVATE_KEY),
+        });
+      }
+
+      /* ═══ v7.87 — SEND PUSH to multiple emps (admin-broadcast) ═══ */
+      case 'push-broadcast': {
+        if (req.method !== 'POST') return res.status(405).json({ error: 'POST required' });
+        var bodyBc = req.body || {};
+        var empIds = bodyBc.empIds; // array of emp IDs
+        var title = bodyBc.title || '📢 ' + ((bodyBc.title || '').trim() || 'تعميم');
+        var message = bodyBc.body || bodyBc.message || '';
+        var actorIdBc = bodyBc.actorId || 'admin';
+
+        if (!Array.isArray(empIds) || empIds.length === 0) {
+          // Broadcast to all subscribed if empIds is empty/null
+          var subsAll = (await dbGet('push_subscriptions')) || {};
+          empIds = Object.keys(subsAll);
+        }
+        if (!message.trim()) return res.status(400).json({ error: 'body/message مطلوب' });
+
+        var subsBc = (await dbGet('push_subscriptions')) || {};
+        var sentCount = 0, failedCount = 0, noSubCount = 0;
+        var results = [];
+
+        for (var i = 0; i < empIds.length; i++) {
+          var eid = empIds[i];
+          var subItem = subsBc[eid];
+          if (!subItem) {
+            noSubCount++;
+            results.push({ empId: eid, sent: false, reason: 'no-subscription' });
+            continue;
+          }
+          var pushR = await sendWebPush(subItem.subscription, {
+            title: title,
+            body: message,
+            tag: 'broadcast-' + Date.now(),
+            data: { type: 'broadcast' },
+          });
+          if (pushR.sent) sentCount++;
+          else failedCount++;
+          results.push({ empId: eid, sent: pushR.sent, reason: pushR.reason });
+
+          // Also save to notifications table (as fallback)
+          try {
+            var notifsBc = (await dbGet('notifications')) || [];
+            notifsBc.unshift({
+              id: 'N' + Date.now() + '_' + i,
+              empId: eid,
+              type: 'broadcast',
+              title: title,
+              message: message,
+              read: false,
+              ts: new Date().toISOString(),
+            });
+            await dbSet('notifications', notifsBc.slice(0, 500));
+          } catch(e) {}
+        }
+
+        // Audit log
+        await auditLog(actorIdBc, 'push_broadcast', null, {
+          targets: empIds.length,
+          sent: sentCount,
+          failed: failedCount,
+          noSub: noSubCount,
+          title: title,
+          messagePreview: message.slice(0, 100),
+        }, 'admin');
+
+        return res.json({
+          ok: true,
+          total: empIds.length,
+          sent: sentCount,
+          failed: failedCount,
+          noSubscription: noSubCount,
+          results: results,
+        });
       }
 
       /* ═══ TEST NOTIFY — إرسال إشعار/اتصال وهمي (مع push حقيقي) ═══ */
