@@ -12,7 +12,7 @@ import { t as tr, setLang, getLang, getDir, isRTL, subscribeLangChange } from ".
 
 /* ═══════════ APP CONFIG (إعدادات التطبيق) ═══════════ */
 const APP_CONFIG = {
-  VER: "7.128",
+  VER: "7.129",
   NAME: "بصمة HMA",
   FULL_NAME: "نظام الحضور والانصراف الذكي",
   COMPANY: "هاني محمد عسيري للاستشارات الهندسية",
@@ -5706,11 +5706,16 @@ var TAWASUL_RETURN_REASONS = [
 var LEGAL_WARNING_TEXT = "وفقاً للمادة (65) من نظام العمل الصادر بالمرسوم الملكي رقم (م/51) وتاريخ 1426/08/23هـ، يلتزم العامل بحسن السلوك والأخلاق أثناء العمل، وعدم إساءة استخدام الصلاحيات الممنوحة له. في حال ثبت أن هذا الإجراء غير مبرر أو كيدي، فإنه يحق لصاحب العمل اتخاذ الإجراءات التأديبية المنصوص عليها في لائحة تنظيم العمل الداخلية، وذلك استناداً للمادة (66) من نظام العمل.";
 var LEGAL_ACK_TEXT = "أقر بعلمي واطلاعي على ما ورد أعلاه، وأتحمل المسؤولية الكاملة عن هذا الإجراء، وأوافق على حق الإدارة في تطبيق الجزاءات التأديبية المقررة نظاماً في حال ثبت عدم مشروعيته.";
 
-/* Big button logic per spec 7.2 */
+/* Big button logic per spec 7.2
+   v7.128 — دمج المؤقت مع زر بدء التنفيذ:
+   - received/accepted → الضغط يُغيّر status إلى inprogress + يبدأ المؤقت معاً
+   - inprogress        → زر ذكي (يعتمد على حالة المؤقت): نابض = شغّال، توقف = زر استئناف
+   - inprogress        → زر "📦 تسليم المهمة" يظهر كزر ثاني منفصل
+*/
 var BIG_BTN_MAP = {
   sent:       { label: "📥 استلام المهمة",  sub: "اضغط لتأكيد الاستلام",     color: "#0f766e", next: "received",   who: "assignee" },
-  received:   { label: "⚡ بدء التنفيذ",     sub: "ابدأ العمل على المهمة",    color: "#7c3aed", next: "inprogress", who: "assignee" },
-  accepted:   { label: "⚡ بدء التنفيذ",     sub: "ابدأ العمل على المهمة",    color: "#7c3aed", next: "inprogress", who: "assignee" },
+  received:   { label: "⚡ بدء التنفيذ",     sub: "ابدأ العمل والمؤقت معاً",  color: "#7c3aed", next: "inprogress", who: "assignee", startsTimer: true },
+  accepted:   { label: "⚡ بدء التنفيذ",     sub: "ابدأ العمل والمؤقت معاً",  color: "#7c3aed", next: "inprogress", who: "assignee", startsTimer: true },
   inprogress: { label: "📦 تسليم المهمة",    sub: "أنهيت المهمة — جاهز للتسليم", color: "#b8960c", next: "delivered",  who: "assignee" },
   delivered:  { label: "⏳ بانتظار التقييم", sub: "4 ساعات للتقييم المتبادل", color: "#94a3b8", next: null,         who: "requester" },
   incomplete: { label: "🔄 استكمال وإعادة الإرسال", sub: "المُرسِل يستكمل النواقص", color: "#f59e0b", next: "sent",       who: "requester" },
@@ -9631,14 +9636,22 @@ function TimeTrackingPanel({ request, user, readOnly, canEdit, onUpdated }) {
   async function startTimer() {
     setBusy(true); setErr(null);
     try {
-      var res = await fetch("/api/data?action=tawasul-timer-start", {
+      // v7.128 — Use toggle endpoint to sync timer with task status
+      var res = await fetch("/api/data?action=tawasul-timer-toggle", {
         method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ userId: myId, userName: myName, taskId: r.id }),
+        body: JSON.stringify({ userId: myId, userName: myName, taskId: r.id, action: "start" }),
       });
       var d = await res.json();
-      if (!res.ok) throw new Error(d.error || "فشل البدء");
+      if (!res.ok) {
+        if (d.activeOnOtherTask && d.active) {
+          throw new Error("لديك مؤقت نشط على: " + (d.active.title || "#" + (d.active.serial || "")) + ". أوقفه أولاً.");
+        }
+        throw new Error(d.error || "فشل البدء");
+      }
       setActive(d.active);
       try { window.dispatchEvent(new CustomEvent("basma:timer-changed")); } catch(_){}
+      // Trigger parent refresh to show the updated status
+      if (onUpdated) onUpdated();
     } catch(e) { setErr(e.message || "خطأ"); }
     setBusy(false);
   }
@@ -9646,9 +9659,10 @@ function TimeTrackingPanel({ request, user, readOnly, canEdit, onUpdated }) {
   async function stopTimer(note) {
     setBusy(true); setErr(null);
     try {
-      var res = await fetch("/api/data?action=tawasul-timer-stop", {
+      // v7.128 — Use toggle endpoint; status stays "inprogress"
+      var res = await fetch("/api/data?action=tawasul-timer-toggle", {
         method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ userId: myId, userName: myName, note: note || "" }),
+        body: JSON.stringify({ userId: myId, userName: myName, taskId: r.id, action: "stop", note: note || "" }),
       });
       var d = await res.json();
       if (!res.ok) throw new Error(d.error || "فشل الإيقاف");
@@ -10705,6 +10719,44 @@ function TawasulDetailModal({ request, user, allEmps, onClose, nameOf, onUpdated
   async function executeBigAction() {
     var btn = BIG_BTN_MAP[r.status];
     if (!btn || !btn.next) return;
+
+    // v7.128 — Special handling for received/accepted → inprogress with integrated timer
+    if (btn.startsTimer && btn.next === "inprogress") {
+      setBusy(true); setErr(null);
+      try {
+        var resT = await fetch("/api/data?action=tawasul-timer-toggle", {
+          method: "POST", headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            userId: myId,
+            userName: myName,
+            taskId: r.id,
+            action: "start",
+          }),
+        });
+        var dT = await resT.json();
+        if (!resT.ok) {
+          // If user has active timer on another task, show friendly error
+          if (dT.activeOnOtherTask && dT.active) {
+            throw new Error("لديك مؤقت نشط على مهمة أخرى: " + (dT.active.title || "#" + (dT.active.serial || "")) + ". يرجى إيقافه أولاً.");
+          }
+          throw new Error(dT.error || "فشل بدء التنفيذ");
+        }
+        // Update local state
+        if (dT.active) setActive(dT.active);
+        try { window.dispatchEvent(new CustomEvent("basma:timer-changed")); } catch(_){}
+        if (onUpdated) onUpdated();
+      } catch(e) {
+        setErr(e.message || "خطأ");
+        setBusy(false);
+        setShowStartConfirm(false);
+        return;
+      }
+      setBusy(false);
+      setShowStartConfirm(false);
+      return;
+    }
+
+    // Default path for other transitions (receive, deliver, resent)
     var patch = { status: btn.next };
     var logMsg = btn.label;
     if (btn.next === "received") {
@@ -10723,6 +10775,18 @@ function TawasulDetailModal({ request, user, allEmps, onClose, nameOf, onUpdated
         return a;
       });
       patch.assignees = assignees2;
+
+      // v7.128 — If user has active timer on this task, stop it automatically when delivering
+      if (active && String(active.taskId) === String(r.id)) {
+        try {
+          await fetch("/api/data?action=tawasul-timer-toggle", {
+            method: "POST", headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ userId: myId, userName: myName, taskId: r.id, action: "stop" }),
+          });
+          setActive(null);
+          setElapsed(0);
+        } catch(_) { /* non-critical */ }
+      }
     } else if (btn.next === "sent") {
       // resent after incomplete
       patch.resentAt = new Date().toISOString();
@@ -11392,7 +11456,7 @@ function TawasulDetailModal({ request, user, allEmps, onClose, nameOf, onUpdated
         {showEscalateHMA && <HMAConfirmModal title="تأكيد التصعيد" subtitle="خطوة لا رجعة فيها — اكتب HMA" icon="⬆️" confirmLabel="⬆️ تصعيد نهائي" confirmColor="#fbbf24" warningText="التصعيد يسجّل في السجل الرسمي ويتم إشعار الإدارة والموارد البشرية. تأكد من السبب قبل المتابعة." onConfirm={doEscalateFinal} onClose={function(){ setShowEscalateHMA(false); setPendingEscData(null); }} />}
 
         {showReceiveConfirm && <SimpleConfirmModal title="استلام المهمة" icon="📥" confirmLabel="✅ موافق — استلمتها" confirmColor="#0f766e" message={<span>هل أنت متأكد أنك استلمت المهمة <b style={{ color: C.gold }}>{r.serial ? "#"+r.serial : ""}</b>؟<br/><span style={{ fontSize: 12, color: C.sub }}>بعد الاستلام تصبح مسؤولاً عن التنفيذ</span></span>} onConfirm={executeBigAction} onClose={function(){ setShowReceiveConfirm(false); }} />}
-        {showStartConfirm && <SimpleConfirmModal title="بدء التنفيذ" icon="⚡" confirmLabel="✅ ابدأ الآن" confirmColor="#7c3aed" message={<span>هل ستبدأ تنفيذ المهمة الآن؟<br/><span style={{ fontSize: 12, color: C.sub }}>سيُسجَّل وقت البدء في السجل</span></span>} onConfirm={executeBigAction} onClose={function(){ setShowStartConfirm(false); }} />}
+        {showStartConfirm && <SimpleConfirmModal title="بدء التنفيذ" icon="⚡" confirmLabel="✅ ابدأ الآن" confirmColor="#7c3aed" message={<span>هل ستبدأ تنفيذ المهمة الآن؟<br/><span style={{ fontSize: 12, color: C.sub }}>سيتم تشغيل المؤقت تلقائياً — يمكنك إيقافه في أي وقت من قسم "تتبع الوقت"</span></span>} onConfirm={executeBigAction} onClose={function(){ setShowStartConfirm(false); }} />}
         {showDeliverConfirm && <HMAConfirmModal title="تسليم المهمة" subtitle="التسليم نهائي — اكتب HMA للتأكيد" icon="📦" confirmLabel="📦 تسليم نهائي" confirmColor="#b8960c" warningText="بعد التسليم تنتقل المهمة لمرحلة التقييم. لا يمكن التراجع عن التسليم. تأكد من إنجاز كل المتطلبات." onConfirm={executeBigAction} onClose={function(){ setShowDeliverConfirm(false); }} />}
 
         {showResent && <SimpleConfirmModal title="إعادة إرسال المهمة" icon="🔄" confirmLabel="🔄 إعادة الإرسال" confirmColor="#0f766e" message={<span>سيتم إعادة المهمة لنفس المهندس ({(r.assignees||[]).map(function(a){return a.name;}).join("، ")}) بعد أن رفضها.<br/><span style={{ fontSize: 12, color: C.sub }}>يُحسب كمحاولة جديدة (#{(r.resendCount||0)+1})</span></span>} onConfirm={doResend} onClose={function(){ setShowResent(false); }} />}

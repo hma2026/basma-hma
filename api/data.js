@@ -8389,6 +8389,189 @@ export default async function handler(req, res) {
         }
       }
 
+      /* ═══════════════════════════════════════════════════════════════
+       * v7.128 — Smart Timer Toggle (integrates with task status)
+       * ═══════════════════════════════════════════════════════════════
+       * POST body: { userId, userName, taskId, action: "start"|"stop" }
+       *
+       * Behavior:
+       *   - action="start": sets task.status to "inprogress" if not already,
+       *                     starts timer, rejects if user has another active timer
+       *   - action="stop":  stops timer, saves time entry, but KEEPS task at "inprogress"
+       *                     (user must press "deliver" button to change status)
+       *
+       * Returns: { ok, active, task, entry? }
+       */
+      case 'tawasul-timer-toggle': {
+        if (req.method !== 'POST') return res.status(405).json({ error: 'POST required' });
+        try {
+          var bTT = req.body || {};
+          var userIdTT = String(bTT.userId || '');
+          var userNameTT = String(bTT.userName || '');
+          var taskIdTT = String(bTT.taskId || '');
+          var actionTT = String(bTT.action || '').toLowerCase();
+          if (!userIdTT || !taskIdTT) return res.status(400).json({ error: 'userId و taskId مطلوبان' });
+          if (actionTT !== 'start' && actionTT !== 'stop') return res.status(400).json({ error: 'action must be "start" or "stop"' });
+
+          var activeKeyTT = 'twsl:active:' + userIdTT;
+          var taskTT = await dbGet('twsl:' + taskIdTT);
+          if (!taskTT) return res.status(404).json({ error: 'المهمة غير موجودة' });
+
+          var nowIsoTT = new Date().toISOString();
+
+          // ═══ ACTION: START ═══
+          if (actionTT === 'start') {
+            // Check for existing active timer
+            var existingTT = await dbGet(activeKeyTT);
+            if (existingTT && existingTT.taskId) {
+              // User has active timer on another task — reject with info
+              if (String(existingTT.taskId) !== taskIdTT) {
+                return res.status(409).json({
+                  error: 'لديك مؤقت نشط على مهمة أخرى',
+                  activeOnOtherTask: true,
+                  active: existingTT,
+                });
+              }
+              // Already active on this task — no-op, just return current state
+              return res.json({ ok: true, active: existingTT, task: taskTT, alreadyActive: true });
+            }
+
+            // Set task status to inprogress (if not already)
+            var wasInprogress = taskTT.status === 'inprogress';
+            if (!wasInprogress && (taskTT.status === 'received' || taskTT.status === 'accepted')) {
+              taskTT.status = 'inprogress';
+              taskTT.startedAt = taskTT.startedAt || nowIsoTT;
+              // Update assignee record
+              if (Array.isArray(taskTT.assignees)) {
+                taskTT.assignees = taskTT.assignees.map(function(a){
+                  if (String(a.id) === userIdTT && !a.startedAt) {
+                    return Object.assign({}, a, { startedAt: nowIsoTT });
+                  }
+                  return a;
+                });
+              }
+              // Add log entry for status change
+              taskTT.log = (taskTT.log || []).concat([{
+                text: '⚡ ' + (userNameTT || userIdTT) + ' بدأ التنفيذ',
+                by: userNameTT || userIdTT,
+                at: nowIsoTT,
+                action: 'start_work',
+              }]);
+              taskTT.updatedAt = nowIsoTT;
+              await dbSet('twsl:' + taskIdTT, taskTT);
+            }
+
+            // Start the timer
+            var activeValTT = {
+              taskId: taskIdTT,
+              startedAt: nowIsoTT,
+              note: bTT.note || '',
+              serial: taskTT.serial || '',
+              title: taskTT.title || '',
+              userName: userNameTT,
+            };
+            await dbSet(activeKeyTT, activeValTT);
+
+            // Notify co-assignees (fire-and-forget)
+            try {
+              if (Array.isArray(taskTT.assignees) && taskTT.assignees.length > 1) {
+                var notifsTT = (await dbGet('notifications')) || [];
+                (taskTT.assignees || []).forEach(function(a){
+                  if (String(a.id) !== userIdTT) {
+                    notifsTT.push({
+                      id: 'NTF' + Date.now() + '_' + Math.random().toString(36).slice(2, 5),
+                      empId: a.id,
+                      type: 'tawasul_colleague_started',
+                      title: '👥 زميل بدأ العمل على مهمة مشتركة',
+                      body: (userNameTT || '') + ' بدأ العمل على: ' + (taskTT.title || '#' + taskTT.serial),
+                      refId: taskIdTT,
+                      read: false,
+                      createdAt: nowIsoTT,
+                    });
+                  }
+                });
+                if (notifsTT.length > 2000) notifsTT = notifsTT.slice(-2000);
+                await dbSet('notifications', notifsTT);
+              }
+            } catch(_) { /* non-critical */ }
+
+            return res.json({ ok: true, active: activeValTT, task: taskTT, started: true });
+          }
+
+          // ═══ ACTION: STOP ═══
+          if (actionTT === 'stop') {
+            var activeStopTT = await dbGet(activeKeyTT);
+            if (!activeStopTT || !activeStopTT.taskId) {
+              return res.status(404).json({ error: 'لا يوجد مؤقت نشط' });
+            }
+            if (String(activeStopTT.taskId) !== taskIdTT) {
+              return res.status(409).json({ error: 'المؤقت النشط على مهمة أخرى', active: activeStopTT });
+            }
+
+            // Calculate duration
+            var startedMsTT = new Date(activeStopTT.startedAt).getTime();
+            var endedMsTT = Date.now();
+            var durSecTT = Math.max(1, Math.round((endedMsTT - startedMsTT) / 1000));
+
+            // Create time entry
+            var entryTT = {
+              id: 'te_' + Date.now() + '_' + Math.random().toString(36).slice(2, 6),
+              userId: userIdTT,
+              userName: userNameTT || '',
+              startedAt: activeStopTT.startedAt,
+              endedAt: nowIsoTT,
+              durationSec: durSecTT,
+              note: bTT.note || activeStopTT.note || '',
+            };
+            taskTT.timeEntries = (taskTT.timeEntries || []).concat([entryTT]);
+            taskTT.updatedAt = nowIsoTT;
+
+            // Format duration for log
+            var hTT = Math.floor(durSecTT / 3600);
+            var mTT = Math.floor((durSecTT % 3600) / 60);
+            var durTextTT = hTT > 0 ? (hTT + ' س ' + mTT + ' د') : (mTT + ' د');
+            taskTT.log = (taskTT.log || []).concat([{
+              text: '⏸ ' + (userNameTT || '') + ' أوقف العمل — سجّل ' + durTextTT,
+              by: userNameTT || '',
+              at: nowIsoTT,
+              action: 'stop_work',
+            }]);
+
+            // NOTE: status stays "inprogress" — user must deliver manually
+            await dbSet('twsl:' + taskIdTT, taskTT);
+            await dbSet(activeKeyTT, null);
+
+            // Notify co-assignees (fire-and-forget)
+            try {
+              if (Array.isArray(taskTT.assignees) && taskTT.assignees.length > 1) {
+                var notifsStopTT = (await dbGet('notifications')) || [];
+                (taskTT.assignees || []).forEach(function(a){
+                  if (String(a.id) !== userIdTT) {
+                    notifsStopTT.push({
+                      id: 'NTF' + Date.now() + '_' + Math.random().toString(36).slice(2, 5),
+                      empId: a.id,
+                      type: 'tawasul_colleague_stopped',
+                      title: '⏸ زميل أوقف العمل على مهمة مشتركة',
+                      body: (userNameTT || '') + ' أوقف العمل على: ' + (taskTT.title || '#' + taskTT.serial) + ' (سجّل ' + durTextTT + ')',
+                      refId: taskIdTT,
+                      read: false,
+                      createdAt: nowIsoTT,
+                    });
+                  }
+                });
+                if (notifsStopTT.length > 2000) notifsStopTT = notifsStopTT.slice(-2000);
+                await dbSet('notifications', notifsStopTT);
+              }
+            } catch(_) { /* non-critical */ }
+
+            return res.json({ ok: true, entry: entryTT, task: taskTT, stopped: true });
+          }
+
+        } catch (e) {
+          return res.status(500).json({ error: 'tawasul-timer-toggle error: ' + (e.message || 'unknown') });
+        }
+      }
+
       /* ═══════════ IN-TASK CHAT (الدردشة داخل المهمة) — v6.30 ═══════════
          - request.chatMessages[] => [{ id, text, by, byName, at, mentions[], replyTo, reactions{emoji:[userIds]}, deleted? }]
       */
