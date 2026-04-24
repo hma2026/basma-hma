@@ -1,11 +1,11 @@
-import { useState, useEffect, useRef } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import { ALL_VIOLATIONS_DEFAULT, PENALTY_TYPES, LAIHA_INFO, COMPLAINT_STATUS, VIOLATION_STATUS, PROCEDURE_RULES } from "./laiha";
 import { generateAttendanceReport, generateEmployeeReport, generateMonthlySummary, generateViolationsReport, generateEmployeesListReport, generateBenefitsReport, generateAnnouncementsReport } from "./pdfReports";
 import { exportFormalWarning, exportInvestigationRecord, exportAffidavit, exportEmploymentLetter, exportSalaryLetter, exportLeaveLetter } from "./formalPdfs";
-import { t as tr, setLang, getLang, subscribeLangChange } from "./i18n";
+import { t as tr, setLang, getLang, subscribeLangChange, isRTL } from "./i18n";
 
 const APP = "بصمة HMA";
-const VER = "7.126";
+const VER = "7.127";
 const CO = "هاني محمد عسيري للإستشارات الهندسية";
 const B = { blue: "#2B5EA7", yellow: "#FDD800", red: "#E2192C", black: "#1A1A1A", blueDk: "#1E4478", blueLt: "#EDF3FB", gold: "#D4A017" };
 
@@ -5113,7 +5113,80 @@ const api = async (action, method = 'GET', body = null, params = '') => {
   } catch { return null; }
 };
 
+/* ═══════════ ERROR BOUNDARY — v7.126 — يحمي من الشاشة البيضاء ═══════════ */
+class AdminErrorBoundary extends React.Component {
+  constructor(props) {
+    super(props);
+    this.state = { hasError: false, error: null, errorInfo: null };
+  }
+  static getDerivedStateFromError(error) {
+    return { hasError: true, error: error };
+  }
+  componentDidCatch(error, errorInfo) {
+    this.setState({ errorInfo: errorInfo });
+    console.error("AdminApp Error:", error, errorInfo);
+  }
+  render() {
+    if (this.state.hasError) {
+      var errMsg = (this.state.error && this.state.error.message) || "خطأ غير معروف";
+      var errStack = (this.state.error && this.state.error.stack) || "";
+      var compStack = (this.state.errorInfo && this.state.errorInfo.componentStack) || "";
+      return React.createElement("div", {
+        style: {
+          minHeight: "100vh",
+          background: "#f1f5f9",
+          display: "flex",
+          flexDirection: "column",
+          alignItems: "center",
+          justifyContent: "center",
+          padding: 24,
+          textAlign: "center",
+          fontFamily: "'Tajawal', sans-serif",
+          direction: "rtl",
+        }
+      },
+        React.createElement("div", { style: { fontSize: 64, marginBottom: 16 } }, "⚠️"),
+        React.createElement("div", { style: { fontSize: 22, fontWeight: 900, marginBottom: 12, color: "#0f172a" } }, "حدث خطأ غير متوقع"),
+        React.createElement("div", { style: { fontSize: 14, color: "#64748b", marginBottom: 8, maxWidth: 600, lineHeight: 1.8 } }, "تعذّر عرض هذه الصفحة. يُمكنك العودة أو إعادة التحميل."),
+        React.createElement("div", { style: { fontSize: 12, color: "#dc2626", marginBottom: 20, padding: "10px 16px", background: "#fef2f2", borderRadius: 10, maxWidth: 600, fontFamily: "monospace", wordBreak: "break-word" } }, errMsg),
+        React.createElement("div", { style: { display: "flex", gap: 10, flexWrap: "wrap", justifyContent: "center" } },
+          React.createElement("button", {
+            onClick: function(){
+              // Try to recover: clear selection and go back
+              try { window.history.back(); } catch(e) { window.location.reload(); }
+            },
+            style: { padding: "10px 24px", borderRadius: 12, background: "#2B5EA7", color: "#fff", fontSize: 14, fontWeight: 700, border: "none", cursor: "pointer", fontFamily: "inherit" }
+          }, "← رجوع"),
+          React.createElement("button", {
+            onClick: function(){ window.location.reload(); },
+            style: { padding: "10px 24px", borderRadius: 12, background: "#FDD800", color: "#1A1A1A", fontSize: 14, fontWeight: 700, border: "none", cursor: "pointer", fontFamily: "inherit" }
+          }, "🔄 إعادة تحميل"),
+          React.createElement("button", {
+            onClick: function(){
+              try {
+                localStorage.removeItem("basma_admin_tab");
+                window.location.hash = "#admin";
+                window.location.reload();
+              } catch(e) { window.location.reload(); }
+            },
+            style: { padding: "10px 24px", borderRadius: 12, background: "#fff", color: "#64748b", fontSize: 14, fontWeight: 700, border: "1px solid #cbd5e1", cursor: "pointer", fontFamily: "inherit" }
+          }, "🏠 لوحة التحكم")
+        ),
+        errStack && React.createElement("details", { style: { marginTop: 24, maxWidth: 600, width: "100%", textAlign: "right" } },
+          React.createElement("summary", { style: { cursor: "pointer", fontSize: 12, color: "#94a3b8", marginBottom: 8 } }, "تفاصيل تقنية للمطوّر"),
+          React.createElement("pre", { style: { fontSize: 10, color: "#64748b", background: "#fff", padding: 12, borderRadius: 8, overflow: "auto", maxHeight: 200, border: "1px solid #e2e8f0" } }, errStack + "\n\n" + compStack)
+        )
+      );
+    }
+    return this.props.children;
+  }
+}
+
 export default function AdminApp() {
+  return React.createElement(AdminErrorBoundary, null, React.createElement(AdminAppInner, null));
+}
+
+function AdminAppInner() {
   const [dk, setDk] = useState(() => localStorage.getItem("basma_theme") === "dark");
   const t = dk ? DK : LT;
   const toggleTheme = () => { setDk(v => { const n = !v; localStorage.setItem("basma_theme", n ? "dark" : "light"); return n; }); };
@@ -11920,6 +11993,93 @@ var BANNER_PRIORITY = {
   important: { label: "هام",  icon: "⚠️", color: "#F59E0B" },
   normal:    { label: "عادي", icon: "📢", color: "#D4A017" },
 };
+
+/* ═══ v7.127 — HolidayBannerToggle — تحكم في بنر العطلات في الموبايل ═══ */
+function HolidayBannerToggle({ t, B }) {
+  var [enabled, setEnabled] = useState(null); // null = loading
+  var [saving, setSaving] = useState(false);
+
+  useEffect(function(){
+    fetch("/api/data?action=holiday-banner-config")
+      .then(function(r){ return r.json(); })
+      .then(function(d){
+        if (d && d.ok) setEnabled(d.enabled !== false);
+        else setEnabled(true);
+      })
+      .catch(function(){ setEnabled(true); });
+  }, []);
+
+  async function toggle() {
+    if (saving || enabled === null) return;
+    var newVal = !enabled;
+    setSaving(true);
+    try {
+      var r = await fetch("/api/data?action=holiday-banner-config", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ enabled: newVal }),
+      });
+      var d = await r.json();
+      if (d && d.ok) setEnabled(newVal);
+    } catch(e) { alert("فشل الحفظ"); }
+    setSaving(false);
+  }
+
+  if (enabled === null) return null;
+
+  return (
+    <div style={{
+      background: "linear-gradient(135deg, #F59E0B15, #FBBF2415)",
+      border: "1px solid " + (enabled ? "#F59E0B" : t.sep) + "40",
+      borderRadius: 12,
+      padding: "14px 16px",
+      marginBottom: 14,
+      display: "flex",
+      alignItems: "center",
+      gap: 12,
+    }}>
+      <div style={{ fontSize: 28, flexShrink: 0 }}>🌴</div>
+      <div style={{ flex: 1, minWidth: 0 }}>
+        <div style={{ fontSize: 13, fontWeight: 800, color: t.tx, marginBottom: 3 }}>
+          بنر العطلات الأسبوعية والرسمية
+        </div>
+        <div style={{ fontSize: 11, color: t.txM, lineHeight: 1.5 }}>
+          {enabled
+            ? "مُفعّل — يظهر في الصفحة الرئيسية للموظفين في أيام العطل فقط"
+            : "مُعطّل — لن يظهر بنر العطلات للموظفين حتى لو كانت عطلة"}
+        </div>
+      </div>
+      <button
+        onClick={toggle}
+        disabled={saving}
+        style={{
+          width: 52, height: 30,
+          borderRadius: 15,
+          background: enabled ? "#F59E0B" : "#CBD5E1",
+          border: "none",
+          cursor: saving ? "wait" : "pointer",
+          position: "relative",
+          transition: "background 0.2s",
+          flexShrink: 0,
+          opacity: saving ? 0.5 : 1,
+        }}
+        aria-label={enabled ? "تعطيل" : "تفعيل"}
+      >
+        <div style={{
+          position: "absolute",
+          top: 3,
+          [enabled ? "right" : "left"]: 3,
+          width: 24, height: 24,
+          borderRadius: "50%",
+          background: "#fff",
+          boxShadow: "0 1px 3px rgba(0,0,0,0.2)",
+          transition: "all 0.2s",
+        }} />
+      </button>
+    </div>
+  );
+}
+
 function BannersPanel({ t, B }) {
   var [banners, setBanners] = useState(null);
   var [loading, setLoading] = useState(true);
@@ -12004,6 +12164,9 @@ function BannersPanel({ t, B }) {
         }
         t={t} B={B}
       />
+
+      {/* v7.127 — Holiday Banner Toggle (بنر العطلات الأسبوعية/الرسمية) */}
+      <HolidayBannerToggle t={t} B={B} />
 
       {/* Info */}
       <div style={{ background: B.blue + "10", border: "1px solid " + B.blue + "30", borderRadius: 10, padding: "10px 14px", marginBottom: 14, fontSize: 11, color: t.tx, lineHeight: 1.6 }}>

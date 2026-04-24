@@ -12,7 +12,7 @@ import { t as tr, setLang, getLang, getDir, isRTL, subscribeLangChange } from ".
 
 /* ═══════════ APP CONFIG (إعدادات التطبيق) ═══════════ */
 const APP_CONFIG = {
-  VER: "7.126",
+  VER: "7.127",
   NAME: "بصمة HMA",
   FULL_NAME: "نظام الحضور والانصراف الذكي",
   COMPANY: "هاني محمد عسيري للاستشارات الهندسية",
@@ -18290,24 +18290,36 @@ function UpcomingHolidaysCard() {
 function BranchHolidayBanner({ branch }) {
   var [holidayToday, setHolidayToday] = useState(null);
   var [loading, setLoading] = useState(true);
+  var [enabled, setEnabled] = useState(true);
 
   useEffect(function(){
-    var ts = todayStr();
-    fetch("/api/data?action=is-holiday&date=" + ts)
+    // v7.127 — Check if holiday banner is enabled globally
+    fetch("/api/data?action=holiday-banner-config")
       .then(function(r){ return r.json(); })
       .then(function(d){
-        if (d.ok && d.isHoliday) {
-          setHolidayToday({
-            name: d.name,
-            type: d.type || "official",
-          });
+        if (d && d.ok && d.enabled === false) {
+          setEnabled(false);
+          setLoading(false);
+          return;
         }
-        setLoading(false);
+        // Fetch today's holiday info
+        var ts = todayStr();
+        return fetch("/api/data?action=is-holiday&date=" + ts)
+          .then(function(r){ return r.json(); })
+          .then(function(d){
+            if (d.ok && d.isHoliday) {
+              setHolidayToday({
+                name: d.name,
+                type: d.type || "official",
+              });
+            }
+            setLoading(false);
+          });
       })
       .catch(function(){ setLoading(false); });
   }, []);
 
-  if (loading || !holidayToday) return null;
+  if (loading || !enabled || !holidayToday) return null;
 
   var isWeekend = holidayToday.type === "weekend";
   var gradient = isWeekend
@@ -18316,16 +18328,27 @@ function BranchHolidayBanner({ branch }) {
   var emoji = isWeekend ? "🌴" : "🎉";
   var lbl = isWeekend ? "يوم راحة أسبوعي" : "عطلة رسمية";
 
+  // v7.127 — تصميم مدمج مثل البنر العادي (compact)
   return (
     <div style={{
       background: gradient,
-      borderRadius: 16, padding: 14, marginBottom: 12,
-      textAlign: "center", color: "#fff",
+      borderRadius: 12,
+      padding: "10px 14px",
+      marginBottom: 10,
+      display: "flex",
+      alignItems: "center",
+      gap: 10,
+      color: "#fff",
+      boxShadow: "0 2px 8px rgba(0,0,0,0.08)",
     }} className="basma-fadein">
-      <div style={{ fontSize: 24, marginBottom: 4 }}>{emoji}</div>
-      <div style={{ fontSize: 14, fontWeight: 800 }}>{tr(lbl) + " — " + holidayToday.name}</div>
-      <div style={{ fontSize: 10, opacity: .85, marginTop: 2 }}>
-        {branch ? (branch.name + " — " + tr("استمتع بإجازتك")) : tr("استمتع بإجازتك")}
+      <div style={{ fontSize: 22, flexShrink: 0 }}>{emoji}</div>
+      <div style={{ flex: 1, minWidth: 0 }}>
+        <div style={{ fontSize: 13, fontWeight: 800, lineHeight: 1.3 }}>
+          {tr(lbl) + " — " + holidayToday.name}
+        </div>
+        <div style={{ fontSize: 10, opacity: 0.9, marginTop: 2 }}>
+          {branch ? (branch.name + " — " + tr("استمتع بإجازتك")) : tr("استمتع بإجازتك")}
+        </div>
       </div>
     </div>
   );

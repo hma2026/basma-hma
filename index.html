@@ -43,7 +43,7 @@
           var keys = await caches.keys();
           for (var key of keys) {
             if (key === 'basma-hma-v662' || key === 'basma-hma-v6' ||
-                (key.startsWith('basma-hma-') && key !== 'basma-hma-v7126')) {
+                (key.startsWith('basma-hma-') && key !== 'basma-hma-v7127')) {
               await caches.delete(key);
               console.log('[SW] Cleared stale cache:', key);
             }

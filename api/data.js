@@ -7205,6 +7205,23 @@ export default async function handler(req, res) {
         break;
       }
 
+      /* ═══ v7.127 — Holiday Banner Config (enable/disable) ═══ */
+      case 'holiday-banner-config': {
+        if (req.method === 'GET') {
+          var cfg = await dbGet('holiday_banner_config');
+          // Default: enabled if no config exists
+          var enabled = cfg && typeof cfg.enabled === 'boolean' ? cfg.enabled : true;
+          return res.json({ ok: true, enabled: enabled });
+        }
+        if (req.method === 'POST' || req.method === 'PUT') {
+          var body = req.body || {};
+          var enabled = body.enabled !== false; // default true
+          await dbSet('holiday_banner_config', { enabled: enabled, updatedAt: new Date().toISOString(), updatedBy: body.updatedBy || 'admin' });
+          return res.json({ ok: true, enabled: enabled });
+        }
+        return res.status(405).json({ error: 'GET or POST required' });
+      }
+
       /* ═══ v7.90 — فحص سريع: هل التاريخ عطلة؟ ═══ */
       case 'is-holiday': {
         if (req.method !== 'GET') return res.status(405).json({ error: 'GET required' });
@@ -7238,6 +7255,27 @@ export default async function handler(req, res) {
           return res.json({ ok: true, isHoliday: true, type: matched.type || 'official', name: matched.name, details: matched });
         }
         return res.json({ ok: true, isHoliday: false });
+      }
+
+      /* ═══════════════════════════════════════════════════════════════
+       * v7.127 — Holiday Banner Config
+       * ═══════════════════════════════════════════════════════════════
+       * GET  ?action=holiday-banner-config  — جلب الإعداد الحالي
+       * POST ?action=holiday-banner-config  — تحديث الإعداد (body: { enabled: true/false })
+       * افتراضياً: enabled = true
+       */
+      case 'holiday-banner-config': {
+        if (req.method === 'GET') {
+          var cfg = (await dbGet('holiday_banner_config')) || { enabled: true };
+          return res.json({ ok: true, enabled: cfg.enabled !== false });
+        }
+        if (req.method === 'POST') {
+          var body = req.body || {};
+          var enabled = body.enabled !== false;
+          await dbSet('holiday_banner_config', { enabled: enabled, updatedAt: new Date().toISOString() });
+          return res.json({ ok: true, enabled: enabled });
+        }
+        return res.status(405).json({ error: 'GET or POST required' });
       }
 
       /* ═══════════════════════════════════════════════════════════════
