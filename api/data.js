@@ -94,6 +94,70 @@ async function redisDel(key) {
 }
 
 /* ────── Unified DB interface (Redis only — Blob removed per directive) ────── */
+/* ════════════════════════════════════════════════════════════════
+ * v7.130 — Auto-Limit Protection
+ * ════════════════════════════════════════════════════════════════
+ * يمنع تجاوز 10MB في request واحد لـ Upstash Redis.
+ * المفاتيح المُجمَّعة تُقصُّ تلقائياً قبل الكتابة.
+ */
+const AUTO_LIMITS = {
+  // إشعارات: آخر 500 فقط
+  'notifications': { type: 'array', max: 500 },
+  'twsl:notifs':   { type: 'array', max: 500 },
+
+  // سجل الحضور: آخر 90 يوم (بناءً على ts)
+  'attendance':         { type: 'array', max: 5000, byTime: 'ts', days: 90 },
+  'manual_attendance':  { type: 'array', max: 2000, byTime: 'ts', days: 180 },
+
+  // قوائم النماذج/الوثائق
+  'tickets':       { type: 'array', max: 2000 },
+  'leaves':        { type: 'array', max: 5000 },
+  'violations':    { type: 'array', max: 3000 },
+  'warnings':      { type: 'array', max: 2000 },
+  'evaluations':   { type: 'array', max: 5000 },
+  'terminations':  { type: 'array', max: 1000 },
+  'custody':       { type: 'array', max: 3000 },
+  'events':        { type: 'array', max: 1000 },
+  'surveys':       { type: 'array', max: 500 },
+  'banners':       { type: 'array', max: 200 },
+  'projects':      { type: 'array', max: 2000 },
+  'delegations':   { type: 'array', max: 1000 },
+  'exceptions':    { type: 'array', max: 1000 },
+
+  // سجلات تدقيق وحماية
+  'biometric_challenges': { type: 'array', max: 100 },
+  'audit_log':            { type: 'array', max: 5000 },
+
+  // بنك الأسئلة
+  'question_bank': { type: 'array', max: 1000 },
+};
+
+const SIZE_WARN_BYTES = 8 * 1024 * 1024;   // 8MB warning
+const SIZE_HARD_LIMIT = 9.5 * 1024 * 1024; // 9.5MB block
+
+function applyAutoLimit(key, value) {
+  var rule = AUTO_LIMITS[key];
+  if (!rule || !Array.isArray(value)) return value;
+
+  // 1. اقتصاص بالعدد
+  if (rule.max && value.length > rule.max) {
+    value = value.slice(-rule.max);
+  }
+
+  // 2. اقتصاص زمني (للسجلات الطويلة)
+  if (rule.byTime && rule.days) {
+    var cutoff = Date.now() - (rule.days * 24 * 60 * 60 * 1000);
+    var field = rule.byTime;
+    value = value.filter(function(item){
+      if (!item || !item[field]) return true;
+      var t = new Date(item[field]).getTime();
+      return isNaN(t) || t > cutoff;
+    });
+  }
+
+  return value;
+}
+
 async function dbGet(t) {
   if (!USE_REDIS) {
     console.error('[DB] CRITICAL: Upstash Redis not configured! Set UPSTASH_REDIS_REST_URL and UPSTASH_REDIS_REST_TOKEN');
@@ -113,6 +177,26 @@ async function dbSet(t, d) {
     return false;
   }
   try {
+    // v7.130 — تطبيق الحدود التلقائية
+    d = applyAutoLimit(t, d);
+
+    // v7.130 — فحص الحجم قبل الكتابة
+    var serialized;
+    try {
+      serialized = JSON.stringify(d);
+    } catch(_) {
+      serialized = '';
+    }
+    var byteSize = serialized.length;
+
+    if (byteSize > SIZE_HARD_LIMIT) {
+      console.error('[DB SET BLOCKED] Key "' + t + '" too large: ' + Math.round(byteSize/1024/1024*10)/10 + 'MB > 9.5MB. Write rejected.');
+      return false;
+    }
+    if (byteSize > SIZE_WARN_BYTES) {
+      console.warn('[DB SET WARN] Key "' + t + '" is ' + Math.round(byteSize/1024/1024*10)/10 + 'MB — approaching 10MB limit');
+    }
+
     await redisSet(t, d);
     return true;
   } catch(e) {
@@ -847,7 +931,68 @@ export default async function handler(req, res) {
         return res.json({ ok: true, msg: 'initialized (employees empty — call action=sync-kadwar)' });
       }
 
-      /* v6.61 — WebAuthn Biometric login endpoints */
+      /* ════════════════════════════════════════════════════════════════
+       * v7.130 — Cleanup Large Keys
+       * ════════════════════════════════════════════════════════════════
+       * GET /api/data?action=db-stats          — يفحص أحجام المفاتيح
+       * POST /api/data?action=db-cleanup       — ينظّف المفاتيح الكبيرة
+       * POST body { dry_run: true }            — معاينة بدون تطبيق
+       */
+      case 'db-stats': {
+        var stats = [];
+        var keysToCheck = Object.keys(AUTO_LIMITS);
+        for (var i = 0; i < keysToCheck.length; i++) {
+          var k = keysToCheck[i];
+          var val = await dbGet(k);
+          if (val == null) { stats.push({ key: k, exists: false }); continue; }
+          var size = JSON.stringify(val).length;
+          var count = Array.isArray(val) ? val.length : 0;
+          stats.push({
+            key: k,
+            exists: true,
+            sizeMB: Math.round(size / 1024 / 1024 * 100) / 100,
+            sizeKB: Math.round(size / 1024),
+            count: count,
+            limit: AUTO_LIMITS[k].max,
+            overLimit: count > (AUTO_LIMITS[k].max || Infinity),
+            warning: size > SIZE_WARN_BYTES,
+            critical: size > SIZE_HARD_LIMIT,
+          });
+        }
+        // ترتيب من الأكبر للأصغر
+        stats.sort(function(a, b){ return (b.sizeMB || 0) - (a.sizeMB || 0); });
+        return res.json({ ok: true, stats: stats, limits: { warnMB: 8, hardMB: 9.5 } });
+      }
+
+      case 'db-cleanup': {
+        if (req.method !== 'POST') return res.status(405).json({ error: 'POST required' });
+        var dryRun = !!(req.body && req.body.dry_run);
+        var report = [];
+        var keysClean = Object.keys(AUTO_LIMITS);
+        for (var j = 0; j < keysClean.length; j++) {
+          var key = keysClean[j];
+          var val2 = await dbGet(key);
+          if (!Array.isArray(val2)) continue;
+          var beforeCount = val2.length;
+          var beforeSize = JSON.stringify(val2).length;
+          var cleaned = applyAutoLimit(key, val2);
+          var afterCount = cleaned.length;
+          var afterSize = JSON.stringify(cleaned).length;
+          if (beforeCount !== afterCount) {
+            if (!dryRun) {
+              await redisSet(key, cleaned);
+            }
+            report.push({
+              key: key,
+              before: { count: beforeCount, sizeKB: Math.round(beforeSize/1024) },
+              after:  { count: afterCount,  sizeKB: Math.round(afterSize/1024) },
+              removed: beforeCount - afterCount,
+              applied: !dryRun,
+            });
+          }
+        }
+        return res.json({ ok: true, dry_run: dryRun, cleaned: report.length, report: report });
+      }
       case 'biometric-register-challenge': {
         // Returns a challenge for the browser to sign with the biometric key
         if (req.method !== 'POST') break;
