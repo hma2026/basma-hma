@@ -5,7 +5,7 @@ import { exportFormalWarning, exportInvestigationRecord, exportAffidavit, export
 import { t as tr, setLang, getLang, subscribeLangChange, isRTL } from "./i18n";
 
 const APP = "بصمة HMA";
-const VER = "7.132";
+const VER = "7.133";
 const CO = "هاني محمد عسيري للإستشارات الهندسية";
 const B = { blue: "#2B5EA7", yellow: "#FDD800", red: "#E2192C", black: "#1A1A1A", blueDk: "#1E4478", blueLt: "#EDF3FB", gold: "#D4A017" };
 
@@ -15257,13 +15257,14 @@ function StoragePanel({ t, B }) {
 
   return (
     <div>
-      <SectionHero
-        title="🛠 أدوات صيانة التخزين"
-        subtitle="تنظيف المفاتيح الكبيرة + إدارة Vercel Blob القديمة"
-        gradient={"linear-gradient(135deg, " + B.blue + ", " + B.blueDk + ")"}
-        t={t} B={B}
-      />
-
+      {/* Header (simple inline, no SectionHero dependency) */}
+      <div style={{
+        background: "linear-gradient(135deg, " + B.blue + ", " + B.blueDk + ")",
+        borderRadius: 12, padding: 16, marginBottom: 14, color: "#fff",
+      }}>
+        <div style={{ fontSize: 18, fontWeight: 900, marginBottom: 4 }}>🛠 أدوات صيانة التخزين</div>
+        <div style={{ fontSize: 12, opacity: 0.9 }}>تنظيف المفاتيح الكبيرة + إدارة Vercel Blob القديمة</div>
+      </div>
       {/* ─── 1) Redis Cleanup ─── */}
       <div style={{ background: t.card, borderRadius: 12, padding: 16, border: "1px solid " + t.sep, marginBottom: 14 }}>
         <div style={{ fontSize: 14, fontWeight: 800, color: B.blue, marginBottom: 8 }}>
