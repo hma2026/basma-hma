@@ -7714,6 +7714,193 @@ export default async function handler(req, res) {
         });
       }
 
+      /* ═══════════════════════════════════════════════════════════════
+       * v7.131 — System Audit (تقرير شامل عن الاستضافات الـ 5)
+       * ═══════════════════════════════════════════════════════════════
+       * GET /api/data?action=system-audit
+       * يعطي تقرير كامل عن: Redis, R2, Vercel Blob, GitHub, Vercel
+       * مع إشارات ضوئية (green/yellow/red) لكل خدمة.
+       */
+      case 'system-audit': {
+        var audit = {
+          timestamp: new Date().toISOString(),
+          services: {},
+          summary: { total: 5, ok: 0, warning: 0, error: 0 },
+        };
+
+        // ───── 1) Upstash Redis ─────
+        try {
+          var redisStart = Date.now();
+          await redisRequest('PING');
+          var redisPingMs = Date.now() - redisStart;
+
+          var keysToCheck = Object.keys(AUTO_LIMITS || {});
+          var keysFound = [];
+          var totalSize = 0;
+          var critical = [];
+          var warnings = [];
+
+          for (var i = 0; i < keysToCheck.length; i++) {
+            var k = keysToCheck[i];
+            var v = await dbGet(k);
+            if (v == null) continue;
+            var size = JSON.stringify(v).length;
+            totalSize += size;
+            var count = Array.isArray(v) ? v.length : 1;
+            if (size > 9.5 * 1024 * 1024) critical.push({ key: k, sizeMB: (size/1024/1024).toFixed(2) });
+            else if (size > 8 * 1024 * 1024) warnings.push({ key: k, sizeMB: (size/1024/1024).toFixed(2) });
+            keysFound.push({ key: k, sizeKB: Math.round(size/1024), count: count });
+          }
+
+          var redisStatus = critical.length > 0 ? 'error' : (warnings.length > 0 ? 'warning' : 'ok');
+          audit.services.redis = {
+            status: redisStatus,
+            configured: true,
+            responseTimeMs: redisPingMs,
+            totalSizeMB: (totalSize / 1024 / 1024).toFixed(2),
+            keysCount: keysFound.length,
+            critical: critical,
+            warnings: warnings,
+            keys: keysFound.sort(function(a, b){ return b.sizeKB - a.sizeKB; }).slice(0, 10),
+            message: redisStatus === 'ok' ? '✅ كل المفاتيح ضمن الحدود الآمنة' :
+                     redisStatus === 'warning' ? '⚠️ بعض المفاتيح تقترب من الحد الأقصى' :
+                     '🚨 مفاتيح تجاوزت 9.5MB — تنفيذ db-cleanup مطلوب فوراً',
+          };
+        } catch(e) {
+          audit.services.redis = { status: 'error', configured: USE_REDIS, error: e.message };
+        }
+
+        // ───── 2) Cloudflare R2 ─────
+        try {
+          var r2Configured = !!(process.env.R2_ACCOUNT_ID && process.env.R2_ACCESS_KEY_ID);
+          if (r2Configured) {
+            // Try to list bucket
+            var r2Test = await r2Upload('audit-test-' + Date.now() + '.txt', 'audit-test', 'text/plain');
+            audit.services.r2 = {
+              status: 'ok',
+              configured: true,
+              bucket: process.env.R2_BUCKET || 'basma-hma',
+              accountId: (process.env.R2_ACCOUNT_ID || '').substring(0, 6) + '...',
+              testWrite: 'OK',
+              message: '✅ R2 يعمل بشكل سليم',
+            };
+          } else {
+            audit.services.r2 = {
+              status: 'error',
+              configured: false,
+              message: '🚨 R2 غير مفعّل — أضف R2_ACCOUNT_ID و R2_ACCESS_KEY_ID',
+            };
+          }
+        } catch(e) {
+          audit.services.r2 = { status: 'error', error: e.message };
+        }
+
+        // ───── 3) Vercel Blob (يجب أن يكون معطّل) ─────
+        try {
+          var blobToken = !!process.env.BLOB_READ_WRITE_TOKEN;
+          audit.services.blob = {
+            status: blobToken ? 'warning' : 'ok',
+            configured: blobToken,
+            active: false,
+            message: blobToken ?
+              '⚠️ Token موجود (للحالات الطارئة فقط) — تأكد من عدم استخدامه' :
+              '✅ Vercel Blob معطّل (الوضع الصحيح)',
+          };
+        } catch(e) {
+          audit.services.blob = { status: 'error', error: e.message };
+        }
+
+        // ───── 4) GitHub ─────
+        try {
+          var ghToken = !!process.env.GITHUB_TOKEN;
+          if (ghToken) {
+            // Verify by fetching latest commit
+            var ghRes = await fetch('https://api.github.com/repos/hma2026/basma-hma/commits?per_page=1', {
+              headers: { 'Authorization': 'Bearer ' + process.env.GITHUB_TOKEN, 'User-Agent': 'basma-audit' }
+            });
+            var ghOk = ghRes.ok;
+            var lastCommit = null;
+            if (ghOk) {
+              var commits = await ghRes.json();
+              if (commits[0]) {
+                lastCommit = {
+                  sha: commits[0].sha.substring(0, 7),
+                  message: (commits[0].commit.message || '').substring(0, 100),
+                  date: commits[0].commit.author.date,
+                };
+              }
+            }
+            audit.services.github = {
+              status: ghOk ? 'ok' : 'error',
+              configured: true,
+              repo: 'hma2026/basma-hma',
+              lastCommit: lastCommit,
+              message: ghOk ? '✅ GitHub يعمل والاتصال سليم' : '🚨 فشل الاتصال بـ GitHub',
+            };
+          } else {
+            audit.services.github = {
+              status: 'warning',
+              configured: false,
+              message: '⚠️ GITHUB_TOKEN غير موجود — التحديثات لن تعمل',
+            };
+          }
+        } catch(e) {
+          audit.services.github = { status: 'error', error: e.message };
+        }
+
+        // ───── 5) Vercel (الكود يعمل = Vercel سليم) ─────
+        audit.services.vercel = {
+          status: 'ok',
+          message: '✅ Vercel يعمل (هذه الـ API نفسها تعمل عليه)',
+          region: process.env.VERCEL_REGION || 'unknown',
+          deploymentId: (process.env.VERCEL_DEPLOYMENT_ID || '').substring(0, 12),
+        };
+
+        // ───── 6) النسخ الاحتياطية (في R2) ─────
+        try {
+          if (audit.services.r2.status === 'ok') {
+            // Try to get backup metadata from Redis
+            var backupMeta = await dbGet('backup_metadata') || [];
+            var lastBackup = backupMeta[backupMeta.length - 1];
+            var hoursSinceBackup = lastBackup ?
+              Math.round((Date.now() - new Date(lastBackup.createdAt).getTime()) / 3600000) : null;
+
+            audit.services.backup = {
+              status: !lastBackup ? 'warning' :
+                      hoursSinceBackup > 48 ? 'error' :
+                      hoursSinceBackup > 30 ? 'warning' : 'ok',
+              configured: true,
+              totalBackups: backupMeta.length,
+              lastBackup: lastBackup ? {
+                date: lastBackup.createdAt,
+                hoursAgo: hoursSinceBackup,
+                sizeMB: lastBackup.sizeMB || 'unknown',
+              } : null,
+              message: !lastBackup ?
+                '⚠️ لا توجد نسخ احتياطية بعد' :
+                hoursSinceBackup > 48 ?
+                '🚨 آخر نسخة قبل ' + hoursSinceBackup + ' ساعة — Cron Job قد يكون متوقف' :
+                '✅ نسخة احتياطية حديثة (' + hoursSinceBackup + ' ساعة)',
+            };
+          }
+        } catch(e) {
+          audit.services.backup = { status: 'error', error: e.message };
+        }
+
+        // ───── Summary ─────
+        Object.keys(audit.services).forEach(function(key) {
+          var s = audit.services[key].status;
+          if (s === 'ok') audit.summary.ok++;
+          else if (s === 'warning') audit.summary.warning++;
+          else if (s === 'error') audit.summary.error++;
+        });
+        audit.summary.total = Object.keys(audit.services).length;
+        audit.summary.overall = audit.summary.error > 0 ? 'error' :
+                                audit.summary.warning > 0 ? 'warning' : 'ok';
+
+        return res.json(audit);
+      }
+
       /* ═══ MIGRATE — نقل البيانات من Blob إلى Redis ═══ */
       case 'migrate-to-redis': {
         if (!USE_REDIS) return res.json({ ok: false, error: 'Redis غير مفعّل — أضف UPSTASH_REDIS_REST_URL و TOKEN في Vercel' });

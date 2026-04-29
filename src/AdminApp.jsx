@@ -5,7 +5,7 @@ import { exportFormalWarning, exportInvestigationRecord, exportAffidavit, export
 import { t as tr, setLang, getLang, subscribeLangChange, isRTL } from "./i18n";
 
 const APP = "بصمة HMA";
-const VER = "7.130";
+const VER = "7.131";
 const CO = "هاني محمد عسيري للإستشارات الهندسية";
 const B = { blue: "#2B5EA7", yellow: "#FDD800", red: "#E2192C", black: "#1A1A1A", blueDk: "#1E4478", blueLt: "#EDF3FB", gold: "#D4A017" };
 
@@ -14945,6 +14945,240 @@ function SystemCheckPanel({ t, B }) {
   );
 }
 
+/* ═══════════════════════════════════════════════════════════
+ * v7.131 — SystemAuditPanel — لوحة فحص الاستضافات الـ 5
+ * ═══════════════════════════════════════════════════════════ */
+function SystemAuditPanel({ t, B }) {
+  var [audit, setAudit] = useState(null);
+  var [loading, setLoading] = useState(false);
+  var [autoRefresh, setAutoRefresh] = useState(false);
+
+  async function runAudit() {
+    setLoading(true);
+    try {
+      var r = await fetch("/api/data?action=system-audit");
+      var d = await r.json();
+      setAudit(d);
+    } catch (e) {
+      setAudit({ error: e.message });
+    }
+    setLoading(false);
+  }
+
+  useEffect(function() { runAudit(); }, []);
+
+  useEffect(function() {
+    if (!autoRefresh) return;
+    var iv = setInterval(runAudit, 60000); // كل دقيقة
+    return function() { clearInterval(iv); };
+  }, [autoRefresh]);
+
+  function statusColor(status) {
+    if (status === 'ok') return '#10b981';
+    if (status === 'warning') return '#f59e0b';
+    if (status === 'error') return '#ef4444';
+    return '#94a3b8';
+  }
+
+  function statusIcon(status) {
+    if (status === 'ok') return '✅';
+    if (status === 'warning') return '⚠️';
+    if (status === 'error') return '🚨';
+    return '⚪';
+  }
+
+  function statusLabel(status) {
+    if (status === 'ok') return 'سليم';
+    if (status === 'warning') return 'تحذير';
+    if (status === 'error') return 'خطأ';
+    return 'غير معروف';
+  }
+
+  if (loading && !audit) {
+    return (
+      <div style={{ padding: 40, textAlign: "center", fontFamily: "Tajawal, sans-serif" }}>
+        <div style={{ fontSize: 48, marginBottom: 16 }}>⏳</div>
+        <div style={{ fontSize: 16, color: "#64748b" }}>جاري فحص الاستضافات...</div>
+      </div>
+    );
+  }
+
+  if (!audit || audit.error) {
+    return (
+      <div style={{ padding: 24, textAlign: "center", fontFamily: "Tajawal, sans-serif" }}>
+        <div style={{ fontSize: 32, marginBottom: 12 }}>❌</div>
+        <div style={{ color: "#ef4444", marginBottom: 16 }}>{audit && audit.error ? audit.error : "تعذّر الفحص"}</div>
+        <button onClick={runAudit} style={{
+          padding: "10px 24px", borderRadius: 12, background: "#2B5EA7", color: "#fff",
+          border: "none", fontSize: 14, fontWeight: 700, cursor: "pointer", fontFamily: "inherit",
+        }}>إعادة المحاولة</button>
+      </div>
+    );
+  }
+
+  var summary = audit.summary || { ok: 0, warning: 0, error: 0 };
+  var overallColor = statusColor(summary.overall);
+  var overallIcon = summary.overall === 'ok' ? '✅' : summary.overall === 'warning' ? '⚠️' : '🚨';
+
+  var services = audit.services || {};
+  var serviceOrder = ['vercel', 'redis', 'r2', 'blob', 'github', 'backup'];
+  var serviceTitles = {
+    vercel: 'Vercel — الاستضافة',
+    redis: 'Upstash Redis — قاعدة البيانات',
+    r2: 'Cloudflare R2 — الملفات الكبيرة',
+    blob: 'Vercel Blob — يجب أن يكون معطّل',
+    github: 'GitHub — مستودع الكود',
+    backup: 'النسخ الاحتياطية',
+  };
+  var serviceIcons = {
+    vercel: '🔷',
+    redis: '💾',
+    r2: '📦',
+    blob: '⚠️',
+    github: '🐙',
+    backup: '🛡',
+  };
+
+  return (
+    <div style={{ padding: 16, fontFamily: "Tajawal, sans-serif", direction: "rtl" }}>
+      {/* Overall Status Card */}
+      <div style={{
+        background: "linear-gradient(135deg, " + overallColor + ", " + overallColor + "dd)",
+        borderRadius: 16, padding: 24, marginBottom: 20, color: "#fff",
+        boxShadow: "0 4px 20px " + overallColor + "40",
+      }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 14, marginBottom: 12 }}>
+          <div style={{ fontSize: 48 }}>{overallIcon}</div>
+          <div style={{ flex: 1 }}>
+            <div style={{ fontSize: 22, fontWeight: 900 }}>
+              {summary.overall === 'ok' ? 'كل الاستضافات سليمة' :
+               summary.overall === 'warning' ? 'يوجد تحذيرات' : 'يوجد أخطاء حرجة'}
+            </div>
+            <div style={{ fontSize: 13, opacity: 0.9, marginTop: 4 }}>
+              آخر فحص: {new Date(audit.timestamp).toLocaleString("ar-SA")}
+            </div>
+          </div>
+        </div>
+        <div style={{ display: "flex", gap: 12, flexWrap: "wrap", marginTop: 12 }}>
+          <div style={{ background: "rgba(255,255,255,0.2)", borderRadius: 10, padding: "6px 14px", fontSize: 13 }}>
+            ✅ سليم: <b>{summary.ok}</b>
+          </div>
+          <div style={{ background: "rgba(255,255,255,0.2)", borderRadius: 10, padding: "6px 14px", fontSize: 13 }}>
+            ⚠️ تحذير: <b>{summary.warning}</b>
+          </div>
+          <div style={{ background: "rgba(255,255,255,0.2)", borderRadius: 10, padding: "6px 14px", fontSize: 13 }}>
+            🚨 خطأ: <b>{summary.error}</b>
+          </div>
+        </div>
+      </div>
+
+      {/* Action Buttons */}
+      <div style={{ display: "flex", gap: 10, marginBottom: 20, flexWrap: "wrap" }}>
+        <button onClick={runAudit} disabled={loading} style={{
+          padding: "10px 18px", borderRadius: 12, background: "#2B5EA7", color: "#fff",
+          border: "none", fontSize: 14, fontWeight: 700, cursor: loading ? "wait" : "pointer",
+          fontFamily: "inherit", flex: "1 1 auto", minWidth: 140,
+        }}>
+          {loading ? "⏳ جاري الفحص..." : "🔄 إعادة الفحص"}
+        </button>
+        <button onClick={function() { setAutoRefresh(!autoRefresh); }} style={{
+          padding: "10px 18px", borderRadius: 12,
+          background: autoRefresh ? "#10b981" : "#fff",
+          color: autoRefresh ? "#fff" : "#0f172a",
+          border: "1px solid " + (autoRefresh ? "#10b981" : "#cbd5e1"),
+          fontSize: 14, fontWeight: 700, cursor: "pointer", fontFamily: "inherit",
+        }}>
+          {autoRefresh ? "⏸ إيقاف التحديث التلقائي" : "▶️ تحديث تلقائي (دقيقة)"}
+        </button>
+      </div>
+
+      {/* Service Cards */}
+      {serviceOrder.filter(function(k) { return services[k]; }).map(function(svcKey) {
+        var svc = services[svcKey];
+        var color = statusColor(svc.status);
+        return (
+          <div key={svcKey} style={{
+            background: "#fff", borderRadius: 14, padding: 18, marginBottom: 12,
+            border: "2px solid " + color + "33",
+            borderRight: "6px solid " + color,
+          }}>
+            <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 8 }}>
+              <div style={{ fontSize: 28 }}>{serviceIcons[svcKey] || '📡'}</div>
+              <div style={{ flex: 1 }}>
+                <div style={{ fontSize: 16, fontWeight: 800, color: "#0f172a" }}>{serviceTitles[svcKey] || svcKey}</div>
+                <div style={{ fontSize: 12, color: color, fontWeight: 700, marginTop: 2 }}>
+                  {statusIcon(svc.status)} {statusLabel(svc.status)}
+                </div>
+              </div>
+            </div>
+            {svc.message && (
+              <div style={{ fontSize: 13, color: "#475569", marginTop: 8, lineHeight: 1.6 }}>
+                {svc.message}
+              </div>
+            )}
+
+            {/* Service-specific details */}
+            {svcKey === 'redis' && svc.status !== 'error' && (
+              <div style={{ marginTop: 10, padding: 10, background: "#f8fafc", borderRadius: 8, fontSize: 12 }}>
+                <div>📊 إجمالي الحجم: <b>{svc.totalSizeMB} MB</b></div>
+                <div>🗝 عدد المفاتيح: <b>{svc.keysCount}</b></div>
+                <div>⚡ زمن الاستجابة: <b>{svc.responseTimeMs} ms</b></div>
+                {svc.keys && svc.keys.length > 0 && (
+                  <details style={{ marginTop: 8 }}>
+                    <summary style={{ cursor: "pointer", fontWeight: 700, color: "#2B5EA7" }}>
+                      أكبر 10 مفاتيح ←
+                    </summary>
+                    <div style={{ marginTop: 8 }}>
+                      {svc.keys.map(function(k, i) {
+                        return <div key={i} style={{ fontFamily: "monospace", fontSize: 11, padding: 4, borderBottom: "1px solid #e2e8f0" }}>
+                          {k.key}: <b>{k.sizeKB} KB</b> ({k.count} entries)
+                        </div>;
+                      })}
+                    </div>
+                  </details>
+                )}
+              </div>
+            )}
+
+            {svcKey === 'r2' && svc.bucket && (
+              <div style={{ marginTop: 10, padding: 10, background: "#f8fafc", borderRadius: 8, fontSize: 12 }}>
+                <div>📦 Bucket: <b>{svc.bucket}</b></div>
+                <div>🆔 Account: <b>{svc.accountId}</b></div>
+              </div>
+            )}
+
+            {svcKey === 'github' && svc.lastCommit && (
+              <div style={{ marginTop: 10, padding: 10, background: "#f8fafc", borderRadius: 8, fontSize: 12 }}>
+                <div>📁 Repo: <b>{svc.repo}</b></div>
+                <div>🔗 آخر commit: <code style={{ background: "#e2e8f0", padding: "2px 6px", borderRadius: 4 }}>{svc.lastCommit.sha}</code></div>
+                <div style={{ marginTop: 4, color: "#64748b", fontSize: 11 }}>{svc.lastCommit.message}</div>
+                <div style={{ fontSize: 11, color: "#94a3b8", marginTop: 2 }}>{new Date(svc.lastCommit.date).toLocaleString("ar-SA")}</div>
+              </div>
+            )}
+
+            {svcKey === 'backup' && svc.lastBackup && (
+              <div style={{ marginTop: 10, padding: 10, background: "#f8fafc", borderRadius: 8, fontSize: 12 }}>
+                <div>📊 إجمالي النسخ: <b>{svc.totalBackups}</b></div>
+                <div>📅 آخر نسخة: <b>قبل {svc.lastBackup.hoursAgo} ساعة</b></div>
+                <div>💾 الحجم: <b>{svc.lastBackup.sizeMB} MB</b></div>
+              </div>
+            )}
+          </div>
+        );
+      })}
+
+      {/* Info footer */}
+      <div style={{
+        marginTop: 20, padding: 14, background: "#f1f5f9", borderRadius: 10,
+        fontSize: 11, color: "#64748b", lineHeight: 1.7,
+      }}>
+        💡 <b>ملاحظة:</b> هذه اللوحة تفحص الاتصال والحالة فقط — للفحص العميق
+        ادخل لوحة كل خدمة مباشرة (Vercel, Upstash, Cloudflare).
+      </div>
+    </div>
+  );
+}
+
 /* ═══════════════════════════════════════════════════════════ */
 
 function StoragePanel({ t, B }) {
@@ -20566,6 +20800,9 @@ function SettingsHub({ t, B, emps, onLogout, onOpenOldSettings, userRole }) {
     {section === "integration" && sub === "kadwar" && <KadwarSyncPanel t={t} B={B} emps={emps} />}
     {section === "integration" && sub === "storage" && <div>
       <div style={{ display: "grid", gridTemplateColumns: "1fr", gap: ADMIN.space.md }}>
+        <div style={{ padding: ADMIN.space.md, background: t.card, borderRadius: ADMIN.radius.lg, border: "1px solid " + t.sep }}>
+          <SystemAuditPanel t={t} B={B} />
+        </div>
         <div style={{ padding: ADMIN.space.md, background: t.card, borderRadius: ADMIN.radius.lg, border: "1px solid " + t.sep }}>
           <StoragePanel t={t} B={B} />
         </div>
