@@ -5,7 +5,7 @@ import { exportFormalWarning, exportInvestigationRecord, exportAffidavit, export
 import { t as tr, setLang, getLang, subscribeLangChange, isRTL } from "./i18n";
 
 const APP = "بصمة HMA";
-const VER = "7.131";
+const VER = "7.132";
 const CO = "هاني محمد عسيري للإستشارات الهندسية";
 const B = { blue: "#2B5EA7", yellow: "#FDD800", red: "#E2192C", black: "#1A1A1A", blueDk: "#1E4478", blueLt: "#EDF3FB", gold: "#D4A017" };
 
@@ -15182,28 +15182,38 @@ function SystemAuditPanel({ t, B }) {
 /* ═══════════════════════════════════════════════════════════ */
 
 function StoragePanel({ t, B }) {
-  var [status, setStatus] = useState(null);
-  var [loading, setLoading] = useState(true);
+  // v7.131 — مبسّطة: الفحص انتقل إلى SystemAuditPanel
+  // هذه اللوحة الآن فقط لأدوات الصيانة (تنظيف Redis + إدارة Blob القديمة)
+  var [cleanupRunning, setCleanupRunning] = useState(false);
+  var [cleanupResult, setCleanupResult] = useState(null);
   var [migrating, setMigrating] = useState(false);
   var [migrateResult, setMigrateResult] = useState(null);
   var [blobList, setBlobList] = useState(null);
   var [loadingBlob, setLoadingBlob] = useState(false);
   var [deletingBlob, setDeletingBlob] = useState(false);
 
-  useEffect(function() { refresh(); }, []);
-
-  async function refresh() {
-    setLoading(true);
-    try {
-      var r = await fetch("/api/data?action=storage-status");
-      var d = await r.json();
-      setStatus(d);
-    } catch(e) {
-      setStatus({ error: e.message });
+  // ───── تنظيف Redis (db-cleanup) ─────
+  async function runDbCleanup(dryRun) {
+    if (!dryRun) {
+      if (!confirm("سيتم تطبيق الحدود التلقائية على المفاتيح الكبيرة في Redis. العملية آمنة (تحذف فقط الإدخالات القديمة من نهاية القائمة). هل تريد المتابعة؟")) return;
     }
-    setLoading(false);
+    setCleanupRunning(true);
+    setCleanupResult(null);
+    try {
+      var r = await fetch("/api/data?action=db-cleanup", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ dry_run: !!dryRun }),
+      });
+      var d = await r.json();
+      setCleanupResult(d);
+    } catch(e) {
+      setCleanupResult({ ok: false, error: e.message });
+    }
+    setCleanupRunning(false);
   }
 
+  // ───── Blob List & Delete (للحالات الطارئة فقط) ─────
   async function loadBlobList() {
     setLoadingBlob(true);
     try {
@@ -15217,14 +15227,13 @@ function StoragePanel({ t, B }) {
   }
 
   async function doMigrate() {
-    if (!confirm("هل تريد نقل البيانات من Vercel Blob إلى Redis؟\n\nهذه العملية آمنة — البيانات تُنسخ ولا تُحذف.")) return;
+    if (!confirm("نقل البيانات من Vercel Blob إلى Redis؟ هذه العملية آمنة — البيانات تُنسخ ولا تُحذف.")) return;
     setMigrating(true);
     setMigrateResult(null);
     try {
       var r = await fetch("/api/data?action=migrate-to-redis");
       var d = await r.json();
       setMigrateResult(d);
-      refresh();
     } catch(e) {
       setMigrateResult({ ok: false, error: e.message });
     }
@@ -15232,281 +15241,153 @@ function StoragePanel({ t, B }) {
   }
 
   async function deleteBlobBasma() {
-    if (!confirm("⚠️ تحذير: سيتم حذف كل بيانات بصمة من Vercel Blob نهائياً!\n\nقبل الحذف:\n✓ تأكد أن Redis يعمل\n✓ تأكد أن النقل تم بنجاح\n\nهل أنت متأكد؟")) return;
-    if (!confirm("⚠️ تأكيد ثاني: هذه العملية لا يمكن التراجع عنها!\n\nهل أنت متأكد تماماً؟")) return;
+    if (!confirm("⚠️ سيتم حذف بيانات بصمة من Vercel Blob نهائياً! قبل الحذف: تأكد أن Redis يعمل، وتأكد من وجود نسخة احتياطية. هل أنت متأكد؟")) return;
+    if (!confirm("⚠️ تأكيد ثانٍ — العملية لا يمكن التراجع عنها! هل أنت متأكد تماماً؟")) return;
     setDeletingBlob(true);
     try {
-      var r = await fetch("/api/data?action=blob-delete-basma-data", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ confirm: "DELETE_BLOB_BASMA" }),
-      });
+      var r = await fetch("/api/data?action=blob-delete-basma-data", { method: "POST" });
       var d = await r.json();
-      if (d.ok) {
-        alert("✅ تم حذف " + d.deleted + " ملف من Vercel Blob");
-        loadBlobList();
-      } else {
-        alert("❌ فشل: " + (d.error || "خطأ غير معروف"));
-      }
+      alert(d.ok ? "✓ تم حذف " + (d.deleted || 0) + " ملف" : "خطأ: " + (d.error || "unknown"));
+      loadBlobList();
     } catch(e) {
-      alert("❌ خطأ: " + e.message);
+      alert("خطأ: " + e.message);
     }
     setDeletingBlob(false);
   }
-
-  async function deleteBlobAll() {
-    if (!confirm("🔥 تحذير شديد: سيتم حذف كل محتوى Vercel Blob!\n\nيشمل:\n• ملفات بصمة الحالية (محفوظة في Redis)\n• ملفات كوادر القديمة\n• أي ملفات أخرى في Blob\n\nهل أنت متأكد؟")) return;
-    if (!confirm("⚠️ تأكيد ثاني: هذا يحذف كل شي ولا يمكن التراجع!\n\nالنسخة الحية من بياناتك في Redis — لكن لا يوجد backup في Blob بعد هذا.\n\nمتأكد تماماً؟")) return;
-    setDeletingBlob(true);
-    try {
-      var r = await fetch("/api/data?action=blob-delete-all", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ confirm: "DELETE_ALL_BLOB" }),
-      });
-      var d = await r.json();
-      if (d.ok) {
-        alert("✅ تم حذف " + d.deleted + " ملف من Vercel Blob بنجاح");
-        loadBlobList();
-      } else {
-        alert("❌ فشل: " + (d.error || "خطأ غير معروف"));
-      }
-    } catch(e) {
-      alert("❌ خطأ: " + e.message);
-    }
-    setDeletingBlob(false);
-  }
-
-  if (loading) return <div style={{ padding: 30, textAlign: "center", color: t.txM }}>جارِ تحميل حالة التخزين...</div>;
-
-  var redisOk = status && status.redis && status.redis.enabled && status.redis.test === "ok";
-  var r2Ok = status && status.r2 && status.r2.enabled && (status.r2.test || "").startsWith("ok");
 
   return (
-    <div style={{ maxWidth: 800 }}>
-      {/* Header — v7.117 unified */}
-      <PanelHeader
-        icon="💾"
-        title="إدارة التخزين"
-        subtitle="مراقبة حالة قواعد البيانات (Redis + R2)"
+    <div>
+      <SectionHero
+        title="🛠 أدوات صيانة التخزين"
+        subtitle="تنظيف المفاتيح الكبيرة + إدارة Vercel Blob القديمة"
         gradient={"linear-gradient(135deg, " + B.blue + ", " + B.blueDk + ")"}
-        action={
-          <ActionButton
-            variant="secondary" size="sm"
-            icon="🔄" label="تحديث"
-            onClick={refresh}
-            t={t} B={B}
-          />
-        }
         t={t} B={B}
       />
 
-      {/* Primary Storage Status */}
+      {/* ─── 1) Redis Cleanup ─── */}
       <div style={{ background: t.card, borderRadius: 12, padding: 16, border: "1px solid " + t.sep, marginBottom: 14 }}>
-        <div style={{ fontSize: 14, fontWeight: 800, color: B.blue, marginBottom: 12, display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-          <span>📊 حالة التخزين الحالية</span>
-          <button onClick={refresh} style={{ padding: "6px 12px", borderRadius: 6, background: "none", border: "1px solid " + t.sep, color: t.tx, fontSize: 11, cursor: "pointer" }}>🔄 تحديث</button>
+        <div style={{ fontSize: 14, fontWeight: 800, color: B.blue, marginBottom: 8 }}>
+          🧹 تنظيف مفاتيح Redis
+        </div>
+        <div style={{ fontSize: 11, color: t.txM, lineHeight: 1.7, marginBottom: 12 }}>
+          يطبّق الحدود التلقائية (AUTO_LIMITS) على المفاتيح الكبيرة في Redis.
+          العملية آمنة — تحذف فقط الإدخالات القديمة من نهاية القوائم الطويلة
+          (مثل: notifications, audit_log, attendance) للحفاظ على الأحجام آمنة.
         </div>
 
-        <div style={{ marginBottom: 10, padding: 10, borderRadius: 8, background: t.bg, fontSize: 11 }}>
-          <div style={{ fontWeight: 700, color: t.tx, marginBottom: 6 }}>التخزين النشط:</div>
-          <div style={{ fontSize: 13, fontWeight: 800, color: redisOk ? "#10b981" : "#f59e0b" }}>
-            {status && status.primary === "upstash-redis" ? "⚡ Upstash Redis" : "📦 Vercel Blob (الافتراضي)"}
+        <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+          <button onClick={function(){ runDbCleanup(true); }} disabled={cleanupRunning} style={{
+            padding: "10px 16px", borderRadius: 10, background: cleanupRunning ? t.sep : "#3b82f6",
+            color: "#fff", border: "none", fontSize: 12, fontWeight: 800, cursor: cleanupRunning ? "default" : "pointer", flex: 1
+          }}>
+            {cleanupRunning ? "⏳ جارٍ..." : "👁 معاينة (Dry Run)"}
+          </button>
+          <button onClick={function(){ runDbCleanup(false); }} disabled={cleanupRunning} style={{
+            padding: "10px 16px", borderRadius: 10, background: cleanupRunning ? t.sep : "#10b981",
+            color: "#fff", border: "none", fontSize: 12, fontWeight: 800, cursor: cleanupRunning ? "default" : "pointer", flex: 1
+          }}>
+            {cleanupRunning ? "⏳ جارٍ..." : "✅ تطبيق التنظيف"}
+          </button>
+        </div>
+
+        {cleanupResult && (
+          <div style={{ marginTop: 12, padding: 12, borderRadius: 8, background: t.bg, fontSize: 11 }}>
+            {cleanupResult.error ? (
+              <div style={{ color: "#ef4444" }}>❌ {cleanupResult.error}</div>
+            ) : (
+              <div>
+                <div style={{ fontWeight: 800, color: t.tx, marginBottom: 6 }}>
+                  {cleanupResult.dry_run ? "📋 معاينة" : "✅ تم التنظيف"} — {cleanupResult.cleaned} مفتاح
+                </div>
+                {cleanupResult.report && cleanupResult.report.map(function(r, i) {
+                  return <div key={i} style={{ padding: 4, borderBottom: "1px solid " + t.sep, fontSize: 10 }}>
+                    <strong>{r.key}</strong>: {r.before.count} → {r.after.count} ({r.removed} محذوف، {r.before.sizeKB}→{r.after.sizeKB} KB)
+                  </div>;
+                })}
+              </div>
+            )}
           </div>
-          <div style={{ fontSize: 10, color: t.txM, marginTop: 3 }}>System: {status.system}</div>
-        </div>
-
-        {/* Redis status */}
-        <div style={{ padding: 12, borderRadius: 8, background: redisOk ? "#10b98110" : "#f59e0b10", border: "1px solid " + (redisOk ? "#10b981" : "#f59e0b") + "40", marginBottom: 10 }}>
-          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 4 }}>
-            <div style={{ fontSize: 13, fontWeight: 800 }}>⚡ Upstash Redis</div>
-            <span style={{ fontSize: 11, fontWeight: 700, padding: "3px 10px", borderRadius: 6, background: redisOk ? "#10b981" : "#f59e0b", color: "#fff" }}>
-              {redisOk ? "✓ يعمل" : status.redis && status.redis.enabled ? "⚠ خطأ" : "❌ غير مفعّل"}
-            </span>
-          </div>
-          {status.redis && status.redis.url && <div style={{ fontSize: 10, color: t.txM, fontFamily: "monospace", direction: "ltr" }}>{status.redis.url}</div>}
-          {status.redis && status.redis.test && status.redis.test !== "ok" && <div style={{ fontSize: 10, color: "#ef4444", marginTop: 4 }}>{status.redis.test}</div>}
-        </div>
-
-        {/* R2 status */}
-        <div style={{ padding: 12, borderRadius: 8, background: r2Ok ? "#10b98110" : "#f59e0b10", border: "1px solid " + (r2Ok ? "#10b981" : "#f59e0b") + "40", marginBottom: 10 }}>
-          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 4 }}>
-            <div style={{ fontSize: 13, fontWeight: 800 }}>☁️ Cloudflare R2</div>
-            <span style={{ fontSize: 11, fontWeight: 700, padding: "3px 10px", borderRadius: 6, background: r2Ok ? "#10b981" : "#f59e0b", color: "#fff" }}>
-              {r2Ok ? "✓ يعمل" : status.r2 && status.r2.enabled ? "⚠ خطأ" : "❌ غير مفعّل"}
-            </span>
-          </div>
-          {status.r2 && status.r2.bucket && <div style={{ fontSize: 10, color: t.txM, marginTop: 2 }}>Bucket: {status.r2.bucket}</div>}
-          {status.r2 && status.r2.publicUrl && <div style={{ fontSize: 10, color: t.txM, fontFamily: "monospace", direction: "ltr" }}>{status.r2.publicUrl}</div>}
-          {status.r2 && status.r2.test && !status.r2.test.startsWith("ok") && <div style={{ fontSize: 10, color: "#ef4444", marginTop: 4 }}>{status.r2.test}</div>}
-        </div>
-
-        {/* Blob fallback */}
-        <div style={{ padding: 10, borderRadius: 8, background: t.bg, fontSize: 11, color: t.txM }}>
-          📦 <strong>Vercel Blob:</strong> نشط كـ backup تلقائي
-        </div>
+        )}
       </div>
 
-      {/* Migration */}
-      {redisOk && (
-        <div style={{ background: t.card, borderRadius: 12, padding: 16, border: "1px solid " + t.sep, marginBottom: 14 }}>
-          <div style={{ fontSize: 14, fontWeight: 800, color: B.blue, marginBottom: 8 }}>🔄 نقل البيانات إلى Redis</div>
-          <div style={{ fontSize: 11, color: t.txM, marginBottom: 12, lineHeight: 1.7 }}>
-            هذه العملية تنسخ كل البيانات من Vercel Blob إلى Upstash Redis.<br/>
-            <strong>آمنة:</strong> البيانات في Blob تبقى كما هي. يمكن تكرار العملية في أي وقت.
-          </div>
-          <button onClick={doMigrate} disabled={migrating} style={{ padding: "10px 18px", borderRadius: 10, background: migrating ? t.sep : B.blue, color: "#fff", border: "none", fontSize: 12, fontWeight: 800, cursor: migrating ? "default" : "pointer" }}>
-            {migrating ? "⏳ جارِ النقل..." : "🚀 نقل البيانات الآن"}
-          </button>
-
-          {migrateResult && (
-            <div style={{ marginTop: 12, padding: 12, borderRadius: 8, background: migrateResult.ok ? "#10b98110" : "#ef444410", border: "1px solid " + (migrateResult.ok ? "#10b981" : "#ef4444") + "40" }}>
-              {migrateResult.ok ? (
-                <>
-                  <div style={{ fontSize: 12, fontWeight: 800, color: "#10b981", marginBottom: 8 }}>✅ تم النقل بنجاح</div>
-                  <div style={{ fontSize: 10, color: t.txM, marginBottom: 8 }}>تم نقل {migrateResult.total || 0} جدول</div>
-                  <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 6, fontSize: 10 }}>
-                    {Object.keys(migrateResult.migrated || {}).map(function(k) {
-                      var v = migrateResult.migrated[k];
-                      return <div key={k} style={{ padding: "4px 8px", borderRadius: 4, background: t.bg }}>
-                        <span style={{ color: t.tx, fontWeight: 700 }}>{k}:</span> <span style={{ color: v === "empty" ? t.txM : "#10b981" }}>{v === "empty" ? "فارغ" : v}</span>
-                      </div>;
-                    })}
-                  </div>
-                </>
-              ) : (
-                <div style={{ fontSize: 12, fontWeight: 800, color: "#ef4444" }}>❌ {migrateResult.error || "فشل النقل"}</div>
-              )}
-            </div>
-          )}
+      {/* ─── 2) Vercel Blob Cleanup (للحالات الطارئة) ─── */}
+      <div style={{ background: t.card, borderRadius: 12, padding: 16, border: "1px solid " + t.sep, marginBottom: 14 }}>
+        <div style={{ fontSize: 14, fontWeight: 800, color: "#f59e0b", marginBottom: 8 }}>
+          ⚠️ Vercel Blob — أدوات قديمة
         </div>
-      )}
-
-      {/* Blob Management */}
-      {redisOk && (
-        <div style={{ background: t.card, borderRadius: 12, padding: 16, border: "1px solid " + t.sep, marginBottom: 14 }}>
-          <div style={{ fontSize: 14, fontWeight: 800, color: B.blue, marginBottom: 8 }}>📦 إدارة Vercel Blob (الـ Backup)</div>
-          <div style={{ fontSize: 11, color: t.txM, marginBottom: 12, lineHeight: 1.7 }}>
-            عرض محتويات Vercel Blob وحذفها بعد التأكد من نجاح النقل.<br/>
-            <strong style={{ color: "#f59e0b" }}>⚠️ تحذير:</strong> لا تحذف إلا بعد التأكد من استقرار Redis لمدة أسبوعين.
-          </div>
-          <button onClick={loadBlobList} disabled={loadingBlob} style={{ padding: "10px 18px", borderRadius: 10, background: loadingBlob ? t.sep : B.blue, color: "#fff", border: "none", fontSize: 12, fontWeight: 800, cursor: loadingBlob ? "default" : "pointer", marginLeft: 8 }}>
-            {loadingBlob ? "⏳..." : "📋 عرض محتوى Blob"}
-          </button>
-
-          {blobList && blobList.ok && (
-            <div style={{ marginTop: 14 }}>
-              {/* Summary */}
-              <div style={{ background: t.bg, borderRadius: 8, padding: 12, marginBottom: 10 }}>
-                <div style={{ fontSize: 12, fontWeight: 800, color: t.tx, marginBottom: 8 }}>📊 ملخص</div>
-                <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 8, fontSize: 10 }}>
-                  <div><span style={{ color: t.txM }}>إجمالي الملفات:</span> <strong style={{ color: t.tx }}>{blobList.totalFiles}</strong></div>
-                  <div><span style={{ color: t.txM }}>الحجم:</span> <strong style={{ color: t.tx }}>{blobList.totalSizeMB} MB</strong></div>
-                  <div><span style={{ color: t.txM }}>بيانات بصمة:</span> <strong style={{ color: "#10b981" }}>{blobList.summary.basmaDataFiles}</strong></div>
-                  <div><span style={{ color: t.txM }}>مرفقات:</span> <strong style={{ color: "#f59e0b" }}>{blobList.summary.basmaAttachments}</strong></div>
-                </div>
-              </div>
-
-              {/* Basma Data Files (safe to delete) */}
-              {blobList.basmaData.length > 0 && (
-                <details style={{ marginBottom: 8 }}>
-                  <summary style={{ cursor: "pointer", padding: 10, background: "#10b98110", borderRadius: 8, fontSize: 12, fontWeight: 700, color: "#10b981" }}>
-                    📄 ملفات بيانات بصمة ({blobList.basmaData.length}) — آمنة للحذف ✓
-                  </summary>
-                  <div style={{ maxHeight: 200, overflowY: "auto", padding: 8 }}>
-                    {blobList.basmaData.map(function(f, i) {
-                      return <div key={i} style={{ fontSize: 10, padding: "4px 8px", borderBottom: "1px solid " + t.sep, display: "flex", justifyContent: "space-between" }}>
-                        <span style={{ fontFamily: "monospace", color: t.tx }}>{f.name}</span>
-                        <span style={{ color: t.txM }}>{f.sizeKB} KB</span>
-                      </div>;
-                    })}
-                  </div>
-                </details>
-              )}
-
-              {/* Attachments (keep!) */}
-              {blobList.basmaFiles.length > 0 && (
-                <details style={{ marginBottom: 8 }}>
-                  <summary style={{ cursor: "pointer", padding: 10, background: "#f59e0b10", borderRadius: 8, fontSize: 12, fontWeight: 700, color: "#f59e0b" }}>
-                    📎 مرفقات بصمة ({blobList.basmaFiles.length}) — لا تُحذف ⚠️
-                  </summary>
-                  <div style={{ maxHeight: 200, overflowY: "auto", padding: 8 }}>
-                    {blobList.basmaFiles.slice(0, 50).map(function(f, i) {
-                      return <div key={i} style={{ fontSize: 10, padding: "4px 8px", borderBottom: "1px solid " + t.sep, display: "flex", justifyContent: "space-between" }}>
-                        <span style={{ fontFamily: "monospace", color: t.tx }}>{f.name}</span>
-                        <span style={{ color: t.txM }}>{f.sizeKB} KB</span>
-                      </div>;
-                    })}
-                    {blobList.basmaFiles.length > 50 && <div style={{ textAlign: "center", fontSize: 10, color: t.txM, padding: 6 }}>... و {blobList.basmaFiles.length - 50} ملف آخر</div>}
-                  </div>
-                </details>
-              )}
-
-              {/* Other basma */}
-              {blobList.basmaOther.length > 0 && (
-                <details style={{ marginBottom: 8 }}>
-                  <summary style={{ cursor: "pointer", padding: 10, background: t.bg, borderRadius: 8, fontSize: 12, fontWeight: 700, color: t.tx }}>
-                    📁 ملفات بصمة أخرى ({blobList.basmaOther.length})
-                  </summary>
-                  <div style={{ maxHeight: 200, overflowY: "auto", padding: 8 }}>
-                    {blobList.basmaOther.map(function(f, i) {
-                      return <div key={i} style={{ fontSize: 10, padding: "4px 8px", borderBottom: "1px solid " + t.sep, display: "flex", justifyContent: "space-between" }}>
-                        <span style={{ fontFamily: "monospace", color: t.tx }}>{f.name}</span>
-                        <span style={{ color: t.txM }}>{f.sizeKB} KB</span>
-                      </div>;
-                    })}
-                  </div>
-                </details>
-              )}
-
-              {/* Other (not basma) */}
-              {blobList.other.length > 0 && (
-                <details style={{ marginBottom: 8 }}>
-                  <summary style={{ cursor: "pointer", padding: 10, background: t.bg, borderRadius: 8, fontSize: 12, fontWeight: 700, color: t.tx }}>
-                    🗂️ ملفات أخرى (ليست بصمة) — {blobList.other.length}
-                  </summary>
-                  <div style={{ maxHeight: 200, overflowY: "auto", padding: 8 }}>
-                    {blobList.other.map(function(f, i) {
-                      return <div key={i} style={{ fontSize: 10, padding: "4px 8px", borderBottom: "1px solid " + t.sep, display: "flex", justifyContent: "space-between" }}>
-                        <span style={{ fontFamily: "monospace", color: t.tx }}>{f.name}</span>
-                        <span style={{ color: t.txM }}>{f.sizeKB} KB</span>
-                      </div>;
-                    })}
-                  </div>
-                </details>
-              )}
-
-              {/* Delete button */}
-              {blobList.basmaData.length > 0 && (
-                <div style={{ marginTop: 14, padding: 12, background: "#ef444410", border: "1px solid #ef444440", borderRadius: 8 }}>
-                  <div style={{ fontSize: 12, fontWeight: 800, color: "#ef4444", marginBottom: 8 }}>⚠️ منطقة الخطر</div>
-                  <div style={{ fontSize: 10, color: t.txM, marginBottom: 10, lineHeight: 1.6 }}>
-                    <div style={{ marginBottom: 6 }}><strong>الخيار 1:</strong> حذف ملفات بيانات بصمة فقط ({blobList.basmaData.length})</div>
-                    <div><strong>الخيار 2:</strong> حذف كل شي ({blobList.totalFiles} ملف — {blobList.totalSizeMB} MB)</div>
-                  </div>
-                  <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-                    <button onClick={deleteBlobBasma} disabled={deletingBlob} style={{ padding: "8px 14px", borderRadius: 8, background: deletingBlob ? t.sep : "#f59e0b", color: "#fff", border: "none", fontSize: 11, fontWeight: 800, cursor: deletingBlob ? "default" : "pointer" }}>
-                      {deletingBlob ? "⏳..." : "🗑️ حذف بيانات بصمة فقط"}
-                    </button>
-                    <button onClick={deleteBlobAll} disabled={deletingBlob} style={{ padding: "8px 14px", borderRadius: 8, background: deletingBlob ? t.sep : "#dc2626", color: "#fff", border: "none", fontSize: 11, fontWeight: 800, cursor: deletingBlob ? "default" : "pointer" }}>
-                      {deletingBlob ? "⏳..." : "🔥 حذف كل شي ({blobList.totalFiles} ملف)".replace("{blobList.totalFiles}", blobList.totalFiles)}
-                    </button>
-                  </div>
-                </div>
-              )}
-            </div>
-          )}
-
-          {blobList && !blobList.ok && (
-            <div style={{ marginTop: 10, padding: 10, background: "#ef444410", borderRadius: 8, fontSize: 11, color: "#ef4444" }}>
-              خطأ: {blobList.error}
-            </div>
-          )}
+        <div style={{ fontSize: 11, color: t.txM, lineHeight: 1.7, marginBottom: 12 }}>
+          Vercel Blob معطّل في النظام (Cloudflare R2 هو البديل المعتمد).
+          هذه الأدوات للحالات الطارئة فقط — استخدمها فقط إذا تبقّت بيانات قديمة في Blob.
         </div>
-      )}
+
+        <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 12 }}>
+          <button onClick={loadBlobList} disabled={loadingBlob} style={{
+            padding: "8px 14px", borderRadius: 8, background: loadingBlob ? t.sep : t.card,
+            color: t.tx, border: "1px solid " + t.sep, fontSize: 11, fontWeight: 700,
+            cursor: loadingBlob ? "default" : "pointer"
+          }}>
+            {loadingBlob ? "⏳..." : "📋 عرض ملفات Blob"}
+          </button>
+          <button onClick={doMigrate} disabled={migrating} style={{
+            padding: "8px 14px", borderRadius: 8, background: migrating ? t.sep : "#3b82f6",
+            color: "#fff", border: "none", fontSize: 11, fontWeight: 700,
+            cursor: migrating ? "default" : "pointer"
+          }}>
+            {migrating ? "⏳..." : "🔄 نقل البيانات إلى Redis"}
+          </button>
+        </div>
+
+        {migrateResult && (
+          <div style={{ marginBottom: 12, padding: 10, borderRadius: 8, background: migrateResult.ok ? "#10b98110" : "#ef444410", fontSize: 11 }}>
+            {migrateResult.ok ? (
+              <div style={{ color: "#10b981" }}>✓ تم النقل: {migrateResult.migrated} مفتاح</div>
+            ) : (
+              <div style={{ color: "#ef4444" }}>❌ {migrateResult.error}</div>
+            )}
+          </div>
+        )}
+
+        {blobList && blobList.ok && (
+          <div style={{ background: t.bg, borderRadius: 8, padding: 12 }}>
+            <div style={{ fontSize: 12, fontWeight: 800, color: t.tx, marginBottom: 8 }}>
+              📊 ملخص ({blobList.totalFiles} ملف — {blobList.totalSizeMB} MB)
+            </div>
+
+            {blobList.basmaData.length > 0 && (
+              <details style={{ marginBottom: 8 }}>
+                <summary style={{ cursor: "pointer", padding: 8, background: "#10b98110", borderRadius: 6, fontSize: 11, fontWeight: 700, color: "#10b981" }}>
+                  📄 ملفات بيانات قديمة ({blobList.basmaData.length}) — آمنة للحذف
+                </summary>
+                <div style={{ maxHeight: 150, overflowY: "auto", padding: 6 }}>
+                  {blobList.basmaData.slice(0, 30).map(function(f, i) {
+                    return <div key={i} style={{ fontSize: 10, padding: 3, borderBottom: "1px solid " + t.sep, fontFamily: "monospace" }}>{f.name} — {f.sizeKB} KB</div>;
+                  })}
+                </div>
+              </details>
+            )}
+
+            {blobList.basmaData.length > 0 && (
+              <button onClick={deleteBlobBasma} disabled={deletingBlob} style={{
+                marginTop: 8, padding: "8px 14px", borderRadius: 8, background: deletingBlob ? t.sep : "#ef4444",
+                color: "#fff", border: "none", fontSize: 11, fontWeight: 800,
+                cursor: deletingBlob ? "default" : "pointer"
+              }}>
+                {deletingBlob ? "⏳..." : "🗑️ حذف بيانات بصمة من Blob"}
+              </button>
+            )}
+          </div>
+        )}
+
+        {blobList && !blobList.ok && (
+          <div style={{ padding: 10, background: "#ef444410", borderRadius: 8, fontSize: 11, color: "#ef4444" }}>
+            ❌ {blobList.error}
+          </div>
+        )}
+      </div>
     </div>
   );
 }
+
 
 function AdminProfile({ t, B, onLogout }) {
   var [profile, setProfile] = useState(null);
