@@ -114,13 +114,72 @@ async function pushToGitHub(files) {
   return { commit: newCommit.sha.substring(0, 7), filesCount: files.length, fileNames: files.map(f => f.name) };
 }
 
+/* ────── Admin password verification (v7.134 — security) ────── */
+async function verifyAdminPassword(password) {
+  var expected = (process.env.ADMIN_UPDATE_PASSWORD || '').trim();
+  if (!expected) return { ok: false, reason: 'ADMIN_UPDATE_PASSWORD غير مضبوط في Vercel' };
+  if (!password || String(password).trim() !== expected) return { ok: false, reason: 'كلمة مرور خاطئة' };
+  return { ok: true };
+}
+
+async function checkLockout(ip) {
+  var key = 'basma:update_lockout_' + ip;
+  var locked = await redis('GET', key);
+  if (locked) {
+    var ttl = await redis('TTL', key);
+    return { locked: true, secondsLeft: ttl > 0 ? ttl : 0 };
+  }
+  return { locked: false };
+}
+
+async function recordFailedAttempt(ip) {
+  var attemptsKey = 'basma:update_attempts_' + ip;
+  var lockKey = 'basma:update_lockout_' + ip;
+  var n = await redis('INCR', attemptsKey);
+  if (n === 1) await redis('EXPIRE', attemptsKey, 900); // 15 min window
+  if (n >= 3) {
+    await redis('SET', lockKey, '1', 'EX', 900); // 15 min lockout
+    await redis('DEL', attemptsKey);
+    return { locked: true };
+  }
+  return { locked: false, attemptsLeft: 3 - n };
+}
+
+async function clearAttempts(ip) {
+  await redis('DEL', 'basma:update_attempts_' + ip).catch(function(){});
+}
+
+async function issueAdminToken() {
+  var token = 'adm_' + Date.now() + '_' + Math.random().toString(36).substring(2, 12);
+  await redis('SET', 'basma:admin_session_' + token, '1', 'EX', 1800); // 30 min session
+  return token;
+}
+
+async function verifyAdminToken(token) {
+  if (!token) return false;
+  var v = await redis('GET', 'basma:admin_session_' + token);
+  return !!v;
+}
+
+function getClientIp(req) {
+  var ip = req.headers['x-forwarded-for'] || req.headers['x-real-ip'] || req.connection?.remoteAddress || 'unknown';
+  return String(ip).split(',')[0].trim();
+}
+
+/* ────── Audit log ────── */
+async function logUpdate(ip, status, info) {
+  var entry = { at: new Date().toISOString(), ip: ip, status: status, info: info || null };
+  await redis('LPUSH', 'basma:update_audit_log', JSON.stringify(entry)).catch(function(){});
+  await redis('LTRIM', 'basma:update_audit_log', 0, 199).catch(function(){}); // keep last 200
+}
+
 /* ────── Main handler ────── */
 export default async function handler(req, res) {
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS');
-  res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
+  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, x-admin-token');
   if (req.method === 'OPTIONS') return res.status(200).end();
-  if (req.method !== 'POST') return res.json({ ok: true, msg: 'update API v4 ready (chunked via Redis)' });
+  if (req.method !== 'POST') return res.json({ ok: true, msg: 'update API v5 ready (secured + chunked)' });
 
   var token = process.env.GITHUB_TOKEN;
   if (!token) return res.json({ error: 'GITHUB_TOKEN غير موجود' });
@@ -129,6 +188,37 @@ export default async function handler(req, res) {
   try {
     var body = req.body;
     if (!body) return res.json({ error: 'Missing request body' });
+    var ip = getClientIp(req);
+
+    /* ═══ Auth: verify admin password and issue token ═══ */
+    if (body.action === 'verify-admin') {
+      var lock = await checkLockout(ip);
+      if (lock.locked) {
+        await logUpdate(ip, 'lockout-blocked', null);
+        return res.json({ error: 'محظور مؤقتاً. حاول بعد ' + Math.ceil(lock.secondsLeft / 60) + ' دقيقة', locked: true, secondsLeft: lock.secondsLeft });
+      }
+      var v = await verifyAdminPassword(body.password);
+      if (!v.ok) {
+        var fail = await recordFailedAttempt(ip);
+        await logUpdate(ip, 'auth-failed', v.reason);
+        if (fail.locked) {
+          return res.json({ error: 'تم تجاوز الحد المسموح. محظور 15 دقيقة', locked: true });
+        }
+        return res.json({ error: v.reason, attemptsLeft: fail.attemptsLeft });
+      }
+      await clearAttempts(ip);
+      var adminToken = await issueAdminToken();
+      await logUpdate(ip, 'auth-success', null);
+      return res.json({ success: true, token: adminToken, expiresIn: 1800 });
+    }
+
+    /* ═══ All upload actions require valid admin token ═══ */
+    var clientToken = req.headers['x-admin-token'] || body.adminToken;
+    var isValid = await verifyAdminToken(clientToken);
+    if (!isValid) {
+      await logUpdate(ip, 'unauthorized-upload', null);
+      return res.status(401).json({ error: 'غير مصرَّح. يجب التحقق من كلمة مرور المدير أولاً', requireAuth: true });
+    }
 
     /* ═══ طريقة 1: Chunked upload (للملفات الكبيرة) ═══ */
     if (body.action === 'chunk') {
@@ -168,6 +258,7 @@ export default async function handler(req, res) {
       if (files.length === 0) return res.json({ error: 'لا توجد ملفات في الـ ZIP' });
 
       var result = await pushToGitHub(files);
+      await logUpdate(ip, 'upload-success', { commit: result.commit, files: result.filesCount });
       return res.json({ success: true, message: 'تم التحديث بنجاح!', ...result });
     }
 
@@ -178,6 +269,7 @@ export default async function handler(req, res) {
       if (files.length === 0) return res.json({ error: 'لا توجد ملفات في الـ ZIP' });
 
       var result = await pushToGitHub(files);
+      await logUpdate(ip, 'upload-success', { commit: result.commit, files: result.filesCount });
       return res.json({ success: true, message: 'تم التحديث بنجاح!', ...result });
     }
 

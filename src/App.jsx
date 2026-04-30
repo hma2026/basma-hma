@@ -162,13 +162,58 @@ export default function App() {
 }
 
 function UpdateScreen() {
+  const [authStep, setAuthStep] = useState("locked"); // locked, verifying, unlocked
+  const [password, setPassword] = useState("");
+  const [authError, setAuthError] = useState("");
+  const [attemptsLeft, setAttemptsLeft] = useState(null);
+  const [lockoutSeconds, setLockoutSeconds] = useState(0);
+  const [adminToken, setAdminToken] = useState("");
   const [file, setFile] = useState(null);
   const [status, setStatus] = useState("idle"); // idle, uploading, success, error
   const [msg, setMsg] = useState("");
   const [details, setDetails] = useState(null);
 
+  // Lockout countdown timer
+  useEffect(() => {
+    if (lockoutSeconds <= 0) return;
+    const t = setInterval(() => setLockoutSeconds(s => Math.max(0, s - 1)), 1000);
+    return () => clearInterval(t);
+  }, [lockoutSeconds]);
+
+  const verifyPassword = async () => {
+    if (!password) return;
+    setAuthStep("verifying");
+    setAuthError("");
+    try {
+      const r = await fetch('/api/update', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'verify-admin', password }),
+      });
+      const data = await r.json();
+      if (data.success && data.token) {
+        setAdminToken(data.token);
+        setAuthStep("unlocked");
+        setPassword("");
+      } else {
+        setAuthStep("locked");
+        setAuthError(data.error || "كلمة مرور خاطئة");
+        if (data.locked) {
+          setLockoutSeconds(data.secondsLeft || 900);
+        }
+        if (typeof data.attemptsLeft === 'number') {
+          setAttemptsLeft(data.attemptsLeft);
+        }
+      }
+    } catch (err) {
+      setAuthStep("locked");
+      setAuthError("خطأ في الاتصال بالخادم");
+    }
+  };
+
   const doUpload = async () => {
     if (!file) return;
+    if (!adminToken) { setAuthStep("locked"); return; }
     setStatus("uploading");
 
     try {
@@ -177,6 +222,7 @@ function UpdateScreen() {
        *  ⚠️ DO NOT use @vercel/blob — chunked upload via Redis only
        *  المسار: المتصفح يقسّم الملف → يرسل أجزاء صغيرة → Redis مؤقتاً
        *  ثم: API يجمّع → يفكّ → يرفع لـ GitHub → Vercel يبني تلقائياً
+       *  v7.134: محمي بتوكن جلسة admin (x-admin-token header)
        * ═══════════════════════════════════════════════════════════════════ */
 
       setMsg("جارِ قراءة الملف...");
@@ -187,20 +233,29 @@ function UpdateScreen() {
         reader.readAsDataURL(file);
       });
 
-      const CHUNK_SIZE = 2 * 1024 * 1024; // 2MB per chunk (safe for Vercel 4.5MB payload)
+      const CHUNK_SIZE = 2 * 1024 * 1024; // 2MB per chunk
       const totalChunks = Math.ceil(base64.length / CHUNK_SIZE);
 
+      const authHeaders = {
+        'Content-Type': 'application/json',
+        'x-admin-token': adminToken,
+      };
+
       if (totalChunks <= 1) {
-        // Small file — direct upload (no chunking needed)
         setMsg("جارِ رفع الملف وتحديث GitHub...");
         const r = await fetch('/api/update', {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
+          headers: authHeaders,
           body: JSON.stringify({ zip: base64 }),
         });
         const text = await r.text();
         var data;
         try { data = JSON.parse(text); } catch { data = { error: text.substring(0, 200) }; }
+        if (data.requireAuth) {
+          setStatus("idle"); setAdminToken(""); setAuthStep("locked");
+          setAuthError("انتهت الجلسة. يجب إعادة إدخال كلمة المرور");
+          return;
+        }
         if (data.success) {
           setStatus("success");
           setMsg("تم التحديث بنجاح! Vercel يبني الآن...");
@@ -216,16 +271,20 @@ function UpdateScreen() {
       // Large file — chunked upload
       const sessionId = Date.now() + '_' + Math.random().toString(36).substring(2, 8);
 
-      // Send chunks
       for (let i = 0; i < totalChunks; i++) {
         setMsg("جارِ رفع الجزء " + (i + 1) + " من " + totalChunks + "...");
         const chunkData = base64.substring(i * CHUNK_SIZE, (i + 1) * CHUNK_SIZE);
         const r = await fetch('/api/update', {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
+          headers: authHeaders,
           body: JSON.stringify({ action: 'chunk', sessionId, chunkIndex: i, totalChunks, data: chunkData }),
         });
         const result = await r.json();
+        if (result.requireAuth) {
+          setStatus("idle"); setAdminToken(""); setAuthStep("locked");
+          setAuthError("انتهت الجلسة. يجب إعادة إدخال كلمة المرور");
+          return;
+        }
         if (!result.ok) {
           setStatus("error");
           setMsg(result.error || "فشل رفع الجزء " + (i + 1));
@@ -233,16 +292,20 @@ function UpdateScreen() {
         }
       }
 
-      // Finalize — assemble and push to GitHub
       setMsg("جارِ تجميع الملف ورفعه إلى GitHub...");
       const r = await fetch('/api/update', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: authHeaders,
         body: JSON.stringify({ action: 'finalize', sessionId, totalChunks }),
       });
       const text = await r.text();
       var data;
       try { data = JSON.parse(text); } catch { data = { error: text.substring(0, 200) }; }
+      if (data.requireAuth) {
+        setStatus("idle"); setAdminToken(""); setAuthStep("locked");
+        setAuthError("انتهت الجلسة. يجب إعادة إدخال كلمة المرور");
+        return;
+      }
       if (data.success) {
         setStatus("success");
         setMsg("تم التحديث بنجاح! Vercel يبني الآن...");
@@ -258,6 +321,67 @@ function UpdateScreen() {
     }
   };
 
+  /* ═══════════════ شاشة كلمة المرور (المرحلة 1) ═══════════════ */
+  if (authStep !== "unlocked") {
+    return (
+      <div style={{ direction: "rtl", fontFamily: "'IBM Plex Sans Arabic',-apple-system,sans-serif", minHeight: "100vh", background: "#F2F2F7", color: "#000", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", padding: 20 }}>
+        <div style={{ width: 60, height: 60, borderRadius: 14, background: "rgba(255,159,10,0.1)", display: "flex", alignItems: "center", justifyContent: "center", marginBottom: 16 }}>
+          <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="#FF9F0A" strokeWidth="1.5" strokeLinecap="round"><path d="M19 11H5a2 2 0 00-2 2v7a2 2 0 002 2h14a2 2 0 002-2v-7a2 2 0 00-2-2zM7 11V7a5 5 0 0110 0v4"/></svg>
+        </div>
+        <div style={{ fontSize: 22, fontWeight: 700 }}>تحديث النظام — وصول محمي</div>
+        <div style={{ fontSize: 13, color: "#6E6E73", marginTop: 6, textAlign: "center", maxWidth: 360 }}>هذي الصفحة تعدّل النظام بالكامل. الوصول مقيَّد بالمدير العام فقط.</div>
+
+        <div style={{ marginTop: 20, width: "100%", maxWidth: 400 }}>
+          <div style={{ background: "#FFFFFF", borderRadius: 14, padding: 20, border: "1px solid rgba(0,0,0,0.05)", boxShadow: "0 1px 3px rgba(0,0,0,0.08)" }}>
+            <div style={{ fontSize: 15, fontWeight: 600, marginBottom: 12 }}>كلمة مرور المدير</div>
+
+            {lockoutSeconds > 0 ? (
+              <div style={{ padding: 16, borderRadius: 10, background: "rgba(255,59,48,0.08)", border: "1px solid rgba(255,59,48,0.2)", textAlign: "center" }}>
+                <div style={{ fontSize: 14, fontWeight: 600, color: "#FF3B30" }}>محظور مؤقتاً</div>
+                <div style={{ fontSize: 12, color: "#8E8E93", marginTop: 6 }}>تم تجاوز عدد المحاولات</div>
+                <div style={{ fontSize: 24, fontWeight: 700, color: "#FF3B30", marginTop: 10 }}>
+                  {Math.floor(lockoutSeconds / 60)}:{String(lockoutSeconds % 60).padStart(2, '0')}
+                </div>
+                <div style={{ fontSize: 11, color: "#8E8E93", marginTop: 4 }}>دقيقة:ثانية</div>
+              </div>
+            ) : (
+              <>
+                <input
+                  type="password"
+                  value={password}
+                  onChange={(e) => { setPassword(e.target.value); setAuthError(""); }}
+                  onKeyDown={(e) => e.key === "Enter" && verifyPassword()}
+                  disabled={authStep === "verifying"}
+                  placeholder="أدخل كلمة المرور"
+                  autoFocus
+                  style={{ width: "100%", height: 44, borderRadius: 10, border: "1px solid #E5E5EA", padding: "0 14px", fontSize: 15, fontFamily: "inherit", boxSizing: "border-box", background: authStep === "verifying" ? "#F2F2F7" : "#fff" }}
+                />
+                {authError && (
+                  <div style={{ marginTop: 10, padding: 10, borderRadius: 8, background: "rgba(255,59,48,0.08)", color: "#FF3B30", fontSize: 12, fontWeight: 500 }}>
+                    {authError}
+                    {typeof attemptsLeft === 'number' && attemptsLeft > 0 && (
+                      <span> · متبقٍ {attemptsLeft} محاولة</span>
+                    )}
+                  </div>
+                )}
+                <button
+                  onClick={verifyPassword}
+                  disabled={!password || authStep === "verifying"}
+                  style={{ width: "100%", height: 44, borderRadius: 12, background: password && authStep !== "verifying" ? "#0A84FF" : "#E5E5EA", color: password && authStep !== "verifying" ? "#fff" : "#8E8E93", fontSize: 17, fontWeight: 600, border: "none", cursor: password && authStep !== "verifying" ? "pointer" : "default", marginTop: 14 }}
+                >
+                  {authStep === "verifying" ? "جارِ التحقق..." : "دخول"}
+                </button>
+              </>
+            )}
+          </div>
+        </div>
+
+        <button onClick={() => { window.location.hash = ""; window.location.search = ""; }} style={{ marginTop: 20, padding: "10px 24px", borderRadius: 12, background: "#FFFFFF", border: "1px solid #E5E5EA", color: "#0A84FF", fontSize: 15, fontWeight: 600, cursor: "pointer" }}>رجوع للتطبيق</button>
+        <div style={{ marginTop: 12, fontSize: 11, color: "#8E8E93" }}>v7.134 · basma-hma.vercel.app</div>
+      </div>
+    );
+  }
+
   return (
     <div style={{ direction: "rtl", fontFamily: "'IBM Plex Sans Arabic',-apple-system,sans-serif", minHeight: "100vh", background: "#F2F2F7", color: "#000", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", padding: 20 }}>
       <div style={{ width: 60, height: 60, borderRadius: 14, background: status === "success" ? "rgba(48,209,88,0.1)" : status === "error" ? "rgba(255,59,48,0.08)" : "rgba(10,132,255,0.1)", display: "flex", alignItems: "center", justifyContent: "center", marginBottom: 16 }}>
@@ -270,7 +394,7 @@ function UpdateScreen() {
         )}
       </div>
       <div style={{ fontSize: 22, fontWeight: 700 }}>تحديث النظام</div>
-      <div style={{ fontSize: 13, color: "#6E6E73", marginTop: 6 }}>بصمة HMA v7.133 — Pipeline كامل لكل مكلَّف على حدة</div>
+      <div style={{ fontSize: 13, color: "#6E6E73", marginTop: 6 }}>بصمة HMA v7.134 — تحديث آمن محمي بكلمة مرور المدير</div>
       
       <div style={{ marginTop: 20, width: "100%", maxWidth: 400 }}>
         <div style={{ background: "#FFFFFF", borderRadius: 14, padding: 20, border: "1px solid rgba(0,0,0,0.05)", boxShadow: "0 1px 3px rgba(0,0,0,0.08)" }}>
@@ -328,7 +452,7 @@ function UpdateScreen() {
       </div>
 
       <button onClick={() => { window.location.hash = ""; window.location.search = ""; }} style={{ marginTop: 20, padding: "10px 24px", borderRadius: 12, background: "#FFFFFF", border: "1px solid #E5E5EA", color: "#0A84FF", fontSize: 15, fontWeight: 600, cursor: "pointer" }}>رجوع للتطبيق</button>
-      <div style={{ marginTop: 12, fontSize: 11, color: "#8E8E93" }}>v7.133 · basma-hma.vercel.app</div>
+      <div style={{ marginTop: 12, fontSize: 11, color: "#8E8E93" }}>v7.134 · basma-hma.vercel.app</div>
     </div>
   );
 }
