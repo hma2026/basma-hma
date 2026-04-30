@@ -5,7 +5,7 @@ import { exportFormalWarning, exportInvestigationRecord, exportAffidavit, export
 import { t as tr, setLang, getLang, subscribeLangChange, isRTL } from "./i18n";
 
 const APP = "بصمة HMA";
-const VER = "7.134";
+const VER = "7.135";
 const CO = "هاني محمد عسيري للإستشارات الهندسية";
 const B = { blue: "#2B5EA7", yellow: "#FDD800", red: "#E2192C", black: "#1A1A1A", blueDk: "#1E4478", blueLt: "#EDF3FB", gold: "#D4A017" };
 
@@ -5000,6 +5000,8 @@ function Login({ onLogin }) {
       // v7.120 — HR manager (role: "hr" or "hr_manager") can also access AdminApp
       var isHR = d.employee && (d.employee.role === "hr" || d.employee.role === "hr_manager" || d.employee.accountRole === "hr_manager");
       if (d.ok && d.employee && (d.employee.isGeneralManager || d.employee.isAdmin || isHR)) {
+        // v7.135 — save session token
+        if (d.sessionToken) localStorage.setItem("basma_session_token", d.sessionToken);
         localStorage.setItem("basma_admin_email", email.toLowerCase().trim());
         // v7.120 — Pass the role so AdminApp knows if it's HR (limited) or Admin (full)
         onLogin(isHR && !d.employee.isAdmin && !d.employee.isGeneralManager ? "hr" : "manager");
@@ -5104,6 +5106,62 @@ function Login({ onLogin }) {
 
 // ═══════ MAIN DASHBOARD ═══════
 const API = '/api/data';
+// v7.135 — Session token helpers (admin)
+function getAdminSessionToken() {
+  try { return localStorage.getItem("basma_session_token") || ""; } catch(_) { return ""; }
+}
+function setAdminSessionToken(t) {
+  try { if (t) localStorage.setItem("basma_session_token", t); else localStorage.removeItem("basma_session_token"); } catch(_) {}
+}
+
+// v7.135 — Patch global fetch ONCE for AdminApp (idempotent with MobileApp)
+(function patchAdminFetchOnce(){
+  if (typeof window === 'undefined') return;
+  if (window.__basma_fetch_patched) return;
+  window.__basma_fetch_patched = true;
+  var origFetch = window.fetch.bind(window);
+  window.fetch = async function(input, init) {
+    try {
+      var url = typeof input === 'string' ? input : (input && input.url) || '';
+      var isApiCall = url.indexOf('/api/data') !== -1 || url.indexOf('/api/backup') !== -1;
+      if (isApiCall) {
+        init = init || {};
+        init.headers = init.headers || {};
+        if (init.headers instanceof Headers) {
+          var tok = getAdminSessionToken();
+          if (tok && !init.headers.has('x-session-token')) init.headers.set('x-session-token', tok);
+        } else {
+          if (!init.headers['x-session-token']) {
+            var tok2 = getAdminSessionToken();
+            if (tok2) init.headers['x-session-token'] = tok2;
+          }
+        }
+      }
+      var r = await origFetch(input, init);
+      if (isApiCall && r.status === 401) {
+        var isLoginCall = url.indexOf('action=login') !== -1
+          || url.indexOf('action=biometric-login') !== -1
+          || url.indexOf('action=biometric-register') !== -1;
+        if (!isLoginCall) {
+          try {
+            var rc = r.clone();
+            var d = await rc.json();
+            if (d && d.requireAuth) {
+              setTimeout(function(){
+                localStorage.removeItem("basma_session_token");
+                localStorage.removeItem("basma_admin_email"); localStorage.removeItem("basma_session_token");
+                localStorage.removeItem("basma_admin_role");
+                window.location.reload();
+              }, 100);
+            }
+          } catch(_) {}
+        }
+      }
+      return r;
+    } catch(e) { throw e; }
+  };
+})();
+
 const api = async (action, method = 'GET', body = null, params = '') => {
   try {
     const opts = { method, headers: { 'Content-Type': 'application/json' } };
@@ -5723,7 +5781,7 @@ function AdminAppInner() {
               window.location.reload();
             }}
             onLogout={function(){
-              localStorage.removeItem("basma_admin_email");
+              localStorage.removeItem("basma_admin_email"); localStorage.removeItem("basma_session_token");
               localStorage.removeItem("basma_admin_role");
               localStorage.removeItem("basma_last_mode");
               setLoggedIn(false);
@@ -6481,7 +6539,7 @@ function AdminAppInner() {
       )}
 
       {/* ═══ v6.93 — SETTINGS HUB (موحّد: 7 تابات فرعية) ═══ */}
-      {tab === "settings_hub" && <SettingsHub t={t} B={B} emps={safeEmps} userRole={role} onLogout={function(){ localStorage.removeItem("basma_admin_email"); localStorage.removeItem("basma_admin_role"); localStorage.removeItem("basma_last_mode"); setLoggedIn(false); }} onOpenOldSettings={function(k){ setTab("settings"); }} />}
+      {tab === "settings_hub" && <SettingsHub t={t} B={B} emps={safeEmps} userRole={role} onLogout={function(){ localStorage.removeItem("basma_admin_email"); localStorage.removeItem("basma_session_token"); localStorage.removeItem("basma_admin_role"); localStorage.removeItem("basma_last_mode"); setLoggedIn(false); }} onOpenOldSettings={function(k){ setTab("settings"); }} />}
 
       {/* ═══ SETTINGS ═══ */}
       {tab === "settings" && <>
@@ -15629,7 +15687,7 @@ function AdminAccountPanel({ t, B }) {
         setMsg("✅ تم الحفظ بنجاح");
         setForm(function(f){ return {...f, currentPassword: "", newPassword: "", confirmPassword: ""}; });
         if (form.newPassword) {
-          setTimeout(function(){ alert("تم تغيير كلمة المرور — سيتم تسجيل خروجك"); localStorage.removeItem("basma_admin_email"); localStorage.removeItem("basma_last_mode"); window.location.reload(); }, 1000);
+          setTimeout(function(){ alert("تم تغيير كلمة المرور — سيتم تسجيل خروجك"); localStorage.removeItem("basma_admin_email"); localStorage.removeItem("basma_session_token"); localStorage.removeItem("basma_last_mode"); window.location.reload(); }, 1000);
         }
       } else {
         setMsg("❌ " + (d.error || "فشل الحفظ"));

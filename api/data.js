@@ -890,13 +890,153 @@ async function calculateWorkDays(startDate, endDate) {
   };
 }
 
+/* ═══════════════════════════════════════════════════════════════════
+ * v7.135 — SESSION & AUTH SYSTEM
+ * ═══════════════════════════════════════════════════════════════════
+ * نظام جلسات حقيقي يحمي 228 endpoint
+ *
+ * - عند login: نُصدر sessionToken ونحفظه في Redis مع بيانات الموظف
+ * - مدة الجلسة: 24 ساعة (أو 30 يوم لو "تذكرني")
+ * - كل طلب لـ API يجب أن يحوي header: x-session-token
+ * - PUBLIC_ACTIONS: قائمة actions مفتوحة (قبل الدخول أو تكامل خارجي)
+ * - ADMIN_ACTIONS: قائمة actions تتطلب صلاحية مدير عام
+ * ═══════════════════════════════════════════════════════════════════ */
+
+// Actions مفتوحة بدون مصادقة (قبل الدخول أو تكامل خارجي)
+var PUBLIC_ACTIONS = new Set([
+  'login',
+  'biometric-login-challenge', 'biometric-login-verify',
+  'biometric-register-challenge', 'biometric-register-verify',
+  'biometric-devices',
+  'holidays', 'is-holiday', 'holiday-banner-config',
+  'sso-verify',
+  'tawasul-web-init',
+  'kadwar-employees', // ← endpoint يستدعيه كوادر للتزامن (سيُحمى لاحقاً بـ HMA_INTERNAL_KEY)
+  'vapid-public-key', // مفتاح عام للإشعارات
+]);
+
+// Actions تتطلب صلاحية مدير عام (admin/general manager فقط)
+var ADMIN_ONLY_ACTIONS = new Set([
+  'init',
+  'db-stats', 'db-cleanup', 'cleanup',
+  'blob-delete-all', 'blob-delete-basma-data', 'blob-list',
+  'kadwar-full-migration',
+  'kadwar-debug-export',
+  'export-all-keys',
+  'bulk-activate', 'bulk-deactivate',
+  'hr-permissions',
+]);
+
+async function createSession(employee, rememberMe) {
+  var crypto = await import('crypto');
+  var token = 'sess_' + Date.now() + '_' + crypto.randomBytes(16).toString('hex');
+  var ttl = rememberMe ? (30 * 24 * 60 * 60) : (24 * 60 * 60); // 30d or 24h
+  var sessionData = {
+    empId: employee.id,
+    idNumber: employee.idNumber,
+    email: employee.email,
+    isAdmin: !!(employee.isAdmin || employee.isGeneralManager || employee.role === 'admin' || employee.accountRole === 'admin'),
+    isHR: !!(employee.role === 'hr' || employee.accountRole === 'hr'),
+    isManager: !!(employee.isManager || employee.role === 'manager'),
+    createdAt: new Date().toISOString(),
+    rememberMe: !!rememberMe,
+  };
+  if (USE_REDIS) {
+    await redisFetch(['SET', 'basma:session:' + token, JSON.stringify(sessionData), 'EX', ttl]);
+  }
+  return { token: token, expiresIn: ttl, session: sessionData };
+}
+
+async function verifySession(token) {
+  if (!token || typeof token !== 'string' || !token.startsWith('sess_')) return null;
+  if (!USE_REDIS) return null;
+  try {
+    var r = await redisFetch(['GET', 'basma:session:' + token]);
+    if (!r || !r.result) return null;
+    var raw = r.result;
+    var data;
+    try { data = typeof raw === 'string' ? JSON.parse(raw) : raw; } catch(_) { return null; }
+    return data;
+  } catch(e) {
+    return null;
+  }
+}
+
+async function revokeSession(token) {
+  if (!token || !USE_REDIS) return;
+  try { await redisFetch(['DEL', 'basma:session:' + token]); } catch(_) {}
+}
+
+async function revokeAllSessionsFor(empId) {
+  if (!empId || !USE_REDIS) return;
+  // simple impl: scan all session keys (acceptable since session count is bounded)
+  try {
+    var cursor = '0';
+    do {
+      var scan = await redisFetch(['SCAN', cursor, 'MATCH', 'basma:session:*', 'COUNT', '500']);
+      if (!scan || !scan.result) break;
+      cursor = scan.result[0];
+      var keys = scan.result[1] || [];
+      for (var i = 0; i < keys.length; i++) {
+        try {
+          var v = await redisFetch(['GET', keys[i]]);
+          if (v && v.result) {
+            var data = typeof v.result === 'string' ? JSON.parse(v.result) : v.result;
+            if (data && data.empId === empId) {
+              await redisFetch(['DEL', keys[i]]);
+            }
+          }
+        } catch(_) {}
+      }
+    } while (cursor !== '0');
+  } catch(_) {}
+}
+
+// helper used by createSession: raw redis fetch
+async function redisFetch(cmdArr) {
+  if (!REDIS_URL || !REDIS_TOKEN) return null;
+  var r = await fetch(REDIS_URL, {
+    method: 'POST',
+    headers: { 'Authorization': 'Bearer ' + REDIS_TOKEN, 'Content-Type': 'application/json' },
+    body: JSON.stringify(cmdArr),
+  });
+  if (!r.ok) return null;
+  return await r.json();
+}
+
+
 export default async function handler(req, res) {
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Access-Control-Allow-Methods', 'GET,POST,PUT,DELETE,OPTIONS');
-  res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
+  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, x-session-token, x-internal-key');
   if (req.method === 'OPTIONS') return res.status(200).end();
 
   const { action } = req.query;
+
+  /* ═══ v7.135 — AUTH MIDDLEWARE ═══ */
+  var isPublic = PUBLIC_ACTIONS.has(action);
+  var internalKey = req.headers['x-internal-key'] || '';
+  var expectedInternalKey = (process.env.HMA_INTERNAL_KEY || '').trim();
+  var isInternalCall = expectedInternalKey && internalKey === expectedInternalKey;
+
+  var session = null;
+  if (!isPublic && !isInternalCall) {
+    var sessionToken = req.headers['x-session-token'] || '';
+    session = await verifySession(sessionToken);
+    if (!session) {
+      return res.status(401).json({
+        error: 'الجلسة غير صالحة أو منتهية. يجب إعادة تسجيل الدخول.',
+        requireAuth: true
+      });
+    }
+    if (ADMIN_ONLY_ACTIONS.has(action) && !session.isAdmin) {
+      return res.status(403).json({
+        error: 'هذي العملية تتطلب صلاحية المدير العام'
+      });
+    }
+  }
+  req.__session = session;
+
   try {
     switch (action) {
 
@@ -1151,7 +1291,9 @@ export default async function handler(req, res) {
         delete safeEmp.password;
         delete safeEmp.passwordSalt;
 
-        return res.json({ ok: true, employee: safeEmp, biometricUsed: true });
+        // v7.135 — Issue session token
+        var bioSess = await createSession(safeEmp, true); // biometric implies "remember me"
+        return res.json({ ok: true, employee: safeEmp, biometricUsed: true, sessionToken: bioSess.token, expiresIn: bioSess.expiresIn });
       }
 
       case 'biometric-devices': {
@@ -1187,19 +1329,22 @@ export default async function handler(req, res) {
         var body = req.body || {};
         var loginId = (body.username || body.empId || body.email || '').toLowerCase().trim();
         var password = body.password || body.code || '';
+        var rememberMe = !!body.rememberMe;
         if (!loginId || !password) return res.status(400).json({ error: 'بيانات ناقصة' });
 
         // 1. Check general manager (admin) — stored in basma
         var admin = await dbGet('admin_config');
         if (admin && admin.email && admin.email === loginId) {
           if (admin.password !== password) return res.status(401).json({ error: 'كلمة المرور خاطئة' });
-          return res.json({ ok: true, employee: {
+          var adminEmp = {
             id: admin.email, email: admin.email,
             name: admin.name || 'المدير العام',
             role: admin.role || 'المدير العام',
             branch: 'jed',
             isGeneralManager: true, isManager: true, isAdmin: true,
-          }});
+          };
+          var adminSess = await createSession(adminEmp, rememberMe);
+          return res.json({ ok: true, employee: adminEmp, sessionToken: adminSess.token, expiresIn: adminSess.expiresIn });
         }
 
         // 2. Regular employee — username + SHA256 password verification
@@ -1219,7 +1364,6 @@ export default async function handler(req, res) {
         var salt = emp.passwordSalt || 'hr_salt_2024';
         if (!storedHash) return res.status(403).json({ error: 'لم تتم مزامنة كلمة المرور بعد — راجع المشرف' });
 
-        // Compute SHA256 using Node crypto
         var crypto = await import('crypto');
         var computed = crypto.createHash('sha256').update(password + salt).digest('hex');
         if (computed.toLowerCase() !== String(storedHash).toLowerCase()) {
@@ -1230,7 +1374,23 @@ export default async function handler(req, res) {
         delete safeEmp.passwordHash;
         delete safeEmp.password;
         delete safeEmp.passwordSalt;
-        return res.json({ ok: true, employee: safeEmp });
+
+        // v7.135 — Issue session token
+        var empSess = await createSession(safeEmp, rememberMe);
+        return res.json({ ok: true, employee: safeEmp, sessionToken: empSess.token, expiresIn: empSess.expiresIn });
+      }
+
+      case 'logout': {
+        // v7.135 — Revoke session
+        var token = req.headers['x-session-token'] || '';
+        if (token) await revokeSession(token);
+        return res.json({ ok: true });
+      }
+
+      case 'session-info': {
+        // v7.135 — Return current session info (used by client to verify session validity)
+        if (!req.__session) return res.json({ ok: false });
+        return res.json({ ok: true, session: req.__session });
       }
 
       case 'employees': {

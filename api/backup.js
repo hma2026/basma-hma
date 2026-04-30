@@ -100,14 +100,47 @@ async function saveManifests(list) {
   await redis('SET', META_KEY, JSON.stringify(list));
 }
 
+/* ────── v7.135 — Session verification (admin-only access) ────── */
+async function verifyAdminSession(req) {
+  var token = req.headers['x-session-token'] || '';
+  if (!token || !token.startsWith('sess_')) return null;
+  try {
+    var r = await fetch(REDIS_URL, {
+      method: 'POST',
+      headers: { 'Authorization': 'Bearer ' + REDIS_TOKEN, 'Content-Type': 'application/json' },
+      body: JSON.stringify(['GET', 'basma:session:' + token]),
+    });
+    if (!r.ok) return null;
+    var j = await r.json();
+    if (!j || !j.result) return null;
+    var data = typeof j.result === 'string' ? JSON.parse(j.result) : j.result;
+    if (!data || !data.isAdmin) return null;
+    return data;
+  } catch(_) { return null; }
+}
+
 /* ────── Handler ────── */
 export default async function handler(req, res) {
   res.setHeader("Access-Control-Allow-Origin", "*");
   res.setHeader("Access-Control-Allow-Methods", "GET, POST, DELETE, OPTIONS");
-  res.setHeader("Access-Control-Allow-Headers", "Content-Type");
+  res.setHeader("Access-Control-Allow-Headers", "Content-Type, x-session-token, x-internal-key");
   if (req.method === "OPTIONS") return res.status(200).end();
 
   if (!REDIS_URL || !REDIS_TOKEN) return res.json({ error: 'Redis غير مفعّل' });
+
+  /* ═══ v7.135 — All backup operations require admin session OR internal key ═══ */
+  var internalKey = req.headers['x-internal-key'] || '';
+  var expectedInternalKey = (process.env.HMA_INTERNAL_KEY || '').trim();
+  var isInternal = expectedInternalKey && internalKey === expectedInternalKey;
+  if (!isInternal) {
+    var session = await verifyAdminSession(req);
+    if (!session) {
+      return res.status(401).json({
+        error: 'الوصول مقيَّد بالمدير العام. يجب تسجيل الدخول.',
+        requireAuth: true
+      });
+    }
+  }
 
   try {
     var action = req.query.action;

@@ -12,7 +12,7 @@ import { t as tr, setLang, getLang, getDir, isRTL, subscribeLangChange } from ".
 
 /* ═══════════ APP CONFIG (إعدادات التطبيق) ═══════════ */
 const APP_CONFIG = {
-  VER: "7.134",
+  VER: "7.135",
   NAME: "بصمة HMA",
   FULL_NAME: "نظام الحضور والانصراف الذكي",
   COMPANY: "هاني محمد عسيري للاستشارات الهندسية",
@@ -189,6 +189,73 @@ if (typeof document !== "undefined" && !document.getElementById("basma-css")) {
 /* v7.52 — orphan `useBodyScrollLock` (20 سطر) حُذفت */
 
 /* ── API Helper ── */
+// v7.135 — Session token helpers
+function getSessionToken() {
+  try { return localStorage.getItem("basma_session_token") || ""; } catch(_) { return ""; }
+}
+function setSessionToken(t) {
+  try { if (t) localStorage.setItem("basma_session_token", t); else localStorage.removeItem("basma_session_token"); } catch(_) {}
+}
+function handleAuthExpired() {
+  try {
+    localStorage.removeItem("basma_session_token");
+    localStorage.removeItem("basma_user");
+    window.location.reload();
+  } catch(_) {}
+}
+
+// v7.135 — Patch global fetch ONCE to inject session token + handle 401 for all /api/data calls
+(function patchFetchOnce(){
+  if (typeof window === 'undefined') return;
+  if (window.__basma_fetch_patched) return;
+  window.__basma_fetch_patched = true;
+  var origFetch = window.fetch.bind(window);
+  window.fetch = async function(input, init) {
+    try {
+      var url = typeof input === 'string' ? input : (input && input.url) || '';
+      var isApiCall = url.indexOf('/api/data') !== -1 || url.indexOf('/api/backup') !== -1;
+      if (isApiCall) {
+        init = init || {};
+        init.headers = init.headers || {};
+        // Normalize headers (could be Headers object or plain object)
+        if (init.headers instanceof Headers) {
+          var h = init.headers;
+          var tok = getSessionToken();
+          if (tok && !h.has('x-session-token')) h.set('x-session-token', tok);
+        } else {
+          if (!init.headers['x-session-token']) {
+            var tok2 = getSessionToken();
+            if (tok2) init.headers['x-session-token'] = tok2;
+          }
+        }
+      }
+      var r = await origFetch(input, init);
+      if (isApiCall && r.status === 401) {
+        // Don't reload for public endpoints
+        var isLoginCall = url.indexOf('action=login') !== -1
+          || url.indexOf('action=biometric-login') !== -1
+          || url.indexOf('action=biometric-register') !== -1
+          || url.indexOf('action=holiday') !== -1
+          || url.indexOf('action=is-holiday') !== -1
+          || url.indexOf('action=vapid-public-key') !== -1;
+        if (!isLoginCall) {
+          // Clone response to read it without consuming
+          try {
+            var rc = r.clone();
+            var d = await rc.json();
+            if (d && d.requireAuth) {
+              setTimeout(function(){ handleAuthExpired(); }, 100);
+            }
+          } catch(_) {}
+        }
+      }
+      return r;
+    } catch(e) {
+      throw e;
+    }
+  };
+})();
+
 async function api(action, opts = {}) {
   const { method = "GET", body, params = {} } = opts;
   const q = new URLSearchParams({ action, ...params }).toString();
@@ -1629,6 +1696,8 @@ function MobileAppInner() {
     try {
       const r = await api("login", { method: "POST", body: { username: username, password: password } });
       if (r.ok) {
+        // v7.135 — save session token
+        if (r.sessionToken) setSessionToken(r.sessionToken);
         setUser(r.employee);
         localStorage.setItem("basma_user", JSON.stringify(r.employee));
         await loadData(r.employee);
@@ -1706,6 +1775,8 @@ function MobileAppInner() {
       }
 
       setUser(vData.employee);
+      // v7.135 — save session token from biometric login
+      if (vData.sessionToken) setSessionToken(vData.sessionToken);
       localStorage.setItem("basma_user", JSON.stringify(vData.employee));
       await loadData(vData.employee);
       setInitDone(true);
@@ -1844,7 +1915,10 @@ function MobileAppInner() {
     }, 3000);
   }, [online]);
 
-  function logout() {
+  async function logout() {
+    // v7.135 — revoke session on server
+    try { await api("logout", { method: "POST" }); } catch(_) {}
+    setSessionToken("");
     setUser(null); setBranch(null); setTodayAtt([]); setAllAtt([]);
     localStorage.removeItem("basma_user");
     setPage("home");
