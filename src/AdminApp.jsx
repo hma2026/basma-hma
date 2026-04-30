@@ -5587,6 +5587,8 @@ function AdminAppInner() {
         // v7.124 — صلاحيات HR (للمدير العام فقط)
         !isHRRole && { id: "hr_permissions", icon: "🔐", label: "صلاحيات HR" },
         { id: "settings_hub", icon: "⚙️", label: isHRRole ? "إعدادات الشركة" : "إعدادات النظام" },
+        // v7.134 — تحديث النظام (للمدير العام فقط، محمي بكلمة مرور)
+        !isHRRole && { id: "system_update", icon: "🔒", label: "تحديث النظام" },
       ].filter(Boolean),
     },
   // فلترة المجموعات الفارغة (في حال HR لا يملك أي صلاحية من المجموعة)
@@ -6431,6 +6433,52 @@ function AdminAppInner() {
 
       {/* ═══ v6.93 — LEAVES HUB (موحّد: طلبات+تسليم + أرصدة + سجل قديم) ═══ */}
       {tab === "leaves_hub" && <LeavesHub t={t} B={B} emps={safeEmps} leaves={leaves} role={role} approve={approve} reject={reject} />}
+
+      {/* ═══ v7.134 — SYSTEM UPDATE (محمي بكلمة مرور المدير العام) ═══ */}
+      {tab === "system_update" && (
+        <div style={{ padding: 24, maxWidth: 600, margin: "20px auto" }}>
+          <div style={{ background: t.card, borderRadius: 14, padding: 24, border: "1px solid " + t.sep, boxShadow: "0 1px 3px rgba(0,0,0,0.05)" }}>
+            <div style={{ display: "flex", alignItems: "center", gap: 14, marginBottom: 16 }}>
+              <div style={{ width: 56, height: 56, borderRadius: 14, background: "rgba(255,159,10,0.1)", display: "flex", alignItems: "center", justifyContent: "center" }}>
+                <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="#FF9F0A" strokeWidth="1.5" strokeLinecap="round"><path d="M19 11H5a2 2 0 00-2 2v7a2 2 0 002 2h14a2 2 0 002-2v-7a2 2 0 00-2-2zM7 11V7a5 5 0 0110 0v4"/></svg>
+              </div>
+              <div>
+                <div style={{ fontSize: 20, fontWeight: 800, color: t.tx }}>تحديث النظام</div>
+                <div style={{ fontSize: 12, color: t.tx2, marginTop: 4 }}>صفحة محمية بكلمة مرور المدير العام</div>
+              </div>
+            </div>
+
+            <div style={{ padding: 14, borderRadius: 10, background: "rgba(255,159,10,0.06)", border: "1px solid rgba(255,159,10,0.2)", marginBottom: 16 }}>
+              <div style={{ fontSize: 13, fontWeight: 700, color: "#B47314", marginBottom: 6 }}>⚠️ تنبيه أمني</div>
+              <div style={{ fontSize: 12, color: t.tx2, lineHeight: 1.7 }}>
+                هذي الصفحة تستبدل كود النظام بالكامل من ملف ZIP. الوصول إليها مقيَّد بكلمة مرور إضافية (غير كلمة مرور حسابك)، مع قفل تلقائي بعد 3 محاولات خاطئة لمدة 15 دقيقة.
+              </div>
+            </div>
+
+            <div style={{ fontSize: 13, color: t.tx2, lineHeight: 1.8, marginBottom: 16 }}>
+              <strong style={{ color: t.tx }}>عند الضغط على الزر أدناه:</strong>
+              <ul style={{ paddingRight: 20, marginTop: 8 }}>
+                <li>تُفتح صفحة /update في تبويب جديد</li>
+                <li>تطلب منك كلمة مرور المدير الخاصة بالتحديث</li>
+                <li>بعد التحقق، تستطيع رفع ملف ZIP الجديد</li>
+                <li>الجلسة تنتهي تلقائياً بعد 30 دقيقة</li>
+              </ul>
+            </div>
+
+            <button
+              onClick={function(){ window.open(window.location.origin + "/#update", "_blank"); }}
+              style={{ width: "100%", height: 48, borderRadius: 12, background: "#FF9F0A", color: "#fff", fontSize: 15, fontWeight: 700, border: "none", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", gap: 8 }}
+            >
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4M17 8l-5-5-5 5M12 3v12"/></svg>
+              فتح صفحة التحديث
+            </button>
+
+            <div style={{ marginTop: 16, padding: 12, borderRadius: 10, background: t.bg, fontSize: 11, color: t.tx2, lineHeight: 1.6 }}>
+              <strong style={{ color: t.tx }}>سجل التحديثات الأخيرة:</strong> يُحفظ في Redis (آخر 200 محاولة دخول/رفع، شاملاً IP والوقت والنتيجة).
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* ═══ v6.93 — SETTINGS HUB (موحّد: 7 تابات فرعية) ═══ */}
       {tab === "settings_hub" && <SettingsHub t={t} B={B} emps={safeEmps} userRole={role} onLogout={function(){ localStorage.removeItem("basma_admin_email"); localStorage.removeItem("basma_admin_role"); localStorage.removeItem("basma_last_mode"); setLoggedIn(false); }} onOpenOldSettings={function(k){ setTab("settings"); }} />}
