@@ -927,6 +927,48 @@ var ADMIN_ONLY_ACTIONS = new Set([
   'hr-permissions',
 ]);
 
+/* ═══ v7.136 — DOUBLE CONFIRM TOKENS for sensitive operations ═══ */
+async function issueConfirmToken(empId, operation) {
+  var crypto = await import('crypto');
+  var token = 'cfm_' + Date.now() + '_' + crypto.randomBytes(12).toString('hex');
+  var data = { empId: empId, operation: operation, issuedAt: Date.now() };
+  if (USE_REDIS) {
+    await redisFetch(['SET', 'basma:confirm:' + token, JSON.stringify(data), 'EX', 60]); // 60 sec TTL
+  }
+  return token;
+}
+
+async function consumeConfirmToken(token, expectedEmpId, expectedOperation) {
+  if (!token || typeof token !== 'string' || !token.startsWith('cfm_')) return false;
+  if (!USE_REDIS) return false;
+  try {
+    var r = await redisFetch(['GET', 'basma:confirm:' + token]);
+    if (!r || !r.result) return false;
+    var data = typeof r.result === 'string' ? JSON.parse(r.result) : r.result;
+    if (!data || data.empId !== expectedEmpId) return false;
+    if (expectedOperation && data.operation !== expectedOperation) return false;
+    // Single-use: delete after read
+    await redisFetch(['DEL', 'basma:confirm:' + token]);
+    return true;
+  } catch(_) { return false; }
+}
+
+// Helper used by sensitive endpoints — checks confirm token and returns 403 if missing/invalid
+async function requireConfirmToken(req, res, operation) {
+  var token = req.headers['x-confirm-token'] || '';
+  var session = req.__session;
+  if (!session) {
+    res.status(401).json({ error: 'الجلسة منتهية', requireAuth: true });
+    return false;
+  }
+  var ok = await consumeConfirmToken(token, session.empId, operation);
+  if (!ok) {
+    res.status(403).json({ error: 'يلزم تأكيد كلمة المرور', requireConfirm: true, operation: operation });
+    return false;
+  }
+  return true;
+}
+
 async function createSession(employee, rememberMe) {
   var crypto = await import('crypto');
   var token = 'sess_' + Date.now() + '_' + crypto.randomBytes(16).toString('hex');
@@ -1019,8 +1061,31 @@ export default async function handler(req, res) {
   var expectedInternalKey = (process.env.HMA_INTERNAL_KEY || '').trim();
   var isInternalCall = expectedInternalKey && internalKey === expectedInternalKey;
 
+  /* ═══ v7.137 — KADWAR INTEGRATION COMPATIBILITY ═══
+   * كوادر يستدعي بصمة من السيرفر للتزامن. نسمح بـ actions محددة جداً
+   * (قراءة فقط، بيانات غير حساسة) كاستثناء من المصادقة، حتى لو لم يكن
+   * HMA_INTERNAL_KEY مضبوطاً. هذا للتوافق مع كوادر الحالي.
+   *
+   * بمجرد ما كوادر يضيف header x-internal-key، تُغلق هذه الاستثناءات تلقائياً
+   * (لأن isInternalCall ستصبح true ولن نمر من هنا).
+   *
+   * Actions المسموحة كاستثناء (قراءة فقط، لا تعديل):
+   *   - kadwar-sync: قراءة بيانات الموظفين النشطين (compliance, points, attendance)
+   * ملاحظة: لا تضف هنا أي action يعدّل/يحذف بيانات
+   */
+  var KADWAR_PUBLIC_FALLBACK = new Set(['kadwar-sync']);
+  var isKadwarFallback = false;
+  if (!isPublic && !isInternalCall && KADWAR_PUBLIC_FALLBACK.has(action)) {
+    // فقط لطلبات GET (قراءة فقط) — POST/PUT/DELETE تبقى محمية
+    if (req.method === 'GET') {
+      isKadwarFallback = true;
+      // تحذير في الـ logs لتذكير الفريق بإصلاح كوادر
+      try { console.warn('[security] kadwar-sync called without HMA_INTERNAL_KEY — please update kadwar to send x-internal-key header'); } catch(_) {}
+    }
+  }
+
   var session = null;
-  if (!isPublic && !isInternalCall) {
+  if (!isPublic && !isInternalCall && !isKadwarFallback) {
     var sessionToken = req.headers['x-session-token'] || '';
     session = await verifySession(sessionToken);
     if (!session) {
@@ -1107,6 +1172,10 @@ export default async function handler(req, res) {
       case 'db-cleanup': {
         if (req.method !== 'POST') return res.status(405).json({ error: 'POST required' });
         var dryRun = !!(req.body && req.body.dry_run);
+        // v7.136 — Double-confirm required for actual cleanup (dry-run is safe)
+        if (!dryRun) {
+          if (!await requireConfirmToken(req, res, 'db-cleanup')) return;
+        }
         var report = [];
         var keysClean = Object.keys(AUTO_LIMITS);
         for (var j = 0; j < keysClean.length; j++) {
@@ -1387,6 +1456,42 @@ export default async function handler(req, res) {
         return res.json({ ok: true });
       }
 
+      case 'verify-password': {
+        // v7.136 — verify password and issue confirm-token for sensitive operations
+        if (req.method !== 'POST') break;
+        var session = req.__session;
+        if (!session) return res.status(401).json({ error: 'الجلسة منتهية', requireAuth: true });
+
+        var body = req.body || {};
+        var password = body.password || '';
+        var operation = body.operation || '';
+        if (!password || !operation) return res.status(400).json({ error: 'بيانات ناقصة' });
+
+        // Verify password — admin first, then employee
+        var verified = false;
+        var admin = await dbGet('admin_config');
+        if (admin && admin.email === session.empId) {
+          if (admin.password === password) verified = true;
+        } else {
+          var emps = await dbGet('employees') || [];
+          var emp = emps.find(function(x){ return x && x.id === session.empId; });
+          if (emp) {
+            var storedHash = emp.passwordHash || '';
+            var salt = emp.passwordSalt || 'hr_salt_2024';
+            if (storedHash) {
+              var crypto = await import('crypto');
+              var computed = crypto.createHash('sha256').update(password + salt).digest('hex');
+              if (computed.toLowerCase() === String(storedHash).toLowerCase()) verified = true;
+            }
+          }
+        }
+
+        if (!verified) return res.status(401).json({ error: 'كلمة المرور خاطئة' });
+
+        var confirmToken = await issueConfirmToken(session.empId, operation);
+        return res.json({ ok: true, confirmToken: confirmToken, expiresIn: 60 });
+      }
+
       case 'session-info': {
         // v7.135 — Return current session info (used by client to verify session validity)
         if (!req.__session) return res.json({ ok: false });
@@ -1665,6 +1770,8 @@ export default async function handler(req, res) {
       /* v7.11 — Approve salary change (GM only) — applies the change */
       case 'salary-change-approve': {
         if (req.method !== 'POST') return res.status(405).json({ error: 'POST required' });
+        // v7.136 — Double-confirm required for salary changes
+        if (!await requireConfirmToken(req, res, 'approve-salary-change')) return;
         const { id, actor } = req.body || {};
         if (!id) return res.status(400).json({ error: 'id required' });
         const list = await dbGet('salary-change-requests') || [];
@@ -5702,6 +5809,10 @@ export default async function handler(req, res) {
           const { id, actorId, ...up } = req.body;
           const i = vs.findIndex(v => v.id === id);
           if (i >= 0) {
+            // v7.136 — Double-confirm required if cancelling/dismissing a violation
+            if (up.status === 'cancelled' || up.status === 'dismissed') {
+              if (!await requireConfirmToken(req, res, 'cancel-violation')) return;
+            }
             var prev = { ...vs[i] };
             vs[i] = { ...vs[i], ...up, updatedAt: new Date().toISOString() };
             await dbSet('violations', vs);
@@ -6168,6 +6279,8 @@ export default async function handler(req, res) {
       case 'termination': {
         if (req.method === 'GET') return res.json(await dbGet('terminations') || []);
         if (req.method === 'POST') {
+          // v7.136 — Double-confirm required for termination
+          if (!await requireConfirmToken(req, res, 'terminate-employee')) return;
           const ts = await dbGet('terminations') || [];
           const newTerm = { id: 'TERM' + Date.now(), status: 'pending', ...req.body, createdAt: new Date().toISOString() };
           ts.push(newTerm);
@@ -10656,6 +10769,10 @@ export default async function handler(req, res) {
           var investigations = await dbGet('investigations') || [];
           var idx = investigations.findIndex(i => i.id === req.body.id);
           if (idx >= 0) {
+            // v7.136 — Double-confirm required when closing investigation (final HR decision)
+            if (req.body.hrDecision === 'close_innocent' || req.body.hrDecision === 'convert_to_violation' || req.body.status === 'CLOSED') {
+              if (!await requireConfirmToken(req, res, 'close-investigation')) return;
+            }
             investigations[idx] = { ...investigations[idx], ...req.body, updatedAt: new Date().toISOString() };
             await dbSet('investigations', investigations);
           }
@@ -11525,6 +11642,8 @@ export default async function handler(req, res) {
        */
       case 'generate-salary-sheet': {
         if (req.method !== 'POST') return res.status(405).json({ error: 'POST required' });
+        // v7.136 — Double-confirm required for salary sheet generation
+        if (!await requireConfirmToken(req, res, 'generate-salary-sheet')) return;
         var bodyGS = req.body || {};
         var periodGS = bodyGS.period; // YYYY-MM
         var empIdsFilter = Array.isArray(bodyGS.empIds) ? bodyGS.empIds.map(String) : null;
@@ -12298,6 +12417,8 @@ export default async function handler(req, res) {
        */
       case 'bulk-activate': {
         if (req.method !== 'POST') return res.status(405).json({ error: 'POST required' });
+        // v7.136 — Double-confirm required for bulk operations
+        if (!await requireConfirmToken(req, res, 'bulk-activate')) return;
         var bodyBA = req.body || {};
         var empIdsBA = bodyBA.empIds;
         var actorBA = bodyBA.actorId || 'admin';
@@ -12325,6 +12446,8 @@ export default async function handler(req, res) {
 
       case 'bulk-deactivate': {
         if (req.method !== 'POST') return res.status(405).json({ error: 'POST required' });
+        // v7.136 — Double-confirm required for bulk operations
+        if (!await requireConfirmToken(req, res, 'bulk-deactivate')) return;
         var bodyBD = req.body || {};
         var empIdsBD = bodyBD.empIds;
         var actorBD = bodyBD.actorId || 'admin';

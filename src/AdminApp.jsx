@@ -5,7 +5,7 @@ import { exportFormalWarning, exportInvestigationRecord, exportAffidavit, export
 import { t as tr, setLang, getLang, subscribeLangChange, isRTL } from "./i18n";
 
 const APP = "بصمة HMA";
-const VER = "7.135";
+const VER = "7.137";
 const CO = "هاني محمد عسيري للإستشارات الهندسية";
 const B = { blue: "#2B5EA7", yellow: "#FDD800", red: "#E2192C", black: "#1A1A1A", blueDk: "#1E4478", blueLt: "#EDF3FB", gold: "#D4A017" };
 
@@ -5157,19 +5157,103 @@ function setAdminSessionToken(t) {
           } catch(_) {}
         }
       }
+      // v7.136 — Auto-handle requireConfirm 403 for direct fetch() calls
+      if (isApiCall && r.status === 403) {
+        try {
+          var rc2 = r.clone();
+          var d2 = await rc2.json();
+          if (d2 && d2.requireConfirm && d2.operation) {
+            // Don't auto-retry from inside the patched fetch (avoid infinite loops);
+            // instead, surface the requireConfirm response so callers can handle it.
+            // Modern callers should use api() helper which handles retry.
+            // For legacy callers: dispatch event so they can re-issue the call.
+          }
+        } catch(_) {}
+      }
       return r;
     } catch(e) { throw e; }
   };
 })();
 
-const api = async (action, method = 'GET', body = null, params = '') => {
+const api = async (action, method = 'GET', body = null, params = '', confirmToken = null) => {
   try {
     const opts = { method, headers: { 'Content-Type': 'application/json' } };
+    if (confirmToken) opts.headers['x-confirm-token'] = confirmToken;
     if (body) opts.body = JSON.stringify(body);
     const r = await fetch(`${API}?action=${action}${params}`, opts);
-    return await r.json();
+    var d = null;
+    try { d = await r.json(); } catch(_) {}
+
+    // v7.136 — Auto-handle requireConfirm
+    if (r.status === 403 && d && d.requireConfirm && !confirmToken) {
+      // Server says we need a confirm token — pop the password modal
+      var operationLabel = OPERATION_LABELS[d.operation] || ('تأكيد العملية: ' + d.operation);
+      var confirmResult = await confirmExecute(d.operation, operationLabel);
+      if (confirmResult && confirmResult.ok && confirmResult.confirmToken) {
+        // Retry with confirm token
+        return await api(action, method, body, params, confirmResult.confirmToken);
+      }
+      // User cancelled or failed
+      return { error: 'تم الإلغاء', cancelled: true };
+    }
+    return d;
   } catch { return null; }
 };
+
+// v7.136 — Operation labels (for confirm modal)
+var OPERATION_LABELS = {
+  'terminate-employee': 'إنهاء خدمة الموظف — هذي عملية حساسة لا يمكن التراجع عنها',
+  'approve-salary-change': 'اعتماد تعديل راتب موظف — سيُطبَّق على المسير القادم',
+  'generate-salary-sheet': 'إصدار مسير الرواتب — سيُحتسب لكل الموظفين النشطين',
+  'cancel-violation': 'إلغاء مخالفة — ستُحذف من السجل التأديبي',
+  'close-investigation': 'إغلاق التحقيق نهائياً — لا يمكن التراجع عن قرار HR',
+  'bulk-activate': 'تفعيل موظفين بالجملة — سيُطبَّق على عدة موظفين',
+  'bulk-deactivate': 'إيقاف موظفين بالجملة — سيُطبَّق على عدة موظفين',
+  'db-cleanup': 'تنظيف قاعدة البيانات — ستُحذف بيانات قديمة من المفاتيح المتضخمة',
+  'delete-backup': 'حذف نسخة احتياطية — لا يمكن التراجع عن الحذف',
+};
+
+/* ═══════════ v7.136 — DOUBLE-CONFIRM HELPER ═══════════
+ * window.__confirmExecute(operationKey, operationLabel, executeFn)
+ * - يفتح modal لإدخال كلمة المرور
+ * - يطلب confirmToken من السيرفر (verify-password)
+ * - يُمرّر التوكن لـ executeFn(confirmToken)
+ * - executeFn هي دالة async تُرسل الطلب الحساس مع header x-confirm-token
+ * ═══════════════════════════════════════════════════════ */
+if (typeof window !== 'undefined' && !window.__basma_confirm_install) {
+  window.__basma_confirm_install = true;
+  window.__pendingConfirm = null; // { operation, label, resolve, reject }
+}
+
+async function confirmExecute(operationKey, operationLabel) {
+  // Returns Promise that resolves with { ok: true, confirmToken } or { ok: false, error }
+  return new Promise(function(resolve){
+    if (typeof window !== 'undefined') {
+      window.__pendingConfirm = {
+        operation: operationKey,
+        label: operationLabel,
+        resolve: resolve,
+      };
+      // Trigger modal display via custom event
+      window.dispatchEvent(new CustomEvent('basma-confirm-show'));
+    } else {
+      resolve({ ok: false, error: 'no window' });
+    }
+  });
+}
+
+// Helper: send a sensitive request with confirm token (used by sensitive operations)
+async function sensitiveRequest(operationKey, operationLabel, requestFn) {
+  // 1. Get confirm token via password modal
+  var c = await confirmExecute(operationKey, operationLabel);
+  if (!c || !c.ok) return { error: c && c.error ? c.error : 'تم الإلغاء', cancelled: !c || !c.error };
+  // 2. Execute the actual request with confirm token in header
+  try {
+    return await requestFn(c.confirmToken);
+  } catch(e) {
+    return { error: e.message || 'خطأ' };
+  }
+}
 
 /* ═══════════ ERROR BOUNDARY — v7.126 — يحمي من الشاشة البيضاء ═══════════ */
 class AdminErrorBoundary extends React.Component {
@@ -5238,6 +5322,112 @@ class AdminErrorBoundary extends React.Component {
     }
     return this.props.children;
   }
+}
+
+/* ═══════════ v7.136 — CONFIRM PASSWORD MODAL ═══════════
+ * يُعرض عند طلب عملية حساسة. يستمع لـ event 'basma-confirm-show'
+ * ويستخدم window.__pendingConfirm لتحديد العملية.
+ * ═══════════════════════════════════════════════════════ */
+function ConfirmPasswordModal({ t, B }) {
+  const [visible, setVisible] = useState(false);
+  const [password, setPassword] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState("");
+  const [info, setInfo] = useState({ operation: "", label: "" });
+
+  useEffect(function(){
+    function onShow() {
+      var p = window.__pendingConfirm;
+      if (!p) return;
+      setInfo({ operation: p.operation, label: p.label });
+      setPassword(""); setErr(""); setBusy(false);
+      setVisible(true);
+    }
+    window.addEventListener('basma-confirm-show', onShow);
+    return function(){ window.removeEventListener('basma-confirm-show', onShow); };
+  }, []);
+
+  function close(result) {
+    setVisible(false);
+    var p = window.__pendingConfirm;
+    window.__pendingConfirm = null;
+    if (p && p.resolve) p.resolve(result);
+  }
+
+  async function doVerify() {
+    if (!password) { setErr("أدخل كلمة المرور"); return; }
+    setBusy(true); setErr("");
+    try {
+      var r = await fetch('/api/data?action=verify-password', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'x-session-token': localStorage.getItem("basma_session_token") || "",
+        },
+        body: JSON.stringify({ password: password, operation: info.operation }),
+      });
+      var d = await r.json();
+      if (r.ok && d.ok && d.confirmToken) {
+        close({ ok: true, confirmToken: d.confirmToken });
+      } else {
+        setErr(d.error || "كلمة مرور خاطئة");
+        setBusy(false);
+      }
+    } catch(e) {
+      setErr("خطأ في الاتصال");
+      setBusy(false);
+    }
+  }
+
+  if (!visible) return null;
+
+  return React.createElement('div', {
+    style: { position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.55)', zIndex: 99999, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16, direction: 'rtl' }
+  },
+    React.createElement('div', {
+      style: { background: t.card, borderRadius: 14, padding: 20, maxWidth: 420, width: '100%', boxShadow: '0 20px 50px rgba(0,0,0,0.3)' }
+    },
+      React.createElement('div', { style: { display: 'flex', alignItems: 'center', gap: 12, marginBottom: 14 } },
+        React.createElement('div', {
+          style: { width: 48, height: 48, borderRadius: 12, background: 'rgba(239,68,68,0.1)', display: 'flex', alignItems: 'center', justifyContent: 'center' }
+        }, '🔐'),
+        React.createElement('div', null,
+          React.createElement('div', { style: { fontSize: 17, fontWeight: 800, color: t.tx } }, 'تأكيد العملية'),
+          React.createElement('div', { style: { fontSize: 11, color: t.tx2, marginTop: 2 } }, 'يلزم إدخال كلمة المرور للمتابعة')
+        )
+      ),
+      React.createElement('div', {
+        style: { padding: 12, borderRadius: 10, background: 'rgba(239,68,68,0.05)', border: '1px solid rgba(239,68,68,0.15)', marginBottom: 14, fontSize: 13, color: t.tx, lineHeight: 1.6 }
+      }, info.label || info.operation),
+      React.createElement('input', {
+        type: 'password',
+        value: password,
+        onChange: function(e){ setPassword(e.target.value); setErr(""); },
+        onKeyDown: function(e){ if (e.key === 'Enter' && !busy) doVerify(); },
+        placeholder: 'كلمة المرور',
+        autoFocus: true,
+        disabled: busy,
+        style: { width: '100%', height: 44, borderRadius: 10, border: '1px solid ' + t.sep, padding: '0 14px', fontSize: 15, fontFamily: 'inherit', boxSizing: 'border-box', background: busy ? t.bg : t.card, color: t.tx }
+      }),
+      err && React.createElement('div', {
+        style: { marginTop: 8, fontSize: 12, color: '#EF4444', fontWeight: 600 }
+      }, err),
+      React.createElement('div', {
+        style: { display: 'flex', gap: 8, marginTop: 16 }
+      },
+        React.createElement('button', {
+          onClick: function(){ close({ ok: false, error: 'cancelled', cancelled: true }); },
+          disabled: busy,
+          style: { flex: 1, height: 44, borderRadius: 10, background: t.bg, color: t.tx2, fontSize: 14, fontWeight: 600, border: '1px solid ' + t.sep, cursor: 'pointer' }
+        }, 'إلغاء'),
+        React.createElement('button', {
+          onClick: doVerify,
+          disabled: busy || !password,
+          style: { flex: 1, height: 44, borderRadius: 10, background: '#EF4444', color: '#fff', fontSize: 14, fontWeight: 700, border: 'none', cursor: busy || !password ? 'default' : 'pointer', opacity: busy || !password ? 0.6 : 1 }
+        }, busy ? 'جارِ التحقق...' : 'تأكيد')
+      )
+    )
+  );
 }
 
 export default function AdminApp() {
@@ -5656,6 +5846,8 @@ function AdminAppInner() {
   const sideItems = sideGroups.reduce(function(acc, g){ return acc.concat(g.items); }, []);
 
   return (<div style={{ direction: "rtl", fontFamily: Fn, display: "flex", minHeight: "100vh", background: t.bg }}>
+    {/* v7.136 — Confirm password modal (mounted always, shows when needed) */}
+    <ConfirmPasswordModal t={t} B={B} />
     <style>{`
       button:active{transform:scale(.97)!important}
       ::-webkit-scrollbar{width:6px}

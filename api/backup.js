@@ -279,8 +279,40 @@ export default async function handler(req, res) {
       return res.json({ success: true, restoredCount: restored, totalKeys: totalKeys });
     }
 
-    /* ═══ DELETE ═══ */
+    /* ═══ DELETE — v7.136 محمي بتأكيد كلمة مرور ═══ */
     if (action === 'delete' && req.method === 'POST') {
+      // v7.136 — verify confirm token (issued by /api/data?action=verify-password)
+      var confirmTok = req.headers['x-confirm-token'] || '';
+      if (!confirmTok || !confirmTok.startsWith('cfm_')) {
+        return res.status(403).json({ error: 'يلزم تأكيد كلمة المرور', requireConfirm: true, operation: 'delete-backup' });
+      }
+      // Validate confirm token via Redis (single-use)
+      var session2 = await verifyAdminSession(req);
+      if (!session2) return res.status(401).json({ error: 'الجلسة منتهية', requireAuth: true });
+      try {
+        var rTok = await fetch(REDIS_URL, {
+          method: 'POST',
+          headers: { 'Authorization': 'Bearer ' + REDIS_TOKEN, 'Content-Type': 'application/json' },
+          body: JSON.stringify(['GET', 'basma:confirm:' + confirmTok]),
+        });
+        var jTok = await rTok.json();
+        if (!jTok || !jTok.result) {
+          return res.status(403).json({ error: 'انتهى رمز التأكيد', requireConfirm: true, operation: 'delete-backup' });
+        }
+        var dataTok = typeof jTok.result === 'string' ? JSON.parse(jTok.result) : jTok.result;
+        if (!dataTok || dataTok.empId !== session2.empId || dataTok.operation !== 'delete-backup') {
+          return res.status(403).json({ error: 'رمز التأكيد غير صالح', requireConfirm: true, operation: 'delete-backup' });
+        }
+        // Single-use: delete after read
+        await fetch(REDIS_URL, {
+          method: 'POST',
+          headers: { 'Authorization': 'Bearer ' + REDIS_TOKEN, 'Content-Type': 'application/json' },
+          body: JSON.stringify(['DEL', 'basma:confirm:' + confirmTok]),
+        });
+      } catch(_) {
+        return res.status(500).json({ error: 'فشل التحقق من رمز التأكيد' });
+      }
+
       var { backupId } = req.body || {};
       if (!backupId) return res.json({ error: 'backupId required' });
       var manifests = await getManifests();
