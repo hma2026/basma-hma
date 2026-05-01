@@ -1,8 +1,15 @@
 # PRODUCTION-TESTS-v7.140.md
-## Basma Integration — Production Test Pack
+## Basma Integration — Production Test Pack (v7.140.1)
 
-**النطاق:** اختبار endpoints التكامل في الإنتاج بعد نشر `Basma v7.140`
-(Phase 0 + Phase 2 + Phase 3).
+**النطاق:** اختبار endpoints التكامل في الإنتاج بعد نشر `Basma v7.140.1`
+(Phase 0 + Phase 2 + Phase 3 Fix).
+
+**معمارية Phase 3 (مهم):**
+- `ensure-kawader-employee` يكتب فقط في:
+  - `basma:employee_ref:{employeeId}` (سجل المرجع)
+  - `basma:employee_ref_idx` (فهرس الـ IDs المُموَّن لها)
+- `basma-employee-ref` يقرأ فقط من `basma:employee_ref:{employeeId}`
+- **لا يكتب أو يقرأ من `basma:employees` نهائيًا**
 
 ---
 
@@ -10,7 +17,7 @@
 
 - **لا تلصق `HMA_INTERNAL_KEY` داخل هذا التقرير أو داخل المحادثة أو في أي ملف يُحفظ في الـ git.**
 - **لا تنسخ الـ JSON responses الكاملة في التقرير — فقط الـ status code و `ok` و `error.code`.**
-- **إذا لاحظت في أي response حقول مثل `passwordHash`, `passwordSalt`, `idNumber`, `salary`, `tokens` — يُعتبر الاختبار FAIL واتصل بفريق التطوير فوراً.**
+- **إذا لاحظت في أي response حقول مثل `passwordHash`, `passwordSalt`, `idNumber`, `salary`, `tokens`, `faces`, `username`, `hasAccount`, `dob`, `joinDate`, `sceNumber` — يُعتبر الاختبار FAIL واتصل بفريق التطوير فوراً.**
 - كل الاختبارات هنا **GET فقط** — لا تستخدم POST/PUT/DELETE في أي اختبار إنتاج.
 - لا اختبار يلمس `basma:attendance` أو يعدّل بيانات.
 
@@ -28,7 +35,7 @@ $env:HMA_INTERNAL_KEY = "ضع_المفتاح_هنا"
 # عنوان بصمة (الإنتاج)
 $env:BASMA_BASE_URL = "https://b.hma.engineer"
 
-# موظف للاختبار — استخدم employeeId حقيقي موجود في كوادر
+# موظف للاختبار — استخدم employeeId حقيقي موجود في كوادر بحالة active
 $env:TEST_EMPLOYEE_ID = "ضع_employeeId_حقيقي"
 
 # رقم جوال موجود في كوادر
@@ -60,7 +67,7 @@ curl.exe -i "$env:BASMA_BASE_URL/api/data?action=health"
 - `ok`: `false`
 - `error.code`: `MISSING_INTERNAL_KEY`
 - `meta.service`: `basma`
-- `meta.version`: `7.140`
+- `meta.version`: `7.140.1`
 
 ### اختبار 2: health بمفتاح صحيح
 
@@ -74,11 +81,11 @@ curl.exe -i -H "x-internal-key: $env:HMA_INTERNAL_KEY" `
 - `ok`: `true`
 - `data.service`: `basma`
 - `data.status`: `healthy`
-- `data.version`: `7.140`
+- `data.version`: `7.140.1`
 - `data.redis`: `connected`
 - `meta.requestId`: قيمة تبدأ بـ `req_basma_`
 
-### اختبار 3: health بمفتاح خاطئ (يجب أن يفشل)
+### اختبار 3: health بمفتاح خاطئ
 
 ```powershell
 curl.exe -i -H "x-internal-key: wrong-key-test" `
@@ -100,13 +107,12 @@ curl.exe -i -H "x-internal-key: $env:HMA_INTERNAL_KEY" `
     "$env:BASMA_BASE_URL/api/data?action=kawader-employee&employeeId=$env:TEST_EMPLOYEE_ID"
 ```
 
-**النتيجة المتوقعة (لو الموظف موجود في كوادر):**
+**النتيجة المتوقعة:**
 - HTTP Status: `200`
 - `ok`: `true`
 - `data.source`: `kawader`
 - `data.employee.employeeId`: نفس قيمة `TEST_EMPLOYEE_ID`
-- `data.employee.name`: اسم الموظف الحقيقي
-- **يجب ألا يحتوي `data.employee` على:** `passwordHash`, `passwordSalt`, `idNumber`, `salary`, `cv`, `contracts`, `token`
+- لا حقول حساسة في `data.employee`
 
 ### اختبار 5: قراءة موظف بالجوال
 
@@ -116,11 +122,7 @@ curl.exe -i -H "x-internal-key: $env:HMA_INTERNAL_KEY" `
 ```
 
 **النتيجة المتوقعة:**
-- HTTP Status: `200`
-- `ok`: `true`
-- `data.employee.phone`: نفس قيمة الجوال
-- `data.employee.roles`: مصفوفة (لو الموظف لديه أدوار)
-- لا حقول حساسة
+- HTTP Status: `200`, `ok`: `true`, لا حقول حساسة.
 
 ### اختبار 6: موظف غير موجود في كوادر
 
@@ -129,16 +131,35 @@ curl.exe -i -H "x-internal-key: $env:HMA_INTERNAL_KEY" `
     "$env:BASMA_BASE_URL/api/data?action=kawader-employee&employeeId=NEVER_EXISTED_99999"
 ```
 
-**النتيجة المتوقعة:**
-- HTTP Status: `404`
-- `ok`: `false`
-- `error.code`: `NOT_FOUND`
+**النتيجة المتوقعة:** `404`, `error.code`: `NOT_FOUND`.
 
 ---
 
-## 4. اختبارات Phase 3 — Lazy Provisioning
+## 4. اختبارات Phase 3 Fix — Employee Reference Provisioning
 
-### اختبار 7: ensure بـ employeeId صحيح (إنشاء أو تأكيد)
+> **مهم:** Phase 3 يستخدم طبقة منفصلة `basma:employee_ref:*` وليس `basma:employees`.
+> الـ response shape يحوي `source: "basma_employee_ref"` و `provisioned: true|false`.
+
+### اختبار 7: ensure بـ employeeId صحيح (active)
+
+```powershell
+curl.exe -i -H "x-internal-key: $env:HMA_INTERNAL_KEY" `
+    "$env:BASMA_BASE_URL/api/data?action=ensure-kawader-employee&employeeId=$env:TEST_EMPLOYEE_ID"
+```
+
+**النتيجة المتوقعة (المرة الأولى):**
+- HTTP Status: `200`
+- `ok`: `true`
+- `data.source`: `basma_employee_ref`
+- `data.provisioned`: `true`
+- `data.employee` يحوي **فقط** الحقول الـ14 المعتمدة:
+  `employeeId, employeeCode, name, phone, email, jobTitle, department, status, managerEmployeeId, branch, sourceSystem, provisionedAt, lastKawaderSyncAt, updatedAt`
+- `data.employee.sourceSystem`: `kawader`
+- لا حقول ممنوعة (passwordHash, idNumber, salary, faces, username, hasAccount, dob, ...)
+
+### اختبار 8: ensure مرة ثانية لنفس الموظف (تأكيد idempotent)
+
+نفس الأمر:
 
 ```powershell
 curl.exe -i -H "x-internal-key: $env:HMA_INTERNAL_KEY" `
@@ -147,25 +168,9 @@ curl.exe -i -H "x-internal-key: $env:HMA_INTERNAL_KEY" `
 
 **النتيجة المتوقعة:**
 - HTTP Status: `200`
-- `ok`: `true`
-- `data.source`: `basma`
-- `data.created`: `true` (إذا كانت أول مرة) أو `false` (لو موجود مسبقاً)
-- `data.employee.employeeId`: نفس قيمة المعرف
-- لا حقول حساسة في الـ employee
-
-### اختبار 8: ensure مرة ثانية لنفس الموظف (تأكيد idempotent)
-
-نفس الأمر السابق، شغّله مرة ثانية:
-
-```powershell
-curl.exe -i -H "x-internal-key: $env:HMA_INTERNAL_KEY" `
-    "$env:BASMA_BASE_URL/api/data?action=ensure-kawader-employee&employeeId=$env:TEST_EMPLOYEE_ID"
-```
-
-**النتيجة المتوقعة (المرة الثانية):**
-- HTTP Status: `200`
-- `data.created`: `false` (موظف موجود مسبقاً)
-- `data.matchedBy`: `kadwarId` أو `id` أو `idNumber`
+- `data.source`: `basma_employee_ref`
+- `data.provisioned`: **`false`** (لم يُنشأ مرة جديدة)
+- `data.employee` نفس البيانات
 
 ### اختبار 9: قراءة الـ ref من بصمة بعد ensure
 
@@ -177,9 +182,8 @@ curl.exe -i -H "x-internal-key: $env:HMA_INTERNAL_KEY" `
 **النتيجة المتوقعة:**
 - HTTP Status: `200`
 - `ok`: `true`
-- `data.source`: `basma`
-- `data.employee` يحوي بيانات الموظف بـ allow-list فقط
-- لا حقول حساسة
+- `data.source`: `basma_employee_ref`
+- `data.employee` نفس الـ schema (14 حقل، لا حقول حساسة)
 
 ### اختبار 10: ensure بمعرف غير موجود في كوادر
 
@@ -191,7 +195,7 @@ curl.exe -i -H "x-internal-key: $env:HMA_INTERNAL_KEY" `
 **النتيجة المتوقعة:**
 - HTTP Status: `404`
 - `error.code`: `NOT_FOUND`
-- (يجب ألا يُنشأ موظف وهمي في بصمة)
+- (يجب ألا يُنشأ employee_ref وهمي)
 
 ### اختبار 11: ensure بدون مفتاح
 
@@ -223,14 +227,13 @@ curl.exe -i "$env:BASMA_BASE_URL/api/data?action=ensure-kawader-employee&employe
 | 10 | ensure بمعرف غير موجود | 404 | | false | | لا | |
 | 11 | ensure بدون مفتاح | 401 | | false | | لا | |
 
-**قاعدة:** أي صف فيه "حقول حساسة؟ نعم" يُعتبر **FAIL تلقائياً** بغض النظر عن باقي الأعمدة.
+**قاعدة:** أي صف فيه "حقول حساسة؟ نعم" يُعتبر **FAIL تلقائيًا** بغض النظر عن باقي الأعمدة.
 
 ---
 
 ## 6. تنظيف بعد الاختبار
 
 ```powershell
-# امسح المتغيرات من الـ session
 Remove-Item Env:HMA_INTERNAL_KEY -ErrorAction SilentlyContinue
 Remove-Item Env:TEST_EMPLOYEE_ID -ErrorAction SilentlyContinue
 Remove-Item Env:TEST_EMPLOYEE_PHONE -ErrorAction SilentlyContinue
@@ -241,7 +244,8 @@ Remove-Item Env:BASMA_BASE_URL -ErrorAction SilentlyContinue
 
 ## 7. ملاحظات
 
-- لو أردت تشغيل الاختبارات تلقائياً بدلاً من يدوياً، استخدم سكربت PowerShell:
-  `production-test-v7.140.ps1` (في نفس مجلد المشروع).
+- لو أردت تشغيل الاختبارات تلقائيًا، استخدم `production-test-v7.140.ps1` (في نفس المجلد).
 - السكربت يقرأ نفس متغيرات البيئة ويطبع جدول ملخص بدون كشف المفتاح.
-- لا تُشغّل أي endpoint غير مذكور في هذا الملف — أي endpoint آخر خارج Phase 0/2/3 لم يُختبر هنا.
+- لا تُشغّل أي endpoint غير مذكور هنا — أي endpoint خارج Phase 0/2/3 لم يُختبر.
+- إذا كان الموظف في كوادر بحالة `inactive` أو `suspended`، اختبار 7 يرجع `409 EMPLOYEE_INACTIVE` (هذا سلوك صحيح).
+

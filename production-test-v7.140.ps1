@@ -47,7 +47,7 @@ $baseUrl = $baseUrl.TrimEnd('/')
 
 # Sanity prints (NO key value, only its length)
 Write-Host ""
-Write-Host "Basma Production Test Pack v7.140" -ForegroundColor Cyan
+Write-Host "Basma Production Test Pack v7.140.1" -ForegroundColor Cyan
 Write-Host ("=" * 60)
 Write-Host "Base URL              : $baseUrl"
 Write-Host "Test employeeId       : $testEmpId"
@@ -57,12 +57,16 @@ Write-Host ("=" * 60)
 Write-Host ""
 
 # Forbidden field names — any occurrence as a JSON property name → FAIL.
+# v7.140.1 — expanded list to match the strict employee_ref schema.
 $forbiddenFields = @(
     'passwordHash','passwordSalt','password',
     'idNumber','nationalId','iqamaNumber',
     'salary','salaryDetails','compensation',
     'token','tokens','sessionToken','apiKey','secret',
-    'cv','cvFile','contracts','attachments','files'
+    'cv','cvFile','contracts','attachments','files',
+    'faces','face','faceData',
+    'username','hasAccount',
+    'dob','joinDate','sceNumber','sceExpiry','sceStatus'
 )
 
 # ---- Helpers ------------------------------------------------------
@@ -223,11 +227,12 @@ Write-Host "Test 5: ensure-kawader-employee with valid employeeId" -ForegroundCo
 $probe = Invoke-Probe "$baseUrl/api/data?action=ensure-kawader-employee&employeeId=$encEmpId" $authHeaders
 $leak  = Test-ForbiddenLeak $probe.BodyText
 $okVal = if ($probe.BodyJson) { [bool]$probe.BodyJson.ok } else { $null }
-$created = if ($probe.BodyJson -and $probe.BodyJson.data) { $probe.BodyJson.data.created } else { '?' }
+$provisioned = if ($probe.BodyJson -and $probe.BodyJson.data) { $probe.BodyJson.data.provisioned } else { '?' }
+$srcVal = if ($probe.BodyJson -and $probe.BodyJson.data) { $probe.BodyJson.data.source } else { '?' }
 Add-TestResult -Name 'ensure-kawader-employee with valid employeeId' `
     -ExpectedStatus 200 -ActualStatus $probe.StatusCode `
     -ExpectedOk $true -ActualOk $okVal -LeakedFields $leak `
-    -Notes "created=$created"
+    -Notes "provisioned=$provisioned source=$srcVal"
 
 # =========================================================
 # Test 6 — basma-employee-ref after ensure
@@ -236,11 +241,12 @@ Write-Host "Test 6: basma-employee-ref after ensure" -ForegroundColor Cyan
 $probe = Invoke-Probe "$baseUrl/api/data?action=basma-employee-ref&employeeId=$encEmpId" $authHeaders
 $leak  = Test-ForbiddenLeak $probe.BodyText
 $okVal = if ($probe.BodyJson) { [bool]$probe.BodyJson.ok } else { $null }
-$matchedBy = if ($probe.BodyJson -and $probe.BodyJson.data) { $probe.BodyJson.data.matchedBy } else { '' }
+$srcVal2 = if ($probe.BodyJson -and $probe.BodyJson.data) { $probe.BodyJson.data.source } else { '' }
+$srcSys = if ($probe.BodyJson -and $probe.BodyJson.data -and $probe.BodyJson.data.employee) { $probe.BodyJson.data.employee.sourceSystem } else { '' }
 Add-TestResult -Name 'basma-employee-ref after ensure' `
     -ExpectedStatus 200 -ActualStatus $probe.StatusCode `
     -ExpectedOk $true -ActualOk $okVal -LeakedFields $leak `
-    -Notes "matchedBy=$matchedBy"
+    -Notes "source=$srcVal2 sourceSystem=$srcSys"
 
 # =========================================================
 # Test 7 — ensure-kawader-employee with non-existing employeeId

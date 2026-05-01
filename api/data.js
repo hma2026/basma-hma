@@ -1078,7 +1078,7 @@ var INTEGRATION_ACTIONS = new Set([
 ]);
 
 // Service version للـ response meta (مفصول عن package.json بقصد)
-var INTEGRATION_SERVICE_VERSION = '7.140';
+var INTEGRATION_SERVICE_VERSION = '7.140.1';
 
 // تكوين CORS مقيد بدلاً من *
 function applyIntegrationCors(req, res) {
@@ -1404,138 +1404,139 @@ function validatePhoneParam(value) {
 
 
 /* ═══════════════════════════════════════════════════════════════════
- * v7.140 — PHASE 3: LAZY EMPLOYEE PROVISIONING
+ * v7.140.1 — PHASE 3 FIX: LAZY EMPLOYEE REFERENCE PROVISIONING
  * ═══════════════════════════════════════════════════════════════════
- * عند طلب ensure-kawader-employee:
- *   - نتحقق هل الموظف موجود مسبقاً في basma:employees
- *     (بحث متعدد المسارات: kadwarId / id / idNumber / email)
- *   - إذا موجود → no-op، نعيد الـ ref الحالية
- *   - إذا غير موجود → نقرأ من كوادر، نُنشئ سجل minimal ونحفظه
+ * طبقة مرجعية خفيفة (employee_ref) معزولة تماماً عن basma:employees.
  *
- * السجل المُنشأ:
- *   - يحتوي فقط حقول allow-list (لا passwordHash/idNumber/salary/faces/etc.)
- *   - source: 'kawader-lazy-provisioning' (للتمييز عن sync-kadwar)
- *   - createdViaLazyAt: timestamp
- *   - sync-kadwar اللاحق سيُكمل الحقول الناقصة عبر merge logic القائمة
+ * Redis keys (مستقلة):
+ *   - basma:employee_ref:{employeeId}     → سجل مرجعي خفيف لموظف
+ *   - basma:employee_ref_idx              → set من employeeId المُموَّن لها
  *
- * Defense in depth (نفس Phase 2):
- *   - allow-list صارم على input من كوادر
- *   - block-list دفاعي للحقول الممنوعة
- *   - x-internal-key مطلوب
- *   - audit log في Redis key مستقل
+ * ممنوع الكتابة في:
+ *   - basma:employees, basma:attendance, basma:faces, basma:gps_logs,
+ *     basma:violations, basma:audit_log, basma:update_audit_log
  *
- * NO writes to:
- *   - basma:attendance
- *   - basma:faces
- *   - basma:violations
- *   - basma:gps_logs
- *   - أي مفتاح آخر سوى basma:employees
+ * Schema الـ employee_ref يحوي 14 حقلاً فقط، وممنوع تخزين:
+ *   password, passwordHash, passwordSalt, idNumber, salary, contracts,
+ *   cv, evaluations, files, attachments, tokens, faces, username,
+ *   hasAccount, dob, joinDate, sceNumber
+ *
+ * هذي الحقول ممنوعة حتى لو بقيمة فارغة "" أو 0 — يجب ألا تظهر أبداً.
  * ═══════════════════════════════════════════════════════════════════ */
 
-// تحويل سجل موظف بصمة إلى ref خارجي (allow-listed، minimal)
-// الإخراج: نفس شكل Phase 2 employee response — للاتساق
-// لا يكشف: passwordHash, passwordSalt, idNumber, salary, faces, sceNumber, dob, joinDate, ...
-function buildBasmaEmployeeRef(emp) {
-  if (!emp || typeof emp !== 'object') return null;
-  // إعادة mapping من schema basma إلى schema الموحد للتكامل
-  var employeeId = emp.kadwarId || emp.id || '';
-  return {
-    employeeId: String(employeeId).slice(0, 64),
-    employeeCode: emp.employeeCode ? String(emp.employeeCode).slice(0, 64) : null,
-    name: emp.name ? String(emp.name).slice(0, 200) : null,
-    phone: emp.phone ? String(emp.phone).slice(0, 20) : null,
-    email: emp.email ? String(emp.email).slice(0, 200) : null,
-    jobTitle: emp.role ? String(emp.role).slice(0, 200) : null,
-    department: emp.department ? String(emp.department).slice(0, 200) : null,
-    status: emp.status ? String(emp.status).slice(0, 32) : null,
-    managerEmployeeId: emp.managerKadwarId ? String(emp.managerKadwarId).slice(0, 64) : null,
-    branch: emp.branchName ? String(emp.branchName).slice(0, 100) : (emp.branch ? String(emp.branch).slice(0, 50) : null),
-    source: emp.source ? String(emp.source).slice(0, 64) : null,
-    provisionedAt: emp.createdViaLazyAt || null,
-    syncedAt: emp.syncedAt || null,
-  };
-}
+// Allow-list صارم للحقول المخزّنة في basma:employee_ref:{id}
+// أي حقل خارج هذي القائمة لا يُخزَّن ولا يُعاد للعميل
+var EMPLOYEE_REF_FIELDS = [
+  'employeeId',
+  'employeeCode',
+  'name',
+  'phone',
+  'email',
+  'jobTitle',
+  'department',
+  'status',
+  'managerEmployeeId',
+  'branch',
+  'sourceSystem',
+  'provisionedAt',
+  'lastKawaderSyncAt',
+  'updatedAt',
+];
 
-// بناء سجل موظف بصمة جديد من sanitized Kawader data
-// minimal — بدون passwordHash/idNumber/salary/etc.
-function buildLazyBasmaEmployeeRecord(sanitizedKawaderEmp) {
+// Block-list دفاعي — هذي الحقول ممنوع ظهورها في الـ ref بأي شكل
+// (تكرار محتوى من Phase 2 KAWADER_FORBIDDEN_FIELDS مع إضافات Phase 3)
+var EMPLOYEE_REF_FORBIDDEN_FIELDS = new Set([
+  'password', 'passwordHash', 'passwordSalt',
+  'idNumber', 'nationalId', 'iqamaNumber',
+  'salary', 'salaryDetails', 'compensation',
+  'contracts', 'contract',
+  'cv', 'cvFile', 'cvPath',
+  'evaluations', 'evaluation',
+  'files', 'attachments',
+  'token', 'tokens', 'sessionToken', 'apiKey', 'secret',
+  'faces', 'face', 'faceData',
+  'username', 'hasAccount',
+  'dob', 'joinDate', 'sceNumber', 'sceExpiry', 'sceStatus',
+]);
+
+// بناء سجل ref جديد من sanitized Kawader data
+// nowIso هو timestamp التموين (provisioning)
+function buildEmployeeRefRecord(sanitizedKawaderEmp, nowIso) {
   var k = sanitizedKawaderEmp || {};
-  var nowIso = new Date().toISOString();
-  var kadwarId = k.employeeId ? String(k.employeeId) : '';
+  var now = nowIso || new Date().toISOString();
   return {
-    // Identity
-    id: kadwarId, // مؤقت — sync-kadwar اللاحق سيُحدّثه إلى idNumber الحقيقي
-    kadwarId: kadwarId,
-    idNumber: '', // عمداً فارغ — لا نعرفه من allow-list
-    email: k.email ? String(k.email).toLowerCase() : '',
-    // Account — عمداً فارغة (لا passwordHash، لا username — sync-kadwar الكامل سيُعبّئها)
-    username: '',
-    hasAccount: false,
-    accountRole: 'employee',
-    passwordHash: '',
-    passwordAlgo: 'sha256',
-    passwordSalt: 'hr_salt_2024',
-    passwordUpdatedAt: null,
-    // Profile (allow-listed من كوادر)
-    name: k.name || '',
-    role: k.jobTitle || '',
-    department: k.department || '',
-    branch: 'jed', // افتراضي — sync-kadwar الكامل سيُعدّله بالـ mapping الصحيح
-    branchName: k.branch || '',
-    phone: k.phone || '',
-    status: k.status || 'active',
-    // Hierarchy (المعرف فقط، الـ email سيُحلّ في sync الكامل)
-    managerKadwarId: k.managerEmployeeId || '',
-    managerEmail: '',
-    supervisorKadwarId: '',
-    supervisorEmail: '',
-    isManager: false,
-    isAdmin: false,
-    // Basma-specific defaults (لا نُحاول استنباطها)
-    points: 0,
-    type: 'office',
-    flexBase: false,
-    flexOT: false,
-    flexOTMax: 0,
-    remote: false,
-    observed: false,
-    onLeave: false,
-    salary: 0,
-    joinDate: '',
-    dob: '',
-    sceNumber: '',
-    sceExpiry: '',
-    sceStatus: '',
-    subordinates: [],
-    subordinatesCount: 0,
-    // Provenance (مهم — للتمييز عن sync-kadwar الكامل)
-    source: 'kawader-lazy-provisioning',
-    createdViaLazyAt: nowIso,
-    syncedAt: nowIso,
+    employeeId: k.employeeId ? String(k.employeeId).slice(0, 64) : '',
+    employeeCode: k.employeeCode ? String(k.employeeCode).slice(0, 64) : null,
+    name: k.name ? String(k.name).slice(0, 200) : null,
+    phone: k.phone ? String(k.phone).slice(0, 20) : null,
+    email: k.email ? String(k.email).toLowerCase().slice(0, 200) : null,
+    jobTitle: k.jobTitle ? String(k.jobTitle).slice(0, 200) : null,
+    department: k.department ? String(k.department).slice(0, 200) : null,
+    status: k.status ? String(k.status).slice(0, 32) : null,
+    managerEmployeeId: k.managerEmployeeId ? String(k.managerEmployeeId).slice(0, 64) : null,
+    branch: k.branch ? String(k.branch).slice(0, 100) : null,
+    sourceSystem: 'kawader',
+    provisionedAt: now,
+    lastKawaderSyncAt: now,
+    updatedAt: k.updatedAt ? String(k.updatedAt).slice(0, 50) : null,
   };
 }
 
-// البحث عن موظف موجود في basma:employees بمعرف Kawader
-// نبحث بترتيب: kadwarId, id, idNumber, ثم email كحل أخير
-function findExistingBasmaEmployee(employees, kawaderEmployeeId) {
-  if (!Array.isArray(employees) || !kawaderEmployeeId) return null;
-  var target = String(kawaderEmployeeId);
-  for (var i = 0; i < employees.length; i++) {
-    var e = employees[i];
-    if (!e || typeof e !== 'object') continue;
-    if (e.kadwarId && String(e.kadwarId) === target) return { employee: e, index: i, matchedBy: 'kadwarId' };
+// تطبيق allow-list دفاعي على سجل مقروء من Redis (حماية ضد bug/تلوّث مستقبلي)
+function sanitizeStoredEmployeeRef(record) {
+  if (!record || typeof record !== 'object') return null;
+  var out = {};
+  var allowed = new Set(EMPLOYEE_REF_FIELDS);
+  for (var key in record) {
+    if (!Object.prototype.hasOwnProperty.call(record, key)) continue;
+    if (EMPLOYEE_REF_FORBIDDEN_FIELDS.has(key)) continue; // double protection
+    if (!allowed.has(key)) continue;
+    out[key] = record[key];
   }
-  for (var j = 0; j < employees.length; j++) {
-    var e2 = employees[j];
-    if (!e2 || typeof e2 !== 'object') continue;
-    if (e2.id && String(e2.id) === target) return { employee: e2, index: j, matchedBy: 'id' };
+  return out;
+}
+
+// قراءة employee_ref من Redis
+// يرجع null إذا لم يوجد، أو السجل المخزَّن (مفلتر) إذا وجد
+async function getBasmaEmployeeRef(employeeId) {
+  if (!employeeId) return null;
+  if (!USE_REDIS) return null;
+  var key = 'basma:employee_ref:' + employeeId;
+  var resp;
+  try {
+    resp = await redisFetch(['GET', key]);
+  } catch (_) {
+    return null;
   }
-  for (var k = 0; k < employees.length; k++) {
-    var e3 = employees[k];
-    if (!e3 || typeof e3 !== 'object') continue;
-    if (e3.idNumber && String(e3.idNumber) === target) return { employee: e3, index: k, matchedBy: 'idNumber' };
+  if (!resp || resp.result === null || resp.result === undefined) return null;
+  var raw;
+  try {
+    raw = JSON.parse(resp.result);
+  } catch (_) {
+    return null;
   }
-  return null;
+  return sanitizeStoredEmployeeRef(raw);
+}
+
+// كتابة employee_ref وتحديث الفهرس (idempotent — SADD safe لإعادة الكتابة)
+// يرجع true عند النجاح، false عند الفشل
+async function setBasmaEmployeeRef(employeeId, refRecord) {
+  if (!employeeId || !refRecord) return false;
+  if (!USE_REDIS) return false;
+  // فلترة دفاعية ثانية قبل الكتابة — نضمن ألا يتسلل أي حقل ممنوع
+  var safe = sanitizeStoredEmployeeRef(refRecord);
+  if (!safe || !safe.employeeId) return false;
+  var key = 'basma:employee_ref:' + employeeId;
+  var idxKey = 'basma:employee_ref_idx';
+  try {
+    var setResp = await redisFetch(['SET', key, JSON.stringify(safe)]);
+    if (!setResp) return false;
+    // SADD — atomic في Redis، لا حاجة لـ read-modify-write
+    await redisFetch(['SADD', idxKey, String(employeeId)]);
+    return true;
+  } catch (_) {
+    return false;
+  }
 }
 
 
@@ -1927,18 +1928,27 @@ export default async function handler(req, res) {
       }
 
       /* ═══════════════════════════════════════════════════════════════
-       * v7.140 — PHASE 3: ENSURE KAWADER EMPLOYEE (lazy provisioning)
+       * v7.140.1 — PHASE 3 FIX: ENSURE KAWADER EMPLOYEE (employee_ref)
        * ═══════════════════════════════════════════════════════════════
        * GET /api/data?action=ensure-kawader-employee&employeeId=...
        *   header: x-internal-key: <HMA_INTERNAL_KEY>
        *
-       * Idempotent:
-       *   - إذا الموظف موجود مسبقاً في basma:employees → no-op، نعيد ref
-       *   - إذا غير موجود → نقرأ من كوادر، نُنشئ سجل minimal، نعيد ref
+       * Writes ONLY to basma:employee_ref:{id} و basma:employee_ref_idx.
+       * NEVER writes to basma:employees (طبقة منفصلة بالكامل).
        *
-       * NO writes to: basma:attendance, basma:faces, basma:violations,
-       *               basma:gps_logs, أو أي مفتاح آخر سوى basma:employees
-       * NO updates لموظفين موجودين (idempotent create-only)
+       * Behavior:
+       *   - إذا الموظف موجود في basma:employee_ref:{id}:
+       *       → source: "basma_employee_ref", provisioned: false
+       *       → no Kawader call, no write
+       *   - إذا غير موجود:
+       *       → استدع كوادر
+       *       → إذا 404 → NOT_FOUND (no write)
+       *       → إذا status !== 'active' → EMPLOYEE_INACTIVE (no write)
+       *       → إذا active → اكتب في employee_ref + idx → provisioned: true
+       *
+       * NO writes to: basma:employees, basma:attendance, basma:faces,
+       *               basma:gps_logs, basma:violations, basma:audit_log,
+       *               basma:update_audit_log
        * ═══════════════════════════════════════════════════════════════ */
       case 'ensure-kawader-employee': {
         var enRequestId = makeIntegrationRequestId();
@@ -1983,20 +1993,21 @@ export default async function handler(req, res) {
         }
         var enEmpId = enEmpIdValidation.value;
 
-        // 1) فحص أولي: هل الموظف موجود مسبقاً؟
-        var enEmployeesPre = await dbGet('employees') || [];
-        var enExistingPre = findExistingBasmaEmployee(enEmployeesPre, enEmpId);
-        if (enExistingPre) {
+        // 1) فحص هل الـ ref موجود مسبقاً (لا call لكوادر إذا موجود)
+        var enExistingRef = null;
+        try {
+          enExistingRef = await getBasmaEmployeeRef(enEmpId);
+        } catch (_) { enExistingRef = null; }
+        if (enExistingRef) {
           await logIntegrationAudit({
             action: 'ensure-kawader-employee', method: req.method,
-            status: 'kawader_employee_ensure_already_exists', code: null,
+            status: 'basma_employee_ref_already_exists', code: null,
             ip: enIp, userAgent: enUa, origin: enOrigin, requestId: enRequestId,
           });
           return res.status(200).json(integrationSuccess({
-            source: 'basma',
-            created: false,
-            matchedBy: enExistingPre.matchedBy,
-            employee: buildBasmaEmployeeRef(enExistingPre.employee),
+            source: 'basma_employee_ref',
+            provisioned: false,
+            employee: enExistingRef,
           }, enRequestId));
         }
 
@@ -2061,64 +2072,76 @@ export default async function handler(req, res) {
           });
         }
 
-        // 4) فحص ثانٍ قبل الكتابة (تقليل race window)
-        var enEmployeesNow = await dbGet('employees') || [];
-        var enExistingNow = findExistingBasmaEmployee(enEmployeesNow, enEmpId);
-        if (enExistingNow) {
-          // أحد ما أنشأها بين فحصنا الأول والآن — نُعيد ref بدون كتابة
+        // 4) فحص status — يجب أن يكون 'active' بالضبط
+        var enKawaderStatus = enSanResult.sanitized && enSanResult.sanitized.status
+          ? String(enSanResult.sanitized.status).toLowerCase().trim()
+          : '';
+        if (enKawaderStatus !== 'active') {
           await logIntegrationAudit({
             action: 'ensure-kawader-employee', method: req.method,
-            status: 'kawader_employee_ensure_already_exists', code: 'race_check',
+            status: 'kawader_employee_ensure_inactive', code: 'EMPLOYEE_INACTIVE',
+            ip: enIp, userAgent: enUa, origin: enOrigin, requestId: enRequestId,
+          });
+          return res.status(409).json(integrationError(
+            'EMPLOYEE_INACTIVE', 'Employee status in Kawader is not active; will not provision', enRequestId
+          ));
+        }
+
+        // 5) فحص ثانٍ قبل الكتابة (تقليل race window)
+        var enExistingNow = null;
+        try { enExistingNow = await getBasmaEmployeeRef(enEmpId); } catch (_) { enExistingNow = null; }
+        if (enExistingNow) {
+          await logIntegrationAudit({
+            action: 'ensure-kawader-employee', method: req.method,
+            status: 'basma_employee_ref_already_exists', code: 'race_check',
             ip: enIp, userAgent: enUa, origin: enOrigin, requestId: enRequestId,
           });
           return res.status(200).json(integrationSuccess({
-            source: 'basma',
-            created: false,
-            matchedBy: enExistingNow.matchedBy,
-            employee: buildBasmaEmployeeRef(enExistingNow.employee),
+            source: 'basma_employee_ref',
+            provisioned: false,
+            employee: enExistingNow,
           }, enRequestId));
         }
 
-        // 5) إنشاء السجل الـ minimal
-        var enNewEmp = buildLazyBasmaEmployeeRecord(enSanResult.sanitized);
-        // كتابة آمنة: append إلى الـ array فقط، لا overwrite لموظفين آخرين
-        enEmployeesNow.push(enNewEmp);
+        // 6) بناء سجل ref وحفظه في basma:employee_ref:{id} + basma:employee_ref_idx
+        var enNowIso = new Date().toISOString();
+        var enRefRecord = buildEmployeeRefRecord(enSanResult.sanitized, enNowIso);
+        var enWriteOk = false;
         try {
-          await dbSet('employees', enEmployeesNow);
-        } catch (e) {
+          enWriteOk = await setBasmaEmployeeRef(enEmpId, enRefRecord);
+        } catch (_) { enWriteOk = false; }
+        if (!enWriteOk) {
           await logIntegrationAudit({
             action: 'ensure-kawader-employee', method: req.method,
-            status: 'kawader_employee_ensure_error', code: 'BASMA_WRITE_FAILED',
+            status: 'kawader_employee_ensure_error', code: 'BASMA_REF_WRITE_FAILED',
             ip: enIp, userAgent: enUa, origin: enOrigin, requestId: enRequestId,
           });
           return res.status(500).json(integrationError(
-            'BASMA_WRITE_FAILED', 'Could not persist new employee', enRequestId
+            'BASMA_REF_WRITE_FAILED', 'Could not persist employee_ref', enRequestId
           ));
         }
 
         await logIntegrationAudit({
           action: 'ensure-kawader-employee', method: req.method,
-          status: 'kawader_employee_ensure_created', code: null,
+          status: 'kawader_employee_ref_provisioned', code: null,
           ip: enIp, userAgent: enUa, origin: enOrigin, requestId: enRequestId,
         });
 
         return res.status(200).json(integrationSuccess({
-          source: 'basma',
-          created: true,
-          matchedBy: null,
-          employee: buildBasmaEmployeeRef(enNewEmp),
+          source: 'basma_employee_ref',
+          provisioned: true,
+          employee: sanitizeStoredEmployeeRef(enRefRecord),
         }, enRequestId));
       }
 
       /* ═══════════════════════════════════════════════════════════════
-       * v7.140 — PHASE 3: BASMA EMPLOYEE REFERENCE (read-only, minimal)
+       * v7.140.1 — PHASE 3 FIX: BASMA EMPLOYEE REF (read-only)
        * ═══════════════════════════════════════════════════════════════
        * GET /api/data?action=basma-employee-ref&employeeId=...
        *   header: x-internal-key: <HMA_INTERNAL_KEY>
        *
-       * يُعيد ref minimal لموظف موجود في basma:employees.
-       * لا قراءة لـ passwordHash, passwordSalt, idNumber, salary, faces.
-       *
+       * READS ONLY from basma:employee_ref:{id}.
+       * Does NOT search basma:employees.
        * NO writes anywhere.
        * ═══════════════════════════════════════════════════════════════ */
       case 'basma-employee-ref': {
@@ -2164,16 +2187,18 @@ export default async function handler(req, res) {
         }
         var brEmpId = brEmpIdValidation.value;
 
-        var brEmployees = await dbGet('employees') || [];
-        var brFound = findExistingBasmaEmployee(brEmployees, brEmpId);
-        if (!brFound) {
+        // قراءة من basma:employee_ref:{id} فقط
+        // لا قراءة من basma:employees
+        var brRef = null;
+        try { brRef = await getBasmaEmployeeRef(brEmpId); } catch (_) { brRef = null; }
+        if (!brRef) {
           await logIntegrationAudit({
             action: 'basma-employee-ref', method: req.method,
             status: 'basma_employee_ref_not_found', code: 'NOT_FOUND',
             ip: brIp, userAgent: brUa, origin: brOrigin, requestId: brRequestId,
           });
           return res.status(404).json(integrationError(
-            'NOT_FOUND', 'Employee not found in Basma', brRequestId
+            'NOT_FOUND', 'Employee ref not found in basma', brRequestId
           ));
         }
 
@@ -2184,9 +2209,8 @@ export default async function handler(req, res) {
         });
 
         return res.status(200).json(integrationSuccess({
-          source: 'basma',
-          matchedBy: brFound.matchedBy,
-          employee: buildBasmaEmployeeRef(brFound.employee),
+          source: 'basma_employee_ref',
+          employee: brRef,
         }, brRequestId));
       }
 
