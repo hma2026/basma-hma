@@ -1072,10 +1072,13 @@ var INTEGRATION_ACTIONS = new Set([
   // v7.139 — Phase 2: قراءة موظف من كوادر (read-through، لا حفظ، لا إنشاء)
   'kawader-employee',
   'kawader-employee-by-phone',
+  // v7.140 — Phase 3: Lazy provisioning + قراءة موظف بصمة (minimal ref)
+  'ensure-kawader-employee',
+  'basma-employee-ref',
 ]);
 
 // Service version للـ response meta (مفصول عن package.json بقصد)
-var INTEGRATION_SERVICE_VERSION = '7.139';
+var INTEGRATION_SERVICE_VERSION = '7.140';
 
 // تكوين CORS مقيد بدلاً من *
 function applyIntegrationCors(req, res) {
@@ -1397,6 +1400,142 @@ function validatePhoneParam(value) {
   if (v.length < 5 || v.length > 20) return { ok: false, message: 'phone length is invalid' };
   if (!/^[\+0-9\-\s]+$/.test(v)) return { ok: false, message: 'phone has invalid characters' };
   return { ok: true, value: v };
+}
+
+
+/* ═══════════════════════════════════════════════════════════════════
+ * v7.140 — PHASE 3: LAZY EMPLOYEE PROVISIONING
+ * ═══════════════════════════════════════════════════════════════════
+ * عند طلب ensure-kawader-employee:
+ *   - نتحقق هل الموظف موجود مسبقاً في basma:employees
+ *     (بحث متعدد المسارات: kadwarId / id / idNumber / email)
+ *   - إذا موجود → no-op، نعيد الـ ref الحالية
+ *   - إذا غير موجود → نقرأ من كوادر، نُنشئ سجل minimal ونحفظه
+ *
+ * السجل المُنشأ:
+ *   - يحتوي فقط حقول allow-list (لا passwordHash/idNumber/salary/faces/etc.)
+ *   - source: 'kawader-lazy-provisioning' (للتمييز عن sync-kadwar)
+ *   - createdViaLazyAt: timestamp
+ *   - sync-kadwar اللاحق سيُكمل الحقول الناقصة عبر merge logic القائمة
+ *
+ * Defense in depth (نفس Phase 2):
+ *   - allow-list صارم على input من كوادر
+ *   - block-list دفاعي للحقول الممنوعة
+ *   - x-internal-key مطلوب
+ *   - audit log في Redis key مستقل
+ *
+ * NO writes to:
+ *   - basma:attendance
+ *   - basma:faces
+ *   - basma:violations
+ *   - basma:gps_logs
+ *   - أي مفتاح آخر سوى basma:employees
+ * ═══════════════════════════════════════════════════════════════════ */
+
+// تحويل سجل موظف بصمة إلى ref خارجي (allow-listed، minimal)
+// الإخراج: نفس شكل Phase 2 employee response — للاتساق
+// لا يكشف: passwordHash, passwordSalt, idNumber, salary, faces, sceNumber, dob, joinDate, ...
+function buildBasmaEmployeeRef(emp) {
+  if (!emp || typeof emp !== 'object') return null;
+  // إعادة mapping من schema basma إلى schema الموحد للتكامل
+  var employeeId = emp.kadwarId || emp.id || '';
+  return {
+    employeeId: String(employeeId).slice(0, 64),
+    employeeCode: emp.employeeCode ? String(emp.employeeCode).slice(0, 64) : null,
+    name: emp.name ? String(emp.name).slice(0, 200) : null,
+    phone: emp.phone ? String(emp.phone).slice(0, 20) : null,
+    email: emp.email ? String(emp.email).slice(0, 200) : null,
+    jobTitle: emp.role ? String(emp.role).slice(0, 200) : null,
+    department: emp.department ? String(emp.department).slice(0, 200) : null,
+    status: emp.status ? String(emp.status).slice(0, 32) : null,
+    managerEmployeeId: emp.managerKadwarId ? String(emp.managerKadwarId).slice(0, 64) : null,
+    branch: emp.branchName ? String(emp.branchName).slice(0, 100) : (emp.branch ? String(emp.branch).slice(0, 50) : null),
+    source: emp.source ? String(emp.source).slice(0, 64) : null,
+    provisionedAt: emp.createdViaLazyAt || null,
+    syncedAt: emp.syncedAt || null,
+  };
+}
+
+// بناء سجل موظف بصمة جديد من sanitized Kawader data
+// minimal — بدون passwordHash/idNumber/salary/etc.
+function buildLazyBasmaEmployeeRecord(sanitizedKawaderEmp) {
+  var k = sanitizedKawaderEmp || {};
+  var nowIso = new Date().toISOString();
+  var kadwarId = k.employeeId ? String(k.employeeId) : '';
+  return {
+    // Identity
+    id: kadwarId, // مؤقت — sync-kadwar اللاحق سيُحدّثه إلى idNumber الحقيقي
+    kadwarId: kadwarId,
+    idNumber: '', // عمداً فارغ — لا نعرفه من allow-list
+    email: k.email ? String(k.email).toLowerCase() : '',
+    // Account — عمداً فارغة (لا passwordHash، لا username — sync-kadwar الكامل سيُعبّئها)
+    username: '',
+    hasAccount: false,
+    accountRole: 'employee',
+    passwordHash: '',
+    passwordAlgo: 'sha256',
+    passwordSalt: 'hr_salt_2024',
+    passwordUpdatedAt: null,
+    // Profile (allow-listed من كوادر)
+    name: k.name || '',
+    role: k.jobTitle || '',
+    department: k.department || '',
+    branch: 'jed', // افتراضي — sync-kadwar الكامل سيُعدّله بالـ mapping الصحيح
+    branchName: k.branch || '',
+    phone: k.phone || '',
+    status: k.status || 'active',
+    // Hierarchy (المعرف فقط، الـ email سيُحلّ في sync الكامل)
+    managerKadwarId: k.managerEmployeeId || '',
+    managerEmail: '',
+    supervisorKadwarId: '',
+    supervisorEmail: '',
+    isManager: false,
+    isAdmin: false,
+    // Basma-specific defaults (لا نُحاول استنباطها)
+    points: 0,
+    type: 'office',
+    flexBase: false,
+    flexOT: false,
+    flexOTMax: 0,
+    remote: false,
+    observed: false,
+    onLeave: false,
+    salary: 0,
+    joinDate: '',
+    dob: '',
+    sceNumber: '',
+    sceExpiry: '',
+    sceStatus: '',
+    subordinates: [],
+    subordinatesCount: 0,
+    // Provenance (مهم — للتمييز عن sync-kadwar الكامل)
+    source: 'kawader-lazy-provisioning',
+    createdViaLazyAt: nowIso,
+    syncedAt: nowIso,
+  };
+}
+
+// البحث عن موظف موجود في basma:employees بمعرف Kawader
+// نبحث بترتيب: kadwarId, id, idNumber, ثم email كحل أخير
+function findExistingBasmaEmployee(employees, kawaderEmployeeId) {
+  if (!Array.isArray(employees) || !kawaderEmployeeId) return null;
+  var target = String(kawaderEmployeeId);
+  for (var i = 0; i < employees.length; i++) {
+    var e = employees[i];
+    if (!e || typeof e !== 'object') continue;
+    if (e.kadwarId && String(e.kadwarId) === target) return { employee: e, index: i, matchedBy: 'kadwarId' };
+  }
+  for (var j = 0; j < employees.length; j++) {
+    var e2 = employees[j];
+    if (!e2 || typeof e2 !== 'object') continue;
+    if (e2.id && String(e2.id) === target) return { employee: e2, index: j, matchedBy: 'id' };
+  }
+  for (var k = 0; k < employees.length; k++) {
+    var e3 = employees[k];
+    if (!e3 || typeof e3 !== 'object') continue;
+    if (e3.idNumber && String(e3.idNumber) === target) return { employee: e3, index: k, matchedBy: 'idNumber' };
+  }
+  return null;
 }
 
 
@@ -1785,6 +1924,270 @@ export default async function handler(req, res) {
           source: 'kawader',
           employee: kpSanResult.sanitized,
         }, kpRequestId));
+      }
+
+      /* ═══════════════════════════════════════════════════════════════
+       * v7.140 — PHASE 3: ENSURE KAWADER EMPLOYEE (lazy provisioning)
+       * ═══════════════════════════════════════════════════════════════
+       * GET /api/data?action=ensure-kawader-employee&employeeId=...
+       *   header: x-internal-key: <HMA_INTERNAL_KEY>
+       *
+       * Idempotent:
+       *   - إذا الموظف موجود مسبقاً في basma:employees → no-op، نعيد ref
+       *   - إذا غير موجود → نقرأ من كوادر، نُنشئ سجل minimal، نعيد ref
+       *
+       * NO writes to: basma:attendance, basma:faces, basma:violations,
+       *               basma:gps_logs, أو أي مفتاح آخر سوى basma:employees
+       * NO updates لموظفين موجودين (idempotent create-only)
+       * ═══════════════════════════════════════════════════════════════ */
+      case 'ensure-kawader-employee': {
+        var enRequestId = makeIntegrationRequestId();
+        var enIp = extractClientIp(req);
+        var enUa = (req.headers && req.headers['user-agent']) ? String(req.headers['user-agent']) : '';
+        var enOrigin = (req.headers && req.headers.origin) ? String(req.headers.origin) : '';
+
+        if (req.method !== 'GET') {
+          await logIntegrationAudit({
+            action: 'ensure-kawader-employee', method: req.method,
+            status: 'error', code: 'METHOD_NOT_ALLOWED',
+            ip: enIp, userAgent: enUa, origin: enOrigin, requestId: enRequestId,
+          });
+          return res.status(405).json(integrationError(
+            'METHOD_NOT_ALLOWED', 'ensure-kawader-employee accepts GET only', enRequestId
+          ));
+        }
+
+        var enKeyCheck = verifyIntegrationInternalKey(req);
+        if (!enKeyCheck.ok) {
+          await logIntegrationAudit({
+            action: 'ensure-kawader-employee', method: req.method,
+            status: 'unauthorized_access', code: enKeyCheck.code,
+            ip: enIp, userAgent: enUa, origin: enOrigin, requestId: enRequestId,
+          });
+          var enUnauthStatus = (enKeyCheck.code === 'SERVER_MISCONFIGURED') ? 500 : 401;
+          return res.status(enUnauthStatus).json(integrationError(
+            enKeyCheck.code, enKeyCheck.message, enRequestId
+          ));
+        }
+
+        var enEmpIdValidation = validateEmployeeIdParam(req.query.employeeId);
+        if (!enEmpIdValidation.ok) {
+          await logIntegrationAudit({
+            action: 'ensure-kawader-employee', method: req.method,
+            status: 'error', code: 'MISSING_PARAM',
+            ip: enIp, userAgent: enUa, origin: enOrigin, requestId: enRequestId,
+          });
+          return res.status(400).json(integrationError(
+            'MISSING_PARAM', enEmpIdValidation.message, enRequestId
+          ));
+        }
+        var enEmpId = enEmpIdValidation.value;
+
+        // 1) فحص أولي: هل الموظف موجود مسبقاً؟
+        var enEmployeesPre = await dbGet('employees') || [];
+        var enExistingPre = findExistingBasmaEmployee(enEmployeesPre, enEmpId);
+        if (enExistingPre) {
+          await logIntegrationAudit({
+            action: 'ensure-kawader-employee', method: req.method,
+            status: 'kawader_employee_ensure_already_exists', code: null,
+            ip: enIp, userAgent: enUa, origin: enOrigin, requestId: enRequestId,
+          });
+          return res.status(200).json(integrationSuccess({
+            source: 'basma',
+            created: false,
+            matchedBy: enExistingPre.matchedBy,
+            employee: buildBasmaEmployeeRef(enExistingPre.employee),
+          }, enRequestId));
+        }
+
+        // 2) قراءة من كوادر (Phase 2 helper)
+        var enUpstream;
+        try {
+          enUpstream = await callKawaderIntegration(
+            '/api/integration/kawader/employees/' + encodeURIComponent(enEmpId),
+            { method: 'GET' }
+          );
+        } catch (e) {
+          await logIntegrationAudit({
+            action: 'ensure-kawader-employee', method: req.method,
+            status: 'kawader_employee_ensure_error', code: 'KAWADER_UNREACHABLE',
+            ip: enIp, userAgent: enUa, origin: enOrigin, requestId: enRequestId,
+          });
+          return res.status(502).json(integrationError(
+            'KAWADER_UNREACHABLE', 'Could not reach Kawader', enRequestId
+          ));
+        }
+
+        if (!enUpstream.ok) {
+          if (enUpstream.code === 'NOT_FOUND') {
+            await logIntegrationAudit({
+              action: 'ensure-kawader-employee', method: req.method,
+              status: 'kawader_employee_ensure_not_found', code: 'NOT_FOUND',
+              ip: enIp, userAgent: enUa, origin: enOrigin, requestId: enRequestId,
+            });
+            return res.status(404).json(integrationError(
+              'NOT_FOUND', 'Employee not found in Kawader; cannot provision', enRequestId
+            ));
+          }
+          await logIntegrationAudit({
+            action: 'ensure-kawader-employee', method: req.method,
+            status: 'kawader_employee_ensure_error', code: enUpstream.code,
+            ip: enIp, userAgent: enUa, origin: enOrigin, requestId: enRequestId,
+          });
+          return res.status(enUpstream.status || 502).json(integrationError(
+            enUpstream.code, enUpstream.message, enRequestId
+          ));
+        }
+
+        // 3) Sanitize via Phase 2 allow-list
+        var enRawEmp = extractKawaderEmployee(enUpstream.body);
+        if (!enRawEmp) {
+          await logIntegrationAudit({
+            action: 'ensure-kawader-employee', method: req.method,
+            status: 'kawader_employee_ensure_error', code: 'KAWADER_BAD_RESPONSE',
+            ip: enIp, userAgent: enUa, origin: enOrigin, requestId: enRequestId,
+          });
+          return res.status(502).json(integrationError(
+            'KAWADER_BAD_RESPONSE', 'Could not parse employee from Kawader response', enRequestId
+          ));
+        }
+        var enSanResult = sanitizeKawaderEmployee(enRawEmp, KAWADER_EMPLOYEE_BASE_FIELDS);
+        if (enSanResult.forbiddenFound.length > 0) {
+          await logIntegrationAudit({
+            action: 'ensure-kawader-employee', method: req.method,
+            status: 'kawader_forbidden_fields_stripped',
+            code: 'FORBIDDEN_FIELDS:' + enSanResult.forbiddenFound.join(','),
+            ip: enIp, userAgent: enUa, origin: enOrigin, requestId: enRequestId,
+          });
+        }
+
+        // 4) فحص ثانٍ قبل الكتابة (تقليل race window)
+        var enEmployeesNow = await dbGet('employees') || [];
+        var enExistingNow = findExistingBasmaEmployee(enEmployeesNow, enEmpId);
+        if (enExistingNow) {
+          // أحد ما أنشأها بين فحصنا الأول والآن — نُعيد ref بدون كتابة
+          await logIntegrationAudit({
+            action: 'ensure-kawader-employee', method: req.method,
+            status: 'kawader_employee_ensure_already_exists', code: 'race_check',
+            ip: enIp, userAgent: enUa, origin: enOrigin, requestId: enRequestId,
+          });
+          return res.status(200).json(integrationSuccess({
+            source: 'basma',
+            created: false,
+            matchedBy: enExistingNow.matchedBy,
+            employee: buildBasmaEmployeeRef(enExistingNow.employee),
+          }, enRequestId));
+        }
+
+        // 5) إنشاء السجل الـ minimal
+        var enNewEmp = buildLazyBasmaEmployeeRecord(enSanResult.sanitized);
+        // كتابة آمنة: append إلى الـ array فقط، لا overwrite لموظفين آخرين
+        enEmployeesNow.push(enNewEmp);
+        try {
+          await dbSet('employees', enEmployeesNow);
+        } catch (e) {
+          await logIntegrationAudit({
+            action: 'ensure-kawader-employee', method: req.method,
+            status: 'kawader_employee_ensure_error', code: 'BASMA_WRITE_FAILED',
+            ip: enIp, userAgent: enUa, origin: enOrigin, requestId: enRequestId,
+          });
+          return res.status(500).json(integrationError(
+            'BASMA_WRITE_FAILED', 'Could not persist new employee', enRequestId
+          ));
+        }
+
+        await logIntegrationAudit({
+          action: 'ensure-kawader-employee', method: req.method,
+          status: 'kawader_employee_ensure_created', code: null,
+          ip: enIp, userAgent: enUa, origin: enOrigin, requestId: enRequestId,
+        });
+
+        return res.status(200).json(integrationSuccess({
+          source: 'basma',
+          created: true,
+          matchedBy: null,
+          employee: buildBasmaEmployeeRef(enNewEmp),
+        }, enRequestId));
+      }
+
+      /* ═══════════════════════════════════════════════════════════════
+       * v7.140 — PHASE 3: BASMA EMPLOYEE REFERENCE (read-only, minimal)
+       * ═══════════════════════════════════════════════════════════════
+       * GET /api/data?action=basma-employee-ref&employeeId=...
+       *   header: x-internal-key: <HMA_INTERNAL_KEY>
+       *
+       * يُعيد ref minimal لموظف موجود في basma:employees.
+       * لا قراءة لـ passwordHash, passwordSalt, idNumber, salary, faces.
+       *
+       * NO writes anywhere.
+       * ═══════════════════════════════════════════════════════════════ */
+      case 'basma-employee-ref': {
+        var brRequestId = makeIntegrationRequestId();
+        var brIp = extractClientIp(req);
+        var brUa = (req.headers && req.headers['user-agent']) ? String(req.headers['user-agent']) : '';
+        var brOrigin = (req.headers && req.headers.origin) ? String(req.headers.origin) : '';
+
+        if (req.method !== 'GET') {
+          await logIntegrationAudit({
+            action: 'basma-employee-ref', method: req.method,
+            status: 'error', code: 'METHOD_NOT_ALLOWED',
+            ip: brIp, userAgent: brUa, origin: brOrigin, requestId: brRequestId,
+          });
+          return res.status(405).json(integrationError(
+            'METHOD_NOT_ALLOWED', 'basma-employee-ref accepts GET only', brRequestId
+          ));
+        }
+
+        var brKeyCheck = verifyIntegrationInternalKey(req);
+        if (!brKeyCheck.ok) {
+          await logIntegrationAudit({
+            action: 'basma-employee-ref', method: req.method,
+            status: 'unauthorized_access', code: brKeyCheck.code,
+            ip: brIp, userAgent: brUa, origin: brOrigin, requestId: brRequestId,
+          });
+          var brUnauthStatus = (brKeyCheck.code === 'SERVER_MISCONFIGURED') ? 500 : 401;
+          return res.status(brUnauthStatus).json(integrationError(
+            brKeyCheck.code, brKeyCheck.message, brRequestId
+          ));
+        }
+
+        var brEmpIdValidation = validateEmployeeIdParam(req.query.employeeId);
+        if (!brEmpIdValidation.ok) {
+          await logIntegrationAudit({
+            action: 'basma-employee-ref', method: req.method,
+            status: 'error', code: 'MISSING_PARAM',
+            ip: brIp, userAgent: brUa, origin: brOrigin, requestId: brRequestId,
+          });
+          return res.status(400).json(integrationError(
+            'MISSING_PARAM', brEmpIdValidation.message, brRequestId
+          ));
+        }
+        var brEmpId = brEmpIdValidation.value;
+
+        var brEmployees = await dbGet('employees') || [];
+        var brFound = findExistingBasmaEmployee(brEmployees, brEmpId);
+        if (!brFound) {
+          await logIntegrationAudit({
+            action: 'basma-employee-ref', method: req.method,
+            status: 'basma_employee_ref_not_found', code: 'NOT_FOUND',
+            ip: brIp, userAgent: brUa, origin: brOrigin, requestId: brRequestId,
+          });
+          return res.status(404).json(integrationError(
+            'NOT_FOUND', 'Employee not found in Basma', brRequestId
+          ));
+        }
+
+        await logIntegrationAudit({
+          action: 'basma-employee-ref', method: req.method,
+          status: 'basma_employee_ref_success', code: null,
+          ip: brIp, userAgent: brUa, origin: brOrigin, requestId: brRequestId,
+        });
+
+        return res.status(200).json(integrationSuccess({
+          source: 'basma',
+          matchedBy: brFound.matchedBy,
+          employee: buildBasmaEmployeeRef(brFound.employee),
+        }, brRequestId));
       }
 
       case 'init': {
