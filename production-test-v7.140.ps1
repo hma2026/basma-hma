@@ -16,10 +16,19 @@
 #   - No attendance, no login, no password endpoints touched.
 #   - HMA_INTERNAL_KEY is never printed to the console.
 #   - Forbidden fields (passwordHash, passwordSalt, idNumber, salary,
-#     tokens) in any response → test marked FAIL.
+#     tokens, faces, username, hasAccount, dob, joinDate, sceNumber, ...)
+#     in any response → test marked FAIL.
 #   - Results are NOT auto-saved. To save, redirect manually:
 #       .\production-test-v7.140.ps1 | Tee-Object -FilePath results.txt
 #     (verify the file has no secrets before sharing)
+#
+# SIDE EFFECT (intentional):
+#   This script calls ensure-kawader-employee, which (if the employee
+#   exists in Kawader with status='active') WILL create or update:
+#     basma:employee_ref:{TEST_EMPLOYEE_ID}
+#     basma:employee_ref_idx (SADD)
+#   It does NOT modify basma:employees or any other Redis key.
+#   The script does NOT delete or clean up created refs.
 # -------------------------------------------------------------------
 
 #Requires -Version 5.1
@@ -47,7 +56,7 @@ $baseUrl = $baseUrl.TrimEnd('/')
 
 # Sanity prints (NO key value, only its length)
 Write-Host ""
-Write-Host "Basma Production Test Pack v7.140.1" -ForegroundColor Cyan
+Write-Host "Basma Production Test Pack v7.140.3" -ForegroundColor Cyan
 Write-Host ("=" * 60)
 Write-Host "Base URL              : $baseUrl"
 Write-Host "Test employeeId       : $testEmpId"
@@ -55,9 +64,22 @@ Write-Host "Test phone            : $testEmpPhone"
 Write-Host ("HMA_INTERNAL_KEY len  : {0} chars (value redacted)" -f $internalKey.Length)
 Write-Host ("=" * 60)
 Write-Host ""
+Write-Host "NOTICE: This test will call ensure-kawader-employee with the" -ForegroundColor Yellow
+Write-Host "        provided TEST_EMPLOYEE_ID. If that employee exists in" -ForegroundColor Yellow
+Write-Host "        Kawader with status='active', this WILL create or update:" -ForegroundColor Yellow
+Write-Host "          basma:employee_ref:$testEmpId" -ForegroundColor Yellow
+Write-Host "        and add the id to:" -ForegroundColor Yellow
+Write-Host "          basma:employee_ref_idx" -ForegroundColor Yellow
+Write-Host "        No other Redis keys are touched. No deletion is performed." -ForegroundColor Yellow
+Write-Host "        basma:employees is NOT modified at any point." -ForegroundColor Yellow
+Write-Host ""
+Write-Host "        If you do not want this side effect, press Ctrl+C now." -ForegroundColor Yellow
+Write-Host "        Resuming in 3 seconds..." -ForegroundColor Yellow
+Start-Sleep -Seconds 3
+Write-Host ""
 
 # Forbidden field names — any occurrence as a JSON property name → FAIL.
-# v7.140.1 — expanded list to match the strict employee_ref schema.
+# v7.140.3 — expanded list to match the strict employee_ref schema.
 $forbiddenFields = @(
     'passwordHash','passwordSalt','password',
     'idNumber','nationalId','iqamaNumber',
@@ -76,8 +98,10 @@ function Invoke-Probe {
         [string]$Url,
         [hashtable]$Headers = @{}
     )
-    # Use Invoke-WebRequest with -SkipHttpErrorCheck if available (PS 7+),
-    # else wrap in try/catch to capture non-2xx responses.
+    # v7.140.3 fix: capture error response body in BOTH PowerShell 5.1 and PS 7+.
+    # PS 5.1 throws System.Net.WebException with Response.GetResponseStream().
+    # PS 7+ throws Microsoft.PowerShell.Commands.HttpResponseException; the body
+    # is on $_.ErrorDetails.Message (not on the Response object the way PS 5.1 has it).
     $result = [pscustomobject]@{
         StatusCode  = $null
         BodyText    = ''
@@ -89,29 +113,39 @@ function Invoke-Probe {
         $result.StatusCode = [int]$resp.StatusCode
         $result.BodyText   = [string]$resp.Content
     }
-    catch [System.Net.WebException] {
-        if ($_.Exception.Response) {
-            $result.StatusCode = [int]$_.Exception.Response.StatusCode
-            try {
-                $stream = $_.Exception.Response.GetResponseStream()
-                $reader = New-Object System.IO.StreamReader($stream)
-                $result.BodyText = $reader.ReadToEnd()
-            } catch {}
-        } else {
-            $result.Error = $_.Exception.Message
-        }
-    }
     catch {
-        # PS 7+ throws different exception types; capture status if present
-        if ($_.Exception.Response) {
-            try { $result.StatusCode = [int]$_.Exception.Response.StatusCode } catch {}
-            try {
-                $stream = $_.Exception.Response.GetResponseStream()
-                $reader = New-Object System.IO.StreamReader($stream)
-                $result.BodyText = $reader.ReadToEnd()
-            } catch {}
+        $exc = $_.Exception
+
+        # 1) Try $_.ErrorDetails.Message (works on PS 7+ for non-2xx responses).
+        if ($_.ErrorDetails -and $_.ErrorDetails.Message) {
+            $result.BodyText = [string]$_.ErrorDetails.Message
         }
-        if (-not $result.StatusCode) { $result.Error = $_.Exception.Message }
+
+        # 2) Try to extract HTTP status from the exception's Response object.
+        if ($exc.Response) {
+            try {
+                # WebResponse.StatusCode (PS 5.1) and HttpResponseMessage.StatusCode (PS 7+)
+                # both expose an enum that casts to int.
+                $result.StatusCode = [int]$exc.Response.StatusCode
+            } catch {}
+
+            # 3) PS 5.1 only: read the body via GetResponseStream() if we still
+            #    don't have it and the Response object actually supports streams.
+            if (-not $result.BodyText) {
+                try {
+                    $stream = $exc.Response.GetResponseStream()
+                    if ($stream) {
+                        $reader = New-Object System.IO.StreamReader($stream)
+                        $result.BodyText = $reader.ReadToEnd()
+                    }
+                } catch {}
+            }
+        }
+
+        if (-not $result.StatusCode -and -not $result.BodyText) {
+            # Network failure or DNS error — capture for diagnosis only.
+            $result.Error = $exc.Message
+        }
     }
     if ($result.BodyText) {
         try { $result.BodyJson = $result.BodyText | ConvertFrom-Json -ErrorAction Stop }
@@ -143,13 +177,22 @@ function Add-TestResult {
         [Nullable[bool]]$ExpectedOk,
         [Nullable[bool]]$ActualOk,
         [string[]]$LeakedFields,
+        [string]$ExpectedErrorCode = '',
+        [string]$ActualErrorCode = '',
+        [bool]$BodyParsed = $true,
         [string]$Notes = ''
     )
     $statusOk = ($ExpectedStatus -eq $ActualStatus)
     $okOk     = $true
     if ($null -ne $ExpectedOk) { $okOk = ($ExpectedOk -eq $ActualOk) }
     $noLeak   = ($LeakedFields.Count -eq 0)
-    $verdict  = if ($statusOk -and $okOk -and $noLeak) { 'PASS' } else { 'FAIL' }
+    # v7.140.3 — body must be parsable JSON whenever we expect a structured response
+    $bodyOk   = $BodyParsed
+    # v7.140.3 — if an error.code is expected, it must match exactly
+    $codeOk   = $true
+    if ($ExpectedErrorCode) { $codeOk = ($ExpectedErrorCode -eq $ActualErrorCode) }
+
+    $verdict  = if ($statusOk -and $okOk -and $noLeak -and $bodyOk -and $codeOk) { 'PASS' } else { 'FAIL' }
 
     $tests.Add([pscustomobject]@{
         Test           = $Name
@@ -157,6 +200,8 @@ function Add-TestResult {
         ActualStatus   = if ($null -ne $ActualStatus) { $ActualStatus } else { '-' }
         ExpectedOk     = if ($null -ne $ExpectedOk) { $ExpectedOk } else { '-' }
         ActualOk       = if ($null -ne $ActualOk) { $ActualOk } else { '-' }
+        ErrorCode      = if ($ActualErrorCode) { $ActualErrorCode } else { '' }
+        BodyOk         = $bodyOk
         LeakedFields   = if ($noLeak) { '' } else { ($LeakedFields -join ',') }
         Verdict        = $verdict
         Notes          = $Notes
@@ -178,10 +223,11 @@ $leak  = Test-ForbiddenLeak $probe.BodyText
 $okVal = if ($probe.BodyJson) { [bool]$probe.BodyJson.ok } else { $null }
 $verNote = ''
 if ($probe.BodyJson -and $probe.BodyJson.meta) { $verNote = "version=$($probe.BodyJson.meta.version)" }
+$bodyParsed = ($null -ne $probe.BodyJson)
 Add-TestResult -Name 'health with valid key' `
     -ExpectedStatus 200 -ActualStatus $probe.StatusCode `
     -ExpectedOk $true -ActualOk $okVal -LeakedFields $leak `
-    -Notes $verNote
+    -BodyParsed $bodyParsed -Notes $verNote
 
 # =========================================================
 # Test 2 — health WITHOUT key
@@ -191,10 +237,12 @@ $probe = Invoke-Probe "$baseUrl/api/data?action=health" @{}
 $leak  = Test-ForbiddenLeak $probe.BodyText
 $okVal = if ($probe.BodyJson) { [bool]$probe.BodyJson.ok } else { $null }
 $code  = if ($probe.BodyJson -and $probe.BodyJson.error) { $probe.BodyJson.error.code } else { '' }
+$bodyParsed = ($null -ne $probe.BodyJson)
 Add-TestResult -Name 'health without key' `
     -ExpectedStatus 401 -ActualStatus $probe.StatusCode `
     -ExpectedOk $false -ActualOk $okVal -LeakedFields $leak `
-    -Notes "expected error.code=MISSING_INTERNAL_KEY actual=$code"
+    -ExpectedErrorCode 'MISSING_INTERNAL_KEY' -ActualErrorCode $code `
+    -BodyParsed $bodyParsed -Notes "expected error.code=MISSING_INTERNAL_KEY actual=$code"
 
 # =========================================================
 # Test 3 — kawader-employee with valid employeeId
@@ -204,9 +252,11 @@ $encEmpId = [System.Net.WebUtility]::UrlEncode($testEmpId)
 $probe = Invoke-Probe "$baseUrl/api/data?action=kawader-employee&employeeId=$encEmpId" $authHeaders
 $leak  = Test-ForbiddenLeak $probe.BodyText
 $okVal = if ($probe.BodyJson) { [bool]$probe.BodyJson.ok } else { $null }
+$bodyParsed = ($null -ne $probe.BodyJson)
 Add-TestResult -Name 'kawader-employee with valid employeeId' `
     -ExpectedStatus 200 -ActualStatus $probe.StatusCode `
-    -ExpectedOk $true -ActualOk $okVal -LeakedFields $leak
+    -ExpectedOk $true -ActualOk $okVal -LeakedFields $leak `
+    -BodyParsed $bodyParsed
 
 # =========================================================
 # Test 4 — kawader-employee-by-phone with valid phone
@@ -216,9 +266,11 @@ $encPhone = [System.Net.WebUtility]::UrlEncode($testEmpPhone)
 $probe = Invoke-Probe "$baseUrl/api/data?action=kawader-employee-by-phone&phone=$encPhone" $authHeaders
 $leak  = Test-ForbiddenLeak $probe.BodyText
 $okVal = if ($probe.BodyJson) { [bool]$probe.BodyJson.ok } else { $null }
+$bodyParsed = ($null -ne $probe.BodyJson)
 Add-TestResult -Name 'kawader-employee-by-phone with valid phone' `
     -ExpectedStatus 200 -ActualStatus $probe.StatusCode `
-    -ExpectedOk $true -ActualOk $okVal -LeakedFields $leak
+    -ExpectedOk $true -ActualOk $okVal -LeakedFields $leak `
+    -BodyParsed $bodyParsed
 
 # =========================================================
 # Test 5 — ensure-kawader-employee with valid employeeId
@@ -229,10 +281,11 @@ $leak  = Test-ForbiddenLeak $probe.BodyText
 $okVal = if ($probe.BodyJson) { [bool]$probe.BodyJson.ok } else { $null }
 $provisioned = if ($probe.BodyJson -and $probe.BodyJson.data) { $probe.BodyJson.data.provisioned } else { '?' }
 $srcVal = if ($probe.BodyJson -and $probe.BodyJson.data) { $probe.BodyJson.data.source } else { '?' }
+$bodyParsed = ($null -ne $probe.BodyJson)
 Add-TestResult -Name 'ensure-kawader-employee with valid employeeId' `
     -ExpectedStatus 200 -ActualStatus $probe.StatusCode `
     -ExpectedOk $true -ActualOk $okVal -LeakedFields $leak `
-    -Notes "provisioned=$provisioned source=$srcVal"
+    -BodyParsed $bodyParsed -Notes "provisioned=$provisioned source=$srcVal"
 
 # =========================================================
 # Test 6 — basma-employee-ref after ensure
@@ -243,10 +296,11 @@ $leak  = Test-ForbiddenLeak $probe.BodyText
 $okVal = if ($probe.BodyJson) { [bool]$probe.BodyJson.ok } else { $null }
 $srcVal2 = if ($probe.BodyJson -and $probe.BodyJson.data) { $probe.BodyJson.data.source } else { '' }
 $srcSys = if ($probe.BodyJson -and $probe.BodyJson.data -and $probe.BodyJson.data.employee) { $probe.BodyJson.data.employee.sourceSystem } else { '' }
+$bodyParsed = ($null -ne $probe.BodyJson)
 Add-TestResult -Name 'basma-employee-ref after ensure' `
     -ExpectedStatus 200 -ActualStatus $probe.StatusCode `
     -ExpectedOk $true -ActualOk $okVal -LeakedFields $leak `
-    -Notes "source=$srcVal2 sourceSystem=$srcSys"
+    -BodyParsed $bodyParsed -Notes "source=$srcVal2 sourceSystem=$srcSys"
 
 # =========================================================
 # Test 7 — ensure-kawader-employee with non-existing employeeId
@@ -257,10 +311,12 @@ $probe = Invoke-Probe "$baseUrl/api/data?action=ensure-kawader-employee&employee
 $leak  = Test-ForbiddenLeak $probe.BodyText
 $okVal = if ($probe.BodyJson) { [bool]$probe.BodyJson.ok } else { $null }
 $code  = if ($probe.BodyJson -and $probe.BodyJson.error) { $probe.BodyJson.error.code } else { '' }
+$bodyParsed = ($null -ne $probe.BodyJson)
 Add-TestResult -Name 'ensure with non-existing employeeId' `
     -ExpectedStatus 404 -ActualStatus $probe.StatusCode `
     -ExpectedOk $false -ActualOk $okVal -LeakedFields $leak `
-    -Notes "expected error.code=NOT_FOUND actual=$code"
+    -ExpectedErrorCode 'NOT_FOUND' -ActualErrorCode $code `
+    -BodyParsed $bodyParsed -Notes "expected error.code=NOT_FOUND actual=$code"
 
 # =========================================================
 # Test 8 — ensure-kawader-employee WITHOUT key
@@ -270,10 +326,12 @@ $probe = Invoke-Probe "$baseUrl/api/data?action=ensure-kawader-employee&employee
 $leak  = Test-ForbiddenLeak $probe.BodyText
 $okVal = if ($probe.BodyJson) { [bool]$probe.BodyJson.ok } else { $null }
 $code  = if ($probe.BodyJson -and $probe.BodyJson.error) { $probe.BodyJson.error.code } else { '' }
+$bodyParsed = ($null -ne $probe.BodyJson)
 Add-TestResult -Name 'ensure without key' `
     -ExpectedStatus 401 -ActualStatus $probe.StatusCode `
     -ExpectedOk $false -ActualOk $okVal -LeakedFields $leak `
-    -Notes "expected error.code=MISSING_INTERNAL_KEY actual=$code"
+    -ExpectedErrorCode 'MISSING_INTERNAL_KEY' -ActualErrorCode $code `
+    -BodyParsed $bodyParsed -Notes "expected error.code=MISSING_INTERNAL_KEY actual=$code"
 
 # =========================================================
 # Summary
@@ -283,7 +341,7 @@ Write-Host ("=" * 60)
 Write-Host "SUMMARY" -ForegroundColor Cyan
 Write-Host ("=" * 60)
 
-$tests | Format-Table -Property Test,ExpectedStatus,ActualStatus,ExpectedOk,ActualOk,LeakedFields,Verdict -AutoSize
+$tests | Format-Table -Property Test,ExpectedStatus,ActualStatus,ExpectedOk,ActualOk,ErrorCode,BodyOk,LeakedFields,Verdict -AutoSize
 
 $passCount = ($tests | Where-Object { $_.Verdict -eq 'PASS' }).Count
 $failCount = ($tests | Where-Object { $_.Verdict -eq 'FAIL' }).Count

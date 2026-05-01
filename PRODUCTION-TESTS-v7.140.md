@@ -1,7 +1,7 @@
 # PRODUCTION-TESTS-v7.140.md
-## Basma Integration — Production Test Pack (v7.140.1)
+## Basma Integration — Production Test Pack (v7.140.3)
 
-**النطاق:** اختبار endpoints التكامل في الإنتاج بعد نشر `Basma v7.140.1`
+**النطاق:** اختبار endpoints التكامل في الإنتاج بعد نشر `Basma v7.140.3`
 (Phase 0 + Phase 2 + Phase 3 Fix).
 
 **معمارية Phase 3 (مهم):**
@@ -67,7 +67,7 @@ curl.exe -i "$env:BASMA_BASE_URL/api/data?action=health"
 - `ok`: `false`
 - `error.code`: `MISSING_INTERNAL_KEY`
 - `meta.service`: `basma`
-- `meta.version`: `7.140.1`
+- `meta.version`: `7.140.3`
 
 ### اختبار 2: health بمفتاح صحيح
 
@@ -81,7 +81,7 @@ curl.exe -i -H "x-internal-key: $env:HMA_INTERNAL_KEY" `
 - `ok`: `true`
 - `data.service`: `basma`
 - `data.status`: `healthy`
-- `data.version`: `7.140.1`
+- `data.version`: `7.140.3`
 - `data.redis`: `connected`
 - `meta.requestId`: قيمة تبدأ بـ `req_basma_`
 
