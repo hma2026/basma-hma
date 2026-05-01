@@ -1047,10 +1047,155 @@ async function redisFetch(cmdArr) {
 }
 
 
-export default async function handler(req, res) {
-  res.setHeader('Access-Control-Allow-Origin', '*');
+/* ═══════════════════════════════════════════════════════════════════
+ * v7.138 — PHASE 0: INTEGRATION FOUNDATION
+ * ═══════════════════════════════════════════════════════════════════
+ * طبقة التكامل الآمنة بين الأنظمة الثلاثة (basma + kadwar + crm).
+ * هذي الطبقة معزولة تماماً عن عمليات بصمة التشغيلية:
+ *   - لا تتداخل مع نظام الجلسات الحالي (x-session-token)
+ *   - لا تتداخل مع verify-password / 10 sensitive operations
+ *   - لا تتداخل مع kadwar-sync fallback
+ *   - تستخدم Redis key مستقل: basma:audit_integration:{date}:{id}
+ *   - لا تخلط مع basma:audit_log أو basma:update_audit_log
+ * ═══════════════════════════════════════════════════════════════════ */
+
+// النطاقات المسموح لها بـ CORS (Phase 0)
+var INTEGRATION_ALLOWED_ORIGINS = [
+  'https://hma.engineer',
+  'https://b.hma.engineer',
+  'https://crm.hma.engineer',
+];
+
+// Actions الجديدة للتكامل (تتطلب x-internal-key، تتجاوز session check)
+var INTEGRATION_ACTIONS = new Set([
+  'health',
+]);
+
+// Service version للـ response meta (مفصول عن package.json بقصد)
+var INTEGRATION_SERVICE_VERSION = '7.138';
+
+// تكوين CORS مقيد بدلاً من *
+function applyIntegrationCors(req, res) {
+  var requestOrigin = (req.headers && req.headers.origin) ? String(req.headers.origin) : '';
+  var allowOrigin;
+  if (INTEGRATION_ALLOWED_ORIGINS.indexOf(requestOrigin) >= 0) {
+    allowOrigin = requestOrigin;
+  } else {
+    // افتراضي آمن: نطاق بصمة الإنتاج (لا نضع * في الإنتاج)
+    allowOrigin = 'https://b.hma.engineer';
+  }
+  res.setHeader('Access-Control-Allow-Origin', allowOrigin);
+  res.setHeader('Vary', 'Origin');
   res.setHeader('Access-Control-Allow-Methods', 'GET,POST,PUT,DELETE,OPTIONS');
   res.setHeader('Access-Control-Allow-Headers', 'Content-Type, x-session-token, x-internal-key');
+}
+
+// توليد requestId لكل طلب تكامل
+function makeIntegrationRequestId() {
+  var rand = Math.random().toString(36).slice(2, 10);
+  return 'req_basma_' + Date.now() + '_' + rand;
+}
+
+// Response Shape الموحد — نجاح
+function integrationSuccess(data, requestId) {
+  return {
+    ok: true,
+    data: (data === undefined ? null : data),
+    error: null,
+    meta: {
+      requestId: requestId,
+      timestamp: new Date().toISOString(),
+      service: 'basma',
+      version: INTEGRATION_SERVICE_VERSION,
+    },
+  };
+}
+
+// Response Shape الموحد — فشل
+function integrationError(code, message, requestId) {
+  return {
+    ok: false,
+    data: null,
+    error: {
+      code: String(code || 'INTERNAL_ERROR'),
+      message: String(message || ''),
+    },
+    meta: {
+      requestId: requestId,
+      timestamp: new Date().toISOString(),
+      service: 'basma',
+      version: INTEGRATION_SERVICE_VERSION,
+    },
+  };
+}
+
+// Helper: التحقق من x-internal-key (Phase 0 — للـ INTEGRATION_ACTIONS فقط)
+// لا تستخدمه للـ kadwar-sync fallback (له منطقه الخاص)
+function verifyIntegrationInternalKey(req) {
+  var expected = (process.env.HMA_INTERNAL_KEY || '').trim();
+  if (!expected) {
+    return { ok: false, code: 'SERVER_MISCONFIGURED', message: 'HMA_INTERNAL_KEY is not configured on the server' };
+  }
+  var provided = ((req.headers && req.headers['x-internal-key']) || '').trim();
+  if (!provided) {
+    return { ok: false, code: 'MISSING_INTERNAL_KEY', message: 'x-internal-key header is required for integration endpoints' };
+  }
+  if (provided !== expected) {
+    return { ok: false, code: 'INVALID_INTERNAL_KEY', message: 'x-internal-key did not match' };
+  }
+  return { ok: true };
+}
+
+// Helper: تسجيل في integration audit log (Redis key مستقل)
+// لا يُخزَّن: HMA_INTERNAL_KEY، session tokens، passwordHash، passwordSalt، أي أسرار
+async function logIntegrationAudit(entry) {
+  try {
+    if (!USE_REDIS) return;
+    var crypto = await import('crypto');
+    var nowIso = new Date().toISOString();
+    var date = nowIso.slice(0, 10); // YYYY-MM-DD
+    var idSuffix = crypto.randomBytes(4).toString('hex');
+    var id = String(Date.now()) + '_' + idSuffix;
+    var key = 'basma:audit_integration:' + date + ':' + id;
+    var safeRecord = {
+      id: id,
+      timestamp: nowIso,
+      action: entry && entry.action ? String(entry.action).slice(0, 64) : null,
+      method: entry && entry.method ? String(entry.method).slice(0, 16) : null,
+      status: entry && entry.status ? String(entry.status).slice(0, 32) : null,
+      code: entry && entry.code ? String(entry.code).slice(0, 64) : null,
+      ip: entry && entry.ip ? String(entry.ip).slice(0, 64) : null,
+      userAgent: entry && entry.userAgent ? String(entry.userAgent).slice(0, 200) : null,
+      origin: entry && entry.origin ? String(entry.origin).slice(0, 200) : null,
+      requestId: entry && entry.requestId ? String(entry.requestId).slice(0, 80) : null,
+    };
+    // TTL: 90 يوم (يكفي لمراجعة دورية ولا ينفجر استهلاك Redis)
+    await redisFetch(['SET', key, JSON.stringify(safeRecord), 'EX', String(60 * 60 * 24 * 90)]);
+  } catch (_) {
+    // الـ audit log لا يجب أن يفشل الطلب — نتجاهل أي خطأ بصمت
+  }
+}
+
+// Helper: استخراج IP العميل (آمن مع كل الحالات)
+function extractClientIp(req) {
+  try {
+    var fwd = (req.headers && req.headers['x-forwarded-for']) ? String(req.headers['x-forwarded-for']) : '';
+    if (fwd) {
+      var first = fwd.split(',')[0];
+      if (first) return first.trim().slice(0, 64);
+    }
+    var real = (req.headers && req.headers['x-real-ip']) ? String(req.headers['x-real-ip']) : '';
+    if (real) return real.trim().slice(0, 64);
+    return '';
+  } catch (_) {
+    return '';
+  }
+}
+
+
+export default async function handler(req, res) {
+  // v7.138 — CORS مقيد على نطاقات الإنتاج فقط (بدلاً من *)
+  applyIntegrationCors(req, res);
   if (req.method === 'OPTIONS') return res.status(200).end();
 
   const { action } = req.query;
@@ -1084,8 +1229,13 @@ export default async function handler(req, res) {
     }
   }
 
+  // v7.138 — Phase 0: actions التكامل تتجاوز session check.
+  // التحقق من x-internal-key يتم داخل case الخاص بكل action،
+  // مع response shape موحد (ok/data/error/meta) و audit log مستقل.
+  var isIntegrationAction = INTEGRATION_ACTIONS.has(action);
+
   var session = null;
-  if (!isPublic && !isInternalCall && !isKadwarFallback) {
+  if (!isPublic && !isInternalCall && !isKadwarFallback && !isIntegrationAction) {
     var sessionToken = req.headers['x-session-token'] || '';
     session = await verifySession(sessionToken);
     if (!session) {
@@ -1104,6 +1254,73 @@ export default async function handler(req, res) {
 
   try {
     switch (action) {
+
+      /* ═══════════════════════════════════════════════════════════════
+       * v7.138 — PHASE 0: HEALTH CHECK
+       * ═══════════════════════════════════════════════════════════════
+       * GET /api/data?action=health
+       *   header: x-internal-key: <HMA_INTERNAL_KEY>
+       *
+       * Response shape موحد (ok/data/error/meta).
+       * كل طلب يُسجَّل في basma:audit_integration:{date}:{id}.
+       * لا تُكشف أي معلومات حساسة (لا أسرار، لا session tokens).
+       * ═══════════════════════════════════════════════════════════════ */
+      case 'health': {
+        var hRequestId = makeIntegrationRequestId();
+        var hIp = extractClientIp(req);
+        var hUa = (req.headers && req.headers['user-agent']) ? String(req.headers['user-agent']) : '';
+        var hOrigin = (req.headers && req.headers.origin) ? String(req.headers.origin) : '';
+
+        // 1) GET فقط
+        if (req.method !== 'GET') {
+          await logIntegrationAudit({
+            action: 'health',
+            method: req.method,
+            status: 'error',
+            code: 'METHOD_NOT_ALLOWED',
+            ip: hIp, userAgent: hUa, origin: hOrigin, requestId: hRequestId,
+          });
+          return res.status(405).json(integrationError(
+            'METHOD_NOT_ALLOWED',
+            'health endpoint accepts GET only',
+            hRequestId
+          ));
+        }
+
+        // 2) التحقق من x-internal-key
+        var hKeyCheck = verifyIntegrationInternalKey(req);
+        if (!hKeyCheck.ok) {
+          await logIntegrationAudit({
+            action: 'health',
+            method: req.method,
+            status: 'unauthorized',
+            code: hKeyCheck.code,
+            ip: hIp, userAgent: hUa, origin: hOrigin, requestId: hRequestId,
+          });
+          var hStatus = (hKeyCheck.code === 'SERVER_MISCONFIGURED') ? 500 : 401;
+          return res.status(hStatus).json(integrationError(
+            hKeyCheck.code,
+            hKeyCheck.message,
+            hRequestId
+          ));
+        }
+
+        // 3) نجاح
+        await logIntegrationAudit({
+          action: 'health',
+          method: req.method,
+          status: 'success',
+          code: null,
+          ip: hIp, userAgent: hUa, origin: hOrigin, requestId: hRequestId,
+        });
+
+        return res.status(200).json(integrationSuccess({
+          service: 'basma',
+          status: 'healthy',
+          version: INTEGRATION_SERVICE_VERSION,
+          redis: USE_REDIS ? 'connected' : 'unavailable',
+        }, hRequestId));
+      }
 
       case 'init': {
         const ex = await dbGet('employees');
