@@ -1069,10 +1069,13 @@ var INTEGRATION_ALLOWED_ORIGINS = [
 // Actions الجديدة للتكامل (تتطلب x-internal-key، تتجاوز session check)
 var INTEGRATION_ACTIONS = new Set([
   'health',
+  // v7.139 — Phase 2: قراءة موظف من كوادر (read-through، لا حفظ، لا إنشاء)
+  'kawader-employee',
+  'kawader-employee-by-phone',
 ]);
 
 // Service version للـ response meta (مفصول عن package.json بقصد)
-var INTEGRATION_SERVICE_VERSION = '7.138';
+var INTEGRATION_SERVICE_VERSION = '7.139';
 
 // تكوين CORS مقيد بدلاً من *
 function applyIntegrationCors(req, res) {
@@ -1190,6 +1193,210 @@ function extractClientIp(req) {
   } catch (_) {
     return '';
   }
+}
+
+
+/* ═══════════════════════════════════════════════════════════════════
+ * v7.139 — PHASE 2: KAWADER EMPLOYEE IDENTITY READ
+ * ═══════════════════════════════════════════════════════════════════
+ * قراءة Snapshot خفيف لموظف من كوادر عبر API داخلي محمي بـ HMA_INTERNAL_KEY.
+ * لا يحفظ بيانات الموظف في Basma. لا ينشئ موظفين. لا يعدل قاعدة البيانات.
+ * read-through lookup فقط. أي مكان في بصمة يحتاج بيانات هوية حديثة من
+ * كوادر يمكنه استدعاء هذا الـ action.
+ *
+ * Defense in depth:
+ *  - allow-list صارم: نقبل فقط الحقول المُعلنة، ونتجاهل الباقي
+ *  - block-list دفاعي: لو ظهر حقل ممنوع (passwordHash, idNumber, salary...)
+ *    نسجل تحذير في audit ولا نمرره للعميل
+ *  - timeout قصير لمنع تعليق Basma لو كوادر بطيء
+ *  - أخطاء الشبكة/الـ upstream لا تكشف stack أو internal details
+ * ═══════════════════════════════════════════════════════════════════ */
+
+// قاعدة Kawader (https://hma.engineer أو override من env)
+var KAWADER_BASE_URL = (process.env.KAWADER_BASE_URL || 'https://hma.engineer').replace(/\/+$/, '');
+
+// timeout افتراضي لاستدعاءات كوادر (ms)
+var KAWADER_DEFAULT_TIMEOUT_MS = 8000;
+
+// الحقول المسموح بها للموظف القادم من kawader-employee
+// (allow-list صارم — أي حقل خارج هذي القائمة يُستبعد)
+var KAWADER_EMPLOYEE_BASE_FIELDS = [
+  'employeeId',
+  'employeeCode',
+  'name',
+  'phone',
+  'email',
+  'jobTitle',
+  'department',
+  'status',
+  'managerEmployeeId',
+  'branch',
+  'updatedAt',
+];
+
+// نفس الحقول + roles (روles مسموحة فقط من by-phone)
+var KAWADER_EMPLOYEE_BY_PHONE_FIELDS = KAWADER_EMPLOYEE_BASE_FIELDS.concat(['roles']);
+
+// قائمة دفاعية بحقول ممنوعة — لو ظهرت في response من كوادر، نسجل تحذير
+// ونحذفها قبل تمريرها للعميل. هذي حماية احتياطية ضد bug في كوادر.
+var KAWADER_FORBIDDEN_FIELDS = new Set([
+  'password', 'passwordHash', 'passwordSalt',
+  'idNumber', 'nationalId', 'iqamaNumber',
+  'salary', 'salaryDetails', 'compensation',
+  'contracts', 'contract',
+  'cv', 'cvFile', 'cvPath',
+  'evaluations', 'evaluation',
+  'files', 'attachments',
+  'token', 'tokens', 'sessionToken', 'apiKey', 'secret',
+]);
+
+// استدعاء كوادر مع HMA_INTERNAL_KEY
+// لا يكتب الـ secret في أي log/audit/response
+async function callKawaderIntegration(path, options) {
+  options = options || {};
+  var method = options.method || 'GET';
+  var timeoutMs = options.timeoutMs || KAWADER_DEFAULT_TIMEOUT_MS;
+  var internalKey = (process.env.HMA_INTERNAL_KEY || '').trim();
+  if (!internalKey) {
+    return {
+      ok: false,
+      code: 'SERVER_MISCONFIGURED',
+      message: 'HMA_INTERNAL_KEY is not configured',
+      status: 500,
+    };
+  }
+  var url = KAWADER_BASE_URL + (path.startsWith('/') ? path : '/' + path);
+  var ctrl;
+  try { ctrl = new AbortController(); } catch (_) { ctrl = null; }
+  var timer = ctrl ? setTimeout(function () { try { ctrl.abort(); } catch (_) {} }, timeoutMs) : null;
+  var headers = {
+    'Content-Type': 'application/json',
+    'Accept': 'application/json',
+    'x-internal-key': internalKey,
+    'User-Agent': 'basma-integration/' + INTEGRATION_SERVICE_VERSION,
+  };
+  var fetchCfg = { method: method, headers: headers };
+  if (ctrl) fetchCfg.signal = ctrl.signal;
+  if (options.body) fetchCfg.body = JSON.stringify(options.body);
+
+  var resp;
+  try {
+    resp = await fetch(url, fetchCfg);
+  } catch (e) {
+    if (timer) clearTimeout(timer);
+    var isAbort = (e && (e.name === 'AbortError' || /abort/i.test(String(e.message || ''))));
+    return {
+      ok: false,
+      code: isAbort ? 'KAWADER_TIMEOUT' : 'KAWADER_UNREACHABLE',
+      message: isAbort ? 'Kawader did not respond in time' : 'Could not reach Kawader',
+      status: 502,
+    };
+  }
+  if (timer) clearTimeout(timer);
+
+  // 404 → not found على مستوى التكامل
+  if (resp.status === 404) {
+    return { ok: false, code: 'NOT_FOUND', status: 404, message: 'Resource not found in Kawader' };
+  }
+  // 401/403 من كوادر معناه HMA_INTERNAL_KEY مرفوض هناك
+  if (resp.status === 401 || resp.status === 403) {
+    return { ok: false, code: 'KAWADER_AUTH_FAILED', status: 502, message: 'Kawader rejected the integration key' };
+  }
+  if (!resp.ok) {
+    return { ok: false, code: 'KAWADER_ERROR', status: 502, message: 'Kawader returned an unexpected status' };
+  }
+
+  var bodyJson;
+  try {
+    bodyJson = await resp.json();
+  } catch (_) {
+    return { ok: false, code: 'KAWADER_BAD_RESPONSE', status: 502, message: 'Kawader returned invalid JSON' };
+  }
+
+  return { ok: true, status: resp.status, body: bodyJson };
+}
+
+// استخراج كائن الموظف من response كوادر بشكل دفاعي
+// نتعامل مع 3 أشكال محتملة:
+//   1. { ok: true, data: { employee: {...} } }   ← الشكل الموحد المتوقع
+//   2. { employee: {...} }                        ← اختصار
+//   3. {...}                                       ← الكائن مباشرة
+function extractKawaderEmployee(body) {
+  if (!body || typeof body !== 'object') return null;
+  // الشكل الموحد
+  if (body.data && typeof body.data === 'object') {
+    if (body.data.employee && typeof body.data.employee === 'object') return body.data.employee;
+    if (body.data.user && typeof body.data.user === 'object') return body.data.user;
+    // إذا data نفسها كائن موظف
+    if (body.data.employeeId || body.data.employeeCode || body.data.phone) return body.data;
+  }
+  if (body.employee && typeof body.employee === 'object') return body.employee;
+  if (body.user && typeof body.user === 'object') return body.user;
+  // Top-level employee
+  if (body.employeeId || body.employeeCode || body.phone) return body;
+  return null;
+}
+
+// تطبيق allow-list + كشف الحقول الممنوعة
+// يرجع { sanitized: {...}, forbiddenFound: [...] }
+function sanitizeKawaderEmployee(rawEmp, allowedFields) {
+  var sanitized = {};
+  var forbiddenFound = [];
+  if (!rawEmp || typeof rawEmp !== 'object') {
+    return { sanitized: sanitized, forbiddenFound: forbiddenFound };
+  }
+  var allowSet = new Set(allowedFields);
+  for (var key in rawEmp) {
+    if (!Object.prototype.hasOwnProperty.call(rawEmp, key)) continue;
+    if (KAWADER_FORBIDDEN_FIELDS.has(key)) {
+      forbiddenFound.push(key); // نسجل اسم الحقل فقط، ليس قيمته
+      continue;
+    }
+    if (!allowSet.has(key)) {
+      // غير مسموح وغير ممنوع — نتجاهله بصمت (allow-list)
+      continue;
+    }
+    var val = rawEmp[key];
+    // حماية إضافية: roles لازم تكون مصفوفة strings
+    if (key === 'roles') {
+      if (Array.isArray(val)) {
+        sanitized.roles = val.filter(function (r) { return typeof r === 'string'; })
+                            .map(function (r) { return String(r).slice(0, 64); })
+                            .slice(0, 20);
+      }
+      continue;
+    }
+    // باقي الحقول: نقبل strings/numbers/null فقط، ونحدد الطول
+    if (val === null || val === undefined) {
+      sanitized[key] = null;
+    } else if (typeof val === 'string') {
+      sanitized[key] = val.slice(0, 500);
+    } else if (typeof val === 'number' || typeof val === 'boolean') {
+      sanitized[key] = val;
+    }
+    // أي type ثاني (object, array لغير roles) نتجاهله — حماية ضد nested injection
+  }
+  return { sanitized: sanitized, forbiddenFound: forbiddenFound };
+}
+
+// validation للـ employeeId
+function validateEmployeeIdParam(value) {
+  if (typeof value !== 'string') return { ok: false, message: 'employeeId is required' };
+  var v = value.trim();
+  if (!v) return { ok: false, message: 'employeeId is required' };
+  if (v.length > 64) return { ok: false, message: 'employeeId is too long' };
+  if (!/^[A-Za-z0-9_\-]+$/.test(v)) return { ok: false, message: 'employeeId has invalid format' };
+  return { ok: true, value: v };
+}
+
+// validation للـ phone (متساهل لتغطية صيغ سعودية مختلفة)
+function validatePhoneParam(value) {
+  if (typeof value !== 'string') return { ok: false, message: 'phone is required' };
+  var v = value.trim();
+  if (!v) return { ok: false, message: 'phone is required' };
+  if (v.length < 5 || v.length > 20) return { ok: false, message: 'phone length is invalid' };
+  if (!/^[\+0-9\-\s]+$/.test(v)) return { ok: false, message: 'phone has invalid characters' };
+  return { ok: true, value: v };
 }
 
 
@@ -1320,6 +1527,264 @@ export default async function handler(req, res) {
           version: INTEGRATION_SERVICE_VERSION,
           redis: USE_REDIS ? 'connected' : 'unavailable',
         }, hRequestId));
+      }
+
+      /* ═══════════════════════════════════════════════════════════════
+       * v7.139 — PHASE 2: KAWADER EMPLOYEE READ (by employeeId)
+       * ═══════════════════════════════════════════════════════════════
+       * GET /api/data?action=kawader-employee&employeeId=...
+       *   header: x-internal-key: <HMA_INTERNAL_KEY>
+       *
+       * يستدعي:
+       *   GET {KAWADER_BASE_URL}/api/integration/kawader/employees/{employeeId}
+       *
+       * Snapshot خفيف فقط — لا يُحفظ في Basma. لا تعديل لقواعد بيانات.
+       * ═══════════════════════════════════════════════════════════════ */
+      case 'kawader-employee': {
+        var keRequestId = makeIntegrationRequestId();
+        var keIp = extractClientIp(req);
+        var keUa = (req.headers && req.headers['user-agent']) ? String(req.headers['user-agent']) : '';
+        var keOrigin = (req.headers && req.headers.origin) ? String(req.headers.origin) : '';
+
+        if (req.method !== 'GET') {
+          await logIntegrationAudit({
+            action: 'kawader-employee', method: req.method,
+            status: 'error', code: 'METHOD_NOT_ALLOWED',
+            ip: keIp, userAgent: keUa, origin: keOrigin, requestId: keRequestId,
+          });
+          return res.status(405).json(integrationError(
+            'METHOD_NOT_ALLOWED', 'kawader-employee accepts GET only', keRequestId
+          ));
+        }
+
+        // x-internal-key check
+        var keKeyCheck = verifyIntegrationInternalKey(req);
+        if (!keKeyCheck.ok) {
+          await logIntegrationAudit({
+            action: 'kawader-employee', method: req.method,
+            status: 'unauthorized_access', code: keKeyCheck.code,
+            ip: keIp, userAgent: keUa, origin: keOrigin, requestId: keRequestId,
+          });
+          var keUnauthStatus = (keKeyCheck.code === 'SERVER_MISCONFIGURED') ? 500 : 401;
+          return res.status(keUnauthStatus).json(integrationError(
+            keKeyCheck.code, keKeyCheck.message, keRequestId
+          ));
+        }
+
+        // employeeId param
+        var keEmpIdValidation = validateEmployeeIdParam(req.query.employeeId);
+        if (!keEmpIdValidation.ok) {
+          await logIntegrationAudit({
+            action: 'kawader-employee', method: req.method,
+            status: 'error', code: 'MISSING_PARAM',
+            ip: keIp, userAgent: keUa, origin: keOrigin, requestId: keRequestId,
+          });
+          return res.status(400).json(integrationError(
+            'MISSING_PARAM', keEmpIdValidation.message, keRequestId
+          ));
+        }
+        var keEmpId = keEmpIdValidation.value;
+
+        // call Kawader
+        var keUpstream;
+        try {
+          keUpstream = await callKawaderIntegration(
+            '/api/integration/kawader/employees/' + encodeURIComponent(keEmpId),
+            { method: 'GET' }
+          );
+        } catch (e) {
+          await logIntegrationAudit({
+            action: 'kawader-employee', method: req.method,
+            status: 'error', code: 'kawader_employee_read_error',
+            ip: keIp, userAgent: keUa, origin: keOrigin, requestId: keRequestId,
+          });
+          return res.status(502).json(integrationError(
+            'KAWADER_UNREACHABLE', 'Could not reach Kawader', keRequestId
+          ));
+        }
+
+        if (!keUpstream.ok) {
+          if (keUpstream.code === 'NOT_FOUND') {
+            await logIntegrationAudit({
+              action: 'kawader-employee', method: req.method,
+              status: 'kawader_employee_read_not_found', code: 'NOT_FOUND',
+              ip: keIp, userAgent: keUa, origin: keOrigin, requestId: keRequestId,
+            });
+            return res.status(404).json(integrationError(
+              'NOT_FOUND', 'Employee not found in Kawader', keRequestId
+            ));
+          }
+          await logIntegrationAudit({
+            action: 'kawader-employee', method: req.method,
+            status: 'kawader_employee_read_error', code: keUpstream.code,
+            ip: keIp, userAgent: keUa, origin: keOrigin, requestId: keRequestId,
+          });
+          return res.status(keUpstream.status || 502).json(integrationError(
+            keUpstream.code, keUpstream.message, keRequestId
+          ));
+        }
+
+        // sanitize via allow-list
+        var keRawEmp = extractKawaderEmployee(keUpstream.body);
+        if (!keRawEmp) {
+          await logIntegrationAudit({
+            action: 'kawader-employee', method: req.method,
+            status: 'kawader_employee_read_error', code: 'KAWADER_BAD_RESPONSE',
+            ip: keIp, userAgent: keUa, origin: keOrigin, requestId: keRequestId,
+          });
+          return res.status(502).json(integrationError(
+            'KAWADER_BAD_RESPONSE', 'Could not parse employee from Kawader response', keRequestId
+          ));
+        }
+        var keSanResult = sanitizeKawaderEmployee(keRawEmp, KAWADER_EMPLOYEE_BASE_FIELDS);
+
+        // إذا ظهرت حقول ممنوعة، سجّل تحذير منفصل (بدون قيم)
+        if (keSanResult.forbiddenFound.length > 0) {
+          await logIntegrationAudit({
+            action: 'kawader-employee', method: req.method,
+            status: 'kawader_forbidden_fields_stripped',
+            code: 'FORBIDDEN_FIELDS:' + keSanResult.forbiddenFound.join(','),
+            ip: keIp, userAgent: keUa, origin: keOrigin, requestId: keRequestId,
+          });
+        }
+
+        await logIntegrationAudit({
+          action: 'kawader-employee', method: req.method,
+          status: 'kawader_employee_read_success', code: null,
+          ip: keIp, userAgent: keUa, origin: keOrigin, requestId: keRequestId,
+        });
+
+        return res.status(200).json(integrationSuccess({
+          source: 'kawader',
+          employee: keSanResult.sanitized,
+        }, keRequestId));
+      }
+
+      /* ═══════════════════════════════════════════════════════════════
+       * v7.139 — PHASE 2: KAWADER EMPLOYEE LOOKUP (by phone)
+       * ═══════════════════════════════════════════════════════════════
+       * GET /api/data?action=kawader-employee-by-phone&phone=...
+       *   header: x-internal-key: <HMA_INTERNAL_KEY>
+       *
+       * يستدعي:
+       *   GET {KAWADER_BASE_URL}/api/integration/kawader/users/by-phone/{phone}
+       *
+       * read-through lookup فقط — لا إنشاء، لا تحديث.
+       * roles مسموح هنا (allow-list موسّع) لأن lookup قد يحتاج معلومات الدور.
+       * ═══════════════════════════════════════════════════════════════ */
+      case 'kawader-employee-by-phone': {
+        var kpRequestId = makeIntegrationRequestId();
+        var kpIp = extractClientIp(req);
+        var kpUa = (req.headers && req.headers['user-agent']) ? String(req.headers['user-agent']) : '';
+        var kpOrigin = (req.headers && req.headers.origin) ? String(req.headers.origin) : '';
+
+        if (req.method !== 'GET') {
+          await logIntegrationAudit({
+            action: 'kawader-employee-by-phone', method: req.method,
+            status: 'error', code: 'METHOD_NOT_ALLOWED',
+            ip: kpIp, userAgent: kpUa, origin: kpOrigin, requestId: kpRequestId,
+          });
+          return res.status(405).json(integrationError(
+            'METHOD_NOT_ALLOWED', 'kawader-employee-by-phone accepts GET only', kpRequestId
+          ));
+        }
+
+        var kpKeyCheck = verifyIntegrationInternalKey(req);
+        if (!kpKeyCheck.ok) {
+          await logIntegrationAudit({
+            action: 'kawader-employee-by-phone', method: req.method,
+            status: 'unauthorized_access', code: kpKeyCheck.code,
+            ip: kpIp, userAgent: kpUa, origin: kpOrigin, requestId: kpRequestId,
+          });
+          var kpUnauthStatus = (kpKeyCheck.code === 'SERVER_MISCONFIGURED') ? 500 : 401;
+          return res.status(kpUnauthStatus).json(integrationError(
+            kpKeyCheck.code, kpKeyCheck.message, kpRequestId
+          ));
+        }
+
+        var kpPhoneValidation = validatePhoneParam(req.query.phone);
+        if (!kpPhoneValidation.ok) {
+          await logIntegrationAudit({
+            action: 'kawader-employee-by-phone', method: req.method,
+            status: 'error', code: 'INVALID_PARAM',
+            ip: kpIp, userAgent: kpUa, origin: kpOrigin, requestId: kpRequestId,
+          });
+          return res.status(400).json(integrationError(
+            'INVALID_PARAM', kpPhoneValidation.message, kpRequestId
+          ));
+        }
+        var kpPhone = kpPhoneValidation.value;
+
+        var kpUpstream;
+        try {
+          kpUpstream = await callKawaderIntegration(
+            '/api/integration/kawader/users/by-phone/' + encodeURIComponent(kpPhone),
+            { method: 'GET' }
+          );
+        } catch (e) {
+          await logIntegrationAudit({
+            action: 'kawader-employee-by-phone', method: req.method,
+            status: 'error', code: 'kawader_employee_read_error',
+            ip: kpIp, userAgent: kpUa, origin: kpOrigin, requestId: kpRequestId,
+          });
+          return res.status(502).json(integrationError(
+            'KAWADER_UNREACHABLE', 'Could not reach Kawader', kpRequestId
+          ));
+        }
+
+        if (!kpUpstream.ok) {
+          if (kpUpstream.code === 'NOT_FOUND') {
+            await logIntegrationAudit({
+              action: 'kawader-employee-by-phone', method: req.method,
+              status: 'kawader_employee_by_phone_not_found', code: 'NOT_FOUND',
+              ip: kpIp, userAgent: kpUa, origin: kpOrigin, requestId: kpRequestId,
+            });
+            return res.status(404).json(integrationError(
+              'NOT_FOUND', 'Employee not found in Kawader for this phone', kpRequestId
+            ));
+          }
+          await logIntegrationAudit({
+            action: 'kawader-employee-by-phone', method: req.method,
+            status: 'kawader_employee_read_error', code: kpUpstream.code,
+            ip: kpIp, userAgent: kpUa, origin: kpOrigin, requestId: kpRequestId,
+          });
+          return res.status(kpUpstream.status || 502).json(integrationError(
+            kpUpstream.code, kpUpstream.message, kpRequestId
+          ));
+        }
+
+        var kpRawEmp = extractKawaderEmployee(kpUpstream.body);
+        if (!kpRawEmp) {
+          await logIntegrationAudit({
+            action: 'kawader-employee-by-phone', method: req.method,
+            status: 'kawader_employee_read_error', code: 'KAWADER_BAD_RESPONSE',
+            ip: kpIp, userAgent: kpUa, origin: kpOrigin, requestId: kpRequestId,
+          });
+          return res.status(502).json(integrationError(
+            'KAWADER_BAD_RESPONSE', 'Could not parse user from Kawader response', kpRequestId
+          ));
+        }
+        var kpSanResult = sanitizeKawaderEmployee(kpRawEmp, KAWADER_EMPLOYEE_BY_PHONE_FIELDS);
+
+        if (kpSanResult.forbiddenFound.length > 0) {
+          await logIntegrationAudit({
+            action: 'kawader-employee-by-phone', method: req.method,
+            status: 'kawader_forbidden_fields_stripped',
+            code: 'FORBIDDEN_FIELDS:' + kpSanResult.forbiddenFound.join(','),
+            ip: kpIp, userAgent: kpUa, origin: kpOrigin, requestId: kpRequestId,
+          });
+        }
+
+        await logIntegrationAudit({
+          action: 'kawader-employee-by-phone', method: req.method,
+          status: 'kawader_employee_by_phone_success', code: null,
+          ip: kpIp, userAgent: kpUa, origin: kpOrigin, requestId: kpRequestId,
+        });
+
+        return res.status(200).json(integrationSuccess({
+          source: 'kawader',
+          employee: kpSanResult.sanitized,
+        }, kpRequestId));
       }
 
       case 'init': {
