@@ -5,7 +5,7 @@ import { exportFormalWarning, exportInvestigationRecord, exportAffidavit, export
 import { t as tr, setLang, getLang, subscribeLangChange, isRTL } from "./i18n";
 
 const APP = "بصمة HMA";
-const VER = "7.140.7";
+const VER = "7.140.8";
 const CO = "هاني محمد عسيري للإستشارات الهندسية";
 const B = { blue: "#2B5EA7", yellow: "#FDD800", red: "#E2192C", black: "#1A1A1A", blueDk: "#1E4478", blueLt: "#EDF3FB", gold: "#D4A017" };
 
@@ -5142,7 +5142,14 @@ function setAdminSessionToken(t) {
         var isLoginCall = url.indexOf('action=login') !== -1
           || url.indexOf('action=biometric-login') !== -1
           || url.indexOf('action=biometric-register') !== -1;
-        if (!isLoginCall) {
+        // v7.140.8 — Don't trigger reload for sync-kadwar 401 (admin-only since v7.140.5).
+        // If session expired, the next user-initiated action will trigger the proper reload.
+        // This prevents an infinite reload loop on AdminApp mount when the auto-sync fires
+        // before the user has authenticated.
+        var isAutoSyncCall = url.indexOf('action=sync-kadwar') !== -1
+          || url.indexOf('action=kadwar-sync') !== -1
+          || url.indexOf('action=kadwar-employees') !== -1;
+        if (!isLoginCall && !isAutoSyncCall) {
           try {
             var rc = r.clone();
             var d = await rc.json();
@@ -5628,16 +5635,26 @@ function AdminAppInner() {
   useEffect(() => {
     (async () => {
       try {
-        // Auto-sync from kadwar if last sync was more than 1 hour ago
-        try {
-          var lastSync = localStorage.getItem("basma_last_sync");
-          var shouldSync = !lastSync || (new Date() - new Date(lastSync)) > 60 * 60 * 1000;
-          if (shouldSync) {
-            var sr = await fetch("/api/data?action=sync-kadwar");
-            var sd = await sr.json();
-            if (sd && sd.ok) localStorage.setItem("basma_last_sync", new Date().toISOString());
-          }
-        } catch(e) { /* silent — continue with existing data */ }
+        // v7.140.8 — Skip auto-sync entirely if no admin session token.
+        // sync-kadwar is now ADMIN_ONLY (since v7.140.5 Phase 4.1), so calling it
+        // without a session token returns 401 + requireAuth, which triggers the
+        // fetch interceptor to wipe localStorage and reload — causing an infinite
+        // refresh loop. Guard ensures we only attempt sync when properly authed.
+        var hasSessionToken = false;
+        try { hasSessionToken = !!localStorage.getItem("basma_session_token"); } catch(_) {}
+
+        // Auto-sync from kadwar if last sync was more than 1 hour ago AND we have a session
+        if (hasSessionToken) {
+          try {
+            var lastSync = localStorage.getItem("basma_last_sync");
+            var shouldSync = !lastSync || (new Date() - new Date(lastSync)) > 60 * 60 * 1000;
+            if (shouldSync) {
+              var sr = await fetch("/api/data?action=sync-kadwar");
+              var sd = await sr.json();
+              if (sd && sd.ok) localStorage.setItem("basma_last_sync", new Date().toISOString());
+            }
+          } catch(e) { /* silent — continue with existing data */ }
+        }
 
         var [brData, empData, evData, lvData, stData] = await Promise.all([
           api('branches'), api('employees'), api('events'), api('leaves'), api('settings')
