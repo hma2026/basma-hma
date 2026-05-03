@@ -5,7 +5,7 @@ import { exportFormalWarning, exportInvestigationRecord, exportAffidavit, export
 import { t as tr, setLang, getLang, subscribeLangChange, isRTL } from "./i18n";
 
 const APP = "بصمة HMA";
-const VER = "7.140.8";
+const VER = "7.140.9";
 const CO = "هاني محمد عسيري للإستشارات الهندسية";
 const B = { blue: "#2B5EA7", yellow: "#FDD800", red: "#E2192C", black: "#1A1A1A", blueDk: "#1E4478", blueLt: "#EDF3FB", gold: "#D4A017" };
 
@@ -5155,9 +5155,13 @@ function setAdminSessionToken(t) {
             var d = await rc.json();
             if (d && d.requireAuth) {
               setTimeout(function(){
+                // v7.140.9 — Full cleanup: include basma_last_mode so the next page load
+                // routes to login instead of re-opening AdminApp on partial state.
                 localStorage.removeItem("basma_session_token");
-                localStorage.removeItem("basma_admin_email"); localStorage.removeItem("basma_session_token");
+                localStorage.removeItem("basma_user");
+                localStorage.removeItem("basma_admin_email");
                 localStorage.removeItem("basma_admin_role");
+                localStorage.removeItem("basma_last_mode");
                 window.location.reload();
               }, 100);
             }
@@ -5446,8 +5450,11 @@ function AdminAppInner() {
   const t = dk ? DK : LT;
   const toggleTheme = () => { setDk(v => { const n = !v; localStorage.setItem("basma_theme", n ? "dark" : "light"); return n; }); };
   const [loggedIn, setLoggedIn] = useState(function() {
-    // Auto-login if admin email was saved (from previous session) — survives F5
-    return !!localStorage.getItem("basma_admin_email");
+    // v7.140.9 — Auto-login requires BOTH admin email AND session token.
+    // Without token, every API call would 401 and trigger reload, causing infinite loop.
+    var hasEmail = !!localStorage.getItem("basma_admin_email");
+    var hasToken = !!localStorage.getItem("basma_session_token");
+    return hasEmail && hasToken;
   });
   // v7.122 — نحفظ الدور أيضاً حتى يستمر بعد إعادة التشغيل
   const [role, setRole] = useState(function(){

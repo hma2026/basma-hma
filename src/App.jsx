@@ -21,12 +21,24 @@ function getInitialMode() {
       return "app";
     }
 
-    // Persist admin mode across F5
+    // v7.140.9 — Persist admin mode across F5 ONLY if both email AND session token are present.
+    // If admin email exists without a session token, the auth-protected calls would 401 and
+    // trigger a reload, causing an infinite refresh loop. Cleanup stale admin keys here so
+    // the app shows login instead of getting stuck.
     var savedAdminEmail = localStorage.getItem("basma_admin_email");
+    var savedSessionToken = localStorage.getItem("basma_session_token");
     var lastMode = localStorage.getItem("basma_last_mode");
-    if (lastMode === "admin" && savedAdminEmail) {
+    if (lastMode === "admin" && savedAdminEmail && savedSessionToken) {
       try { window.history.replaceState({}, document.title, "/#admin"); } catch(e) {}
       return "admin";
+    }
+    if (lastMode === "admin" && savedAdminEmail && !savedSessionToken) {
+      // Stale admin state — clean up and route to login
+      try {
+        localStorage.removeItem("basma_admin_email");
+        localStorage.removeItem("basma_admin_role");
+        localStorage.removeItem("basma_last_mode");
+      } catch(_) {}
     }
     return "app";
   } catch(e) { return "app"; }
@@ -109,9 +121,11 @@ export default function App() {
       }
 
       // If user explicitly navigated to root (no hash) and they are admin, go to admin
+      // v7.140.9 — also require session token (see getInitialMode for full reasoning)
       var savedAdminEmail = localStorage.getItem("basma_admin_email");
+      var savedSessionToken = localStorage.getItem("basma_session_token");
       var lastMode = localStorage.getItem("basma_last_mode");
-      if (lastMode === "admin" && savedAdminEmail && !h) {
+      if (lastMode === "admin" && savedAdminEmail && savedSessionToken && !h) {
         window.history.replaceState({}, document.title, "/#admin");
         return setMode("admin");
       }
@@ -377,7 +391,7 @@ function UpdateScreen() {
         </div>
 
         <button onClick={() => { window.location.hash = ""; window.location.search = ""; }} style={{ marginTop: 20, padding: "10px 24px", borderRadius: 12, background: "#FFFFFF", border: "1px solid #E5E5EA", color: "#0A84FF", fontSize: 15, fontWeight: 600, cursor: "pointer" }}>رجوع للتطبيق</button>
-        <div style={{ marginTop: 12, fontSize: 11, color: "#8E8E93" }}>v7.140.8 · basma-hma.vercel.app</div>
+        <div style={{ marginTop: 12, fontSize: 11, color: "#8E8E93" }}>v7.140.9 · basma-hma.vercel.app</div>
       </div>
     );
   }
@@ -394,7 +408,7 @@ function UpdateScreen() {
         )}
       </div>
       <div style={{ fontSize: 22, fontWeight: 700 }}>تحديث النظام</div>
-      <div style={{ fontSize: 13, color: "#6E6E73", marginTop: 6 }}>بصمة HMA v7.140.8 — تحديث آمن محمي بكلمة مرور المدير</div>
+      <div style={{ fontSize: 13, color: "#6E6E73", marginTop: 6 }}>بصمة HMA v7.140.9 — تحديث آمن محمي بكلمة مرور المدير</div>
       
       <div style={{ marginTop: 20, width: "100%", maxWidth: 400 }}>
         <div style={{ background: "#FFFFFF", borderRadius: 14, padding: 20, border: "1px solid rgba(0,0,0,0.05)", boxShadow: "0 1px 3px rgba(0,0,0,0.08)" }}>
@@ -452,7 +466,7 @@ function UpdateScreen() {
       </div>
 
       <button onClick={() => { window.location.hash = ""; window.location.search = ""; }} style={{ marginTop: 20, padding: "10px 24px", borderRadius: 12, background: "#FFFFFF", border: "1px solid #E5E5EA", color: "#0A84FF", fontSize: 15, fontWeight: 600, cursor: "pointer" }}>رجوع للتطبيق</button>
-      <div style={{ marginTop: 12, fontSize: 11, color: "#8E8E93" }}>v7.140.8 · basma-hma.vercel.app</div>
+      <div style={{ marginTop: 12, fontSize: 11, color: "#8E8E93" }}>v7.140.9 · basma-hma.vercel.app</div>
     </div>
   );
 }

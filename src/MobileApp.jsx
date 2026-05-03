@@ -12,7 +12,7 @@ import { t as tr, setLang, getLang, getDir, isRTL, subscribeLangChange } from ".
 
 /* ═══════════ APP CONFIG (إعدادات التطبيق) ═══════════ */
 const APP_CONFIG = {
-  VER: "7.140.8",
+  VER: "7.140.9",
   NAME: "بصمة HMA",
   FULL_NAME: "نظام الحضور والانصراف الذكي",
   COMPANY: "هاني محمد عسيري للاستشارات الهندسية",
@@ -198,8 +198,15 @@ function setSessionToken(t) {
 }
 function handleAuthExpired() {
   try {
+    // v7.140.9 — Clean BOTH mobile and admin keys. The MobileApp fetch patch wins
+    // the install race (imported first in App.jsx), so it must clean admin keys too;
+    // otherwise basma_admin_email would persist and AdminAppInner would re-open,
+    // re-firing protected calls → infinite loop.
     localStorage.removeItem("basma_session_token");
     localStorage.removeItem("basma_user");
+    localStorage.removeItem("basma_admin_email");
+    localStorage.removeItem("basma_admin_role");
+    localStorage.removeItem("basma_last_mode");
     window.location.reload();
   } catch(_) {}
 }
@@ -238,7 +245,14 @@ function handleAuthExpired() {
           || url.indexOf('action=holiday') !== -1
           || url.indexOf('action=is-holiday') !== -1
           || url.indexOf('action=vapid-public-key') !== -1;
-        if (!isLoginCall) {
+        // v7.140.9 — Don't reload on 401 from sync endpoints (admin-only since v7.140.5).
+        // These get called automatically on AdminApp mount; if the session is missing/expired,
+        // an immediate reload would loop. Fail silently and let user-initiated actions trigger
+        // proper auth flow.
+        var isAutoSyncCall = url.indexOf('action=sync-kadwar') !== -1
+          || url.indexOf('action=kadwar-sync') !== -1
+          || url.indexOf('action=kadwar-employees') !== -1;
+        if (!isLoginCall && !isAutoSyncCall) {
           // Clone response to read it without consuming
           try {
             var rc = r.clone();
