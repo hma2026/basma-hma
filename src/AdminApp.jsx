@@ -5,7 +5,7 @@ import { exportFormalWarning, exportInvestigationRecord, exportAffidavit, export
 import { t as tr, setLang, getLang, subscribeLangChange, isRTL } from "./i18n";
 
 const APP = "بصمة HMA";
-const VER = "7.140.5";
+const VER = "7.140.6";
 const CO = "هاني محمد عسيري للإستشارات الهندسية";
 const B = { blue: "#2B5EA7", yellow: "#FDD800", red: "#E2192C", black: "#1A1A1A", blueDk: "#1E4478", blueLt: "#EDF3FB", gold: "#D4A017" };
 
@@ -20911,6 +20911,7 @@ function SettingsHub({ t, B, emps, onLogout, onOpenOldSettings, userRole }) {
     monitoring: [
       { id: "audit",  icon: "📜", label: tr("سجل العمليات") },
       { id: "check",  icon: "🔍", label: tr("فحص + اختبار") },
+      { id: "release_doctor", icon: "🩺", label: tr("فحص ما بعد النشر") },
     ],
     maintenance: [
       { id: "cleanup",      icon: "🧹", label: tr("تنظيف البيانات") },
@@ -21030,12 +21031,271 @@ function SettingsHub({ t, B, emps, onLogout, onOpenOldSettings, userRole }) {
         </div>
       </div>
     </div>}
+    {section === "monitoring" && sub === "release_doctor" && <ReleaseDoctorPanel t={t} B={B} />}
 
     {/* ═══ القسم: الصيانة ═══ */}
     {section === "maintenance" && sub === "cleanup" && <DataCleanupManager t={t} B={B} />}
     {section === "maintenance" && sub === "faces" && <FacesManager t={t} B={B} emps={emps} />}
     {section === "maintenance" && sub === "attach_queue" && <PendingAttachmentsQueue t={t} B={B} />}
     {section === "maintenance" && sub === "attachments" && <AttachmentTypesManager t={t} B={B} />}
+  </div>;
+}
+
+
+/* ═══════════════════════════════════════════════════════════════════
+ * v7.140.6 — Release Doctor Panel — فحص ما بعد النشر
+ * ═══════════════════════════════════════════════════════════════════
+ * Admin-only panel that calls /api/data?action=release-doctor
+ * Server-side checks. NEVER stores or displays HMA_INTERNAL_KEY.
+ * Auth via x-session-token (admin session) — server validates isAdmin.
+ *
+ * Features:
+ *   - Show overall verdict: GO / NEEDS_REVIEW / NO-GO (Arabic + English code)
+ *   - Show each check with status icon
+ *   - "نسخ AI Review Package" button (clipboard, Arabic, no PII)
+ *   - Re-run button
+ *   - Loading + error states
+ * ═══════════════════════════════════════════════════════════════════ */
+function ReleaseDoctorPanel({ t, B }) {
+  var [loading, setLoading] = useState(false);
+  var [data, setData] = useState(null);
+  var [error, setError] = useState(null);
+  var [copied, setCopied] = useState(false);
+
+  function runDoctor() {
+    setLoading(true);
+    setError(null);
+    setCopied(false);
+    var token = "";
+    try { token = localStorage.getItem("hma_session") || ""; } catch (_) { token = ""; }
+    var headers = { "Content-Type": "application/json" };
+    if (token) headers["x-session-token"] = token;
+    fetch("/api/data?action=release-doctor", { method: "GET", headers: headers })
+      .then(function(r){
+        return r.json().then(function(j){
+          if (!r.ok) {
+            var msg = (j && j.error && j.error.message) ? j.error.message : ("HTTP " + r.status);
+            throw new Error(msg);
+          }
+          if (!j || !j.ok || !j.data) throw new Error("استجابة غير صالحة من الخادم");
+          return j.data;
+        });
+      })
+      .then(function(d){ setData(d); setLoading(false); })
+      .catch(function(e){ setError(e.message || "فشل في تشغيل الفحص"); setLoading(false); });
+  }
+
+  function copyAIReview() {
+    if (!data || !data.aiReviewPackage) return;
+    try {
+      if (navigator && navigator.clipboard && navigator.clipboard.writeText) {
+        navigator.clipboard.writeText(data.aiReviewPackage).then(function(){
+          setCopied(true);
+          setTimeout(function(){ setCopied(false); }, 2500);
+        }).catch(function(){
+          // Fallback: textarea + execCommand
+          fallbackCopy(data.aiReviewPackage);
+        });
+      } else {
+        fallbackCopy(data.aiReviewPackage);
+      }
+    } catch (_) { fallbackCopy(data.aiReviewPackage); }
+  }
+  function fallbackCopy(text) {
+    try {
+      var ta = document.createElement("textarea");
+      ta.value = text;
+      ta.style.position = "fixed";
+      ta.style.opacity = "0";
+      document.body.appendChild(ta);
+      ta.select();
+      document.execCommand("copy");
+      document.body.removeChild(ta);
+      setCopied(true);
+      setTimeout(function(){ setCopied(false); }, 2500);
+    } catch (_) {}
+  }
+
+  // Verdict colors
+  var verdictColors = {
+    "GO":            { bg: t.okLt,   fg: t.ok,   border: t.ok,   icon: "✅" },
+    "NEEDS_REVIEW":  { bg: t.warnLt, fg: t.warn, border: t.warn, icon: "⚠️" },
+    "NO-GO":         { bg: t.badLt,  fg: t.bad,  border: t.bad,  icon: "🛑" },
+  };
+
+  return <div>
+    {/* Header card */}
+    <div style={{
+      padding: ADMIN.space.md,
+      background: t.card,
+      borderRadius: ADMIN.radius.lg,
+      border: "1px solid " + t.sep,
+      marginBottom: ADMIN.space.md,
+    }}>
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", gap: ADMIN.space.sm }}>
+        <div>
+          <div style={{ fontSize: ADMIN.font.md, fontWeight: ADMIN.weight.black, color: t.tx, marginBottom: 4 }}>
+            🩺 فحص ما بعد النشر
+          </div>
+          <div style={{ fontSize: ADMIN.font.xs, color: t.txM, lineHeight: 1.6 }}>
+            أداة موحّدة تقيس صحة النظام بعد التحديث — تعمل من داخل لوحة الإدارة بدون PowerShell
+          </div>
+        </div>
+        <button
+          onClick={runDoctor}
+          disabled={loading}
+          style={{
+            padding: "10px 18px",
+            background: loading ? t.sep : B.blue,
+            color: loading ? t.tx2 : "#fff",
+            border: "none",
+            borderRadius: ADMIN.radius.md,
+            fontSize: ADMIN.font.sm,
+            fontWeight: ADMIN.weight.black,
+            cursor: loading ? "not-allowed" : "pointer",
+            fontFamily: "inherit",
+            minWidth: 130,
+          }}
+        >
+          {loading ? "جاري الفحص..." : (data ? "🔄 إعادة الفحص" : "🩺 ابدأ الفحص")}
+        </button>
+      </div>
+    </div>
+
+    {/* Error banner */}
+    {error && <div style={{
+      padding: ADMIN.space.md,
+      background: t.badLt,
+      border: "1px solid " + t.bad,
+      borderRadius: ADMIN.radius.md,
+      marginBottom: ADMIN.space.md,
+      color: t.bad,
+      fontSize: ADMIN.font.sm,
+      fontWeight: ADMIN.weight.bold,
+    }}>
+      ❌ {error}
+    </div>}
+
+    {/* Verdict + summary */}
+    {data && (function(){
+      var vc = verdictColors[data.verdict] || verdictColors["NEEDS_REVIEW"];
+      return <div>
+        <div style={{
+          padding: ADMIN.space.lg,
+          background: vc.bg,
+          border: "2px solid " + vc.border,
+          borderRadius: ADMIN.radius.lg,
+          marginBottom: ADMIN.space.md,
+          textAlign: "center",
+        }}>
+          <div style={{ fontSize: 36, marginBottom: 8 }}>{vc.icon}</div>
+          <div style={{ fontSize: ADMIN.font.lg, fontWeight: ADMIN.weight.black, color: vc.fg, marginBottom: 4 }}>
+            {data.verdictArabic}
+          </div>
+          <div style={{ fontSize: ADMIN.font.xs, fontWeight: ADMIN.weight.bold, color: vc.fg, opacity: 0.8 }}>
+            {data.verdict}
+          </div>
+          <div style={{ fontSize: ADMIN.font.xs, color: t.tx2, marginTop: 12 }}>
+            الإصدار: <b style={{ color: t.tx }}>{data.version}</b> • وُلِّد: {new Date(data.generatedAt).toLocaleString("ar-SA")}
+          </div>
+        </div>
+
+        {/* Summary counts */}
+        <div style={{
+          display: "grid",
+          gridTemplateColumns: "repeat(3, 1fr)",
+          gap: ADMIN.space.sm,
+          marginBottom: ADMIN.space.md,
+        }}>
+          <div style={{ padding: ADMIN.space.md, background: t.okLt, border: "1px solid " + t.ok, borderRadius: ADMIN.radius.md, textAlign: "center" }}>
+            <div style={{ fontSize: 24, fontWeight: ADMIN.weight.black, color: t.ok }}>{data.summary.go}</div>
+            <div style={{ fontSize: ADMIN.font.xs, color: t.tx2, fontWeight: ADMIN.weight.bold }}>مستقر</div>
+          </div>
+          <div style={{ padding: ADMIN.space.md, background: t.warnLt, border: "1px solid " + t.warn, borderRadius: ADMIN.radius.md, textAlign: "center" }}>
+            <div style={{ fontSize: 24, fontWeight: ADMIN.weight.black, color: t.warn }}>{data.summary.needs_review}</div>
+            <div style={{ fontSize: ADMIN.font.xs, color: t.tx2, fontWeight: ADMIN.weight.bold }}>يحتاج مراجعة</div>
+          </div>
+          <div style={{ padding: ADMIN.space.md, background: t.badLt, border: "1px solid " + t.bad, borderRadius: ADMIN.radius.md, textAlign: "center" }}>
+            <div style={{ fontSize: 24, fontWeight: ADMIN.weight.black, color: t.bad }}>{data.summary.no_go}</div>
+            <div style={{ fontSize: ADMIN.font.xs, color: t.tx2, fontWeight: ADMIN.weight.bold }}>ممنوع</div>
+          </div>
+        </div>
+
+        {/* Per-check cards */}
+        <div style={{ display: "grid", gridTemplateColumns: "1fr", gap: ADMIN.space.sm, marginBottom: ADMIN.space.md }}>
+          {data.checks.map(function(c){
+            var cc = verdictColors[c.status] || verdictColors["NEEDS_REVIEW"];
+            return <div key={c.id} style={{
+              padding: ADMIN.space.md,
+              background: t.card,
+              border: "1px solid " + cc.border,
+              borderRight: "4px solid " + cc.border,
+              borderRadius: ADMIN.radius.md,
+            }}>
+              <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: ADMIN.space.sm, marginBottom: 6 }}>
+                <div style={{ fontSize: ADMIN.font.sm, fontWeight: ADMIN.weight.black, color: t.tx, flex: 1 }}>
+                  {cc.icon} {c.label}
+                </div>
+                <div style={{
+                  fontSize: ADMIN.font.tiny,
+                  fontWeight: ADMIN.weight.black,
+                  color: cc.fg,
+                  background: cc.bg,
+                  padding: "2px 8px",
+                  borderRadius: 8,
+                  whiteSpace: "nowrap",
+                }}>
+                  {c.status}
+                </div>
+              </div>
+              <div style={{ fontSize: ADMIN.font.xs, color: t.tx2, lineHeight: 1.6 }}>
+                {c.detail}
+              </div>
+            </div>;
+          })}
+        </div>
+
+        {/* Copy AI Review Package */}
+        <button
+          onClick={copyAIReview}
+          style={{
+            width: "100%",
+            padding: "12px 16px",
+            background: copied ? t.ok : B.blue,
+            color: "#fff",
+            border: "none",
+            borderRadius: ADMIN.radius.md,
+            fontSize: ADMIN.font.sm,
+            fontWeight: ADMIN.weight.black,
+            cursor: "pointer",
+            fontFamily: "inherit",
+          }}
+        >
+          {copied ? "✅ تم النسخ" : "📋 نسخ AI Review Package"}
+        </button>
+        <div style={{ fontSize: ADMIN.font.tiny, color: t.txM, marginTop: 8, textAlign: "center", lineHeight: 1.5 }}>
+          الباقة لا تحتوي على مفاتيح أو tokens أو بيانات شخصية
+        </div>
+      </div>;
+    })()}
+
+    {/* Empty state */}
+    {!data && !error && !loading && <div style={{
+      padding: ADMIN.space.xl,
+      background: t.card,
+      borderRadius: ADMIN.radius.lg,
+      border: "1px dashed " + t.sep,
+      textAlign: "center",
+      color: t.txM,
+    }}>
+      <div style={{ fontSize: 48, marginBottom: 12 }}>🩺</div>
+      <div style={{ fontSize: ADMIN.font.sm, fontWeight: ADMIN.weight.bold, marginBottom: 6 }}>
+        اضغط "ابدأ الفحص" لتشغيل فحص ما بعد النشر
+      </div>
+      <div style={{ fontSize: ADMIN.font.xs, lineHeight: 1.6 }}>
+        الفحص يعمل من داخل النظام، لا يكتب أي بيانات، ولا يكشف أي أسرار
+      </div>
+    </div>}
   </div>;
 }
 
