@@ -911,7 +911,9 @@ var PUBLIC_ACTIONS = new Set([
   'holidays', 'is-holiday', 'holiday-banner-config',
   'sso-verify',
   'tawasul-web-init',
-  'kadwar-employees', // ← endpoint يستدعيه كوادر للتزامن (سيُحمى لاحقاً بـ HMA_INTERNAL_KEY)
+  // v7.140.4 — REMOVED: 'kadwar-employees' (Phase 4 security exposure closure)
+  // It now requires either HMA_INTERNAL_KEY (server-to-server) or an admin session.
+  // Reason: previously was PUBLIC and returned the full employee roster (PII).
   'vapid-public-key', // مفتاح عام للإشعارات
 ]);
 
@@ -925,6 +927,11 @@ var ADMIN_ONLY_ACTIONS = new Set([
   'export-all-keys',
   'bulk-activate', 'bulk-deactivate',
   'hr-permissions',
+  // v7.140.5 — Phase 4.1: prevent normal employee session from reading
+  // employee roster / attendance / violations via these endpoints.
+  // Internal-key callers (Kadwar S2S) bypass this check via isInternalCall.
+  'kadwar-sync',
+  'kadwar-employees',
 ]);
 
 /* ═══ v7.136 — DOUBLE CONFIRM TOKENS for sensitive operations ═══ */
@@ -1078,7 +1085,7 @@ var INTEGRATION_ACTIONS = new Set([
 ]);
 
 // Service version للـ response meta (مفصول عن package.json بقصد)
-var INTEGRATION_SERVICE_VERSION = '7.140.3';
+var INTEGRATION_SERVICE_VERSION = '7.140.5';
 
 // تكوين CORS مقيد بدلاً من *
 function applyIntegrationCors(req, res) {
@@ -1553,26 +1560,26 @@ export default async function handler(req, res) {
   var expectedInternalKey = (process.env.HMA_INTERNAL_KEY || '').trim();
   var isInternalCall = expectedInternalKey && internalKey === expectedInternalKey;
 
-  /* ═══ v7.137 — KADWAR INTEGRATION COMPATIBILITY ═══
-   * كوادر يستدعي بصمة من السيرفر للتزامن. نسمح بـ actions محددة جداً
-   * (قراءة فقط، بيانات غير حساسة) كاستثناء من المصادقة، حتى لو لم يكن
-   * HMA_INTERNAL_KEY مضبوطاً. هذا للتوافق مع كوادر الحالي.
+  /* ═══ v7.140.4 — KADWAR FALLBACK CLOSED (Phase 4 security exposure closure) ═══
+   * Previously, GET ?action=kadwar-sync was accepted without any auth as a
+   * temporary compatibility shim for an older Kadwar build. That shim is now
+   * REMOVED. kadwar-sync now requires either:
+   *   - x-internal-key: <HMA_INTERNAL_KEY>   (server-to-server from Kadwar), or
+   *   - x-session-token: <admin session>     (manual admin invocation)
    *
-   * بمجرد ما كوادر يضيف header x-internal-key، تُغلق هذه الاستثناءات تلقائياً
-   * (لأن isInternalCall ستصبح true ولن نمر من هنا).
-   *
-   * Actions المسموحة كاستثناء (قراءة فقط، لا تعديل):
-   *   - kadwar-sync: قراءة بيانات الموظفين النشطين (compliance, points, attendance)
-   * ملاحظة: لا تضف هنا أي action يعدّل/يحذف بيانات
+   * The Set below is kept empty (not deleted) so that any future re-enablement
+   * is an explicit, reviewable code change rather than a sneaky regression.
+   * Reason for closure: the previous fallback exposed employee roster +
+   * 30-day attendance + violations to any unauthenticated GET caller.
    */
-  var KADWAR_PUBLIC_FALLBACK = new Set(['kadwar-sync']);
+  var KADWAR_PUBLIC_FALLBACK = new Set([]);
   var isKadwarFallback = false;
   if (!isPublic && !isInternalCall && KADWAR_PUBLIC_FALLBACK.has(action)) {
     // فقط لطلبات GET (قراءة فقط) — POST/PUT/DELETE تبقى محمية
     if (req.method === 'GET') {
       isKadwarFallback = true;
-      // تحذير في الـ logs لتذكير الفريق بإصلاح كوادر
-      try { console.warn('[security] kadwar-sync called without HMA_INTERNAL_KEY — please update kadwar to send x-internal-key header'); } catch(_) {}
+      // تحذير في الـ logs لتذكير الفريق
+      try { console.warn('[security] ' + action + ' called without HMA_INTERNAL_KEY — fallback should not normally trigger in v7.140.4+'); } catch(_) {}
     }
   }
 
