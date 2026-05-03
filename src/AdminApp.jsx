@@ -5,7 +5,7 @@ import { exportFormalWarning, exportInvestigationRecord, exportAffidavit, export
 import { t as tr, setLang, getLang, subscribeLangChange, isRTL } from "./i18n";
 
 const APP = "بصمة HMA";
-const VER = "7.140.9";
+const VER = "7.140.10";
 const CO = "هاني محمد عسيري للإستشارات الهندسية";
 const B = { blue: "#2B5EA7", yellow: "#FDD800", red: "#E2192C", black: "#1A1A1A", blueDk: "#1E4478", blueLt: "#EDF3FB", gold: "#D4A017" };
 
@@ -20933,8 +20933,10 @@ function SettingsHub({ t, B, emps, onLogout, onOpenOldSettings, userRole }) {
       { id: "advanced", icon: "📨", label: tr("إعدادات متقدمة") },
     ],
     monitoring: [
+      { id: "tools",  icon: "🛠", label: tr("أدوات النظام") },
       { id: "audit",  icon: "📜", label: tr("سجل العمليات") },
       { id: "check",  icon: "🔍", label: tr("فحص + اختبار") },
+      { id: "release_doctor", icon: "🩺", label: tr("فحص ما بعد النشر") },
     ],
     maintenance: [
       { id: "cleanup",      icon: "🧹", label: tr("تنظيف البيانات") },
@@ -20945,7 +20947,7 @@ function SettingsHub({ t, B, emps, onLogout, onOpenOldSettings, userRole }) {
   };
 
   // أول sub-tab في كل قسم (default)
-  var defaultSubs = { company: "holidays", integration: "kadwar", monitoring: "audit", maintenance: "cleanup" };
+  var defaultSubs = { company: "holidays", integration: "kadwar", monitoring: "tools", maintenance: "cleanup" };
   var [sub, setSub] = useState(initialSub || defaultSubs[initialSection]);
 
   // عند تغيير القسم → اضبط sub-tab على الأول في القسم الجديد
@@ -21043,6 +21045,8 @@ function SettingsHub({ t, B, emps, onLogout, onOpenOldSettings, userRole }) {
     </div>}
 
     {/* ═══ القسم: المراقبة ═══ */}
+    {/* v7.140.10 — System Tools Hub: المدخل الرئيسي لكل أدوات النظام */}
+    {section === "monitoring" && sub === "tools" && <SystemToolsHubPanel t={t} B={B} version={VER} onNavigate={function(sec, sb){ setSection(sec); setSub(sb); }} />}
     {section === "monitoring" && sub === "audit" && <AuditLogPanel t={t} B={B} emps={emps} />}
     {section === "monitoring" && sub === "check" && <div>
       <div style={{ display: "grid", gridTemplateColumns: "1fr", gap: ADMIN.space.md }}>
@@ -21054,13 +21058,385 @@ function SettingsHub({ t, B, emps, onLogout, onOpenOldSettings, userRole }) {
         </div>
       </div>
     </div>}
-    {/* v7.140.7 — ReleaseDoctorPanel UI route disabled (backend action remains for future re-enable) */}
+    {/* v7.140.10 — ReleaseDoctorPanel route re-enabled (was hidden in v7.140.7 during refresh-loop debug; root cause was elsewhere, fixed in v7.140.9) */}
+    {section === "monitoring" && sub === "release_doctor" && <ReleaseDoctorPanel t={t} B={B} />}
 
     {/* ═══ القسم: الصيانة ═══ */}
     {section === "maintenance" && sub === "cleanup" && <DataCleanupManager t={t} B={B} />}
     {section === "maintenance" && sub === "faces" && <FacesManager t={t} B={B} emps={emps} />}
     {section === "maintenance" && sub === "attach_queue" && <PendingAttachmentsQueue t={t} B={B} />}
     {section === "maintenance" && sub === "attachments" && <AttachmentTypesManager t={t} B={B} />}
+  </div>;
+}
+
+
+/* ═══════════════════════════════════════════════════════════════════
+ * v7.140.10 — System Tools Hub — أدوات النظام
+ * ═══════════════════════════════════════════════════════════════════
+ * Single entry point for all admin system tools. This panel does NOT
+ * implement any tools itself — it's a catalog with navigation cards
+ * pointing to the existing tools across monitoring/integration/maintenance
+ * sections. Each card declares risk level + read-only/write capability
+ * so the admin knows what to expect before clicking.
+ *
+ * Constraints:
+ *   - read-only catalog (no API calls, no Redis writes)
+ *   - no execution of cleanup/backup/restore/sync/update from this panel
+ *   - no PII, no secrets in the AI Review Package
+ *   - existing tool paths preserved (defensive: re-routes via setSection+setSub)
+ * ═══════════════════════════════════════════════════════════════════ */
+function SystemToolsHubPanel({ t, B, version, onNavigate }) {
+  var [copied, setCopied] = useState(false);
+
+  // Risk colors
+  var riskColors = {
+    "SAFE":          { bg: t.okLt,   fg: t.ok,   border: t.ok,   icon: "✅", label: "آمنة" },
+    "NEEDS_REVIEW":  { bg: t.warnLt, fg: t.warn, border: t.warn, icon: "⚠️", label: "تحتاج مراجعة" },
+    "DANGEROUS":     { bg: t.badLt,  fg: t.bad,  border: t.bad,  icon: "🛑", label: "خطرة" },
+  };
+  var modeColors = {
+    "read-only":     { bg: t.okLt,   fg: t.ok,   icon: "👁",  label: "للقراءة فقط" },
+    "write-capable": { bg: t.badLt,  fg: t.bad,  icon: "✏️", label: "تعدّل البيانات" },
+    "read-write":    { bg: t.warnLt, fg: t.warn, icon: "📝", label: "قراءة وكتابة" },
+  };
+
+  // Tool catalog — frozen list, mirrors existing tools only
+  var TOOLS = [
+    {
+      id: "release_doctor",
+      icon: "🩺",
+      name: "فحص ما بعد النشر",
+      desc: "فحص شامل بعد كل تحديث: الإصدار، الحماية، التكامل. يُعطي GO / يحتاج مراجعة / ممنوع.",
+      risk: "SAFE",
+      mode: "read-only",
+      section: "monitoring",
+      sub: "release_doctor",
+    },
+    {
+      id: "audit_log",
+      icon: "📜",
+      name: "سجل العمليات",
+      desc: "سجل كامل لكل العمليات الإدارية والأمنية في النظام.",
+      risk: "SAFE",
+      mode: "read-only",
+      section: "monitoring",
+      sub: "audit",
+    },
+    {
+      id: "system_check",
+      icon: "🔍",
+      name: "فحص + اختبار النظام",
+      desc: "فحص حالة النظام واختبار الوظائف الأساسية. بعض الاختبارات قد تنشئ بيانات اختبارية.",
+      risk: "NEEDS_REVIEW",
+      mode: "read-write",
+      section: "monitoring",
+      sub: "check",
+    },
+    {
+      id: "kadwar_integration",
+      icon: "🔗",
+      name: "تكامل كوادر",
+      desc: "إعدادات وحالة التكامل مع نظام كوادر. يحوي خيارات مزامنة قد تكتب بيانات.",
+      risk: "NEEDS_REVIEW",
+      mode: "write-capable",
+      section: "integration",
+      sub: "kadwar",
+    },
+    {
+      id: "storage",
+      icon: "💾",
+      name: "التخزين والنسخ الاحتياطي",
+      desc: "إدارة التخزين والنسخ الاحتياطي. عمليات الاستعادة تُغيّر البيانات بشكل جذري.",
+      risk: "DANGEROUS",
+      mode: "write-capable",
+      section: "integration",
+      sub: "storage",
+    },
+    {
+      id: "advanced_settings",
+      icon: "📨",
+      name: "إعدادات متقدمة",
+      desc: "أوقات الدوام، توجيه البريد، الموظفون تحت الملاحظة، البريك العشوائي.",
+      risk: "NEEDS_REVIEW",
+      mode: "write-capable",
+      section: "integration",
+      sub: "advanced",
+    },
+    {
+      id: "data_cleanup",
+      icon: "🧹",
+      name: "تنظيف البيانات",
+      desc: "حذف بيانات قديمة أو غير ضرورية. عملية لا يمكن التراجع عنها.",
+      risk: "DANGEROUS",
+      mode: "write-capable",
+      section: "maintenance",
+      sub: "cleanup",
+    },
+    {
+      id: "faces_manager",
+      icon: "📸",
+      name: "بصمات الوجه",
+      desc: "إدارة بصمات الوجه للموظفين. حذف البصمة يمنع الموظف من تسجيل الحضور حتى يعيد التسجيل.",
+      risk: "DANGEROUS",
+      mode: "write-capable",
+      section: "maintenance",
+      sub: "faces",
+    },
+    {
+      id: "pending_attachments",
+      icon: "📎",
+      name: "مرفقات معلّقة",
+      desc: "عرض وإدارة المرفقات في طابور الرفع.",
+      risk: "NEEDS_REVIEW",
+      mode: "read-write",
+      section: "maintenance",
+      sub: "attach_queue",
+    },
+    {
+      id: "attachment_types",
+      icon: "🗂",
+      name: "أنواع المرفقات",
+      desc: "تعريف وإدارة أنواع المرفقات المسموح بها في النظام.",
+      risk: "NEEDS_REVIEW",
+      mode: "write-capable",
+      section: "maintenance",
+      sub: "attachments",
+    },
+  ];
+
+  // Group by risk
+  var safeTools = TOOLS.filter(function(x){ return x.risk === "SAFE"; });
+  var reviewTools = TOOLS.filter(function(x){ return x.risk === "NEEDS_REVIEW"; });
+  var dangerousTools = TOOLS.filter(function(x){ return x.risk === "DANGEROUS"; });
+
+  // Build AI Review Package — Arabic, no PII, no secrets, no tokens
+  function buildAIReviewPackage() {
+    var lines = [];
+    lines.push("=== Basma System Tools Hub — تقرير أدوات النظام ===");
+    lines.push("الإصدار: " + (version || "—"));
+    lines.push("التوقيت: " + new Date().toISOString());
+    lines.push("إجمالي الأدوات: " + TOOLS.length);
+    lines.push("  آمنة (SAFE): " + safeTools.length);
+    lines.push("  تحتاج مراجعة (NEEDS_REVIEW): " + reviewTools.length);
+    lines.push("  خطرة (DANGEROUS): " + dangerousTools.length);
+    lines.push("");
+    lines.push("--- قائمة الأدوات ---");
+    for (var i = 0; i < TOOLS.length; i++) {
+      var x = TOOLS[i];
+      lines.push("[" + x.risk + "] " + x.name);
+      lines.push("       النمط: " + x.mode);
+      lines.push("       الوصف: " + x.desc);
+      lines.push("       الحماية: " + (x.risk === "DANGEROUS" ? "تحتاج تأكيد إضافي" :
+                                       x.risk === "NEEDS_REVIEW" ? "تحتاج مراجعة قبل الاستخدام" :
+                                       "آمنة بدون قيود إضافية"));
+    }
+    lines.push("");
+    lines.push("--- ملاحظات ---");
+    lines.push("• كل الأدوات admin-only (تتطلب صلاحية مدير)");
+    lines.push("• أدوات DANGEROUS تتطلب تأكيد إضافي قبل التنفيذ");
+    lines.push("• الباقة لا تحوي مفاتيح أو tokens أو بيانات شخصية");
+    lines.push("=== نهاية التقرير ===");
+    return lines.join("\n");
+  }
+
+  function copyReport() {
+    var text = buildAIReviewPackage();
+    try {
+      if (navigator && navigator.clipboard && navigator.clipboard.writeText) {
+        navigator.clipboard.writeText(text).then(function(){
+          setCopied(true);
+          setTimeout(function(){ setCopied(false); }, 2500);
+        }).catch(function(){ fallbackCopy(text); });
+      } else { fallbackCopy(text); }
+    } catch(_) { fallbackCopy(text); }
+  }
+  function fallbackCopy(text) {
+    try {
+      var ta = document.createElement("textarea");
+      ta.value = text;
+      ta.style.position = "fixed"; ta.style.opacity = "0";
+      document.body.appendChild(ta); ta.select();
+      document.execCommand("copy"); document.body.removeChild(ta);
+      setCopied(true);
+      setTimeout(function(){ setCopied(false); }, 2500);
+    } catch(_) {}
+  }
+
+  function ToolCard({ tool }) {
+    var rc = riskColors[tool.risk];
+    var mc = modeColors[tool.mode];
+    return <div style={{
+      padding: ADMIN.space.md,
+      background: t.card,
+      border: "1px solid " + t.sep,
+      borderRight: "4px solid " + rc.border,
+      borderRadius: ADMIN.radius.md,
+      display: "flex",
+      flexDirection: "column",
+      gap: ADMIN.space.sm,
+    }}>
+      <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: ADMIN.space.sm }}>
+        <div style={{ display: "flex", alignItems: "center", gap: ADMIN.space.sm, flex: 1 }}>
+          <div style={{ fontSize: 24 }}>{tool.icon}</div>
+          <div style={{ fontSize: ADMIN.font.sm, fontWeight: ADMIN.weight.black, color: t.tx }}>{tool.name}</div>
+        </div>
+        <div style={{
+          fontSize: ADMIN.font.tiny,
+          fontWeight: ADMIN.weight.black,
+          color: rc.fg,
+          background: rc.bg,
+          padding: "2px 8px",
+          borderRadius: 8,
+          whiteSpace: "nowrap",
+        }}>
+          {rc.icon} {rc.label}
+        </div>
+      </div>
+      <div style={{ fontSize: ADMIN.font.xs, color: t.tx2, lineHeight: 1.6 }}>{tool.desc}</div>
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: ADMIN.space.sm, flexWrap: "wrap" }}>
+        <div style={{
+          fontSize: ADMIN.font.tiny,
+          color: mc.fg,
+          background: mc.bg,
+          padding: "2px 8px",
+          borderRadius: 8,
+          fontWeight: ADMIN.weight.bold,
+        }}>
+          {mc.icon} {mc.label}
+        </div>
+        <button
+          onClick={function(){ if (onNavigate) onNavigate(tool.section, tool.sub); }}
+          style={{
+            padding: "8px 16px",
+            background: B.blue,
+            color: "#fff",
+            border: "none",
+            borderRadius: ADMIN.radius.sm,
+            fontSize: ADMIN.font.xs,
+            fontWeight: ADMIN.weight.black,
+            cursor: "pointer",
+            fontFamily: "inherit",
+          }}
+        >
+          فتح الأداة ›
+        </button>
+      </div>
+    </div>;
+  }
+
+  function SectionHeader({ title, count, color }) {
+    return <div style={{
+      fontSize: ADMIN.font.sm,
+      fontWeight: ADMIN.weight.black,
+      color: color,
+      marginTop: ADMIN.space.lg,
+      marginBottom: ADMIN.space.sm,
+      paddingBottom: 6,
+      borderBottom: "2px solid " + color + "30",
+    }}>
+      {title} ({count})
+    </div>;
+  }
+
+  return <div>
+    {/* Header */}
+    <div style={{
+      padding: ADMIN.space.md,
+      background: t.card,
+      borderRadius: ADMIN.radius.lg,
+      border: "1px solid " + t.sep,
+      marginBottom: ADMIN.space.md,
+    }}>
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", gap: ADMIN.space.sm }}>
+        <div style={{ flex: 1 }}>
+          <div style={{ fontSize: ADMIN.font.md, fontWeight: ADMIN.weight.black, color: t.tx, marginBottom: 4 }}>
+            🛠 أدوات النظام
+          </div>
+          <div style={{ fontSize: ADMIN.font.xs, color: t.txM, lineHeight: 1.6 }}>
+            مركز موحّد لكل أدوات الفحص والصيانة والتكامل. اضغط بطاقة لفتح الأداة الموجودة في مكانها الحالي.
+          </div>
+        </div>
+        <button
+          onClick={copyReport}
+          style={{
+            padding: "10px 16px",
+            background: copied ? t.ok : B.blue,
+            color: "#fff",
+            border: "none",
+            borderRadius: ADMIN.radius.md,
+            fontSize: ADMIN.font.xs,
+            fontWeight: ADMIN.weight.black,
+            cursor: "pointer",
+            fontFamily: "inherit",
+            whiteSpace: "nowrap",
+          }}
+        >
+          {copied ? "✅ تم النسخ" : "📋 نسخ تقرير أدوات النظام"}
+        </button>
+      </div>
+    </div>
+
+    {/* Summary counts */}
+    <div style={{
+      display: "grid",
+      gridTemplateColumns: "repeat(3, 1fr)",
+      gap: ADMIN.space.sm,
+      marginBottom: ADMIN.space.md,
+    }}>
+      <div style={{ padding: ADMIN.space.sm, background: t.okLt, border: "1px solid " + t.ok, borderRadius: ADMIN.radius.sm, textAlign: "center" }}>
+        <div style={{ fontSize: 20, fontWeight: ADMIN.weight.black, color: t.ok }}>{safeTools.length}</div>
+        <div style={{ fontSize: ADMIN.font.tiny, color: t.tx2, fontWeight: ADMIN.weight.bold }}>آمنة</div>
+      </div>
+      <div style={{ padding: ADMIN.space.sm, background: t.warnLt, border: "1px solid " + t.warn, borderRadius: ADMIN.radius.sm, textAlign: "center" }}>
+        <div style={{ fontSize: 20, fontWeight: ADMIN.weight.black, color: t.warn }}>{reviewTools.length}</div>
+        <div style={{ fontSize: ADMIN.font.tiny, color: t.tx2, fontWeight: ADMIN.weight.bold }}>تحتاج مراجعة</div>
+      </div>
+      <div style={{ padding: ADMIN.space.sm, background: t.badLt, border: "1px solid " + t.bad, borderRadius: ADMIN.radius.sm, textAlign: "center" }}>
+        <div style={{ fontSize: 20, fontWeight: ADMIN.weight.black, color: t.bad }}>{dangerousTools.length}</div>
+        <div style={{ fontSize: ADMIN.font.tiny, color: t.tx2, fontWeight: ADMIN.weight.bold }}>خطرة</div>
+      </div>
+    </div>
+
+    {/* SAFE tools */}
+    {safeTools.length > 0 && <>
+      <SectionHeader title="✅ أدوات آمنة (للقراءة فقط)" count={safeTools.length} color={t.ok} />
+      <div style={{ display: "grid", gridTemplateColumns: "1fr", gap: ADMIN.space.sm }}>
+        {safeTools.map(function(x){ return <ToolCard key={x.id} tool={x} />; })}
+      </div>
+    </>}
+
+    {/* NEEDS_REVIEW tools */}
+    {reviewTools.length > 0 && <>
+      <SectionHeader title="⚠️ أدوات تحتاج مراجعة" count={reviewTools.length} color={t.warn} />
+      <div style={{ display: "grid", gridTemplateColumns: "1fr", gap: ADMIN.space.sm }}>
+        {reviewTools.map(function(x){ return <ToolCard key={x.id} tool={x} />; })}
+      </div>
+    </>}
+
+    {/* DANGEROUS tools */}
+    {dangerousTools.length > 0 && <>
+      <SectionHeader title="🛑 أدوات خطرة (تحتاج تأكيد إضافي)" count={dangerousTools.length} color={t.bad} />
+      <div style={{ display: "grid", gridTemplateColumns: "1fr", gap: ADMIN.space.sm }}>
+        {dangerousTools.map(function(x){ return <ToolCard key={x.id} tool={x} />; })}
+      </div>
+    </>}
+
+    {/* Footer note */}
+    <div style={{
+      marginTop: ADMIN.space.lg,
+      padding: ADMIN.space.md,
+      background: t.bg,
+      border: "1px dashed " + t.sep,
+      borderRadius: ADMIN.radius.md,
+      fontSize: ADMIN.font.tiny,
+      color: t.txM,
+      lineHeight: 1.7,
+      textAlign: "center",
+    }}>
+      الأدوات لم تُحذف ولم تُنقل — هذه الصفحة فقط نقطة دخول موحّدة.
+      <br/>
+      كل أداة تبقى في مكانها الأصلي ويمكن الوصول إليها مباشرة من تبويبها.
+    </div>
   </div>;
 }
 
