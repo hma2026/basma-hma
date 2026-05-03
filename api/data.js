@@ -1087,7 +1087,7 @@ var INTEGRATION_ACTIONS = new Set([
 ]);
 
 // Service version للـ response meta (مفصول عن package.json بقصد)
-var INTEGRATION_SERVICE_VERSION = '7.140.6';
+var INTEGRATION_SERVICE_VERSION = '7.140.7';
 
 // تكوين CORS مقيد بدلاً من *
 function applyIntegrationCors(req, res) {

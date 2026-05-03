@@ -5,7 +5,7 @@ import { exportFormalWarning, exportInvestigationRecord, exportAffidavit, export
 import { t as tr, setLang, getLang, subscribeLangChange, isRTL } from "./i18n";
 
 const APP = "بصمة HMA";
-const VER = "7.140.6";
+const VER = "7.140.7";
 const CO = "هاني محمد عسيري للإستشارات الهندسية";
 const B = { blue: "#2B5EA7", yellow: "#FDD800", red: "#E2192C", black: "#1A1A1A", blueDk: "#1E4478", blueLt: "#EDF3FB", gold: "#D4A017" };
 
@@ -20911,7 +20911,6 @@ function SettingsHub({ t, B, emps, onLogout, onOpenOldSettings, userRole }) {
     monitoring: [
       { id: "audit",  icon: "📜", label: tr("سجل العمليات") },
       { id: "check",  icon: "🔍", label: tr("فحص + اختبار") },
-      { id: "release_doctor", icon: "🩺", label: tr("فحص ما بعد النشر") },
     ],
     maintenance: [
       { id: "cleanup",      icon: "🧹", label: tr("تنظيف البيانات") },
@@ -21031,7 +21030,7 @@ function SettingsHub({ t, B, emps, onLogout, onOpenOldSettings, userRole }) {
         </div>
       </div>
     </div>}
-    {section === "monitoring" && sub === "release_doctor" && <ReleaseDoctorPanel t={t} B={B} />}
+    {/* v7.140.7 — ReleaseDoctorPanel UI route disabled (backend action remains for future re-enable) */}
 
     {/* ═══ القسم: الصيانة ═══ */}
     {section === "maintenance" && sub === "cleanup" && <DataCleanupManager t={t} B={B} />}
