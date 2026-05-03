@@ -5,7 +5,7 @@ import { exportFormalWarning, exportInvestigationRecord, exportAffidavit, export
 import { t as tr, setLang, getLang, subscribeLangChange, isRTL } from "./i18n";
 
 const APP = "بصمة HMA";
-const VER = "7.140.10";
+const VER = "7.140.13";
 const CO = "هاني محمد عسيري للإستشارات الهندسية";
 const B = { blue: "#2B5EA7", yellow: "#FDD800", red: "#E2192C", black: "#1A1A1A", blueDk: "#1E4478", blueLt: "#EDF3FB", gold: "#D4A017" };
 
@@ -20933,10 +20933,11 @@ function SettingsHub({ t, B, emps, onLogout, onOpenOldSettings, userRole }) {
       { id: "advanced", icon: "📨", label: tr("إعدادات متقدمة") },
     ],
     monitoring: [
-      { id: "tools",  icon: "🛠", label: tr("أدوات النظام") },
-      { id: "audit",  icon: "📜", label: tr("سجل العمليات") },
-      { id: "check",  icon: "🔍", label: tr("فحص + اختبار") },
-      { id: "release_doctor", icon: "🩺", label: tr("فحص ما بعد النشر") },
+      // v7.140.11 — HMA Simple System Control Standard v1.0
+      // Daily interface = single entry "مركز سلامة النظام" with 4 main paths inside.
+      // Old sub-tabs (audit, check, release_doctor) removed from tab bar but their
+      // render routes preserved below — reachable via Safety Center navigation.
+      { id: "safety", icon: "🛡", label: tr("مركز سلامة النظام") },
     ],
     maintenance: [
       { id: "cleanup",      icon: "🧹", label: tr("تنظيف البيانات") },
@@ -20947,7 +20948,7 @@ function SettingsHub({ t, B, emps, onLogout, onOpenOldSettings, userRole }) {
   };
 
   // أول sub-tab في كل قسم (default)
-  var defaultSubs = { company: "holidays", integration: "kadwar", monitoring: "tools", maintenance: "cleanup" };
+  var defaultSubs = { company: "holidays", integration: "kadwar", monitoring: "safety", maintenance: "cleanup" };
   var [sub, setSub] = useState(initialSub || defaultSubs[initialSection]);
 
   // عند تغيير القسم → اضبط sub-tab على الأول في القسم الجديد
@@ -21045,7 +21046,9 @@ function SettingsHub({ t, B, emps, onLogout, onOpenOldSettings, userRole }) {
     </div>}
 
     {/* ═══ القسم: المراقبة ═══ */}
-    {/* v7.140.10 — System Tools Hub: المدخل الرئيسي لكل أدوات النظام */}
+    {/* v7.140.11 — Daily entry: Safety Center (4 main paths + advanced link). */}
+    {section === "monitoring" && sub === "safety" && <SystemSafetyCenterPanel t={t} B={B} version={VER} emps={emps} onNavigate={function(sec, sb){ setSection(sec); setSub(sb); }} />}
+    {/* v7.140.10 — Legacy routes preserved (not in tab bar; reachable from Safety Center "advanced") */}
     {section === "monitoring" && sub === "tools" && <SystemToolsHubPanel t={t} B={B} version={VER} onNavigate={function(sec, sb){ setSection(sec); setSub(sb); }} />}
     {section === "monitoring" && sub === "audit" && <AuditLogPanel t={t} B={B} emps={emps} />}
     {section === "monitoring" && sub === "check" && <div>
@@ -21058,7 +21061,6 @@ function SettingsHub({ t, B, emps, onLogout, onOpenOldSettings, userRole }) {
         </div>
       </div>
     </div>}
-    {/* v7.140.10 — ReleaseDoctorPanel route re-enabled (was hidden in v7.140.7 during refresh-loop debug; root cause was elsewhere, fixed in v7.140.9) */}
     {section === "monitoring" && sub === "release_doctor" && <ReleaseDoctorPanel t={t} B={B} />}
 
     {/* ═══ القسم: الصيانة ═══ */}
@@ -21085,6 +21087,1246 @@ function SettingsHub({ t, B, emps, onLogout, onOpenOldSettings, userRole }) {
  *   - no PII, no secrets in the AI Review Package
  *   - existing tool paths preserved (defensive: re-routes via setSection+setSub)
  * ═══════════════════════════════════════════════════════════════════ */
+/* ═══════════════════════════════════════════════════════════════════
+ * v7.140.13 — HMA Systems Linkage Card — حالة ترابط أنظمة HMA
+ * ═══════════════════════════════════════════════════════════════════
+ * Read-only health/readiness probe for the 3 HMA systems:
+ *   - Basma HMA   (b.hma.engineer — own system)
+ *   - Kadwar      (hma.engineer)
+ *   - HMA CRM     (crm.hma.engineer)
+ *
+ * Strict constraints (HMA Simple System Control Standard v1.0):
+ *   - read-only ONLY (GET requests, no POST/PUT/DELETE)
+ *   - safe endpoints only (/api/data?action=admin-alerts for self;
+ *     /api/health for cross-origin where available)
+ *   - cross-origin failures → "Needs Review" (NEVER fabricate workaround)
+ *   - NO Redis writes, NO business mutation, NO sync execution
+ *   - NO secrets, tokens, or internal keys exposed to frontend
+ *   - NO PII in the report (only metadata: status, http code, response ms)
+ * ═══════════════════════════════════════════════════════════════════ */
+function HMASystemsLinkageCard({ t, B, version }) {
+  // Status per system: null | "Online" | "Offline" | "Needs Review"
+  var [results, setResults] = useState(null); // {basma, kadwar, crm} | null
+  var [checking, setChecking] = useState(false);
+  var [lastCheckedAt, setLastCheckedAt] = useState(null);
+  var [copied, setCopied] = useState(false);
+
+  // System endpoints — only public/safe health probes
+  var SYSTEMS = [
+    {
+      key: "basma",
+      icon: "🟢",
+      name: "Basma HMA",
+      label: "بصمة HMA",
+      domain: "b.hma.engineer",
+      probeUrl: "/api/data?action=admin-alerts", // same-origin, lightweight, already used by SmartDashboard
+      probeKind: "self",
+    },
+    {
+      key: "kadwar",
+      icon: "🔗",
+      name: "Kadwar",
+      label: "كوادر",
+      domain: "hma.engineer",
+      probeUrl: "https://hma.engineer/api/health",
+      probeKind: "cross-origin",
+    },
+    {
+      key: "crm",
+      icon: "🏢",
+      name: "HMA CRM",
+      label: "إدارة العلاقات",
+      domain: "crm.hma.engineer",
+      probeUrl: "https://crm.hma.engineer/api/health",
+      probeKind: "cross-origin",
+    },
+  ];
+
+  function classifyStatus(httpCode, errMsg) {
+    if (errMsg) return "Needs Review"; // network/CORS error — can't determine
+    if (httpCode == null) return "Needs Review";
+    if (httpCode >= 200 && httpCode < 300) return "Online";
+    if (httpCode === 401 || httpCode === 403) return "Needs Review"; // auth gate exists but we can't pass it (no key on frontend)
+    if (httpCode === 404) return "Needs Review"; // health endpoint doesn't exist
+    if (httpCode >= 500) return "Offline"; // server error
+    return "Needs Review";
+  }
+
+  async function probeSystem(sys) {
+    var t0 = Date.now();
+    var probeVersion = null;
+    try {
+      // Same-origin call doesn't have CORS issue; cross-origin will throw on CORS or network
+      var resp = await fetch(sys.probeUrl, { method: "GET" });
+      var ms = Date.now() - t0;
+      // Try to read version from response if available (best effort)
+      try {
+        var dataText = await resp.clone().text();
+        if (dataText && dataText.length < 5000) {
+          try {
+            var dataJson = JSON.parse(dataText);
+            probeVersion = dataJson.version || (dataJson.data && dataJson.data.version) || (dataJson.meta && dataJson.meta.version) || null;
+          } catch(_) {}
+        }
+      } catch(_) {}
+
+      return {
+        key: sys.key,
+        name: sys.name,
+        label: sys.label,
+        domain: sys.domain,
+        httpCode: resp.status,
+        responseMs: ms,
+        status: classifyStatus(resp.status, null),
+        version: probeVersion,
+        note: resp.status === 401 ? "auth required (expected for cross-origin)" :
+              resp.status === 403 ? "forbidden (auth gate)" :
+              resp.status === 404 ? "endpoint not available" :
+              resp.status >= 500 ? "server error" : null,
+        error: null,
+      };
+    } catch(e) {
+      var ms2 = Date.now() - t0;
+      var errMsg = (e && e.message) ? String(e.message).slice(0, 120) : "fetch failed";
+      // Network-level error usually = CORS blocked or domain unreachable
+      return {
+        key: sys.key,
+        name: sys.name,
+        label: sys.label,
+        domain: sys.domain,
+        httpCode: null,
+        responseMs: ms2,
+        status: "Needs Review",
+        version: null,
+        note: "cross-origin/network — health endpoint not reachable from browser",
+        error: errMsg,
+      };
+    }
+  }
+
+  async function runCheck() {
+    setChecking(true);
+    setCopied(false);
+    var probes = await Promise.all(SYSTEMS.map(probeSystem));
+    var byKey = {};
+    probes.forEach(function(p){ byKey[p.key] = p; });
+    setResults(byKey);
+    setLastCheckedAt(new Date().toISOString());
+    setChecking(false);
+  }
+
+  // Derived overall verdict
+  function overallVerdict(r) {
+    if (!r) return null;
+    var statuses = [r.basma, r.kadwar, r.crm].map(function(s){ return s.status; });
+    if (statuses.indexOf("Offline") !== -1) return { code: "NO-GO", ar: "ممنوع", color: t.bad };
+    if (statuses.indexOf("Needs Review") !== -1) return { code: "NEEDS_REVIEW", ar: "يحتاج مراجعة", color: t.warn };
+    return { code: "GO", ar: "مستقر", color: t.ok };
+  }
+
+  function statusVisual(s) {
+    if (s === "Online")       return { color: t.ok,   bg: t.okLt,   icon: "🟢" };
+    if (s === "Offline")      return { color: t.bad,  bg: t.badLt,  icon: "🔴" };
+    if (s === "Needs Review") return { color: t.warn, bg: t.warnLt, icon: "🟡" };
+    return { color: t.tx2, bg: t.bg, icon: "⚪" };
+  }
+
+  function fmtTs(iso) {
+    if (!iso) return "—";
+    try { return new Date(iso).toLocaleString("ar-SA", { dateStyle: "medium", timeStyle: "short" }); }
+    catch(_) { return iso; }
+  }
+
+  // ═══ Build report (no secrets, no PII) ═══
+  function buildLinkageReport() {
+    var lines = [];
+    lines.push("════════════════════════════════════════════════════════");
+    lines.push("  تقرير حالة ترابط أنظمة HMA");
+    lines.push("  HMA Systems Linkage Status Report");
+    lines.push("════════════════════════════════════════════════════════");
+    lines.push("");
+    lines.push("النظام الذي تم تشغيل الفحص منه: Basma HMA (b.hma.engineer)");
+    lines.push("رقم الإصدار: v" + (version || "—"));
+    lines.push("التوقيت: " + new Date().toISOString());
+    lines.push("آخر وقت فحص: " + (lastCheckedAt ? fmtTs(lastCheckedAt) : "(لم يُفحص بعد)"));
+    lines.push("");
+
+    if (!results) {
+      lines.push("⚠️ لم يتم تشغيل الفحص بعد — اضغط 'فحص الآن' لتعبئة هذا التقرير.");
+      lines.push("");
+      lines.push("════════════════════════════════════════════════════════");
+      return lines.join("\n");
+    }
+
+    var verdict = overallVerdict(results);
+
+    lines.push("─── Final Verdict ───");
+    lines.push("القرار النهائي: " + verdict.code + " (" + verdict.ar + ")");
+    lines.push("");
+
+    // Per-system status
+    lines.push("─── حالة الأنظمة الثلاثة ───");
+    [results.basma, results.kadwar, results.crm].forEach(function(r){
+      lines.push("");
+      lines.push("• " + r.name + " (" + r.label + ") — " + r.domain);
+      lines.push("    الحالة: " + r.status);
+      lines.push("    HTTP: " + (r.httpCode != null ? r.httpCode : "—") + "   |   زمن الاستجابة: " + (r.responseMs != null ? r.responseMs + " ms" : "—"));
+      if (r.version) lines.push("    الإصدار المُكتشَف: " + r.version);
+      if (r.note) lines.push("    ملاحظة: " + r.note);
+      if (r.error) lines.push("    خطأ شبكي/CORS: " + r.error);
+    });
+    lines.push("");
+
+    // Auth/readiness summary (no secrets)
+    lines.push("─── auth/readiness بدون عرض الأسرار ───");
+    lines.push("• Basma: same-origin probe (لا حاجة لمفتاح من الواجهة)");
+    lines.push("• Kadwar: cross-origin — المفتاح الداخلي server-side فقط، لا يُكشف للمتصفح");
+    lines.push("• CRM: cross-origin — نفس المبدأ");
+    lines.push("لم يتم إرسال أي token أو internal key من المتصفح في هذا الفحص.");
+    lines.push("");
+
+    // Critical issues
+    lines.push("─── المشاكل الحرجة ───");
+    var crit = [];
+    [results.basma, results.kadwar, results.crm].forEach(function(r){
+      if (r.status === "Offline") {
+        crit.push("• " + r.name + " — Offline (HTTP " + (r.httpCode || "—") + (r.error ? ", " + r.error : "") + ")");
+      }
+    });
+    if (crit.length === 0) lines.push("(لا توجد مشاكل حرجة)");
+    else crit.forEach(function(c){ lines.push(c); });
+    lines.push("");
+
+    // Warnings
+    lines.push("─── التحذيرات ───");
+    var warns = [];
+    [results.basma, results.kadwar, results.crm].forEach(function(r){
+      if (r.status === "Needs Review") {
+        warns.push("• " + r.name + " — Needs Review (" + (r.note || (r.error ? r.error : "—")) + ")");
+      }
+    });
+    if (warns.length === 0) lines.push("(لا توجد تحذيرات)");
+    else warns.forEach(function(w){ lines.push(w); });
+    lines.push("");
+
+    // Final recommendation
+    lines.push("─── التوصية النهائية ───");
+    if (verdict.code === "GO") {
+      lines.push("✅ كل الأنظمة الثلاثة Online — التكامل سليم.");
+    } else if (verdict.code === "NEEDS_REVIEW") {
+      lines.push("⚠️ بعض الأنظمة تتطلب تحقق يدوي:");
+      lines.push("    • تأكد أن Health/Readiness endpoints منشورة وقابلة للوصول");
+      lines.push("    • تأكد من إعدادات CORS لو الفحص cross-origin");
+      lines.push("    • راجع إعدادات الـ DNS لكل نطاق");
+      lines.push("    تابع بعد التأكد. لا توجد أداة workaround خطيرة في هذا الفحص.");
+    } else {
+      lines.push("🛑 يوجد نظام واحد على الأقل Offline.");
+      lines.push("    راجع المشاكل الحرجة أعلاه فورًا قبل أي عملية تكامل.");
+    }
+    lines.push("");
+
+    // Confirmations
+    lines.push("─── تأكيدات ───");
+    lines.push("✅ هذا الفحص READ-ONLY بالكامل:");
+    lines.push("    • صفر Redis writes");
+    lines.push("    • صفر business data mutation");
+    lines.push("    • صفر sync execution");
+    lines.push("    • صفر cleanup / backup / restore");
+    lines.push("    • صفر تحديث / migration");
+    lines.push("✅ صفر تسريب أسرار:");
+    lines.push("    • لا يحتوي على tokens أو internal keys أو passwords");
+    lines.push("    • لا يحتوي على بيانات شخصية (PII)");
+    lines.push("    • لا يحتوي أسماء موظفين أو IDs أو هواتف");
+    lines.push("✅ Endpoints مستخدمة:");
+    lines.push("    • Basma: /api/data?action=admin-alerts (same-origin GET)");
+    lines.push("    • Kadwar: GET /api/health (cross-origin)");
+    lines.push("    • CRM: GET /api/health (cross-origin)");
+    lines.push("");
+
+    lines.push("════════════════════════════════════════════════════════");
+    lines.push("  نهاية التقرير — End of Report");
+    lines.push("════════════════════════════════════════════════════════");
+
+    return lines.join("\n");
+  }
+
+  function copyReport() {
+    var text = buildLinkageReport();
+    try {
+      if (navigator && navigator.clipboard && navigator.clipboard.writeText) {
+        navigator.clipboard.writeText(text).then(function(){
+          setCopied(true);
+          setTimeout(function(){ setCopied(false); }, 2500);
+        }).catch(function(){ fallbackCopy(text); });
+      } else { fallbackCopy(text); }
+    } catch(_) { fallbackCopy(text); }
+  }
+  function fallbackCopy(text) {
+    try {
+      var ta = document.createElement("textarea");
+      ta.value = text; ta.style.position = "fixed"; ta.style.opacity = "0";
+      document.body.appendChild(ta); ta.select();
+      document.execCommand("copy"); document.body.removeChild(ta);
+      setCopied(true);
+      setTimeout(function(){ setCopied(false); }, 2500);
+    } catch(_) {}
+  }
+
+  var verdict = overallVerdict(results);
+
+  return <div style={{
+    padding: ADMIN.space.md,
+    background: t.card,
+    borderRadius: ADMIN.radius.lg,
+    border: "1px solid " + t.sep,
+    borderTop: "4px solid " + (verdict ? verdict.color : t.tx2),
+    marginBottom: ADMIN.space.md,
+  }}>
+    {/* Header row */}
+    <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", flexWrap: "wrap", gap: ADMIN.space.sm, marginBottom: ADMIN.space.md }}>
+      <div style={{ flex: 1, minWidth: 200 }}>
+        <div style={{ fontSize: ADMIN.font.md, fontWeight: ADMIN.weight.black, color: t.tx, marginBottom: 4 }}>
+          🔗 حالة ترابط أنظمة HMA
+        </div>
+        <div style={{ fontSize: ADMIN.font.tiny, color: t.txM }}>
+          آخر فحص: {lastCheckedAt ? fmtTs(lastCheckedAt) : "(لم يُفحص بعد)"}
+        </div>
+      </div>
+      {verdict && <div style={{
+        padding: "6px 12px",
+        background: verdict.color + "20",
+        color: verdict.color,
+        border: "1px solid " + verdict.color,
+        borderRadius: ADMIN.radius.sm,
+        fontSize: ADMIN.font.xs,
+        fontWeight: ADMIN.weight.black,
+        whiteSpace: "nowrap",
+      }}>
+        {verdict.code} — {verdict.ar}
+      </div>}
+    </div>
+
+    {/* Per-system rows */}
+    <div style={{ display: "grid", gridTemplateColumns: "1fr", gap: 6, marginBottom: ADMIN.space.md }}>
+      {SYSTEMS.map(function(sys){
+        var r = results ? results[sys.key] : null;
+        var s = statusVisual(r ? r.status : null);
+        return <div key={sys.key} style={{
+          display: "flex",
+          alignItems: "center",
+          gap: ADMIN.space.sm,
+          padding: ADMIN.space.sm + "px " + ADMIN.space.md + "px",
+          background: t.bg,
+          borderRadius: ADMIN.radius.sm,
+          border: "1px solid " + t.sep,
+        }}>
+          <div style={{ fontSize: 16 }}>{s.icon}</div>
+          <div style={{ flex: 1, minWidth: 0 }}>
+            <div style={{ fontSize: ADMIN.font.sm, fontWeight: ADMIN.weight.black, color: t.tx }}>
+              {sys.label} <span style={{ color: t.txM, fontWeight: ADMIN.weight.medium, fontSize: ADMIN.font.tiny }}>({sys.domain})</span>
+            </div>
+            <div style={{ fontSize: ADMIN.font.tiny, color: t.tx2 }}>
+              {r ? (
+                r.status + (r.httpCode != null ? " · HTTP " + r.httpCode : "") + (r.responseMs != null ? " · " + r.responseMs + "ms" : "")
+              ) : "—"}
+            </div>
+          </div>
+          {r && <div style={{
+            padding: "2px 8px",
+            background: s.bg,
+            color: s.color,
+            borderRadius: 6,
+            fontSize: ADMIN.font.tiny,
+            fontWeight: ADMIN.weight.black,
+            whiteSpace: "nowrap",
+          }}>{r.status}</div>}
+        </div>;
+      })}
+    </div>
+
+    {/* Action buttons */}
+    <div style={{ display: "flex", gap: ADMIN.space.sm, flexWrap: "wrap" }}>
+      <button
+        onClick={runCheck}
+        disabled={checking}
+        style={{
+          flex: 1,
+          minWidth: 140,
+          padding: "10px 14px",
+          background: checking ? t.sep : B.blue,
+          color: checking ? t.tx2 : "#fff",
+          border: "none",
+          borderRadius: ADMIN.radius.sm,
+          fontSize: ADMIN.font.sm,
+          fontWeight: ADMIN.weight.black,
+          cursor: checking ? "not-allowed" : "pointer",
+          fontFamily: "inherit",
+        }}
+      >
+        {checking ? "⏳ جارٍ الفحص..." : (results ? "🔄 إعادة الفحص" : "🩺 فحص الآن")}
+      </button>
+      <button
+        onClick={copyReport}
+        disabled={!results}
+        style={{
+          flex: 1,
+          minWidth: 140,
+          padding: "10px 14px",
+          background: copied ? t.ok : (results ? "#10B981" : t.sep),
+          color: copied || results ? "#fff" : t.tx2,
+          border: "none",
+          borderRadius: ADMIN.radius.sm,
+          fontSize: ADMIN.font.sm,
+          fontWeight: ADMIN.weight.black,
+          cursor: results ? "pointer" : "not-allowed",
+          fontFamily: "inherit",
+        }}
+      >
+        {copied ? "✅ تم النسخ" : "📋 نسخ تقرير الترابط"}
+      </button>
+    </div>
+
+    {/* Privacy note */}
+    <div style={{ fontSize: ADMIN.font.tiny, color: t.txM, marginTop: ADMIN.space.sm, textAlign: "center", lineHeight: 1.6 }}>
+      🔒 read-only — لا secrets، لا PII، لا tokens
+    </div>
+  </div>;
+}
+
+
+/* ═══════════════════════════════════════════════════════════════════
+ * v7.140.11 — System Safety Center — مركز سلامة النظام
+ * ═══════════════════════════════════════════════════════════════════
+ * Implements HMA Simple System Control Standard v1.0.
+ *
+ * Daily interface = 4 main paths only:
+ *   1. فحص شامل           (Comprehensive Check — wraps Release Doctor + AI Review)
+ *   2. التحديث الآمن       (Safe Update — guided 4-step journey)
+ *   3. النسخ والاستعادة    (Backup & Restore — opens existing BackupPanel)
+ *   4. السجل والتقارير      (Logs & Reports — opens existing AuditLogPanel)
+ *
+ * Below that: small link "الأدوات المتقدمة / وضع الصيانة المتقدم"
+ *   reveals catalog of existing advanced tools with DANGEROUS_ACTION badges.
+ *
+ * v7.140.13 adds: HMA Systems Linkage Card on home screen
+ *   (read-only health probe across Basma + Kadwar + CRM).
+ *
+ * Constraints (all enforced):
+ *   - No execution of cleanup/backup/restore/sync from this panel
+ *   - No Redis writes
+ *   - No Kadwar/CRM contact (linkage card uses only safe health endpoints)
+ *   - Existing tools NOT deleted — only hidden from daily interface
+ *   - AI Review Package = single copy button inside فحص شامل (not standalone card)
+ * ═══════════════════════════════════════════════════════════════════ */
+function SystemSafetyCenterPanel({ t, B, version, emps, onNavigate }) {
+  // Internal navigation state — keeps the daily interface uncluttered.
+  // mode: "home" | "comprehensive" | "safe_update" | "advanced"
+  var [mode, setMode] = useState("home");
+
+  // ════════════════════════════════════════════════════════════════
+  // SUB-VIEW 1: COMPREHENSIVE CHECK
+  // Wraps Release Doctor (which already has AI Review Package + verdict).
+  // System Check + System Audit are reachable via small links — no duplicate UI.
+  //
+  // v7.140.12 — adds prominent "نسخ تقرير الفحص الشامل / AI Review Package"
+  //             button that aggregates: RD result + backup info + audit summary
+  //             + dangerous-tools status + final recommendation.
+  //             Read-only: no Redis writes, no business mutation, no PII.
+  // ════════════════════════════════════════════════════════════════
+  function ComprehensiveCheckView() {
+    var [rdResult, setRdResult] = useState(null);
+    var [rdError, setRdError] = useState(null);
+    var [backupInfo, setBackupInfo] = useState(null);   // {exists, ts, sizeBytes} | null
+    var [auditMeta, setAuditMeta] = useState(null);     // {count, recentActions[]} | null
+    var [building, setBuilding] = useState(false);
+    var [copied, setCopied] = useState(false);
+    var [buildError, setBuildError] = useState(null);
+
+    function handleRdResult(d, errMsg) {
+      if (d) { setRdResult(d); setRdError(null); }
+      else { setRdResult(null); setRdError(errMsg || "فشل الفحص"); }
+    }
+
+    // Read-only fetches — backup info + audit log summary
+    async function loadAuxiliaryData() {
+      // Backup info (read-only)
+      try {
+        var br = await fetch("/api/backup?action=info");
+        if (br.ok) {
+          var bd = await br.json();
+          if (bd && bd.exists) {
+            setBackupInfo({
+              exists: true,
+              ts: bd.timestamp || bd.ts || null,
+              sizeBytes: bd.size || bd.sizeBytes || null,
+            });
+          } else {
+            setBackupInfo({ exists: false });
+          }
+        } else {
+          setBackupInfo({ exists: null });
+        }
+      } catch(_) { setBackupInfo({ exists: null }); }
+
+      // Audit log summary (counts + action types only — NO PII, NO names, NO IDs)
+      try {
+        var ar = await fetch("/api/data?action=audit-log");
+        if (ar.ok) {
+          var ad = await ar.json();
+          var arr = Array.isArray(ad) ? ad : (ad && Array.isArray(ad.entries) ? ad.entries : []);
+          // Take last 10, extract only the action TYPE field (no names, no IDs)
+          var recentActions = arr.slice(-10).map(function(e){
+            return (e && (e.action || e.type || e.event)) ? String(e.action || e.type || e.event) : "unknown";
+          });
+          // Dedupe and count
+          var counts = {};
+          recentActions.forEach(function(a){ counts[a] = (counts[a] || 0) + 1; });
+          setAuditMeta({
+            totalCount: arr.length,
+            recentSampleSize: recentActions.length,
+            actionTypeCounts: counts,
+          });
+        } else {
+          setAuditMeta({ totalCount: null, error: "audit-log not accessible" });
+        }
+      } catch(_) { setAuditMeta({ totalCount: null, error: "audit-log fetch failed" }); }
+    }
+
+    function fmtBytes(n) {
+      if (!n || typeof n !== "number") return "—";
+      if (n < 1024) return n + " B";
+      if (n < 1024*1024) return (n/1024).toFixed(1) + " KB";
+      return (n/1024/1024).toFixed(2) + " MB";
+    }
+
+    function fmtDate(iso) {
+      if (!iso) return "—";
+      try { return new Date(iso).toLocaleString("ar-SA", { dateStyle: "medium", timeStyle: "short" }); }
+      catch(_) { return iso; }
+    }
+
+    function buildComprehensiveReport() {
+      var lines = [];
+      // ═══ Header ═══
+      lines.push("════════════════════════════════════════════════════════");
+      lines.push("  تقرير الفحص الشامل / AI Review Package");
+      lines.push("  Comprehensive System Check Report");
+      lines.push("════════════════════════════════════════════════════════");
+      lines.push("");
+      lines.push("اسم النظام: بصمة HMA (Basma HMA — Attendance System)");
+      lines.push("رقم الإصدار: v" + (version || "—"));
+      lines.push("التوقيت: " + new Date().toISOString());
+      lines.push("النطاق: b.hma.engineer");
+      lines.push("");
+
+      // ═══ Final Verdict ═══
+      var verdict = "UNKNOWN";
+      var verdictAr = "غير معروف";
+      if (rdResult && rdResult.verdict) {
+        verdict = rdResult.verdict;
+        verdictAr = rdResult.verdictArabic || (
+          verdict === "GO" ? "مستقر" :
+          verdict === "NEEDS_REVIEW" ? "يحتاج مراجعة" :
+          verdict === "NO-GO" ? "ممنوع" : "غير معروف"
+        );
+      } else if (rdError) {
+        verdict = "UNKNOWN";
+        verdictAr = "تعذّر الفحص";
+      }
+      lines.push("─── Final Verdict ───");
+      lines.push("القرار النهائي: " + verdict + " (" + verdictAr + ")");
+      lines.push("");
+
+      // ═══ Checks Summary ═══
+      lines.push("─── ملخص الفحوصات ───");
+      if (rdResult && rdResult.summary) {
+        lines.push("إجمالي الفحوص: " + (rdResult.summary.total || rdResult.checks?.length || 0));
+        lines.push("  ✅ مستقر (GO): " + (rdResult.summary.go || 0));
+        lines.push("  ⚠️ يحتاج مراجعة (NEEDS_REVIEW): " + (rdResult.summary.needs_review || 0));
+        lines.push("  🛑 ممنوع (NO-GO): " + (rdResult.summary.no_go || 0));
+      } else {
+        lines.push("(غير متاح — لم يكتمل Release Doctor بعد)");
+      }
+      lines.push("");
+
+      // ═══ Critical Errors ═══
+      lines.push("─── الأخطاء الحرجة ───");
+      var criticalErrors = [];
+      if (rdResult && Array.isArray(rdResult.checks)) {
+        rdResult.checks.forEach(function(c){
+          if (c.status === "NO-GO") criticalErrors.push("• " + c.label + " — " + (c.detail || ""));
+        });
+      }
+      if (rdError) criticalErrors.push("• Release Doctor failed: " + rdError);
+      if (criticalErrors.length === 0) lines.push("(لا توجد أخطاء حرجة)");
+      else criticalErrors.forEach(function(e){ lines.push(e); });
+      lines.push("");
+
+      // ═══ Warnings ═══
+      lines.push("─── التحذيرات ───");
+      var warnings = [];
+      if (rdResult && Array.isArray(rdResult.checks)) {
+        rdResult.checks.forEach(function(c){
+          if (c.status === "NEEDS_REVIEW") warnings.push("• " + c.label + " — " + (c.detail || ""));
+        });
+      }
+      if (warnings.length === 0) lines.push("(لا توجد تحذيرات)");
+      else warnings.forEach(function(w){ lines.push(w); });
+      lines.push("");
+
+      // ═══ Backup Status ═══
+      lines.push("─── حالة النسخ الاحتياطي ───");
+      if (!backupInfo) {
+        lines.push("(جارٍ التحميل...)");
+      } else if (backupInfo.exists === true) {
+        lines.push("✅ نسخة احتياطية موجودة");
+        lines.push("    آخر نسخة: " + fmtDate(backupInfo.ts));
+        lines.push("    الحجم: " + fmtBytes(backupInfo.sizeBytes));
+      } else if (backupInfo.exists === false) {
+        lines.push("⚠️ لا توجد نسخة احتياطية مسجّلة");
+      } else {
+        lines.push("⚠️ غير متاح — تعذّر قراءة معلومات النسخ");
+      }
+      lines.push("");
+
+      // ═══ Update Status ═══
+      lines.push("─── حالة التحديث ───");
+      lines.push("الإصدار الحالي: v" + (version || "—"));
+      lines.push("نطاق Service Worker: مُحدَّث (CACHE invalidated في كل patch)");
+      lines.push("صفحة التحديث: /#update (محمية بكلمة مرور المدير)");
+      lines.push("");
+
+      // ═══ Dangerous Tools Status ═══
+      lines.push("─── حالة الأدوات الخطرة ───");
+      lines.push("الأدوات التالية معلَّمة DANGEROUS_ACTION ولا تُنفَّذ من مركز سلامة النظام:");
+      lines.push("  🛑 التخزين والاستعادة (Backup/Restore) — تتطلب تأكيد منفصل");
+      lines.push("  🛑 تنظيف البيانات (Data Cleanup) — تتطلب تأكيد منفصل");
+      lines.push("  🛑 بصمات الوجه (Face Deletion) — تتطلب تأكيد منفصل");
+      lines.push("  🔗 تكامل كوادر (Kadwar Sync) — لا تشغيل تلقائي، يدوي فقط");
+      lines.push("الحماية: admin-only + شاشة تأكيد خاصة بكل أداة قبل التنفيذ");
+      lines.push("");
+
+      // ═══ Recent Log Notes ═══
+      lines.push("─── آخر ملاحظات السجل ───");
+      if (!auditMeta) {
+        lines.push("(جارٍ التحميل...)");
+      } else if (auditMeta.error) {
+        lines.push("⚠️ غير متاح — " + auditMeta.error);
+      } else {
+        lines.push("إجمالي السجلات: " + (auditMeta.totalCount != null ? auditMeta.totalCount : "—"));
+        lines.push("آخر " + auditMeta.recentSampleSize + " إجراء (أنواع فقط، بدون أسماء/IDs):");
+        var types = Object.keys(auditMeta.actionTypeCounts || {});
+        if (types.length === 0) lines.push("  (لا توجد إجراءات حديثة)");
+        else types.forEach(function(k){
+          lines.push("  • " + k + ": " + auditMeta.actionTypeCounts[k]);
+        });
+      }
+      lines.push("");
+
+      // ═══ Final Recommendation ═══
+      lines.push("─── التوصية النهائية ───");
+      if (verdict === "GO") {
+        lines.push("✅ النظام مستقر — يمكن المتابعة بدون مخاوف.");
+      } else if (verdict === "NEEDS_REVIEW") {
+        lines.push("⚠️ النظام يعمل، لكن هناك بنود تحتاج تحقق يدوي:");
+        lines.push("    • فحص login يدويًا من تطبيق بصمة");
+        lines.push("    • فحص checkin/checkout بحساب اختبار");
+        lines.push("    • مراجعة Vercel Logs للساعة الأخيرة");
+        lines.push("    تابع بعد التأكد من البنود أعلاه.");
+      } else if (verdict === "NO-GO") {
+        lines.push("🛑 لا تتابع — يوجد فحص حرج فاشل.");
+        lines.push("    راجع الأخطاء الحرجة أعلاه قبل أي إجراء.");
+      } else {
+        lines.push("(انتظر اكتمال Release Doctor للحصول على توصية)");
+      }
+      lines.push("");
+
+      // ═══ Confirmations ═══
+      lines.push("─── تأكيدات ───");
+      lines.push("✅ لا يحتوي هذا التقرير على:");
+      lines.push("    • أسرار / مفاتيح / tokens");
+      lines.push("    • كلمات مرور أو password hashes");
+      lines.push("    • أرقام هوية / هواتف / إيميلات / بيانات شخصية");
+      lines.push("    • أسماء موظفين أو IDs");
+      lines.push("    • بيانات حضور أو رواتب أو مخالفات");
+      lines.push("✅ كل البيانات metadata + counts فقط (read-only).");
+      lines.push("");
+
+      lines.push("════════════════════════════════════════════════════════");
+      lines.push("  نهاية التقرير — End of Report");
+      lines.push("════════════════════════════════════════════════════════");
+      return lines.join("\n");
+    }
+
+    async function copyComprehensiveReport() {
+      setBuilding(true);
+      setCopied(false);
+      setBuildError(null);
+      try {
+        // Make sure auxiliary data is loaded (backup + audit summary)
+        await loadAuxiliaryData();
+        // Small grace period for state to settle (React batching)
+        await new Promise(function(r){ setTimeout(r, 50); });
+        var text = buildComprehensiveReport();
+        // Copy to clipboard with fallback
+        if (navigator && navigator.clipboard && navigator.clipboard.writeText) {
+          await navigator.clipboard.writeText(text);
+        } else {
+          var ta = document.createElement("textarea");
+          ta.value = text; ta.style.position = "fixed"; ta.style.opacity = "0";
+          document.body.appendChild(ta); ta.select();
+          document.execCommand("copy"); document.body.removeChild(ta);
+        }
+        setCopied(true);
+        setTimeout(function(){ setCopied(false); }, 3000);
+      } catch(e) {
+        setBuildError(e.message || "فشل بناء التقرير");
+      }
+      setBuilding(false);
+    }
+
+    var canCopy = !!rdResult || !!rdError; // allow copy even on RD error (report explains)
+
+    return <div>
+      {/* Header card */}
+      <div style={{
+        padding: ADMIN.space.md,
+        background: t.card,
+        borderRadius: ADMIN.radius.lg,
+        border: "1px solid " + t.sep,
+        marginBottom: ADMIN.space.md,
+      }}>
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", gap: 8 }}>
+          <div>
+            <div style={{ fontSize: ADMIN.font.md, fontWeight: ADMIN.weight.black, color: t.tx, marginBottom: 4 }}>
+              🔍 فحص شامل
+            </div>
+            <div style={{ fontSize: ADMIN.font.xs, color: t.txM, lineHeight: 1.6 }}>
+              يفحص حالة النظام والحماية والإصدار، وينتج تقرير اعتماد واحد قابل للنسخ والإرسال.
+            </div>
+          </div>
+          <button
+            onClick={function(){ setMode("home"); }}
+            style={{
+              padding: "6px 12px",
+              background: t.bg,
+              color: t.tx,
+              border: "1px solid " + t.sep,
+              borderRadius: ADMIN.radius.sm,
+              fontSize: ADMIN.font.tiny,
+              fontWeight: ADMIN.weight.bold,
+              cursor: "pointer",
+              fontFamily: "inherit",
+            }}
+          >
+            ← رجوع
+          </button>
+        </div>
+      </div>
+
+      {/* THE COMPREHENSIVE REPORT BUTTON — prominent, always visible */}
+      <div style={{
+        padding: ADMIN.space.md,
+        background: B.blue + "10",
+        border: "2px solid " + B.blue,
+        borderRadius: ADMIN.radius.lg,
+        marginBottom: ADMIN.space.md,
+      }}>
+        <div style={{ fontSize: ADMIN.font.sm, fontWeight: ADMIN.weight.black, color: t.tx, marginBottom: 4, display: "flex", alignItems: "center", gap: 8 }}>
+          📋 تقرير الفحص الشامل / AI Review Package
+        </div>
+        <div style={{ fontSize: ADMIN.font.xs, color: t.tx2, lineHeight: 1.6, marginBottom: ADMIN.space.md }}>
+          تقرير اعتماد كامل جاهز للإرسال إلى ChatGPT أو فريق المراجعة. يحتوي:
+          الإصدار، النتيجة النهائية، ملخص الفحوصات، الأخطاء، التحذيرات،
+          حالة النسخ، حالة التحديث، الأدوات الخطرة، آخر ملاحظات السجل، التوصية.
+        </div>
+        <button
+          onClick={copyComprehensiveReport}
+          disabled={!canCopy || building}
+          style={{
+            width: "100%",
+            padding: "14px 18px",
+            background: copied ? t.ok : (canCopy && !building ? B.blue : t.sep),
+            color: copied || (canCopy && !building) ? "#fff" : t.tx2,
+            border: "none",
+            borderRadius: ADMIN.radius.md,
+            fontSize: ADMIN.font.md,
+            fontWeight: ADMIN.weight.black,
+            cursor: (canCopy && !building) ? "pointer" : "not-allowed",
+            fontFamily: "inherit",
+          }}
+        >
+          {copied ? "✅ تم النسخ — جاهز للإرسال إلى ChatGPT" :
+           building ? "⏳ جارٍ بناء التقرير..." :
+           canCopy ? "📋 نسخ تقرير الفحص الشامل / AI Review Package" :
+           "⏳ في انتظار اكتمال الفحص..."}
+        </button>
+        {buildError && <div style={{
+          marginTop: ADMIN.space.sm,
+          padding: ADMIN.space.sm,
+          background: t.badLt,
+          color: t.bad,
+          fontSize: ADMIN.font.tiny,
+          borderRadius: ADMIN.radius.sm,
+          fontWeight: ADMIN.weight.bold,
+        }}>
+          ❌ {buildError}
+        </div>}
+        <div style={{ fontSize: ADMIN.font.tiny, color: t.txM, marginTop: 8, textAlign: "center", lineHeight: 1.5 }}>
+          🔒 لا يحتوي على أسرار، tokens، كلمات مرور، أسماء، IDs، أو بيانات شخصية
+        </div>
+      </div>
+
+      {/* Release Doctor — internal copy button hidden (handled by comprehensive button above) */}
+      <ReleaseDoctorPanel t={t} B={B} onResult={handleRdResult} hideCopyButton={true} />
+
+      {/* Optional deep-dives — small links, not cards */}
+      <div style={{
+        marginTop: ADMIN.space.md,
+        padding: ADMIN.space.md,
+        background: t.bg,
+        border: "1px dashed " + t.sep,
+        borderRadius: ADMIN.radius.md,
+        fontSize: ADMIN.font.xs,
+        color: t.txM,
+      }}>
+        <div style={{ fontWeight: ADMIN.weight.bold, marginBottom: 8 }}>هل تحتاج فحصًا أعمق؟</div>
+        <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
+          <button
+            onClick={function(){ if (onNavigate) onNavigate("monitoring", "check"); }}
+            style={{
+              padding: "6px 12px",
+              background: "transparent",
+              color: B.blue,
+              border: "1px solid " + B.blue + "60",
+              borderRadius: ADMIN.radius.sm,
+              fontSize: ADMIN.font.tiny,
+              fontWeight: ADMIN.weight.bold,
+              cursor: "pointer",
+              fontFamily: "inherit",
+            }}
+          >
+            🔍 فحص النظام التفصيلي (System Check)
+          </button>
+          <button
+            onClick={function(){ if (onNavigate) onNavigate("integration", "storage"); }}
+            style={{
+              padding: "6px 12px",
+              background: "transparent",
+              color: B.blue,
+              border: "1px solid " + B.blue + "60",
+              borderRadius: ADMIN.radius.sm,
+              fontSize: ADMIN.font.tiny,
+              fontWeight: ADMIN.weight.bold,
+              cursor: "pointer",
+              fontFamily: "inherit",
+            }}
+          >
+            🔧 فحص البنية التحتية (System Audit)
+          </button>
+        </div>
+      </div>
+    </div>;
+  }
+
+  // ════════════════════════════════════════════════════════════════
+  // SUB-VIEW 2: SAFE UPDATE — guided 4-step journey
+  // No execution from here — just guidance + navigation
+  // ════════════════════════════════════════════════════════════════
+  function SafeUpdateView() {
+    var STEPS = [
+      {
+        n: 1,
+        title: "فحص ZIP (إن وُجد)",
+        desc: "إذا كان لديك ZIP جديد، تأكد من اسمه (Basma-v7.x.y-{description}.zip) وحجمه قبل الرفع.",
+        action: null,
+      },
+      {
+        n: 2,
+        title: "رفع ZIP",
+        desc: "افتح صفحة التحديث الآمنة وأدخل كلمة مرور المدير، ثم اختر الملف.",
+        action: { label: "افتح صفحة /update", onClick: function(){ window.open("/#update", "_blank"); } },
+      },
+      {
+        n: 3,
+        title: "تحقق بعد النشر",
+        desc: "بعد ظهور الإصدار الجديد في تذييل الواجهة، شغّل فحصًا شاملًا.",
+        action: { label: "🔍 شغّل الفحص الشامل", onClick: function(){ setMode("comprehensive"); } },
+      },
+      {
+        n: 4,
+        title: "تقرير اعتماد",
+        desc: "انسخ AI Review Package من نتيجة الفحص الشامل وأرسله للاعتماد.",
+        action: null,
+      },
+    ];
+
+    return <div>
+      <div style={{
+        padding: ADMIN.space.md,
+        background: t.card,
+        borderRadius: ADMIN.radius.lg,
+        border: "1px solid " + t.sep,
+        marginBottom: ADMIN.space.md,
+      }}>
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", gap: 8 }}>
+          <div>
+            <div style={{ fontSize: ADMIN.font.md, fontWeight: ADMIN.weight.black, color: t.tx, marginBottom: 4 }}>
+              📦 التحديث الآمن
+            </div>
+            <div style={{ fontSize: ADMIN.font.xs, color: t.txM, lineHeight: 1.6 }}>
+              رحلة موحّدة من 4 خطوات لرفع التحديث والتحقق منه.
+            </div>
+          </div>
+          <button
+            onClick={function(){ setMode("home"); }}
+            style={{
+              padding: "6px 12px",
+              background: t.bg,
+              color: t.tx,
+              border: "1px solid " + t.sep,
+              borderRadius: ADMIN.radius.sm,
+              fontSize: ADMIN.font.tiny,
+              fontWeight: ADMIN.weight.bold,
+              cursor: "pointer",
+              fontFamily: "inherit",
+            }}
+          >
+            ← رجوع
+          </button>
+        </div>
+      </div>
+
+      <div style={{
+        padding: ADMIN.space.md,
+        background: B.yellow + "10",
+        border: "1px solid " + B.yellow + "60",
+        borderRadius: ADMIN.radius.md,
+        marginBottom: ADMIN.space.md,
+        fontSize: ADMIN.font.xs,
+        color: t.tx,
+        lineHeight: 1.7,
+      }}>
+        <div style={{ fontWeight: ADMIN.weight.black, marginBottom: 4 }}>الإصدار الحالي: <span style={{ color: B.blue }}>v{version}</span></div>
+        <div style={{ color: t.tx2 }}>تابع الخطوات بالترتيب. كل خطوة لها زر إجراء أو وصف فقط.</div>
+      </div>
+
+      <div style={{ display: "grid", gridTemplateColumns: "1fr", gap: ADMIN.space.sm }}>
+        {STEPS.map(function(step){
+          return <div key={step.n} style={{
+            padding: ADMIN.space.md,
+            background: t.card,
+            border: "1px solid " + t.sep,
+            borderRight: "4px solid " + B.blue,
+            borderRadius: ADMIN.radius.md,
+            display: "flex",
+            gap: ADMIN.space.md,
+            alignItems: "center",
+          }}>
+            <div style={{
+              width: 36, height: 36,
+              background: B.blue,
+              color: "#fff",
+              borderRadius: "50%",
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              fontSize: 16,
+              fontWeight: ADMIN.weight.black,
+              flexShrink: 0,
+            }}>
+              {step.n}
+            </div>
+            <div style={{ flex: 1, minWidth: 0 }}>
+              <div style={{ fontSize: ADMIN.font.sm, fontWeight: ADMIN.weight.black, color: t.tx, marginBottom: 4 }}>
+                {step.title}
+              </div>
+              <div style={{ fontSize: ADMIN.font.xs, color: t.tx2, lineHeight: 1.6 }}>
+                {step.desc}
+              </div>
+            </div>
+            {step.action && <button
+              onClick={step.action.onClick}
+              style={{
+                padding: "8px 14px",
+                background: B.blue,
+                color: "#fff",
+                border: "none",
+                borderRadius: ADMIN.radius.sm,
+                fontSize: ADMIN.font.tiny,
+                fontWeight: ADMIN.weight.black,
+                cursor: "pointer",
+                fontFamily: "inherit",
+                whiteSpace: "nowrap",
+                flexShrink: 0,
+              }}
+            >
+              {step.action.label}
+            </button>}
+          </div>;
+        })}
+      </div>
+    </div>;
+  }
+
+  // ════════════════════════════════════════════════════════════════
+  // SUB-VIEW 3: ADVANCED TOOLS (وضع الصيانة المتقدم)
+  // Reachable only via small link from home. DANGEROUS_ACTION badges shown.
+  // No direct execution — only navigation to existing tools.
+  // ════════════════════════════════════════════════════════════════
+  function AdvancedToolsView() {
+    // Catalog of existing advanced tools (no creation, no duplication)
+    var ADVANCED = [
+      // Diagnostics (safe)
+      { icon: "📜", name: "سجل العمليات", desc: "Audit log الكامل للنظام", danger: false, sec: "monitoring", sub: "audit" },
+      { icon: "🩺", name: "فحص ما بعد النشر", desc: "Release Doctor المباشر", danger: false, sec: "monitoring", sub: "release_doctor" },
+      { icon: "🔍", name: "فحص + اختبار النظام", desc: "System Check + Test Panel", danger: false, sec: "monitoring", sub: "check" },
+      { icon: "🛠", name: "أدوات النظام (الكتالوج القديم)", desc: "Hub القديم لكل الأدوات", danger: false, sec: "monitoring", sub: "tools" },
+      // Integration
+      { icon: "🔗", name: "تكامل كوادر", desc: "حالة المزامنة + الإعدادات", danger: false, sec: "integration", sub: "kadwar" },
+      { icon: "📨", name: "إعدادات متقدمة", desc: "أوقات الدوام، توجيه البريد، البريك العشوائي", danger: false, sec: "integration", sub: "advanced" },
+      // Dangerous
+      { icon: "💾", name: "التخزين والنسخ", desc: "إدارة Redis + Backup + Restore", danger: true, dangerKind: "DANGEROUS_ACTION", sec: "integration", sub: "storage" },
+      { icon: "🧹", name: "تنظيف البيانات", desc: "حذف بيانات قديمة (لا يمكن التراجع)", danger: true, dangerKind: "DANGEROUS_ACTION", sec: "maintenance", sub: "cleanup" },
+      { icon: "📸", name: "بصمات الوجه", desc: "حذف/إعادة تسجيل بصمات", danger: true, dangerKind: "DANGEROUS_ACTION", sec: "maintenance", sub: "faces" },
+      { icon: "📎", name: "مرفقات معلّقة", desc: "إدارة طابور المرفقات", danger: false, sec: "maintenance", sub: "attach_queue" },
+      { icon: "🗂", name: "أنواع المرفقات", desc: "تعريف أنواع الملفات", danger: false, sec: "maintenance", sub: "attachments" },
+    ];
+
+    return <div>
+      <div style={{
+        padding: ADMIN.space.md,
+        background: t.card,
+        borderRadius: ADMIN.radius.lg,
+        border: "1px solid " + t.sep,
+        marginBottom: ADMIN.space.md,
+      }}>
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", gap: 8 }}>
+          <div>
+            <div style={{ fontSize: ADMIN.font.md, fontWeight: ADMIN.weight.black, color: t.tx, marginBottom: 4 }}>
+              ⚙ وضع الصيانة المتقدم
+            </div>
+            <div style={{ fontSize: ADMIN.font.xs, color: t.txM, lineHeight: 1.6 }}>
+              للأدوات التي تحتاج خبرة. الأدوات الخطرة معلَّمة بشارة DANGEROUS_ACTION.
+            </div>
+          </div>
+          <button
+            onClick={function(){ setMode("home"); }}
+            style={{
+              padding: "6px 12px",
+              background: t.bg,
+              color: t.tx,
+              border: "1px solid " + t.sep,
+              borderRadius: ADMIN.radius.sm,
+              fontSize: ADMIN.font.tiny,
+              fontWeight: ADMIN.weight.bold,
+              cursor: "pointer",
+              fontFamily: "inherit",
+            }}
+          >
+            ← رجوع
+          </button>
+        </div>
+      </div>
+
+      <div style={{
+        padding: ADMIN.space.sm,
+        background: t.badLt,
+        border: "1px solid " + t.bad + "40",
+        borderRadius: ADMIN.radius.sm,
+        marginBottom: ADMIN.space.md,
+        fontSize: ADMIN.font.tiny,
+        color: t.bad,
+        fontWeight: ADMIN.weight.bold,
+        textAlign: "center",
+      }}>
+        ⚠️ الأدوات الخطرة لا تُنفَّذ من هنا — كل أداة لها شاشة تأكيد خاصة بها.
+      </div>
+
+      <div style={{ display: "grid", gridTemplateColumns: "1fr", gap: ADMIN.space.sm }}>
+        {ADVANCED.map(function(tool, i){
+          return <div key={i} style={{
+            padding: ADMIN.space.sm + "px " + ADMIN.space.md + "px",
+            background: t.card,
+            border: "1px solid " + t.sep,
+            borderRight: "3px solid " + (tool.danger ? t.bad : t.sep),
+            borderRadius: ADMIN.radius.sm,
+            display: "flex",
+            alignItems: "center",
+            gap: ADMIN.space.md,
+          }}>
+            <div style={{ fontSize: 18, flexShrink: 0 }}>{tool.icon}</div>
+            <div style={{ flex: 1, minWidth: 0 }}>
+              <div style={{ fontSize: ADMIN.font.sm, fontWeight: ADMIN.weight.bold, color: t.tx, marginBottom: 2, display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap" }}>
+                {tool.name}
+                {tool.danger && <span style={{
+                  fontSize: ADMIN.font.tiny,
+                  color: t.bad,
+                  background: t.badLt,
+                  padding: "2px 6px",
+                  borderRadius: 6,
+                  fontWeight: ADMIN.weight.black,
+                }}>🛑 {tool.dangerKind}</span>}
+              </div>
+              <div style={{ fontSize: ADMIN.font.tiny, color: t.txM, lineHeight: 1.5 }}>{tool.desc}</div>
+            </div>
+            <button
+              onClick={function(){ if (onNavigate) onNavigate(tool.sec, tool.sub); }}
+              style={{
+                padding: "6px 12px",
+                background: tool.danger ? t.bad : B.blue,
+                color: "#fff",
+                border: "none",
+                borderRadius: ADMIN.radius.sm,
+                fontSize: ADMIN.font.tiny,
+                fontWeight: ADMIN.weight.black,
+                cursor: "pointer",
+                fontFamily: "inherit",
+                flexShrink: 0,
+              }}
+            >
+              فتح ›
+            </button>
+          </div>;
+        })}
+      </div>
+    </div>;
+  }
+
+  // ════════════════════════════════════════════════════════════════
+  // HOME VIEW: 4 main paths + advanced link
+  // ════════════════════════════════════════════════════════════════
+  function HomeView() {
+    var PATHS = [
+      {
+        id: "comprehensive",
+        icon: "🔍",
+        title: "فحص شامل",
+        desc: "تحقّق من حالة النظام والحماية والإصدار. ينتج تقرير اعتماد قابل للنسخ.",
+        color: B.blue,
+        onClick: function(){ setMode("comprehensive"); },
+      },
+      {
+        id: "safe_update",
+        icon: "📦",
+        title: "التحديث الآمن",
+        desc: "رحلة موحّدة: فحص ZIP → رفع → تحقق بعد النشر → تقرير اعتماد.",
+        color: "#7C3AED",
+        onClick: function(){ setMode("safe_update"); },
+      },
+      {
+        id: "backup",
+        icon: "💾",
+        title: "النسخ والاستعادة",
+        desc: "إدارة النسخ الاحتياطية (الاستعادة تتطلب تأكيدًا منفصلًا).",
+        color: "#10B981",
+        onClick: function(){ if (onNavigate) onNavigate("integration", "storage"); },
+      },
+      {
+        id: "logs",
+        icon: "📜",
+        title: "السجل والتقارير",
+        desc: "سجل كل العمليات الإدارية والأمنية في النظام.",
+        color: "#F59E0B",
+        onClick: function(){ if (onNavigate) onNavigate("monitoring", "audit"); },
+      },
+    ];
+
+    return <div>
+      {/* Header card */}
+      <div style={{
+        padding: ADMIN.space.md,
+        background: t.card,
+        borderRadius: ADMIN.radius.lg,
+        border: "1px solid " + t.sep,
+        marginBottom: ADMIN.space.md,
+      }}>
+        <div style={{ fontSize: ADMIN.font.md, fontWeight: ADMIN.weight.black, color: t.tx, marginBottom: 4 }}>
+          🛡 مركز سلامة النظام
+        </div>
+        <div style={{ fontSize: ADMIN.font.xs, color: t.txM, lineHeight: 1.7 }}>
+          الواجهة الأساسية لإدارة سلامة النظام يوميًا. كل ما تحتاجه في 4 مسارات واضحة.
+          الإصدار الحالي: <b style={{ color: B.blue }}>v{version}</b>
+        </div>
+      </div>
+
+      {/* v7.140.13 — HMA Systems Linkage Card */}
+      <HMASystemsLinkageCard t={t} B={B} version={version} />
+
+      {/* 4 main path cards (2×2 on wider screens, 1 col on mobile) */}
+      <div style={{
+        display: "grid",
+        gridTemplateColumns: "repeat(auto-fit, minmax(260px, 1fr))",
+        gap: ADMIN.space.md,
+      }}>
+        {PATHS.map(function(p){
+          return <button
+            key={p.id}
+            onClick={p.onClick}
+            style={{
+              padding: ADMIN.space.lg,
+              background: t.card,
+              border: "1px solid " + t.sep,
+              borderTop: "4px solid " + p.color,
+              borderRadius: ADMIN.radius.lg,
+              cursor: "pointer",
+              fontFamily: "inherit",
+              textAlign: "right",
+              display: "flex",
+              flexDirection: "column",
+              gap: ADMIN.space.sm,
+              minHeight: 140,
+            }}
+          >
+            <div style={{ fontSize: 36 }}>{p.icon}</div>
+            <div style={{ fontSize: ADMIN.font.md, fontWeight: ADMIN.weight.black, color: t.tx }}>
+              {p.title}
+            </div>
+            <div style={{ fontSize: ADMIN.font.xs, color: t.tx2, lineHeight: 1.6, flex: 1 }}>
+              {p.desc}
+            </div>
+            <div style={{ fontSize: ADMIN.font.xs, color: p.color, fontWeight: ADMIN.weight.black }}>
+              فتح ›
+            </div>
+          </button>;
+        })}
+      </div>
+
+      {/* Small advanced link at bottom */}
+      <div style={{
+        marginTop: ADMIN.space.xl,
+        textAlign: "center",
+      }}>
+        <button
+          onClick={function(){ setMode("advanced"); }}
+          style={{
+            padding: "8px 14px",
+            background: "transparent",
+            color: t.txM,
+            border: "1px dashed " + t.sep,
+            borderRadius: ADMIN.radius.sm,
+            fontSize: ADMIN.font.xs,
+            fontWeight: ADMIN.weight.bold,
+            cursor: "pointer",
+            fontFamily: "inherit",
+          }}
+        >
+          ⚙ الأدوات المتقدمة / وضع الصيانة المتقدم
+        </button>
+      </div>
+    </div>;
+  }
+
+  // ════════════════════════════════════════════════════════════════
+  // ROUTER
+  // ════════════════════════════════════════════════════════════════
+  if (mode === "comprehensive") return <ComprehensiveCheckView />;
+  if (mode === "safe_update")   return <SafeUpdateView />;
+  if (mode === "advanced")      return <AdvancedToolsView />;
+  return <HomeView />;
+}
+
+
 function SystemToolsHubPanel({ t, B, version, onNavigate }) {
   var [copied, setCopied] = useState(false);
 
@@ -21455,7 +22697,7 @@ function SystemToolsHubPanel({ t, B, version, onNavigate }) {
  *   - Re-run button
  *   - Loading + error states
  * ═══════════════════════════════════════════════════════════════════ */
-function ReleaseDoctorPanel({ t, B }) {
+function ReleaseDoctorPanel({ t, B, onResult, hideCopyButton }) {
   var [loading, setLoading] = useState(false);
   var [data, setData] = useState(null);
   var [error, setError] = useState(null);
@@ -21480,8 +22722,15 @@ function ReleaseDoctorPanel({ t, B }) {
           return j.data;
         });
       })
-      .then(function(d){ setData(d); setLoading(false); })
-      .catch(function(e){ setError(e.message || "فشل في تشغيل الفحص"); setLoading(false); });
+      .then(function(d){
+        setData(d); setLoading(false);
+        // v7.140.12 — bubble result to parent (used by ComprehensiveCheckView)
+        if (typeof onResult === "function") { try { onResult(d); } catch(_) {} }
+      })
+      .catch(function(e){
+        setError(e.message || "فشل في تشغيل الفحص"); setLoading(false);
+        if (typeof onResult === "function") { try { onResult(null, e.message); } catch(_) {} }
+      });
   }
 
   function copyAIReview() {
@@ -21654,8 +22903,8 @@ function ReleaseDoctorPanel({ t, B }) {
           })}
         </div>
 
-        {/* Copy AI Review Package */}
-        <button
+        {/* Copy AI Review Package — hidden when ReleaseDoctorPanel is embedded inside ComprehensiveCheckView (which provides its own consolidated copy button) */}
+        {!hideCopyButton && <button
           onClick={copyAIReview}
           style={{
             width: "100%",
@@ -21671,10 +22920,10 @@ function ReleaseDoctorPanel({ t, B }) {
           }}
         >
           {copied ? "✅ تم النسخ" : "📋 نسخ AI Review Package"}
-        </button>
-        <div style={{ fontSize: ADMIN.font.tiny, color: t.txM, marginTop: 8, textAlign: "center", lineHeight: 1.5 }}>
+        </button>}
+        {!hideCopyButton && <div style={{ fontSize: ADMIN.font.tiny, color: t.txM, marginTop: 8, textAlign: "center", lineHeight: 1.5 }}>
           الباقة لا تحتوي على مفاتيح أو tokens أو بيانات شخصية
-        </div>
+        </div>}
       </div>;
     })()}
 
