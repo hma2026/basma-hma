@@ -22,7 +22,7 @@
  * ═══════════════════════════════════════════════════════════════════ */
 
 // keep in sync with INTEGRATION_SERVICE_VERSION in api/data.js (version bump touches both)
-var BASMA_HEALTH_VERSION = '7.140.15';
+var BASMA_HEALTH_VERSION = '7.140.16';
 
 var HEALTH_ALLOWED_ORIGINS = [
   'https://hma.engineer',
